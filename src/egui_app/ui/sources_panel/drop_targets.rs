@@ -106,6 +106,7 @@ impl EguiApp {
                                 marker,
                                 rating: None,
                                 looped: false,
+                                bpm_label: None,
                             },
                         )
                         .on_hover_text(row.path.display().to_string());

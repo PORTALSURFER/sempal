@@ -1,6 +1,8 @@
+use super::helpers;
 use super::*;
 
 use eframe::egui;
+use crate::egui_app::ui::style::StatusTone;
 
 impl EguiApp {
     pub(super) fn sample_tag_menu<F>(
@@ -58,6 +60,59 @@ impl EguiApp {
         let requested = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         if (ui.button("Apply rename").clicked() || requested) && on_rename(self, value.as_str()) {
             return true;
+        }
+        false
+    }
+
+    /// Render a BPM input row that applies the value when confirmed.
+    pub(super) fn sample_bpm_controls<F>(
+        &mut self,
+        ui: &mut egui::Ui,
+        bpm_id: egui::Id,
+        default_bpm: Option<f32>,
+        mut on_apply: F,
+    ) -> bool
+    where
+        F: FnMut(&mut EguiApp, f32) -> bool,
+    {
+        let mut value = ui.ctx().data_mut(|data| {
+            let value = data.get_temp::<String>(bpm_id);
+            let value = value.unwrap_or_else(|| {
+                default_bpm
+                    .map(helpers::format_bpm_input)
+                    .unwrap_or_default()
+            });
+            data.insert_temp(bpm_id, value.clone());
+            value
+        });
+        let mut apply_requested = false;
+        ui.horizontal(|ui| {
+            ui.label("BPM");
+            let edit = ui.add(
+                egui::TextEdit::singleline(&mut value)
+                    .desired_width(64.0)
+                    .hint_text("120"),
+            );
+            apply_requested =
+                edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            if ui.button("Apply BPM").clicked() {
+                apply_requested = true;
+            }
+        });
+        ui.ctx()
+            .data_mut(|data| data.insert_temp(bpm_id, value.clone()));
+        if apply_requested {
+            match helpers::parse_bpm_input(&value) {
+                Some(bpm) => {
+                    if on_apply(self, bpm) {
+                        return true;
+                    }
+                }
+                None => {
+                    self.controller
+                        .set_status("Enter a positive BPM value", StatusTone::Warning);
+                }
+            }
         }
         false
     }

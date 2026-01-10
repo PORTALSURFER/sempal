@@ -30,6 +30,17 @@ impl EguiController {
             .set_loop_marker_browser_samples(rows, looped, primary_visible_row)
     }
 
+    /// Update the stored BPM metadata for multiple visible browser rows.
+    pub fn set_bpm_browser_samples(
+        &mut self,
+        rows: &[usize],
+        bpm: f32,
+        primary_visible_row: usize,
+    ) -> Result<(), String> {
+        self.browser()
+            .set_bpm_browser_samples(rows, bpm, primary_visible_row)
+    }
+
     /// Normalize a single visible browser row in-place (overwrites audio).
     pub fn normalize_browser_sample(&mut self, row: usize) -> Result<(), String> {
         self.browser().normalize_browser_sample(row)

@@ -8,7 +8,9 @@ mod types;
 
 pub(crate) use db::open_source_db;
 pub(crate) use db::purge_orphaned_samples;
-pub(crate) use db::{build_sample_id, parse_sample_id, sample_bpm, update_sample_bpm};
+pub(crate) use db::{
+    build_sample_id, parse_sample_id, sample_bpm, update_sample_bpm, update_sample_bpms,
+};
 pub(crate) use enqueue::enqueue_jobs_for_source;
 pub(crate) use enqueue::enqueue_jobs_for_source_backfill;
 pub(crate) use enqueue::enqueue_jobs_for_source_backfill_full;

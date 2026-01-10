@@ -72,10 +72,38 @@ pub(super) fn clamp_label_for_width(text: &str, available_width: f32) -> String 
     clipped
 }
 
+/// Parse a BPM input string into a positive finite value.
+pub(super) fn parse_bpm_input(input: &str) -> Option<f32> {
+    let trimmed = input.trim().to_lowercase();
+    let trimmed = trimmed
+        .strip_suffix("bpm")
+        .unwrap_or(trimmed.as_str())
+        .trim();
+    let bpm = trimmed.parse::<f32>().ok()?;
+    if bpm.is_finite() && bpm > 0.0 {
+        Some(bpm)
+    } else {
+        None
+    }
+}
+
+/// Format a BPM value for single-line editing.
+pub(super) fn format_bpm_input(value: f32) -> String {
+    let rounded = value.round();
+    if (value - rounded).abs() < 0.01 {
+        format!("{rounded:.0}")
+    } else {
+        format!("{value:.2}")
+    }
+}
+
 const LOOP_BADGE_TEXT: &str = "LOOP";
 const LOOP_BADGE_PADDING_X: f32 = 6.0;
 const LOOP_BADGE_PADDING_Y: f32 = 2.0;
 const LOOP_BADGE_GAP: f32 = 6.0;
+const BPM_BADGE_PADDING_X: f32 = 6.0;
+const BPM_BADGE_PADDING_Y: f32 = 2.0;
+const BPM_BADGE_GAP: f32 = 6.0;
 
 /// Return the horizontal space needed for the loop badge, including the gap.
 pub(super) fn loop_badge_space(ui: &Ui) -> f32 {
@@ -90,6 +118,18 @@ pub(super) fn loop_badge_space(ui: &Ui) -> f32 {
     LOOP_BADGE_GAP + text_width + LOOP_BADGE_PADDING_X * 2.0
 }
 
+pub(super) fn bpm_badge_space(ui: &Ui, label: &str) -> f32 {
+    let font_id = TextStyle::Button.resolve(ui.style());
+    let text_width = ui
+        .ctx()
+        .fonts_mut(|fonts| {
+            fonts.layout_no_wrap(label.to_string(), font_id, style::bpm_badge_text())
+        })
+        .size()
+        .x;
+    BPM_BADGE_GAP + text_width + BPM_BADGE_PADDING_X * 2.0
+}
+
 pub(super) struct ListRow<'a> {
     pub label: &'a str,
     pub row_width: f32,
@@ -102,6 +142,7 @@ pub(super) struct ListRow<'a> {
     pub marker: Option<RowMarker>,
     pub rating: Option<Rating>,
     pub looped: bool,
+    pub bpm_label: Option<&'a str>,
 }
 
 pub(super) fn render_list_row(ui: &mut Ui, row: ListRow<'_>) -> egui::Response {
@@ -209,6 +250,32 @@ pub(super) fn render_list_row(ui: &mut Ui, row: ListRow<'_>) -> egui::Response {
             LOOP_BADGE_TEXT,
             font_id.clone(),
             style::loop_badge_text(),
+        );
+        trailing_x = badge_rect.right();
+    }
+    if let Some(label) = row.bpm_label {
+        let badge_galley = ui.ctx().fonts_mut(|fonts| {
+            fonts.layout_no_wrap(label.to_string(), font_id.clone(), style::bpm_badge_text())
+        });
+        let badge_min = egui::pos2(
+            trailing_x + BPM_BADGE_GAP,
+            rect.center().y - badge_galley.size().y * 0.5 - BPM_BADGE_PADDING_Y,
+        );
+        let badge_rect = egui::Rect::from_min_size(
+            badge_min,
+            egui::vec2(
+                badge_galley.size().x + BPM_BADGE_PADDING_X * 2.0,
+                badge_galley.size().y + BPM_BADGE_PADDING_Y * 2.0,
+            ),
+        );
+        ui.painter()
+            .rect_filled(badge_rect, 0.0, style::bpm_badge_fill());
+        ui.painter().text(
+            badge_rect.center(),
+            Align2::CENTER_CENTER,
+            label,
+            font_id.clone(),
+            style::bpm_badge_text(),
         );
         trailing_x = badge_rect.right();
     }

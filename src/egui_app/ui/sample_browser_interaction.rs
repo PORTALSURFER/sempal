@@ -213,6 +213,16 @@ impl EguiApp {
                     close_menu = true;
                 }
             }
+            ui.separator();
+            let bpm_id = ui.make_persistent_id(format!("bpm:triage:{}", path.display()));
+            let default_bpm = self.controller.ui.waveform.bpm_value;
+            if self.sample_bpm_controls(ui, bpm_id, default_bpm, |app, bpm| {
+                app.controller
+                    .set_bpm_browser_samples(&action_rows, bpm, row)
+                    .is_ok()
+            }) {
+                close_menu = true;
+            }
             if ui
                 .button("Normalize (overwrite)")
                 .on_hover_text("Scale to full range and overwrite the wav")

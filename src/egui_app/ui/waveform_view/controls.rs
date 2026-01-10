@@ -1,3 +1,4 @@
+use super::helpers;
 use super::style;
 use super::*;
 use eframe::egui::{self, RichText, Ui};
@@ -126,7 +127,7 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
                 .hint_text("120"),
         );
         if bpm_edit.changed() {
-            let parsed = parse_bpm_input(&app.controller.ui.waveform.bpm_input);
+            let parsed = helpers::parse_bpm_input(&app.controller.ui.waveform.bpm_input);
             app.controller.ui.waveform.bpm_value = parsed;
             if let Some(value) = parsed {
                 app.controller.set_bpm_value(value);
@@ -202,19 +203,5 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
     });
     if view_mode != app.controller.ui.waveform.channel_view {
         app.controller.set_waveform_channel_view(view_mode);
-    }
-}
-
-fn parse_bpm_input(input: &str) -> Option<f32> {
-    let trimmed = input.trim().to_lowercase();
-    let trimmed = trimmed
-        .strip_suffix("bpm")
-        .unwrap_or(trimmed.as_str())
-        .trim();
-    let bpm = trimmed.parse::<f32>().ok()?;
-    if bpm.is_finite() && bpm > 0.0 {
-        Some(bpm)
-    } else {
-        None
     }
 }

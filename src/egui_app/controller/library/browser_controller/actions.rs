@@ -1,7 +1,8 @@
 use super::helpers::TriageSampleContext;
 use super::*;
 use crate::egui_app::state::LoopCrossfadeSettings;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use tracing::{info, warn};
 
 pub(crate) trait BrowserActions {
@@ -16,6 +17,12 @@ pub(crate) trait BrowserActions {
         &mut self,
         rows: &[usize],
         looped: bool,
+        primary_visible_row: usize,
+    ) -> Result<(), String>;
+    fn set_bpm_browser_samples(
+        &mut self,
+        rows: &[usize],
+        bpm: f32,
         primary_visible_row: usize,
     ) -> Result<(), String>;
     fn normalize_browser_sample(&mut self, row: usize) -> Result<(), String>;
@@ -107,6 +114,73 @@ impl BrowserActions for BrowserController<'_> {
         self.refocus_after_filtered_removal(primary_visible_row);
         if let Some(err) = last_error {
             warn!(?rows, looped, error = %err, "loop marker failed for multi row");
+            Err(err)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn set_bpm_browser_samples(
+        &mut self,
+        rows: &[usize],
+        bpm: f32,
+        primary_visible_row: usize,
+    ) -> Result<(), String> {
+        if !bpm.is_finite() || bpm <= 0.0 {
+            return Err("BPM must be a positive number".to_string());
+        }
+        let (contexts, mut last_error) = self.resolve_unique_browser_contexts(rows);
+        let mut grouped: HashMap<SourceId, (SampleSource, Vec<PathBuf>)> = HashMap::new();
+        for ctx in contexts {
+            grouped
+                .entry(ctx.source.id.clone())
+                .or_insert_with(|| (ctx.source.clone(), Vec::new()))
+                .1
+                .push(ctx.entry.relative_path.clone());
+        }
+        let mut updated = 0usize;
+        for (source_id, (source, paths)) in grouped {
+            let mut conn = match analysis_jobs::open_source_db(&source.root) {
+                Ok(conn) => conn,
+                Err(err) => {
+                    last_error = Some(format!("Failed to open source DB for BPM save: {err}"));
+                    continue;
+                }
+            };
+            let sample_ids: Vec<String> = paths
+                .iter()
+                .map(|path| analysis_jobs::build_sample_id(source_id.as_str(), path))
+                .collect();
+            match analysis_jobs::update_sample_bpms(&mut conn, &sample_ids, Some(bpm)) {
+                Ok(count) => updated = updated.saturating_add(count),
+                Err(err) => last_error = Some(err),
+            }
+            let loaded_matches = self
+                .sample_view
+                .wav
+                .loaded_audio
+                .as_ref()
+                .is_some_and(|audio| {
+                    audio.source_id == source_id
+                        && paths
+                            .iter()
+                            .any(|path| audio.relative_path == *path)
+                });
+            if loaded_matches {
+                self.set_waveform_bpm_input(Some(bpm));
+            }
+        }
+        if updated > 0 {
+            let label = format_bpm_label(bpm);
+            let sample_label = if updated == 1 { "sample" } else { "samples" };
+            self.set_status(
+                format!("Set BPM {label} for {updated} {sample_label}"),
+                StatusTone::Info,
+            );
+        }
+        self.refocus_after_filtered_removal(primary_visible_row);
+        if let Some(err) = last_error {
+            warn!(?rows, bpm, error = %err, "bpm update failed for browser samples");
             Err(err)
         } else {
             Ok(())
@@ -265,5 +339,14 @@ impl BrowserController<'_> {
             }
         }
         (contexts, last_error)
+    }
+}
+
+fn format_bpm_label(bpm: f32) -> String {
+    let rounded = bpm.round();
+    if (bpm - rounded).abs() < 0.01 {
+        format!("{rounded:.0}")
+    } else {
+        format!("{bpm:.2}")
     }
 }

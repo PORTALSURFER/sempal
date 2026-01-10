@@ -1,8 +1,8 @@
 use super::drag_targets;
 use super::flat_items_list::{FlatItemsListConfig, render_flat_items_list};
 use super::helpers::{
-    NumberColumn, RowBackground, RowMarker, clamp_label_for_width, loop_badge_space,
-    render_list_row,
+    NumberColumn, RowBackground, RowMarker, bpm_badge_space, clamp_label_for_width,
+    format_bpm_input, loop_badge_space, render_list_row,
 };
 use super::status_badges;
 use super::style;
@@ -101,6 +101,10 @@ impl EguiApp {
                     .iter()
                     .any(|p| p == &path);
                 let is_loaded = loaded_row == Some(row);
+                let bpm_label = is_loaded
+                    .then(|| self.controller.ui.waveform.bpm_value)
+                    .flatten()
+                    .map(|bpm| format!("{} BPM", format_bpm_input(bpm)));
                 let row_width = metrics.row_width;
                 let similar_query = self.controller.ui.browser.similar_query.as_ref();
                 let is_anchor = similar_query.and_then(|sim| sim.anchor_index) == Some(entry_index);
@@ -128,11 +132,16 @@ impl EguiApp {
                     0.0
                 };
                 let loop_space = if looped { loop_badge_space(ui) } else { 0.0 };
+                let bpm_space = bpm_label
+                    .as_deref()
+                    .map(|label| bpm_badge_space(ui, label))
+                    .unwrap_or(0.0);
                 let trailing_space = indicator_space
                     + triage_marker_width
                         .map(|width| width + metrics.padding * 0.5)
                         .unwrap_or(0.0)
-                    + loop_space;
+                    + loop_space
+                    + bpm_space;
 
                 let mut base_label = self
                     .controller
@@ -217,6 +226,7 @@ impl EguiApp {
                             marker: triage_marker,
                             rating: Some(tag),
                             looped,
+                            bpm_label: bpm_label.as_deref(),
                         },
                     );
                     let response = if let Some(hover) = status_label.hover_text.as_deref() {

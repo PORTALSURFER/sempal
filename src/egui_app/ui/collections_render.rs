@@ -108,6 +108,7 @@ impl EguiApp {
                                     marker: None,
                                     rating: None,
                                     looped: false,
+                                    bpm_label: None,
                                 },
                             );
                             if is_drag_hover {
@@ -321,6 +322,7 @@ impl EguiApp {
                                 marker: triage_marker,
                                 rating: Some(sample.tag),
                                 looped: false,
+                                bpm_label: None,
                             },
                         );
                         if is_selected {

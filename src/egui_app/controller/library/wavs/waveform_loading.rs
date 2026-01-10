@@ -264,7 +264,8 @@ impl EguiController {
         }
     }
 
-    fn set_waveform_bpm_input(&mut self, bpm: Option<f32>) {
+    /// Update the waveform BPM input fields to match stored metadata.
+    pub(crate) fn set_waveform_bpm_input(&mut self, bpm: Option<f32>) {
         let bpm = bpm.filter(|value| value.is_finite() && *value > 0.0);
         self.ui.waveform.bpm_value = bpm;
         if let Some(value) = bpm {

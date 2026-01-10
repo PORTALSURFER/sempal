@@ -63,6 +63,39 @@ pub(crate) fn update_sample_bpm(
     Ok(())
 }
 
+/// Update the stored BPM for multiple sample rows, clearing it if the value is invalid.
+pub(crate) fn update_sample_bpms(
+    conn: &mut Connection,
+    sample_ids: &[String],
+    bpm: Option<f32>,
+) -> Result<usize, String> {
+    if sample_ids.is_empty() {
+        return Ok(0);
+    }
+    let bpm = bpm
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .map(|value| value as f64);
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|err| format!("Failed to start BPM update transaction: {err}"))?;
+    let mut updated = 0usize;
+    for sample_id in sample_ids {
+        let count = tx
+            .execute(
+                "UPDATE samples SET bpm = ?2 WHERE sample_id = ?1",
+                params![sample_id, bpm],
+            )
+            .map_err(|err| format!("Failed to update sample bpm: {err}"))?;
+        if count == 0 {
+            return Err(format!("No sample row updated for sample_id={sample_id}"));
+        }
+        updated = updated.saturating_add(count);
+    }
+    tx.commit()
+        .map_err(|err| format!("Failed to commit BPM updates: {err}"))?;
+    Ok(updated)
+}
+
 /// Load content hashes and analysis versions for the requested sample ids.
 pub(crate) fn sample_analysis_states(
     conn: &Connection,

@@ -34,7 +34,7 @@ pub(crate) use jobs::claim_next_job;
 pub(crate) use jobs::{
     SampleAnalysisState, claim_next_jobs, mark_done, mark_failed, mark_failed_with_reason,
     mark_pending, sample_analysis_states, sample_bpm, sample_content_hash, touch_running_at,
-    update_sample_bpm,
+    update_sample_bpm, update_sample_bpms,
 };
 pub(crate) use progress::{
     current_embedding_backfill_progress, current_progress, current_running_jobs,

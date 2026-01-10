@@ -79,6 +79,30 @@ fn sample_bpm_round_trips() {
 }
 
 #[test]
+fn update_sample_bpms_updates_multiple_rows() {
+    let mut conn = conn_with_schema();
+    conn.execute(
+        "INSERT INTO samples (sample_id, content_hash, size, mtime_ns)
+         VALUES (?1, ?2, 1, 1)",
+        params!["s::a.wav", "hash-a"],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO samples (sample_id, content_hash, size, mtime_ns)
+         VALUES (?1, ?2, 1, 1)",
+        params!["s::b.wav", "hash-b"],
+    )
+    .unwrap();
+    let sample_ids = vec!["s::a.wav".to_string(), "s::b.wav".to_string()];
+    let updated = update_sample_bpms(&mut conn, &sample_ids, Some(96.0)).unwrap();
+    assert_eq!(updated, 2);
+    let bpm_a = sample_bpm(&conn, "s::a.wav").unwrap();
+    let bpm_b = sample_bpm(&conn, "s::b.wav").unwrap();
+    assert_eq!(bpm_a, Some(96.0));
+    assert_eq!(bpm_b, Some(96.0));
+}
+
+#[test]
 fn enqueue_jobs_dedupes_by_sample_and_type() {
     let mut conn = conn_with_schema();
     conn.execute(

@@ -53,6 +53,7 @@ impl EguiApp {
                                 marker: None,
                                 rating: None,
                                 looped: false,
+                                bpm_label: None,
                             },
                         )
                         .on_hover_text(&row.path);
