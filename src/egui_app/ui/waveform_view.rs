@@ -5,6 +5,7 @@ use crate::egui_app::view_model;
 use eframe::egui::{self, StrokeKind, Ui};
 
 mod base_render;
+mod beat_grid;
 mod controls;
 mod destructive_prompt;
 mod edit_selection_overlay;
@@ -68,6 +69,14 @@ impl EguiApp {
             if !base_render::render_waveform_base(self, ui, waveform_rect, &palette, is_loading) {
                 return;
             }
+            beat_grid::render_waveform_beat_grid(
+                self,
+                ui,
+                waveform_rect,
+                &palette,
+                display_view,
+                view_width,
+            );
 
             hover_overlay::render_hover_overlay(
                 self,
