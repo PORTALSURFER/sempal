@@ -186,6 +186,13 @@ impl EguiController {
         if self.settings.controls.bpm_stretch_enabled == enabled {
             return;
         }
+        let was_playing = self.is_playing();
+        let start_override = if was_playing {
+            Some(self.ui.waveform.playhead.position)
+        } else {
+            None
+        };
+        let looped = self.ui.waveform.loop_enabled;
         self.settings.controls.bpm_stretch_enabled = enabled;
         self.ui.waveform.bpm_stretch_enabled = enabled;
         self.persist_controls();
@@ -202,9 +209,25 @@ impl EguiController {
             )
         };
         self.reload_waveform_for_selection_if_active(&source, &relative_path);
+        let loaded_matches = self
+            .sample_view
+            .wav
+            .loaded_audio
+            .as_ref()
+            .is_some_and(|audio| {
+                audio.source_id == source.id && audio.relative_path == relative_path
+            });
+        if !enabled && was_playing && loaded_matches {
+            if let Err(err) = self.play_audio(looped, start_override) {
+                self.set_status(err, StatusTone::Error);
+            }
+        }
     }
 
     /// Update and persist the BPM snap value for waveform snapping and stretching.
+    ///
+    /// When stretch is enabled and a sample is loaded, the waveform reloads to
+    /// apply the new tempo.
     pub fn set_bpm_value(&mut self, value: f32) {
         if !value.is_finite() || value <= 0.0 {
             return;
@@ -221,6 +244,24 @@ impl EguiController {
         self.settings.controls.bpm_value = value;
         self.ui.waveform.bpm_value = Some(value);
         self.persist_controls();
+        if self.ui.waveform.bpm_stretch_enabled
+            && !self.selection_state.range.is_dragging()
+            && !self.selection_state.edit_range.is_dragging()
+        {
+            let (source, relative_path) = {
+                let Some(loaded) = self.sample_view.wav.loaded_audio.as_ref() else {
+                    return;
+                };
+                (
+                    crate::sample_sources::SampleSource {
+                        id: loaded.source_id.clone(),
+                        root: loaded.root.clone(),
+                    },
+                    loaded.relative_path.clone(),
+                )
+            };
+            self.reload_waveform_for_selection_if_active(&source, &relative_path);
+        }
     }
 
     /// Enable/disable transient snapping and persist the setting.

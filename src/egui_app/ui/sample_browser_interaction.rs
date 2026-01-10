@@ -123,7 +123,9 @@ impl EguiApp {
         label: &str,
         missing: bool,
     ) {
-        response.context_menu(|ui| {
+        egui::Popup::context_menu(response)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .show(|ui| {
             let palette = style::palette();
             let mut close_menu = false;
             let action_rows = self.controller.action_rows_from_primary(row);

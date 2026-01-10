@@ -134,12 +134,20 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
         if stretch_toggle.clicked() {
             app.controller.set_bpm_stretch_enabled(bpm_stretch);
         }
-        let bpm_edit = ui.add(
-            egui::TextEdit::singleline(&mut app.controller.ui.waveform.bpm_input)
-                .desired_width(64.0)
-                .hint_text("120"),
-        );
-        if bpm_edit.changed() {
+        let bpm_edit = egui::TextEdit::singleline(&mut app.controller.ui.waveform.bpm_input)
+            .desired_width(64.0)
+            .hint_text("120")
+            .show(ui);
+        if bpm_edit.response.gained_focus() {
+            let mut state = bpm_edit.state;
+            state
+                .cursor
+                .set_char_range(Some(egui::text::CCursorRange::select_all(
+                    &bpm_edit.galley,
+                )));
+            state.store(ui.ctx(), bpm_edit.response.id);
+        }
+        if bpm_edit.response.changed() {
             let parsed = helpers::parse_bpm_input(&app.controller.ui.waveform.bpm_input);
             app.controller.ui.waveform.bpm_value = parsed;
             if let Some(value) = parsed {
