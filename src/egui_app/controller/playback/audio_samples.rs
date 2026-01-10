@@ -72,6 +72,34 @@ pub(crate) fn write_wav(
         .map_err(|err| format!("Failed to finalize clip: {err}"))
 }
 
+/// Encode interleaved f32 samples into WAV bytes for in-memory playback.
+pub(crate) fn wav_bytes_from_samples(
+    samples: &[f32],
+    sample_rate: u32,
+    channels: u16,
+) -> Result<Vec<u8>, String> {
+    let spec = hound::WavSpec {
+        channels: channels.max(1),
+        sample_rate: sample_rate.max(1),
+        bits_per_sample: 32,
+        sample_format: SampleFormat::Float,
+    };
+    let mut cursor = Cursor::new(Vec::new());
+    {
+        let mut writer = hound::WavWriter::new(&mut cursor, spec)
+            .map_err(|err| format!("Failed to create wav buffer: {err}"))?;
+        for sample in samples {
+            writer
+                .write_sample(*sample)
+                .map_err(|err| format!("Failed to write wav buffer: {err}"))?;
+        }
+        writer
+            .finalize()
+            .map_err(|err| format!("Failed to finalize wav buffer: {err}"))?;
+    }
+    Ok(cursor.into_inner())
+}
+
 fn decode_samples(
     reader: &mut hound::WavReader<Cursor<&[u8]>>,
     format: SampleFormat,

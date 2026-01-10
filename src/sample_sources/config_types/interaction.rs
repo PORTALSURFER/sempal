@@ -12,8 +12,9 @@ use super::super::config_defaults::{
 /// Config keys: `invert_waveform_scroll`, `waveform_scroll_speed`,
 /// `wheel_zoom_factor`, `keyboard_zoom_factor`, `anti_clip_fade_enabled`,
 /// `anti_clip_fade_ms`, `destructive_yolo_mode`, `waveform_channel_view`,
-/// `bpm_snap_enabled`, `bpm_value`, `transient_markers_enabled`, `transient_snap_enabled`,
-/// `input_monitoring_enabled`, `normalized_audition_enabled`.
+/// `bpm_snap_enabled`, `bpm_lock_enabled`, `bpm_stretch_enabled`, `bpm_value`,
+/// `transient_markers_enabled`, `transient_snap_enabled`, `input_monitoring_enabled`,
+/// `normalized_audition_enabled`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InteractionOptions {
     #[serde(default = "default_true")]
@@ -34,6 +35,10 @@ pub struct InteractionOptions {
     pub waveform_channel_view: WaveformChannelView,
     #[serde(default = "default_false")]
     pub bpm_snap_enabled: bool,
+    #[serde(default = "default_false")]
+    pub bpm_lock_enabled: bool,
+    #[serde(default = "default_false")]
+    pub bpm_stretch_enabled: bool,
     #[serde(default = "default_bpm_value")]
     pub bpm_value: f32,
     #[serde(default = "default_false")]
@@ -58,6 +63,8 @@ impl Default for InteractionOptions {
             destructive_yolo_mode: false,
             waveform_channel_view: WaveformChannelView::Mono,
             bpm_snap_enabled: default_false(),
+            bpm_lock_enabled: default_false(),
+            bpm_stretch_enabled: default_false(),
             bpm_value: default_bpm_value(),
             transient_snap_enabled: default_false(),
             transient_markers_enabled: default_true(),

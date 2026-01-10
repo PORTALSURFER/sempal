@@ -8,6 +8,7 @@ pub mod recording;
 mod fade;
 mod mixer;
 mod player;
+mod time_stretch;
 mod routing;
 
 pub use input::{
@@ -20,6 +21,7 @@ pub use output::{
     available_devices, available_hosts, open_output_stream, supported_sample_rates,
 };
 pub use player::AudioPlayer;
+pub(crate) use time_stretch::Wsola;
 pub use recording::{AudioRecorder, InputMonitor, RecordingOutcome};
 
 #[cfg(test)]

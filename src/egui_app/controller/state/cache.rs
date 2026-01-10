@@ -71,6 +71,7 @@ pub(crate) struct BrowserCacheState {
     pub(crate) analysis_failures_pending: HashSet<SourceId>,
     pub(crate) search: wavs::BrowserSearchCache,
     pub(crate) features: HashMap<SourceId, FeatureCache>,
+    pub(crate) bpm_values: HashMap<SourceId, HashMap<PathBuf, Option<f32>>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -115,6 +116,7 @@ impl ControllerUiCacheState {
                 analysis_failures_pending: HashSet::new(),
                 search: wavs::BrowserSearchCache::default(),
                 features: HashMap::new(),
+                bpm_values: HashMap::new(),
             },
             folders: FolderBrowsersState {
                 models: HashMap::new(),

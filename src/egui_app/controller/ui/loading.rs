@@ -132,6 +132,7 @@ impl EguiController {
         if let Some(ref id) = source_id {
             if !from_cache {
                 self.ui_cache.browser.labels.remove(id);
+                self.ui_cache.browser.bpm_values.remove(id);
             }
             let needs_failures =
                 !from_cache || !self.ui_cache.browser.analysis_failures.contains_key(id);
@@ -205,6 +206,7 @@ impl EguiController {
             self.queue_wav_load();
         } else {
             self.ui_cache.browser.labels.remove(&source.id);
+            self.ui_cache.browser.bpm_values.remove(&source.id);
         }
         self.rebuild_missing_lookup_for_source(&source.id);
     }
@@ -222,6 +224,7 @@ impl EguiController {
             self.queue_wav_load();
         } else {
             self.ui_cache.browser.labels.remove(&source.id);
+            self.ui_cache.browser.bpm_values.remove(&source.id);
         }
         self.rebuild_missing_lookup_for_source(&source.id);
     }

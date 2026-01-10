@@ -101,9 +101,9 @@ impl EguiApp {
                     .iter()
                     .any(|p| p == &path);
                 let is_loaded = loaded_row == Some(row);
-                let bpm_label = is_loaded
-                    .then(|| self.controller.ui.waveform.bpm_value)
-                    .flatten()
+                let bpm_label = self
+                    .controller
+                    .bpm_value_for_path(&path)
                     .map(|bpm| format!("{} BPM", format_bpm_input(bpm)));
                 let row_width = metrics.row_width;
                 let similar_query = self.controller.ui.browser.similar_query.as_ref();

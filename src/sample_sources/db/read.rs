@@ -136,6 +136,20 @@ impl SourceDatabase {
         Ok(rows)
     }
 
+    /// Fetch the BPM value stored for a specific sample id, when available.
+    pub fn bpm_for_sample_id(&self, sample_id: &str) -> Result<Option<f32>, SourceDbError> {
+        let bpm: Option<f64> = self
+            .connection
+            .query_row(
+                "SELECT bpm FROM samples WHERE sample_id = ?1",
+                rusqlite::params![sample_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(map_sql_error)?;
+        Ok(bpm.map(|value| value as f32))
+    }
+
     /// Find the sorted index for a tracked wav path.
     pub fn index_for_path(&self, path: &Path) -> Result<Option<usize>, SourceDbError> {
         if !crate::sample_sources::is_supported_audio(path) {

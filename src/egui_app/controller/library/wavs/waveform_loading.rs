@@ -1,4 +1,7 @@
 use super::*;
+use crate::egui_app::controller::playback::audio_samples::{
+    decode_samples_from_bytes, wav_bytes_from_samples,
+};
 use crate::egui_app::state::WaveformView;
 
 impl EguiController {
@@ -44,17 +47,21 @@ impl EguiController {
                 return Err(err);
             }
         };
-        let decoded = self
-            .sample_view
-            .renderer
-            .decode_from_bytes(&bytes)
-            .map_err(|err| err.to_string())?;
+        let (decoded, bytes, stretched) = self.prepare_loaded_audio(
+            source,
+            relative_path,
+            None,
+            bytes,
+            AudioLoadIntent::Selection,
+        )?;
         let duration_seconds = decoded.duration_seconds;
         let sample_rate = decoded.sample_rate;
         let cache_key = CacheKey::new(&source.id, relative_path);
-        self.audio
-            .cache
-            .insert(cache_key, metadata, decoded.clone(), bytes.clone());
+        if !stretched {
+            self.audio
+                .cache
+                .insert(cache_key, metadata, decoded.clone(), bytes.clone());
+        }
         self.finish_waveform_load(
             source,
             relative_path,
@@ -122,6 +129,67 @@ impl EguiController {
             self.apply_loaded_sample_bpm(source, relative_path);
         }
         Ok(())
+    }
+
+    pub(crate) fn prepare_loaded_audio(
+        &mut self,
+        source: &SampleSource,
+        relative_path: &Path,
+        decoded: Option<DecodedWaveform>,
+        bytes: Vec<u8>,
+        intent: AudioLoadIntent,
+    ) -> Result<(DecodedWaveform, Vec<u8>, bool), String> {
+        if matches!(intent, AudioLoadIntent::Selection) {
+            if let Some(ratio) = self.stretch_ratio_for_sample(source, relative_path) {
+                let stretched = self.stretch_wav_bytes(&bytes, ratio)?;
+                let decoded = self
+                    .sample_view
+                    .renderer
+                    .decode_from_bytes(&stretched)
+                    .map_err(|err| err.to_string())?;
+                return Ok((decoded, stretched, true));
+            }
+        }
+        let decoded = match decoded {
+            Some(decoded) => decoded,
+            None => self
+                .sample_view
+                .renderer
+                .decode_from_bytes(&bytes)
+                .map_err(|err| err.to_string())?,
+        };
+        Ok((decoded, bytes, false))
+    }
+
+    pub(crate) fn stretch_ratio_for_sample(
+        &self,
+        source: &SampleSource,
+        relative_path: &Path,
+    ) -> Option<f64> {
+        if !self.ui.waveform.bpm_snap_enabled || !self.ui.waveform.bpm_stretch_enabled {
+            return None;
+        }
+        let target_bpm = self.ui.waveform.bpm_value?;
+        if !target_bpm.is_finite() || target_bpm <= 0.0 {
+            return None;
+        }
+        let source_bpm = self.load_sample_bpm_metadata(source, relative_path)?;
+        if !source_bpm.is_finite() || source_bpm <= 0.0 {
+            return None;
+        }
+        let ratio = target_bpm as f64 / source_bpm as f64;
+        if !ratio.is_finite() || (ratio - 1.0).abs() < 1e-3 {
+            return None;
+        }
+        Some(ratio.clamp(0.5, 2.0))
+    }
+
+    fn stretch_wav_bytes(&self, bytes: &[u8], ratio: f64) -> Result<Vec<u8>, String> {
+        let decoded = decode_samples_from_bytes(bytes)?;
+        let channels = decoded.channels.max(1) as usize;
+        let wsola = crate::audio::Wsola::new(decoded.sample_rate);
+        let stretched = wsola.stretch(&decoded.samples, channels, ratio);
+        wav_bytes_from_samples(&stretched, decoded.sample_rate, decoded.channels)
     }
 
     pub(crate) fn clear_waveform_selection(&mut self) {
@@ -223,19 +291,34 @@ impl EguiController {
     }
 
     fn apply_loaded_sample_bpm(&mut self, source: &SampleSource, relative_path: &Path) {
+        if self.ui.waveform.bpm_lock_enabled || self.ui.waveform.bpm_stretch_enabled {
+            return;
+        }
+        let bpm = self.load_sample_bpm_metadata(source, relative_path);
+        if let Some(bpm) = bpm {
+            self.set_waveform_bpm_input(Some(bpm));
+        }
+    }
+
+    fn load_sample_bpm_metadata(
+        &self,
+        source: &SampleSource,
+        relative_path: &Path,
+    ) -> Option<f32> {
         let sample_id = analysis_jobs::build_sample_id(source.id.as_str(), relative_path);
         let conn = match analysis_jobs::open_source_db(&source.root) {
             Ok(conn) => conn,
             Err(err) => {
                 tracing::warn!("Failed to open source DB for BPM load: {err}");
-                return;
+                return None;
             }
         };
         match analysis_jobs::sample_bpm(&conn, &sample_id) {
-            Ok(Some(bpm)) => self.set_waveform_bpm_input(Some(bpm)),
-            Ok(None) => {}
+            Ok(Some(bpm)) => Some(bpm),
+            Ok(None) => None,
             Err(err) => {
                 tracing::warn!("Failed to load BPM metadata for {sample_id}: {err}");
+                None
             }
         }
     }
@@ -261,6 +344,13 @@ impl EguiController {
         );
         if let Err(err) = analysis_jobs::update_sample_bpm(&conn, &sample_id, Some(bpm)) {
             tracing::warn!("Failed to update BPM metadata for {sample_id}: {err}");
+        } else if let Some(cache) = self
+            .ui_cache
+            .browser
+            .bpm_values
+            .get_mut(&loaded.source_id)
+        {
+            cache.insert(loaded.relative_path.clone(), Some(bpm));
         }
     }
 

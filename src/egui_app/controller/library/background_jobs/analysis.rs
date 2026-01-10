@@ -64,6 +64,7 @@ pub(crate) fn handle_analysis_message(
                 if let Some(source) = controller.current_source() {
                     controller.queue_analysis_failures_refresh(&source);
                     controller.ui_cache.browser.features.remove(&source.id);
+                    controller.ui_cache.browser.bpm_values.remove(&source.id);
                 }
                 if controller.ui.progress.task == Some(ProgressTaskKind::Analysis) {
                     controller.clear_progress();

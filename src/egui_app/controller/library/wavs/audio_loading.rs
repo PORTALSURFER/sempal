@@ -17,12 +17,28 @@ impl EguiController {
             bytes,
             metadata,
         } = outcome;
+        let (decoded, bytes, stretched) = match self.prepare_loaded_audio(
+            &source,
+            &pending.relative_path,
+            Some(decoded),
+            bytes,
+            pending.intent,
+        ) {
+            Ok(result) => result,
+            Err(err) => {
+                self.runtime.jobs.set_pending_playback(None);
+                self.set_status(err, StatusTone::Error);
+                return;
+            }
+        };
         let duration_seconds = decoded.duration_seconds;
         let sample_rate = decoded.sample_rate;
         let cache_key = CacheKey::new(&source.id, &pending.relative_path);
-        self.audio
-            .cache
-            .insert(cache_key, metadata, decoded.clone(), bytes.clone());
+        if !stretched {
+            self.audio
+                .cache
+                .insert(cache_key, metadata, decoded.clone(), bytes.clone());
+        }
         if let Err(err) = self.finish_waveform_load(
             &source,
             &pending.relative_path,
@@ -147,6 +163,11 @@ impl EguiController {
         relative_path: &Path,
         intent: AudioLoadIntent,
     ) -> Result<bool, String> {
+        if matches!(intent, AudioLoadIntent::Selection)
+            && self.stretch_ratio_for_sample(source, relative_path).is_some()
+        {
+            return Ok(false);
+        }
         let metadata = match self.current_file_metadata(source, relative_path) {
             Ok(meta) => meta,
             Err(_) => return Ok(false),

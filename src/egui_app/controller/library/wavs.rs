@@ -1,6 +1,7 @@
 use crate::egui_app::controller::playback::audio_cache::CacheKey;
 use super::*;
 use crate::egui_app::view_model;
+use std::collections::HashMap;
 use crate::waveform::DecodedWaveform;
 use std::path::{Path, PathBuf};
 
@@ -37,6 +38,27 @@ impl EguiController {
             TriageFlagColumn::Neutral => &self.ui.browser.neutral,
             TriageFlagColumn::Keep => &self.ui.browser.keep,
         }
+    }
+
+    /// Resolve the stored BPM metadata for a sample path when available.
+    pub(crate) fn bpm_value_for_path(&mut self, path: &Path) -> Option<f32> {
+        let source = self.current_source()?;
+        if let Some(cache) = self.ui_cache.browser.bpm_values.get(&source.id) {
+            if let Some(cached) = cache.get(path) {
+                return *cached;
+            }
+        }
+        let db = self.database_for(&source).ok()?;
+        let sample_id = analysis_jobs::build_sample_id(source.id.as_str(), path);
+        let bpm = db.bpm_for_sample_id(&sample_id).ok().flatten();
+        let cache = self
+            .ui_cache
+            .browser
+            .bpm_values
+            .entry(source.id.clone())
+            .or_insert_with(HashMap::new);
+        cache.insert(path.to_path_buf(), bpm);
+        bpm
     }
 
     /// Visible wav indices after applying the active sample browser filter.

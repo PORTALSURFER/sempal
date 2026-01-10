@@ -171,6 +171,39 @@ impl EguiController {
         self.persist_controls();
     }
 
+    /// Enable/disable BPM auto-override lock and persist the setting.
+    pub fn set_bpm_lock_enabled(&mut self, enabled: bool) {
+        if self.settings.controls.bpm_lock_enabled == enabled {
+            return;
+        }
+        self.settings.controls.bpm_lock_enabled = enabled;
+        self.ui.waveform.bpm_lock_enabled = enabled;
+        self.persist_controls();
+    }
+
+    /// Enable/disable BPM stretch and persist the setting.
+    pub fn set_bpm_stretch_enabled(&mut self, enabled: bool) {
+        if self.settings.controls.bpm_stretch_enabled == enabled {
+            return;
+        }
+        self.settings.controls.bpm_stretch_enabled = enabled;
+        self.ui.waveform.bpm_stretch_enabled = enabled;
+        self.persist_controls();
+        let (source, relative_path) = {
+            let Some(loaded) = self.sample_view.wav.loaded_audio.as_ref() else {
+                return;
+            };
+            (
+                crate::sample_sources::SampleSource {
+                    id: loaded.source_id.clone(),
+                    root: loaded.root.clone(),
+                },
+                loaded.relative_path.clone(),
+            )
+        };
+        self.reload_waveform_for_selection_if_active(&source, &relative_path);
+    }
+
     /// Update and persist the BPM snap value, also storing it for the loaded sample when possible.
     pub fn set_bpm_value(&mut self, value: f32) {
         if !value.is_finite() || value <= 0.0 {

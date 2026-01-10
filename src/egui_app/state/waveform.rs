@@ -29,6 +29,10 @@ pub struct WaveformState {
     pub channel_view: WaveformChannelView,
     /// When true, selection edits snap to beat-sized steps using the bpm value.
     pub bpm_snap_enabled: bool,
+    /// When true, loaded BPM metadata will not override the current BPM value.
+    pub bpm_lock_enabled: bool,
+    /// When true, loaded samples with BPM metadata are time-stretched to match the current BPM.
+    pub bpm_stretch_enabled: bool,
     /// Last text input for bpm snapping.
     pub bpm_input: String,
     /// Parsed bpm value used for snapping, when valid.
@@ -80,6 +84,8 @@ impl Default for WaveformState {
             hover_time_label: None,
             channel_view: WaveformChannelView::Mono,
             bpm_snap_enabled: false,
+            bpm_lock_enabled: false,
+            bpm_stretch_enabled: false,
             bpm_input: "142".to_string(),
             bpm_value: Some(142.0),
             transients: Vec::new(),

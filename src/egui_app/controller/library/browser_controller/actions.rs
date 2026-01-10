@@ -155,6 +155,11 @@ impl BrowserActions for BrowserController<'_> {
                 Ok(count) => updated = updated.saturating_add(count),
                 Err(err) => last_error = Some(err),
             }
+            if let Some(cache) = self.ui_cache.browser.bpm_values.get_mut(&source_id) {
+                for path in &paths {
+                    cache.insert(path.clone(), Some(bpm));
+                }
+            }
             let loaded_matches = self
                 .sample_view
                 .wav
