@@ -24,6 +24,7 @@ pub(crate) enum StatusMessage {
     SimilarityPrepFailed {
         err: String,
     },
+    SimilarityAlreadyUpToDate,
     RandomHistoryEmpty,
     RandomHistoryStart,
     RandomNavOff,
@@ -97,6 +98,10 @@ impl StatusMessage {
             StatusMessage::SimilarityPrepFailed { err } => {
                 (format!("Similarity prep failed: {err}"), StatusTone::Error)
             }
+            StatusMessage::SimilarityAlreadyUpToDate => (
+                "Similarity search is already up to date for this source".into(),
+                StatusTone::Info,
+            ),
             StatusMessage::RandomHistoryEmpty => ("No random history yet".into(), StatusTone::Info),
             StatusMessage::RandomHistoryStart => {
                 ("Reached start of random history".into(), StatusTone::Info)

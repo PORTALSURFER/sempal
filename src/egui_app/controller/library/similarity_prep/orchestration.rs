@@ -2,7 +2,6 @@ use super::plan::plan_similarity_prep_start;
 use super::store::DbSimilarityPrepStore;
 use super::state::SimilarityPrepStage;
 use crate::egui_app::controller::EguiController;
-use crate::egui_app::controller::library::analysis_jobs;
 use crate::egui_app::controller::ui::status_message::StatusMessage;
 use crate::egui_app::ui::style::StatusTone;
 
@@ -51,17 +50,15 @@ impl EguiController {
         self.apply_similarity_prep_worker_boost();
         self.show_similarity_prep_start(&source);
         if plan.skip_scan {
-            if plan.needs_embeddings || force_full_analysis {
-                self.ensure_similarity_prep_progress(0, true);
-                self.set_similarity_embedding_detail();
-                self.enqueue_similarity_backfill(source, force_full_analysis);
-            } else {
-                self.set_similarity_analysis_detail();
-                self.refresh_similarity_prep_progress();
-            }
+            self.ensure_similarity_prep_progress(0, true);
+            self.set_similarity_embedding_detail();
+            self.enqueue_similarity_backfill(source, force_full_analysis);
         } else {
-            self.set_similarity_scan_detail();
-            self.request_hard_sync();
+            self.set_similarity_analysis_detail();
+            self.refresh_similarity_prep_progress();
+            if !force_full_analysis {
+                self.set_status_message(StatusMessage::SimilarityAlreadyUpToDate);
+            }
         }
     }
 

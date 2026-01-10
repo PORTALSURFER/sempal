@@ -34,6 +34,7 @@ pub struct MapUiState {
     pub last_draw_calls: usize,
     pub last_points_rendered: usize,
     pub last_render_mode: MapRenderMode,
+    pub outdated: bool,
 }
 
 impl Default for MapUiState {
@@ -69,6 +70,7 @@ impl Default for MapUiState {
             last_draw_calls: 0,
             last_points_rendered: 0,
             last_render_mode: MapRenderMode::Points,
+            outdated: false,
         }
     }
 }

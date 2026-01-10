@@ -42,9 +42,34 @@ pub(super) fn render_map_controls(app: &mut EguiApp, ui: &mut egui::Ui) -> bool 
                     "Size min/max: {}/{}",
                     stats.min_cluster_size, stats.max_cluster_size
                 ));
+                if app.controller.ui.map.outdated {
+                    ui.separator();
+                    ui.label(
+                        egui::RichText::new("⚠ Outdated")
+                            .color(style::palette().warning)
+                            .strong(),
+                    )
+                    .on_hover_text("The source has been updated since the last similarity map build.");
+                    if ui.button("Update Map").clicked() {
+                        app.controller.prepare_similarity_for_selected_source();
+                    }
+                }
             });
         } else {
-            ui.label("Clusters missing for this view (press Build clusters).");
+            ui.horizontal(|ui| {
+                ui.label("Clusters missing for this view (press Build clusters).");
+                if app.controller.ui.map.outdated {
+                    ui.separator();
+                    ui.label(
+                        egui::RichText::new("⚠ Map Outdated")
+                            .color(style::palette().warning)
+                            .strong(),
+                    );
+                    if ui.button("Update Map").clicked() {
+                        app.controller.prepare_similarity_for_selected_source();
+                    }
+                }
+            });
         }
     }
     refresh
