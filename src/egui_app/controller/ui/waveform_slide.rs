@@ -39,6 +39,18 @@ impl EguiController {
             return Ok(());
         }
         let target = self.waveform_slide_target()?;
+        let preview = self
+            .ui
+            .waveform
+            .bpm_stretch_enabled
+            .then(|| self.sample_view.waveform.decoded.as_ref())
+            .flatten()
+            .filter(|decoded| !decoded.samples.is_empty())
+            .map(|decoded| WaveformSlidePreview {
+                samples: decoded.samples.as_ref().to_vec(),
+                channels: decoded.channels,
+                sample_rate: decoded.sample_rate,
+            });
         let (samples, spec): (Vec<f32>, _) = read_samples_for_normalization(&target.absolute_path)?;
         if samples.is_empty() {
             return Err("No audio data available".into());
@@ -54,11 +66,13 @@ impl EguiController {
             relative_path: target.relative_path,
             absolute_path: target.absolute_path,
             original_samples: samples,
+            preview,
             channels,
             spec_channels: spec.channels.max(1),
             sample_rate: spec.sample_rate.max(1),
             start_normalized: position.clamp(0.0, 1.0),
             last_offset_frames: 0,
+            last_preview_offset_frames: 0,
         });
         Ok(())
     }
@@ -66,24 +80,46 @@ impl EguiController {
     pub(crate) fn update_waveform_circular_slide(&mut self, position: f32) {
         let Some((rotated, spec_channels, sample_rate)) =
             self.sample_view.waveform_slide.as_mut().and_then(|state| {
-                let total_frames = state.original_samples.len() / state.channels.max(1);
-                if total_frames == 0 {
+                let (preview_samples, preview_channels, spec_channels, sample_rate) =
+                    match state.preview.as_ref() {
+                    Some(preview) => (
+                        preview.samples.as_slice(),
+                        preview.channels.max(1) as usize,
+                        preview.channels.max(1),
+                        preview.sample_rate.max(1),
+                    ),
+                    None => (
+                        state.original_samples.as_slice(),
+                        state.channels.max(1),
+                        state.spec_channels,
+                        state.sample_rate,
+                    ),
+                };
+                let preview_total_frames = preview_samples.len() / preview_channels.max(1);
+                let original_total_frames = state.original_samples.len() / state.channels.max(1);
+                if preview_total_frames == 0 || original_total_frames == 0 {
                     return None;
                 }
                 let delta = position - state.start_normalized;
-                let offset_frames = (delta * total_frames as f32).round() as isize;
-                if offset_frames == state.last_offset_frames {
+                let preview_offset_frames =
+                    (delta * preview_total_frames as f32).round() as isize;
+                let original_offset_frames =
+                    (delta * original_total_frames as f32).round() as isize;
+                if preview_offset_frames == state.last_preview_offset_frames
+                    && original_offset_frames == state.last_offset_frames
+                {
                     return None;
                 }
-                state.last_offset_frames = offset_frames;
+                state.last_preview_offset_frames = preview_offset_frames;
+                state.last_offset_frames = original_offset_frames;
                 Some((
                     rotate_interleaved_samples(
-                        &state.original_samples,
-                        state.channels,
-                        offset_frames,
+                        preview_samples,
+                        preview_channels,
+                        preview_offset_frames,
                     ),
-                    state.spec_channels,
-                    state.sample_rate,
+                    spec_channels,
+                    sample_rate,
                 ))
             })
         else {

@@ -53,11 +53,21 @@ pub(crate) struct WaveformSlideState {
     pub(crate) relative_path: PathBuf,
     pub(crate) absolute_path: PathBuf,
     pub(crate) original_samples: Vec<f32>,
+    /// Optional preview buffer (e.g. stretched audition) used to keep the render stable.
+    pub(crate) preview: Option<WaveformSlidePreview>,
     pub(crate) channels: usize,
     pub(crate) spec_channels: u16,
     pub(crate) sample_rate: u32,
     pub(crate) start_normalized: f32,
     pub(crate) last_offset_frames: isize,
+    pub(crate) last_preview_offset_frames: isize,
+}
+
+/// Cached waveform preview used during circular slide gestures.
+pub(crate) struct WaveformSlidePreview {
+    pub(crate) samples: Vec<f32>,
+    pub(crate) channels: u16,
+    pub(crate) sample_rate: u32,
 }
 
 pub(crate) struct SelectionContextState {

@@ -1,4 +1,5 @@
 use super::super::*;
+use super::super::selection_geometry;
 use crate::egui_app::state::WaveformView;
 use crate::egui_app::ui::style::StatusTone;
 use eframe::egui::{self, Ui};
@@ -110,6 +111,46 @@ pub(in super::super) fn handle_waveform_pointer_interactions(
             finish_slice_paint(app);
         } else if app.controller.is_selection_dragging() {
             app.controller.finish_selection_drag();
+        }
+    } else if response.clicked_by(egui::PointerButton::Secondary) {
+        if app.controller.ui.waveform.edit_selection.is_some() {
+            let clicked_pos = pointer_pos.or_else(|| response.hover_pos());
+            let on_selection = clicked_pos
+                .map(|pos| {
+                    app.controller
+                        .ui
+                        .waveform
+                        .selection
+                        .map(|selection| {
+                            selection_geometry::selection_rect_for_view(
+                                selection,
+                                rect,
+                                view,
+                                view_width,
+                            )
+                            .contains(pos)
+                        })
+                        .unwrap_or(false)
+                        || app
+                            .controller
+                            .ui
+                            .waveform
+                            .edit_selection
+                            .map(|selection| {
+                                selection_geometry::selection_rect_for_view(
+                                    selection,
+                                    rect,
+                                    view,
+                                    view_width,
+                                )
+                                .contains(pos)
+                            })
+                            .unwrap_or(false)
+                })
+                .unwrap_or(true);
+            if !on_selection {
+                app.controller.clear_edit_selection();
+            }
         }
     } else if response.clicked() {
         if app.controller.ui.waveform.image.is_some() {
