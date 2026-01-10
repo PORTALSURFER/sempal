@@ -22,6 +22,9 @@ pub(super) struct KeyFeedback {
 impl EguiApp {
     pub(super) fn process_hotkeys(&mut self, ctx: &egui::Context, focus: FocusContext) {
         let overlay_open = self.controller.ui.hotkeys.overlay_visible;
+        if self.controller.ui.hotkeys.suppress_for_bpm_input {
+            return;
+        }
         let collection_rename_active = matches!(
             self.controller.ui.collections.pending_action,
             Some(crate::egui_app::state::CollectionActionPrompt::Rename { .. })

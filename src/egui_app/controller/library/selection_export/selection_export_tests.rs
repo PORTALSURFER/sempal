@@ -1,4 +1,5 @@
 use super::*;
+use crate::egui_app::controller::library::analysis_jobs;
 use crate::egui_app::controller::test_support::write_test_wav;
 use std::path::{Path, PathBuf};
 use tempfile::tempdir;
@@ -54,4 +55,46 @@ fn next_selection_path_in_dir_strips_existing_suffix() {
     let candidate = controller.next_selection_path_in_dir(root, Path::new("clip_sel.wav"));
 
     assert_eq!(candidate, PathBuf::from("clip_sel_2.wav"));
+}
+
+#[test]
+fn export_selection_clip_marks_loop_and_bpm_when_looping() {
+    let temp = tempdir().unwrap();
+    let source_root = temp.path().join("source");
+    std::fs::create_dir_all(&source_root).unwrap();
+
+    let renderer = crate::waveform::WaveformRenderer::new(12, 12);
+    let mut controller = EguiController::new(renderer, None);
+    let source = SampleSource::new(source_root.clone());
+    controller.library.sources.push(source.clone());
+
+    let wav_path = source_root.join("looping.wav");
+    write_test_wav(&wav_path, &[0.1, 0.2, 0.3, 0.4]);
+    controller
+        .load_waveform_for_selection(&source, Path::new("looping.wav"))
+        .unwrap();
+    controller.ui.waveform.loop_enabled = true;
+    controller.ui.waveform.bpm_value = Some(120.0);
+
+    let entry = controller
+        .export_selection_clip(
+            &source.id,
+            Path::new("looping.wav"),
+            SelectionRange::new(0.0, 1.0),
+            None,
+            true,
+            true,
+        )
+        .unwrap();
+
+    assert!(entry.looped);
+    let db = controller.database_for(&source).unwrap();
+    assert_eq!(
+        db.looped_for_path(&entry.relative_path).unwrap(),
+        Some(true)
+    );
+    let conn = analysis_jobs::open_source_db(&source.root).unwrap();
+    let sample_id = analysis_jobs::build_sample_id(source.id.as_str(), &entry.relative_path);
+    let bpm = analysis_jobs::sample_bpm(&conn, &sample_id).unwrap();
+    assert_eq!(bpm, Some(120.0));
 }

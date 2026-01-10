@@ -232,7 +232,7 @@ impl EguiController {
         let target_rel = self.next_slice_path_in_dir(source, relative_path, counter);
         let target_abs = source.root.join(&target_rel);
         write_wav(&target_abs, &samples, decoded.sample_rate, decoded.channels)?;
-        self.record_selection_entry(source, target_rel, None, true, true)?;
+        self.record_selection_entry(source, target_rel, None, true, true, false, None)?;
         Ok(())
     }
 

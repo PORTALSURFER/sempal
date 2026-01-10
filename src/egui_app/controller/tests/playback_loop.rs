@@ -1,7 +1,9 @@
 use super::super::test_support::{dummy_controller, write_test_wav};
 use super::super::*;
+use crate::egui_app::controller::library::analysis_jobs;
 use crate::selection::SelectionRange;
-use std::path::PathBuf;
+use rusqlite::params;
+use std::path::{Path, PathBuf};
 use tempfile::tempdir;
 
 fn setup_looping_controller(selection: SelectionRange) -> Option<EguiController> {
@@ -171,4 +173,55 @@ fn finish_selection_drag_restarts_when_playhead_outside_loop() {
     controller.finish_selection_drag();
 
     assert!((controller.ui.waveform.playhead.position - updated_selection.start()).abs() < 1e-6);
+}
+
+#[test]
+fn enabling_stretch_while_playing_keeps_playing() {
+    let Some(player) = crate::audio::AudioPlayer::playing_for_tests() else {
+        return;
+    };
+
+    let (mut controller, source) = dummy_controller();
+    let wav_path = source.root.join("stretch_test.wav");
+    let long_samples = vec![0.1_f32; 240];
+    write_test_wav(&wav_path, &long_samples);
+
+    controller.library.sources.push(source.clone());
+    controller.audio.player = Some(std::rc::Rc::new(std::cell::RefCell::new(player)));
+    controller
+        .load_waveform_for_selection(&source, Path::new("stretch_test.wav"))
+        .unwrap();
+    controller.ui.waveform.bpm_value = Some(120.0);
+
+    let metadata = std::fs::metadata(&wav_path).unwrap();
+    let modified_ns = metadata
+        .modified()
+        .unwrap()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos() as i64;
+    let sample_id = analysis_jobs::build_sample_id(source.id.as_str(), Path::new("stretch_test.wav"));
+    let conn = analysis_jobs::open_source_db(&source.root).unwrap();
+    conn.execute(
+        "INSERT INTO samples (sample_id, content_hash, size, mtime_ns, duration_seconds, sr_used, analysis_version, bpm)
+         VALUES (?1, ?2, ?3, ?4, NULL, NULL, NULL, ?5)
+         ON CONFLICT(sample_id) DO UPDATE SET bpm = excluded.bpm",
+        params![
+            sample_id,
+            "test",
+            metadata.len() as i64,
+            modified_ns,
+            80.0_f64
+        ],
+    )
+    .unwrap();
+
+    let _ = controller.play_audio(false, None);
+    if !controller.is_playing() {
+        return;
+    }
+
+    controller.set_bpm_stretch_enabled(true);
+
+    assert!(controller.is_playing());
 }

@@ -138,6 +138,7 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
             .desired_width(64.0)
             .hint_text("120")
             .show(ui);
+        app.controller.ui.hotkeys.suppress_for_bpm_input = bpm_edit.response.has_focus();
         if bpm_edit.response.gained_focus() {
             let mut state = bpm_edit.state;
             state
@@ -147,10 +148,18 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
                 )));
             state.store(ui.ctx(), bpm_edit.response.id);
         }
-        if bpm_edit.response.changed() {
+        let parsed = if bpm_edit.response.changed() {
             let parsed = helpers::parse_bpm_input(&app.controller.ui.waveform.bpm_input);
             app.controller.ui.waveform.bpm_value = parsed;
-            if let Some(value) = parsed {
+            parsed
+        } else {
+            None
+        };
+        if bpm_edit.response.lost_focus() {
+            let submitted = parsed.or_else(|| {
+                helpers::parse_bpm_input(&app.controller.ui.waveform.bpm_input)
+            });
+            if let Some(value) = submitted {
                 app.controller.set_bpm_value(value);
             }
         }

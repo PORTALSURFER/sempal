@@ -217,7 +217,7 @@ impl EguiController {
             .is_some_and(|audio| {
                 audio.source_id == source.id && audio.relative_path == relative_path
             });
-        if !enabled && was_playing && loaded_matches {
+        if was_playing && loaded_matches {
             if let Err(err) = self.play_audio(looped, start_override) {
                 self.set_status(err, StatusTone::Error);
             }

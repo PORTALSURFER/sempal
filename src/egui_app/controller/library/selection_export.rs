@@ -4,6 +4,7 @@ use std::fs;
 use std::time::SystemTime;
 
 use crate::egui_app::controller::playback::audio_samples::{crop_samples, decode_samples_from_bytes, write_wav};
+use rusqlite::params;
 
 impl EguiController {
     pub(crate) fn export_selection_clip(
@@ -27,12 +28,15 @@ impl EguiController {
         let target_abs = source.root.join(&target_rel);
         let (samples, spec) = crop_selection_samples(&audio, bounds)?;
         write_wav(&target_abs, &samples, spec.sample_rate, spec.channels)?;
+        let (looped, bpm) = self.selection_export_metadata();
         self.record_selection_entry(
             &source,
             target_rel,
             target_tag,
             add_to_browser,
             register_in_source,
+            looped,
+            bpm,
         )
     }
 
@@ -65,12 +69,15 @@ impl EguiController {
         let target_abs = source.root.join(&target_rel);
         let (samples, spec) = crop_selection_samples(&audio, bounds)?;
         write_wav(&target_abs, &samples, spec.sample_rate, spec.channels)?;
+        let (looped, bpm) = self.selection_export_metadata();
         self.record_selection_entry(
             &source,
             target_rel,
             target_tag,
             add_to_browser,
             register_in_source,
+            looped,
+            bpm,
         )
     }
 
@@ -159,7 +166,16 @@ impl EguiController {
             root: clip_root.to_path_buf(),
         };
         // Collection-owned clips are not inserted into browser or source DB.
-        self.record_selection_entry(&source, target_rel, target_tag, false, false)
+        let (looped, bpm) = self.selection_export_metadata();
+        self.record_selection_entry(
+            &source,
+            target_rel,
+            target_tag,
+            false,
+            false,
+            looped,
+            bpm,
+        )
     }
 
     pub(crate) fn selection_audio(
@@ -174,6 +190,16 @@ impl EguiController {
             return Err("Selection no longer matches the loaded sample".into());
         }
         Ok(audio.clone())
+    }
+
+    fn selection_export_metadata(&self) -> (bool, Option<f32>) {
+        let looped = self.ui.waveform.loop_enabled;
+        let bpm = self
+            .ui
+            .waveform
+            .bpm_value
+            .filter(|value| value.is_finite() && *value > 0.0);
+        (looped, if looped { bpm } else { None })
     }
 
     fn next_selection_path_in_dir(&self, root: &Path, original: &Path) -> PathBuf {
@@ -217,6 +243,7 @@ impl EguiController {
     }
 
     /// Register a newly exported clip in the browser and source database.
+    /// When `looped` is true, the entry is flagged as a loop and any provided BPM is persisted.
     pub(crate) fn record_selection_entry(
         &mut self,
         source: &SampleSource,
@@ -224,6 +251,8 @@ impl EguiController {
         target_tag: Option<Rating>,
         add_to_browser: bool,
         register_in_source: bool,
+        looped: bool,
+        bpm: Option<f32>,
     ) -> Result<WavEntry, String> {
         let metadata = fs::metadata(source.root.join(&relative_path))
             .map_err(|err| format!("Failed to read saved clip: {err}"))?;
@@ -239,7 +268,7 @@ impl EguiController {
             modified_ns,
             content_hash: None,
             tag: target_tag.unwrap_or(Rating::NEUTRAL),
-            looped: false,
+            looped,
             missing: false,
             last_played_at: None,
         };
@@ -252,6 +281,13 @@ impl EguiController {
             if entry.tag != Rating::NEUTRAL {
                 db.set_tag(&entry.relative_path, entry.tag)
                     .map_err(|err| format!("Failed to tag clip: {err}"))?;
+            }
+            if looped {
+                db.set_looped(&entry.relative_path, true)
+                    .map_err(|err| format!("Failed to mark clip as looped: {err}"))?;
+            }
+            if let Some(bpm) = bpm {
+                self.persist_selection_bpm(source, &entry, bpm)?;
             }
             if add_to_browser {
                 if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id)
@@ -274,6 +310,42 @@ impl EguiController {
     fn insert_new_wav_entry(&mut self, source: &SampleSource, _entry: WavEntry) {
         self.invalidate_wav_entries_for_source(source);
     }
+
+    fn persist_selection_bpm(
+        &self,
+        source: &SampleSource,
+        entry: &WavEntry,
+        bpm: f32,
+    ) -> Result<(), String> {
+        if !bpm.is_finite() || bpm <= 0.0 {
+            return Ok(());
+        }
+        let size = i64::try_from(entry.file_size)
+            .map_err(|_| "Clip size exceeds database limits".to_string())?;
+        let content_hash = fast_content_hash(entry.file_size, entry.modified_ns);
+        let conn = analysis_jobs::open_source_db(&source.root)
+            .map_err(|err| format!("Failed to open analysis database: {err}"))?;
+        let sample_id =
+            analysis_jobs::build_sample_id(source.id.as_str(), &entry.relative_path);
+        conn.execute(
+            "INSERT INTO samples (sample_id, content_hash, size, mtime_ns, duration_seconds, sr_used, analysis_version, bpm)
+             VALUES (?1, ?2, ?3, ?4, NULL, NULL, NULL, ?5)
+             ON CONFLICT(sample_id) DO UPDATE SET
+                 content_hash = excluded.content_hash,
+                 size = excluded.size,
+                 mtime_ns = excluded.mtime_ns,
+                 bpm = excluded.bpm",
+            params![
+                sample_id,
+                content_hash,
+                size,
+                entry.modified_ns,
+                bpm as f64
+            ],
+        )
+        .map_err(|err| format!("Failed to store clip BPM: {err}"))?;
+        Ok(())
+    }
 }
 
 fn crop_selection_samples(
@@ -289,6 +361,10 @@ fn crop_selection_samples(
         sample_format: hound::SampleFormat::Float,
     };
     Ok((cropped, spec))
+}
+
+fn fast_content_hash(file_size: u64, modified_ns: i64) -> String {
+    format!("fast-{}-{}", file_size, modified_ns)
 }
 
 #[cfg(test)]
