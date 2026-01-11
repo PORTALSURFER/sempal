@@ -8,7 +8,6 @@ pub(crate) mod clipboard_paste;
 pub(crate) mod drag_drop_controller;
 pub(crate) mod feedback_issue;
 pub(crate) mod focus;
-pub(crate) mod hints;
 pub(crate) mod hotkeys;
 pub(crate) mod hotkeys_controller;
 pub(crate) mod interaction_options;

@@ -6,7 +6,6 @@ mod drag_targets;
 mod feedback_issue;
 mod flat_items_list;
 mod helpers;
-mod hints;
 mod hotkey_overlay;
 mod hotkey_runtime;
 mod input;

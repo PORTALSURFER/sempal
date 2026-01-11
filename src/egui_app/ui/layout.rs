@@ -197,7 +197,6 @@ impl EguiApp {
         self.render_audio_settings_window(ctx);
         progress_overlay::render_progress_overlay(ctx, &mut self.controller.ui.progress);
         self.render_feedback_issue_prompt(ctx);
-        self.render_hint_of_day_prompt(ctx);
         self.render_loop_crossfade_prompt(ctx);
         self.render_map_window(ctx);
         if self.controller.ui.hotkeys.overlay_visible {

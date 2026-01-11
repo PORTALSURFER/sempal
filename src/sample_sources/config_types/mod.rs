@@ -7,7 +7,7 @@ mod updates;
 pub use analysis::{AnalysisSettings, WgpuPowerPreference};
 pub(crate) use app::AppSettings;
 pub use app::{
-    AppConfig, AppSettingsCore, DropTargetColor, DropTargetConfig, FeatureFlags, HintSettings,
+    AppConfig, AppSettingsCore, DropTargetColor, DropTargetConfig, FeatureFlags,
 };
 pub use errors::ConfigError;
 pub use interaction::InteractionOptions;

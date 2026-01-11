@@ -16,7 +16,7 @@ use super::{AnalysisSettings, InteractionOptions, UpdateSettings};
 
 /// Aggregate application state loaded from disk.
 ///
-/// Config keys (TOML): `feature_flags`, `analysis`, `updates`, `hints`, `app_data_dir`,
+/// Config keys (TOML): `feature_flags`, `analysis`, `updates`, `app_data_dir`,
 /// `trash_folder`, `collection_export_root`, `drop_targets`, `last_selected_source`,
 /// `volume`, `audio_output`, `audio_input`, `controls`.
 ///
@@ -71,8 +71,6 @@ pub struct AppSettingsCore {
     pub analysis: AnalysisSettings,
     #[serde(default)]
     pub updates: UpdateSettings,
-    #[serde(default)]
-    pub hints: HintSettings,
     /// Optional override for the `.sempal` data folder.
     #[serde(default)]
     pub app_data_dir: Option<PathBuf>,
@@ -146,22 +144,6 @@ pub struct FeatureFlags {
     pub autoplay_selection: bool,
 }
 
-/// Persisted preferences for the hint-of-the-day popup.
-///
-/// Config keys: `show_on_startup`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HintSettings {
-    #[serde(default = "default_true")]
-    pub show_on_startup: bool,
-}
-
-impl Default for HintSettings {
-    fn default() -> Self {
-        Self {
-            show_on_startup: true,
-        }
-    }
-}
 
 impl Default for FeatureFlags {
     fn default() -> Self {
@@ -196,7 +178,6 @@ impl Default for AppSettingsCore {
             feature_flags: FeatureFlags::default(),
             analysis: AnalysisSettings::default(),
             updates: UpdateSettings::default(),
-            hints: HintSettings::default(),
             app_data_dir: None,
             trash_folder: None,
             collection_export_root: None,

@@ -1,6 +1,6 @@
 use super::super::super::config_types::{
     AnalysisSettings, AppSettingsCore, DropTargetColor, DropTargetConfig, FeatureFlags,
-    HintSettings, InteractionOptions, UpdateChannel, UpdateSettings,
+    InteractionOptions, UpdateChannel, UpdateSettings,
     WgpuPowerPreference,
 };
 use super::super::load::load_settings_from;
@@ -164,9 +164,6 @@ fn settings_round_trip_preserves_fields() {
                 check_on_startup: false,
                 last_seen_nightly_published_at: Some("2024-01-01".into()),
             },
-            hints: HintSettings {
-                show_on_startup: false,
-            },
             app_data_dir: Some(std::path::PathBuf::from("data_root")),
             trash_folder: Some(std::path::PathBuf::from("trash_bin")),
             collection_export_root: Some(std::path::PathBuf::from("exports_root")),
@@ -266,10 +263,6 @@ fn settings_round_trip_preserves_fields() {
     assert_eq!(
         round_trip.core.updates.last_seen_nightly_published_at,
         cfg.core.updates.last_seen_nightly_published_at
-    );
-    assert_eq!(
-        round_trip.core.hints.show_on_startup,
-        cfg.core.hints.show_on_startup
     );
     assert_eq!(round_trip.core.app_data_dir, cfg.core.app_data_dir);
     assert_eq!(round_trip.core.trash_folder, cfg.core.trash_folder);

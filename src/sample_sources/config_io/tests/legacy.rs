@@ -1,5 +1,5 @@
 use super::super::super::config_types::{
-    AnalysisSettings, AppSettingsCore, DropTargetConfig, FeatureFlags, HintSettings,
+    AnalysisSettings, AppSettingsCore, DropTargetConfig, FeatureFlags,
     InteractionOptions, UpdateSettings,
 };
 use super::super::LEGACY_CONFIG_FILE_NAME;
@@ -20,7 +20,6 @@ fn migrates_from_legacy_json() {
             feature_flags: FeatureFlags::default(),
             analysis: AnalysisSettings::default(),
             updates: UpdateSettings::default(),
-            hints: HintSettings::default(),
             app_data_dir: None,
             trash_folder: Some(std::path::PathBuf::from("trash_here")),
             collection_export_root: None,
