@@ -1,0 +1,120 @@
+    Checking sempal v9.0.0 (X:\sempal)
+warning: use of deprecated method `cpal::traits::DeviceTrait::name`: Use `description()` for comprehensive device information including name, manufacturer, and device type. Use `id()` for a unique, stable device identifier that persists across reboots and reconnections.
+ --> src\audio\device.rs:4:12
+  |
+4 |     device.name().ok()
+  |            ^^^^
+  |
+  = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+   --> src\egui_app\ui\sources_panel\mod.rs:170:16
+    |
+170 |             ui.allocate_ui_at_rect(folder_rect, |ui| {
+    |                ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+   --> src\egui_app\ui\sources_panel\mod.rs:181:16
+    |
+181 |             ui.allocate_ui_at_rect(drop_targets_rect, |ui| {
+    |                ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::audio::Source`
+ --> src\analysis\audio_decode.rs:4:5
+  |
+4 | use crate::audio::Source;
+  |     ^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `byte_len`
+  --> src\analysis\audio\decode_io.rs:48:9
+   |
+48 |     let byte_len = file.metadata().map(|meta| meta.len()).unwrap_or(0) as u64;
+   |         ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_byte_len`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+error[E0499]: cannot borrow `state` as mutable more than once at a time
+   --> src\audio\output.rs:239:34
+    |
+239 |         state.sources.retain_mut(|(source, source_volume)| {
+    |         -----         ---------- ^^^^^^^^^^^^^^^^^^^^^^^^^ second mutable borrow occurs here
+    |         |             |
+    |         |             first borrow later used by call
+    |         first mutable borrow occurs here
+...
+252 |                     state.error = Some(err);
+    |                     ----- second borrow occurs due to use of `state` in closure
+
+error[E0499]: cannot borrow `state` as mutable more than once at a time
+   --> src\audio\output.rs:292:46
+    |
+292 |                     state.sources.retain_mut(|(source, source_volume)| {
+    |                     -----         ---------- ^^^^^^^^^^^^^^^^^^^^^^^^^ second mutable borrow occurs here
+    |                     |             |
+    |                     |             first borrow later used by call
+    |                     first mutable borrow occurs here
+...
+305 |                                 state.error = Some(err);
+    |                                 ----- second borrow occurs due to use of `state` in closure
+
+warning: variable does not need to be mutable
+  --> src\audio\decoder.rs:37:13
+   |
+37 |         let mut reader = probed.format;
+   |             ----^^^^^^
+   |             |
+   |             help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+  --> src\egui_app\ui\sources_panel\mod.rs:86:17
+   |
+86 |             let mut drop_targets_height = self
+   |                 ----^^^^^^^^^^^^^^^^^^^
+   |                 |
+   |                 help: remove this `mut`
+
+warning: variable does not need to be mutable
+  --> src\http_client.rs:69:9
+   |
+69 |     let mut reader = response.into_reader();
+   |         ----^^^^^^
+   |         |
+   |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+  --> src\http_client.rs:89:9
+   |
+89 |     let mut reader = response.into_reader();
+   |         ----^^^^^^
+   |         |
+   |         help: remove this `mut`
+
+warning: unused variable: `dir`
+   --> src\issue_gateway\token_store.rs:501:20
+    |
+501 | fn sync_parent_dir(dir: &Path) -> Result<(), IssueTokenStoreError> {
+    |                    ^^^ help: if this is intentional, prefix it with an underscore: `_dir`
+
+warning: variable does not need to be mutable
+   --> src\wav_sanitize.rs:186:9
+    |
+186 |     let mut changed = false;
+    |         ----^^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> src\waveform\mod.rs:383:9
+    |
+383 |     let mut file = std::fs::File::open(path).map_err(|source| WaveformLoadError::Read {
+    |         ----^^^^
+    |         |
+    |         help: remove this `mut`
+
+For more information about this error, try `rustc --explain E0499`.
+warning: `sempal` (lib) generated 12 warnings
+error: could not compile `sempal` (lib) due to 2 previous errors; 12 warnings emitted

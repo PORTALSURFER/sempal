@@ -220,6 +220,10 @@ where
     fn total_duration(&self) -> Option<Duration> {
         Some(self.duration)
     }
+
+    fn last_error(&self) -> Option<String> {
+        self.inner.last_error()
+    }
 }
 
 /// Source that repeats infinitely.
@@ -262,6 +266,10 @@ where
 
     fn total_duration(&self) -> Option<Duration> {
         None
+    }
+
+    fn last_error(&self) -> Option<String> {
+        self.source.last_error()
     }
 }
 
@@ -324,6 +332,10 @@ where
     fn total_duration(&self) -> Option<Duration> {
         self.inner.total_duration()
     }
+
+    fn last_error(&self) -> Option<String> {
+        self.inner.last_error()
+    }
 }
 
 /// Source that fades in.
@@ -374,5 +386,9 @@ where
 
     fn total_duration(&self) -> Option<Duration> {
         self.inner.total_duration()
+    }
+
+    fn last_error(&self) -> Option<String> {
+        self.inner.last_error()
     }
 }

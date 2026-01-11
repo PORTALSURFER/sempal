@@ -228,32 +228,7 @@ pub fn open_output_stream(
     let state_for_callback = state.clone();
     let callback = move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
         let mut state = state_for_callback.lock().unwrap();
-        let volume = state.volume;
-        
-        // Fill with silence first
-        for sample in data.iter_mut() {
-            *sample = 0.0;
-        }
-
-        // Mix in all active sources
-        state.sources.retain_mut(|(source, source_volume)| {
-            let mut finished = false;
-            let combined_volume = volume * *source_volume;
-            for sample_out in data.iter_mut() {
-                if let Some(sample_in) = source.next() {
-                    *sample_out += sample_in * combined_volume;
-                } else {
-                    finished = true;
-                    break;
-                }
-            }
-            if finished {
-                if let Some(err) = source.last_error() {
-                    state.error = Some(err);
-                }
-            }
-            !finished
-        });
+        process_audio_callback(&mut state, data);
     };
 
     let stream = match device.build_output_stream(
@@ -283,30 +258,7 @@ pub fn open_output_stream(
                 &fallback_stream_config,
                 move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                     let mut state = state_for_fallback.lock().unwrap();
-                    let volume = state.volume;
-                    
-                    for sample in data.iter_mut() {
-                        *sample = 0.0;
-                    }
-
-                    state.sources.retain_mut(|(source, source_volume)| {
-                        let mut finished = false;
-                        let combined_volume = volume * *source_volume;
-                        for sample_out in data.iter_mut() {
-                            if let Some(sample_in) = source.next() {
-                                *sample_out += sample_in * combined_volume;
-                            } else {
-                                finished = true;
-                                break;
-                            }
-                        }
-                        if finished {
-                            if let Some(err) = source.last_error() {
-                                state.error = Some(err);
-                            }
-                        }
-                        !finished
-                    });
+                    process_audio_callback(&mut state, data);
                 },
                 |err| tracing::error!("Fallback stream error: {}", err),
                 None,
@@ -387,6 +339,40 @@ fn resolve_device(
     Ok((resolved, resolved_name, used_fallback))
 }
 
+fn process_audio_callback(state: &mut StreamState, data: &mut [f32]) {
+    let volume = state.volume;
+
+    // Fill with silence first
+    for sample in data.iter_mut() {
+        *sample = 0.0;
+    }
+
+    // Mix in all active sources
+    let mut last_error = None;
+    state.sources.retain_mut(|(source, source_volume)| {
+        let mut finished = false;
+        let combined_volume = volume * *source_volume;
+        for sample_out in data.iter_mut() {
+            if let Some(sample_in) = source.next() {
+                *sample_out += sample_in * combined_volume;
+            } else {
+                finished = true;
+                break;
+            }
+        }
+        if finished {
+            if let Some(err) = source.last_error() {
+                last_error = Some(err);
+            }
+        }
+        !finished
+    });
+
+    if let Some(err) = last_error {
+        state.error = Some(err);
+    }
+}
+
 const COMMON_SAMPLE_RATES: &[u32] = &[32_000, 44_100, 48_000, 88_200, 96_000, 176_400, 192_000];
 
 fn sample_rates_in_range(min: u32, max: u32) -> Vec<u32> {
@@ -414,5 +400,41 @@ mod tests {
     fn sample_rate_filter_returns_common_values() {
         let rates = sample_rates_in_range(40_000, 50_000);
         assert_eq!(rates, vec![44_100, 48_000]);
+    }
+
+    #[test]
+    fn callback_propagates_error() {
+        use std::time::Duration;
+        use crate::audio::Source;
+
+        struct MockSource {
+            error: Option<String>,
+        }
+
+        impl Iterator for MockSource {
+            type Item = f32;
+            fn next(&mut self) -> Option<Self::Item> {
+                None // Finish immediately
+            }
+        }
+
+        impl Source for MockSource {
+            fn current_frame_len(&self) -> Option<usize> { None }
+            fn channels(&self) -> u16 { 2 }
+            fn sample_rate(&self) -> u32 { 44100 }
+            fn total_duration(&self) -> Option<Duration> { None }
+            fn last_error(&self) -> Option<String> { self.error.clone() }
+        }
+
+        let mut state = StreamState {
+            sources: vec![(Box::new(MockSource { error: Some("failure".into()) }), 1.0)],
+            volume: 1.0,
+            error: None,
+        };
+
+        let mut data = vec![0.0; 10];
+        process_audio_callback(&mut state, &mut data);
+
+        assert_eq!(state.error, Some("failure".into()));
     }
 }
