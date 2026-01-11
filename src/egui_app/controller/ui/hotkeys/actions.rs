@@ -431,4 +431,32 @@ pub(crate) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         scope: HotkeyScope::Focus(FocusContext::Waveform),
         command: HotkeyCommand::ZoomOutSelection,
     },
+    HotkeyAction {
+        id: "slide-selection-left",
+        label: "Slide selection left",
+        gesture: HotkeyGesture::new(Key::ArrowLeft),
+        scope: HotkeyScope::Focus(FocusContext::Waveform),
+        command: HotkeyCommand::SlideSelectionLeft,
+    },
+    HotkeyAction {
+        id: "slide-selection-right",
+        label: "Slide selection right",
+        gesture: HotkeyGesture::new(Key::ArrowRight),
+        scope: HotkeyScope::Focus(FocusContext::Waveform),
+        command: HotkeyCommand::SlideSelectionRight,
+    },
+    HotkeyAction {
+        id: "nudge-selection-left",
+        label: "Nudge selection left (fine)",
+        gesture: HotkeyGesture::with_shift(Key::ArrowLeft),
+        scope: HotkeyScope::Focus(FocusContext::Waveform),
+        command: HotkeyCommand::NudgeSelectionLeft,
+    },
+    HotkeyAction {
+        id: "nudge-selection-right",
+        label: "Nudge selection right (fine)",
+        gesture: HotkeyGesture::with_shift(Key::ArrowRight),
+        scope: HotkeyScope::Focus(FocusContext::Waveform),
+        command: HotkeyCommand::NudgeSelectionRight,
+    },
 ];

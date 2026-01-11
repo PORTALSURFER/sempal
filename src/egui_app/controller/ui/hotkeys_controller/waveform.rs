@@ -102,6 +102,22 @@ pub(crate) fn handle_waveform_command(
             controller.waveform().zoom_to_selection();
             true
         }
+        HotkeyCommand::SlideSelectionLeft => {
+            controller.waveform().slide_selection_range(-1);
+            true
+        }
+        HotkeyCommand::SlideSelectionRight => {
+            controller.waveform().slide_selection_range(1);
+            true
+        }
+        HotkeyCommand::NudgeSelectionLeft => {
+            controller.waveform().nudge_selection_range(-1, true);
+            true
+        }
+        HotkeyCommand::NudgeSelectionRight => {
+            controller.waveform().nudge_selection_range(1, true);
+            true
+        }
         HotkeyCommand::ZoomOutSelection => {
             controller.waveform().zoom_out_full();
             true

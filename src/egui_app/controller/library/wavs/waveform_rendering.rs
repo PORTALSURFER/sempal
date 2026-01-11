@@ -5,7 +5,7 @@ use crate::waveform::DecodedWaveform;
 use std::fs;
 use std::path::Path;
 
-const MIN_VIEW_WIDTH_BASE: f32 = 0.001;
+const MIN_VIEW_WIDTH_BASE: f32 = 1e-9;
 const MIN_SAMPLES_PER_PIXEL: f32 = 1.0;
 pub(crate) const MAX_ZOOM_MULTIPLIER: f32 = 64.0;
 // Cap oversampling to avoid subpixel waveform columns that shimmer when downscaled.

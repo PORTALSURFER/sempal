@@ -26,7 +26,7 @@ impl std::ops::DerefMut for WaveformController<'_> {
 
 pub(crate) const PLAYHEAD_STEP_PX: f32 = 32.0;
 pub(crate) const PLAYHEAD_STEP_PX_FINE: f32 = 1.0;
-pub(crate) const VIEW_EPSILON: f32 = 1e-5;
+pub(crate) const VIEW_EPSILON: f32 = 1e-9;
 pub(crate) const CURSOR_IDLE_FADE: Duration = Duration::from_millis(500);
 
 #[derive(Clone, Copy, Debug)]
@@ -293,9 +293,8 @@ impl WaveformController<'_> {
             focus.unwrap_or_else(|| self.waveform_focus_point())
         };
         let min_width = self.min_view_width();
-        let max_zoom =
-            (1.0 / min_width).min(crate::egui_app::controller::library::wavs::MAX_ZOOM_MULTIPLIER);
-        let min_render_width = (1.0 / max_zoom).max(min_width);
+
+        let min_render_width = min_width;
         if zoom_in && original.width() <= min_render_width + VIEW_EPSILON {
             return false;
         }
