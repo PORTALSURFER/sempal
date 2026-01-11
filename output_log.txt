@@ -1,0 +1,86 @@
+   Compiling sempal v9.0.0 (X:\sempal)
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+   --> src\egui_app\ui\sources_panel\mod.rs:170:16
+    |
+170 |             ui.allocate_ui_at_rect(folder_rect, |ui| {
+    |                ^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+   --> src\egui_app\ui\sources_panel\mod.rs:181:16
+    |
+181 |             ui.allocate_ui_at_rect(drop_targets_rect, |ui| {
+    |                ^^^^^^^^^^^^^^^^^^^
+
+error[E0382]: borrow of moved value: `source`
+   --> src\audio\player\playback.rs:184:64
+    |
+171 |         let mut source = decoder_from_bytes(bytes)?;
+    |             ---------- move occurs because `source` has type `rodio::Decoder<std::io::Cursor<Arc<[u8]>>>`, which does not implement the `Copy` trait
+...
+180 |             .take_duration(aligned_span)
+    |              --------------------------- `source` moved due to this method call
+...
+184 |         let offset_dur = Self::aligned_offset_duration(offset, source.sample_rate());
+    |                                                                ^^^^^^ value borrowed here after move
+    |
+note: `take_duration` takes ownership of the receiver `self`, which moves `source`
+   --> C:\Users\wanja.svasek\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rodio-0.21.1\src\source\mod.rs:213:22
+    |
+213 |     fn take_duration(self, duration: Duration) -> TakeDuration<Self>
+    |                      ^^^^
+
+warning: variable does not need to be mutable
+  --> src\egui_app\ui\sources_panel\mod.rs:86:17
+   |
+86 |             let mut drop_targets_height = self
+   |                 ----^^^^^^^^^^^^^^^^^^^
+   |                 |
+   |                 help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+  --> src\http_client.rs:69:9
+   |
+69 |     let mut reader = response.into_reader();
+   |         ----^^^^^^
+   |         |
+   |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+  --> src\http_client.rs:89:9
+   |
+89 |     let mut reader = response.into_reader();
+   |         ----^^^^^^
+   |         |
+   |         help: remove this `mut`
+
+warning: unused variable: `dir`
+   --> src\issue_gateway\token_store.rs:501:20
+    |
+501 | fn sync_parent_dir(dir: &Path) -> Result<(), IssueTokenStoreError> {
+    |                    ^^^ help: if this is intentional, prefix it with an underscore: `_dir`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> src\wav_sanitize.rs:186:9
+    |
+186 |     let mut changed = false;
+    |         ----^^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> src\waveform\mod.rs:383:9
+    |
+383 |     let mut file = std::fs::File::open(path).map_err(|source| WaveformLoadError::Read {
+    |         ----^^^^
+    |         |
+    |         help: remove this `mut`
+
+For more information about this error, try `rustc --explain E0382`.
+warning: `sempal` (lib) generated 8 warnings
+error: could not compile `sempal` (lib) due to 1 previous error; 8 warnings emitted

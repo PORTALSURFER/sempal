@@ -246,6 +246,8 @@ pub(crate) fn adjust_selected_rating(controller: &mut EguiController, delta: i8)
         controller.set_status(err, StatusTone::Error);
     }
 
+
+
     if controller.settings.controls.advance_after_rating
         && controller.ui.browser.selected_visible == Some(primary_row)
     {

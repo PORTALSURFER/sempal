@@ -84,7 +84,7 @@ impl ClaimSelector {
         );
         if self.sources.len() != self.last_source_count {
             self.last_source_count = self.sources.len();
-            tracing::info!(
+            tracing::debug!(
                 "Analysis claim sources refreshed: {} source(s) available",
                 self.last_source_count
             );

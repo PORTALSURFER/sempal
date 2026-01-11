@@ -57,7 +57,6 @@ pub(crate) fn handle_analysis_message(
                 if controller.ui.progress.task == Some(ProgressTaskKind::Analysis) {
                     controller.clear_progress();
                 }
-                let _ = controller.apply_pending_backend_switch();
                 return;
             }
             if progress.pending == 0 && progress.running == 0 {
@@ -69,7 +68,6 @@ pub(crate) fn handle_analysis_message(
                 if controller.ui.progress.task == Some(ProgressTaskKind::Analysis) {
                     controller.clear_progress();
                 }
-                let _ = controller.apply_pending_backend_switch();
                 return;
             }
             if controller.ui.progress.task.is_none()

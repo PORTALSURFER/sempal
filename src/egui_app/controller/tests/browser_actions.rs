@@ -534,6 +534,7 @@ fn rating_auto_advance_works() {
 
     // Initial state: first row focused
     controller.focus_browser_row(0);
+    controller.set_advance_after_rating(true);
     assert_eq!(controller.ui.browser.selected_visible, Some(0));
 
     // Case 1: Advance is ON (default)

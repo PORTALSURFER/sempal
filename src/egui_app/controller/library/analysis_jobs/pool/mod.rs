@@ -65,7 +65,7 @@ impl AnalysisWorkerPool {
     pub(crate) fn set_worker_count(&self, value: u32) {
         let previous = self.worker_count_override.swap(value, Ordering::Relaxed);
         if previous != value {
-            info!("Analysis worker count override set to {}", value);
+            tracing::debug!("Analysis worker count override set to {}", value);
         }
     }
 
@@ -113,14 +113,14 @@ impl AnalysisWorkerPool {
     pub(crate) fn pause_claiming(&self) {
         let previous = self.pause_claiming.swap(true, Ordering::Relaxed);
         if !previous {
-            info!("Analysis job claiming paused");
+            tracing::debug!("Analysis job claiming paused");
         }
     }
 
     pub(crate) fn resume_claiming(&self) {
         let previous = self.pause_claiming.swap(false, Ordering::Relaxed);
         if previous {
-            info!("Analysis job claiming resumed");
+            tracing::debug!("Analysis job claiming resumed");
         }
     }
 

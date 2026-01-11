@@ -13,6 +13,7 @@ pub(crate) struct ControllerRuntimeState {
     pub(crate) performance: PerformanceGovernorState,
     pub(crate) similarity_prep: Option<SimilarityPrepState>,
     pub(crate) similarity_prep_last_error: Option<String>,
+    pub(crate) similarity_prep_last_attempt: Option<Instant>,
     pub(crate) similarity_prep_force_full_analysis_next: bool,
     #[cfg(test)]
     pub(crate) progress_cancel_after: Option<usize>,
@@ -32,6 +33,7 @@ impl ControllerRuntimeState {
             performance: PerformanceGovernorState::new(),
             similarity_prep: None,
             similarity_prep_last_error: None,
+            similarity_prep_last_attempt: None,
             similarity_prep_force_full_analysis_next: false,
             #[cfg(test)]
             progress_cancel_after: None,

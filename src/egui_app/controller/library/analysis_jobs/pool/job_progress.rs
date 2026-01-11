@@ -190,7 +190,7 @@ pub(crate) fn spawn_progress_poller(
                 if sources_empty {
                     tracing::info!("Analysis progress poller has no sources to inspect");
                 } else {
-                    tracing::info!(
+                    tracing::debug!(
                         "Analysis progress poller inspecting {} source(s)",
                         sources.len()
                     );

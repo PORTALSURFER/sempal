@@ -51,20 +51,21 @@ impl AudioPlayer {
         self.fade_out_current_sink(self.anti_clip_fade());
 
         let source = decoder_from_bytes(bytes)?;
-        let aligned_duration = Self::aligned_span_seconds(duration, source.sample_rate());
-        let offset = (start.clamp(0.0, 1.0) * duration).min(aligned_duration);
-        let fade = fade_duration(aligned_duration, self.anti_clip_fade());
+        let aligned_duration = Self::aligned_span_duration(duration, source.sample_rate());
+        let offset = (start.clamp(0.0, 1.0) * duration).min(aligned_duration.as_secs_f32());
+        let offset_dur = Self::aligned_offset_duration(offset, source.sample_rate());
+        let fade = fade_duration(aligned_duration.as_secs_f32(), self.anti_clip_fade());
         let limited = source
-            .take_duration(Duration::from_secs_f32(aligned_duration))
+            .take_duration(aligned_duration)
             .buffered();
         let faded = EdgeFade::new(limited, fade);
         let repeated = faded
             .repeat_infinite()
-            .skip_duration(Duration::from_secs_f32(offset));
+            .skip_duration(offset_dur);
 
         let (sink, handle, format) = self.build_sink_with_fade(repeated);
         self.started_at = Some(std::time::Instant::now());
-        self.play_span = Some((0.0, aligned_duration));
+        self.play_span = Some((0.0, aligned_duration.as_secs_f32()));
         self.looping = true;
         self.loop_offset = Some(offset);
         self.sink = Some(sink);
@@ -99,28 +100,71 @@ impl AudioPlayer {
         self.fade_out_current_sink(self.anti_clip_fade());
 
         let mut source = decoder_from_bytes(bytes)?;
-        let aligned_span = if looped {
-            Self::aligned_span_seconds(span_length, source.sample_rate())
+        let aligned_span_dur = if looped {
+            Self::aligned_span_duration(span_length, source.sample_rate())
         } else {
-            span_length
+             // For non-looped, we can just use the span length directly, 
+             // or use aligned_span_duration if we want consistent cutting? 
+             // Rodio take_duration takes Duration. 
+             // Let's use duration from secs f32 if not looping, or just use aligned for consistency?
+             // The original used `aligned_span` (f32) for both.
+             Duration::from_secs_f32(span_length)
         };
-        source
-            .try_seek(Duration::from_secs_f32(bounded_start))
-            .map_err(map_seek_error)?;
-        let fade = fade_duration(aligned_span, self.anti_clip_fade());
-        let limited = source
-            .take_duration(Duration::from_secs_f32(aligned_span))
-            .buffered();
-        let faded = EdgeFade::new(limited, fade);
-
-        let final_source: Box<dyn Source<Item = f32> + Send> = if looped {
-            Box::new(faded.repeat_infinite())
+        
+        // We still need f32 for fade setup
+        let aligned_span_sec = if looped {
+             aligned_span_dur.as_secs_f32()
         } else {
+             span_length
+        };
+
+        let seek_dur = Self::aligned_seek_duration(bounded_start, source.sample_rate());
+        let sample_rate = source.sample_rate();
+        let channels = source.channels();
+        
+        tracing::debug!(
+            "Loop setup: rate={}, channels={}, span_sec={:.6}, looped={}",
+            sample_rate, channels, aligned_span_sec, looped
+        );
+        
+        source
+            .try_seek(seek_dur)
+            .map_err(map_seek_error)?;
+        
+        // For looped playback, calculate duration that guarantees even sample count
+        let loop_duration = if looped {
+            // Calculate frames, round to ensure we get whole frames
+            let frames = (aligned_span_sec * sample_rate as f32).round() as u64;
+            // For stereo, ensure we have an even number of frames (each frame = 2 samples)
+            let frames_adjusted = if channels == 2 && frames % 2 != 0 { frames + 1 } else { frames };
+            // Convert to duration using floor division
+            let nanos = (frames_adjusted * 1_000_000_000) / sample_rate as u64;
+            let duration = Duration::from_nanos(nanos);
+            
+            tracing::debug!(
+                "Loop duration calc: frames={}, adjusted={}, nanos={}, samples_expected={}",
+                frames, frames_adjusted, nanos, frames_adjusted * channels as u64
+            );
+            
+            duration
+        } else {
+            aligned_span_dur
+        };
+        
+        let fade = fade_duration(aligned_span_sec, self.anti_clip_fade());
+        let limited = source.take_duration(loop_duration).buffered();
+        
+        // For looped playback, skip EdgeFade to avoid sample counting issues
+        // that can cause stereo channel swap when repeat_infinite() restarts
+        let final_source: Box<dyn Source<Item = f32> + Send> = if looped {
+            Box::new(limited.repeat_infinite())
+        } else {
+            let faded = EdgeFade::new(limited, fade);
             Box::new(faded)
         };
         let (sink, handle, format) = self.build_sink_with_fade(final_source);
         self.started_at = Some(std::time::Instant::now());
-        self.play_span = Some((bounded_start, bounded_start + aligned_span));
+        self.play_span = Some((bounded_start, bounded_start + aligned_span_sec));
         self.looping = looped;
         self.sink = Some(sink);
         self.fade_out = Some(handle);
@@ -155,29 +199,32 @@ impl AudioPlayer {
         let span_length = (end_seconds - start_seconds).max(0.001);
         self.fade_out_current_sink(self.anti_clip_fade());
         let mut source = decoder_from_bytes(bytes)?;
+        let seek_dur = Self::aligned_seek_duration(start_seconds, source.sample_rate());
+        let sample_rate = source.sample_rate();
+        let channels = source.channels();
         source
-            .try_seek(Duration::from_secs_f32(start_seconds))
+            .try_seek(seek_dur)
             .map_err(map_seek_error)?;
-        let aligned_span = Self::aligned_span_seconds(span_length, source.sample_rate());
-        let fade = fade_duration(aligned_span, self.anti_clip_fade());
-        let limited = source
-            .take_duration(Duration::from_secs_f32(aligned_span))
-            .buffered();
-        let faded = EdgeFade::new(limited, fade);
-        let offset = offset_seconds.clamp(0.0, aligned_span);
-        let repeated = faded
+        
+        let aligned_span = Self::aligned_span_duration(span_length, sample_rate);
+        let aligned_span_sec = aligned_span.as_secs_f32();
+        
+        // Calculate duration that guarantees even sample count for stereo
+        let frames = (aligned_span_sec * sample_rate as f32).round() as u64;
+        // For stereo, ensure we have an even number of frames
+        let frames = if channels == 2 && frames % 2 != 0 { frames + 1 } else { frames };
+        let loop_duration = Duration::from_nanos((frames * 1_000_000_000) / sample_rate as u64);
+        
+        let fade = fade_duration(aligned_span_sec, self.anti_clip_fade());
+        let limited = source.take_duration(loop_duration).buffered();
+        
+        // Skip EdgeFade for looped sources to prevent stereo swap
+        let offset = offset_seconds.clamp(0.0, aligned_span_sec);
+        let offset_dur = Self::aligned_offset_duration(offset, sample_rate);
+        let repeated = limited
             .repeat_infinite()
-            .skip_duration(Duration::from_secs_f32(offset));
-        self.start_looped_sink(repeated, start_seconds, aligned_span, offset)
-    }
-
-    fn aligned_span_seconds(span_length: f32, sample_rate: u32) -> f32 {
-        if sample_rate == 0 {
-            return span_length;
-        }
-        let frames = (span_length * sample_rate as f32).floor();
-        let frames = if frames < 1.0 { 1.0 } else { frames };
-        frames / sample_rate as f32
+            .skip_duration(offset_dur);
+        self.start_looped_sink(repeated, start_seconds, aligned_span_sec, offset)
     }
 
     fn start_looped_sink<S: Source<Item = f32> + Send + 'static>(
@@ -202,9 +249,45 @@ impl AudioPlayer {
         Ok(())
     }
 
-    #[cfg(test)]
-    pub(crate) fn aligned_span_seconds_for_tests(span_length: f32, sample_rate: u32) -> f32 {
-        Self::aligned_span_seconds(span_length, sample_rate)
+    /// Calculate a Duration that covers at least `frames` full frames.
+    /// This uses u64 arithmetic to avoid f32 precision loss which can cause rodio to drop one sample (half a frame)
+    /// in stereo sources, leading to channel swapping.
+    fn aligned_span_duration(span_seconds: f32, sample_rate: u32) -> Duration {
+        if sample_rate == 0 {
+            return Duration::from_secs_f32(span_seconds);
+        }
+        let frames = (span_seconds * sample_rate as f32).round().max(1.0) as u64;
+        let nanos = (frames * 1_000_000_000) / sample_rate as u64;
+        Duration::from_nanos(nanos)
+    }
+
+    /// Calculate a Duration that corresponds to the exact number of frames for `seconds`.
+    /// This allows 0 duration.
+    fn aligned_offset_duration(seconds: f32, sample_rate: u32) -> Duration {
+        if sample_rate == 0 {
+            return Duration::from_secs_f32(seconds);
+        }
+        let frames = (seconds * sample_rate as f32).round().max(0.0) as u64;
+         // Use the same ceiling logic? No, for offset, we want to be exact or slightly padded?
+         // If we skip 1 frame, we want to skip exactly 1 frame.
+         // If `skip_duration` logic in rodio is "skip while duration > 0", then to skip N frames we need duration corresponding to N frames.
+         // And since rodio's duration handling might be "skip N samples", we need to be careful.
+         // Based on analysis, CEIL causes us to skip into the next frame (Sample 2), causing stereo swap.
+         // We must use FLOOR (integer truncation) to ensure we stop BEFORE the next frame starts.
+         // nanos = frames * 1e9 / rate.
+         let nanos = (frames * 1_000_000_000) / sample_rate as u64;
+         Duration::from_nanos(nanos)
+    }
+
+    /// Calculate a Duration for seeking that aligns exactly with frame boundaries.
+    /// Uses floor division to prevent seeking past the intended frame.
+    fn aligned_seek_duration(seconds: f32, sample_rate: u32) -> Duration {
+        if sample_rate == 0 {
+            return Duration::from_secs_f32(seconds);
+        }
+        let frames = (seconds * sample_rate as f32).round().max(0.0) as u64;
+        let nanos = (frames * 1_000_000_000) / sample_rate as u64;
+        Duration::from_nanos(nanos)
     }
 
     fn frame_align(&self, seconds: f32, sample_rate: u32) -> f32 {
