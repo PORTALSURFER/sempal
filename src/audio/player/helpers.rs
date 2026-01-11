@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use rodio::{OutputStream, Sink, Source};
+use rodio::Source;
 
 #[cfg(test)]
 use super::super::DEFAULT_ANTI_CLIP_FADE;
@@ -34,32 +34,30 @@ impl AudioPlayer {
     }
 
     pub(super) fn build_sink_with_fade<S: Source<Item = f32> + Send + 'static>(
-        &self,
+        &mut self,
         source: S,
-    ) -> (Sink, FadeOutHandle, (u32, u16)) {
-        Self::build_sink_with_fade_for_stream(&self.stream, self.effective_volume(), source)
-    }
-
-    pub fn create_monitor_sink(&self, volume: f32) -> Sink {
-        let sink = Sink::connect_new(self.stream.mixer());
-        sink.set_volume(volume);
-        sink.play();
-        sink
-    }
-
-    pub(super) fn build_sink_with_fade_for_stream<S: Source<Item = f32> + Send + 'static>(
-        stream: &OutputStream,
-        volume: f32,
-        source: S,
-    ) -> (Sink, FadeOutHandle, (u32, u16)) {
-        let sink = Sink::connect_new(stream.mixer());
-        sink.set_volume(volume);
+    ) -> (FadeOutHandle, (u32, u16)) {
+        let volume = self.effective_volume();
         let format = (source.sample_rate(), source.channels());
         let handle = FadeOutHandle::new();
-        sink.append(FadeOutOnRequest::new(source, handle.clone()));
-        sink.play();
-        (sink, handle, format)
+        
+        {
+            let mut state = self.stream.state.lock().unwrap();
+            state.sources.push((Box::new(FadeOutOnRequest::new(source, handle.clone())), 1.0));
+            self.active_sources = state.sources.len();
+        }
+        
+        (handle, format)
     }
+
+    pub fn create_monitor_sink(&self, volume: f32) -> crate::audio::output::MonitorSink {
+        crate::audio::output::MonitorSink {
+            state: self.stream.state.clone(),
+            volume,
+        }
+    }
+
+    // Removed build_sink_with_fade_for_stream as it was rodio-specific
 
     pub(super) fn elapsed_since(&self, started_at: Instant) -> Duration {
         #[cfg(test)]
@@ -112,27 +110,30 @@ impl AudioPlayer {
     }
 
     pub(super) fn fade_out_current_sink(&mut self, fade: Duration) {
-        let Some(sink) = self.sink.take() else {
+        if self.active_sources == 0 {
             return;
-        };
+        }
         let handle = self.fade_out.take();
         let format = self.sink_format.take();
+        self.active_sources = 0;
 
         let Some(handle) = handle else {
-            sink.stop();
+            let mut state = self.stream.state.lock().unwrap();
+            state.sources.clear();
             return;
         };
         let Some((sample_rate, _channels)) = format else {
-            sink.stop();
+            let mut state = self.stream.state.lock().unwrap();
+            state.sources.clear();
             return;
         };
         if fade.is_zero() {
-            sink.stop();
+            let mut state = self.stream.state.lock().unwrap();
+            state.sources.clear();
             return;
         }
         let fade_frames = fade_frames_for_duration(sample_rate, fade);
         handle.request_fade_out_frames(fade_frames);
-        sink.detach();
     }
 
     #[cfg(test)]

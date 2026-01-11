@@ -50,25 +50,33 @@ impl AudioPlayer {
 
         self.fade_out_current_sink(self.anti_clip_fade());
 
-        let source = decoder_from_bytes(bytes)?;
-        let aligned_duration = Self::aligned_span_duration(duration, source.sample_rate());
+        let mut source = decoder_from_bytes(bytes)?;
+        let sample_rate = source.sample_rate();
+        let channels = source.channels();
+        let aligned_duration = Self::aligned_span_duration(duration, sample_rate);
+        
+        let mut samples = Vec::new();
+        let mut limited = source.take_duration(aligned_duration);
+        while let Some(s) = limited.next() {
+            samples.push(s);
+        }
+        // Ensure even count for stereo
+        if channels == 2 && samples.len() % 2 != 0 {
+            samples.push(0.0);
+        }
+        
+        let buffer = rodio::buffer::SamplesBuffer::new(channels, sample_rate, samples);
         let offset = (start.clamp(0.0, 1.0) * duration).min(aligned_duration.as_secs_f32());
-        let offset_dur = Self::aligned_offset_duration(offset, source.sample_rate());
-        let fade = fade_duration(aligned_duration.as_secs_f32(), self.anti_clip_fade());
-        let limited = source
-            .take_duration(aligned_duration)
-            .buffered();
-        let faded = EdgeFade::new(limited, fade);
-        let repeated = faded
+        let offset_dur = Self::aligned_offset_duration(offset, sample_rate);
+        let repeated = buffer
             .repeat_infinite()
             .skip_duration(offset_dur);
 
-        let (sink, handle, format) = self.build_sink_with_fade(repeated);
+        let (handle, format) = self.build_sink_with_fade(repeated);
         self.started_at = Some(std::time::Instant::now());
         self.play_span = Some((0.0, aligned_duration.as_secs_f32()));
         self.looping = true;
         self.loop_offset = Some(offset);
-        self.sink = Some(sink);
         self.fade_out = Some(handle);
         self.sink_format = Some(format);
         #[cfg(test)]
@@ -132,11 +140,14 @@ impl AudioPlayer {
             .map_err(map_seek_error)?;
         
         // For looped playback, calculate duration that guarantees even sample count
+        let frames = (aligned_span_sec * sample_rate as f32).round() as u64;
+        let frames_adjusted = if looped && channels == 2 && frames % 2 != 0 { 
+            frames + 1 
+        } else { 
+            frames 
+        };
+        
         let loop_duration = if looped {
-            // Calculate frames, round to ensure we get whole frames
-            let frames = (aligned_span_sec * sample_rate as f32).round() as u64;
-            // For stereo, ensure we have an even number of frames (each frame = 2 samples)
-            let frames_adjusted = if channels == 2 && frames % 2 != 0 { frames + 1 } else { frames };
             // Convert to duration using floor division
             let nanos = (frames_adjusted * 1_000_000_000) / sample_rate as u64;
             let duration = Duration::from_nanos(nanos);
@@ -152,21 +163,42 @@ impl AudioPlayer {
         };
         
         let fade = fade_duration(aligned_span_sec, self.anti_clip_fade());
-        let limited = source.take_duration(loop_duration).buffered();
+        let expected_samples = frames_adjusted * channels as u64;
         
-        // For looped playback, skip EdgeFade to avoid sample counting issues
-        // that can cause stereo channel swap when repeat_infinite() restarts
+        // For looped playback, pre-decode the segment into a memory buffer
+        // to ensure perfect sample alignment and avoid stereo channel swap.
         let final_source: Box<dyn Source<Item = f32> + Send> = if looped {
-            Box::new(limited.repeat_infinite())
+            let mut limited = source.take_duration(loop_duration);
+            let mut samples = Vec::with_capacity(expected_samples as usize);
+            for _ in 0..expected_samples {
+                if let Some(s) = limited.next() {
+                    samples.push(s);
+                } else {
+                    break;
+                }
+            }
+            // Ensure exactly expected_samples (even for stereo)
+            while samples.len() < expected_samples as usize {
+                samples.push(0.0);
+            }
+            samples.truncate(expected_samples as usize);
+            
+            let buffer = rodio::buffer::SamplesBuffer::new(channels, sample_rate, samples);
+            let diagnostic = crate::audio::loop_diagnostic::LoopDiagnostic::new(
+                buffer.repeat_infinite(),
+                expected_samples,
+            );
+            Box::new(diagnostic)
         } else {
+            let limited = source.take_duration(loop_duration).buffered();
             let faded = EdgeFade::new(limited, fade);
             Box::new(faded)
         };
-        let (sink, handle, format) = self.build_sink_with_fade(final_source);
+        let (handle, format) = self.build_sink_with_fade(final_source);
         self.started_at = Some(std::time::Instant::now());
         self.play_span = Some((bounded_start, bounded_start + aligned_span_sec));
         self.looping = looped;
-        self.sink = Some(sink);
+        self.loop_offset = None;
         self.fade_out = Some(handle);
         self.sink_format = Some(format);
         #[cfg(test)]
@@ -216,30 +248,38 @@ impl AudioPlayer {
         let loop_duration = Duration::from_nanos((frames * 1_000_000_000) / sample_rate as u64);
         
         let fade = fade_duration(aligned_span_sec, self.anti_clip_fade());
-        let limited = source.take_duration(loop_duration).buffered();
+        let expected_samples = frames * channels as u64;
         
-        // Skip EdgeFade for looped sources to prevent stereo swap
-        let offset = offset_seconds.clamp(0.0, aligned_span_sec);
-        let offset_dur = Self::aligned_offset_duration(offset, sample_rate);
-        let repeated = limited
-            .repeat_infinite()
-            .skip_duration(offset_dur);
-        self.start_looped_sink(repeated, start_seconds, aligned_span_sec, offset)
-    }
-
-    fn start_looped_sink<S: Source<Item = f32> + Send + 'static>(
-        &mut self,
-        source: S,
-        span_start: f32,
-        span_length: f32,
-        offset: f32,
-    ) -> Result<(), String> {
-        let (sink, handle, format) = self.build_sink_with_fade(source);
+        let mut limited = source.take_duration(loop_duration);
+        let mut samples = Vec::with_capacity(expected_samples as usize);
+        for _ in 0..expected_samples {
+            if let Some(s) = limited.next() {
+                samples.push(s);
+            } else {
+                break;
+            }
+        }
+        while samples.len() < expected_samples as usize {
+            samples.push(0.0);
+        }
+        samples.truncate(expected_samples as usize);
+        
+        let buffer = rodio::buffer::SamplesBuffer::new(channels, sample_rate, samples);
+        let final_source: Box<dyn Source<Item = f32> + Send> = {
+            let offset_dur = Self::aligned_offset_duration(offset_seconds, sample_rate);
+            let repeated = buffer.repeat_infinite().skip_duration(offset_dur);
+            let diagnostic = crate::audio::loop_diagnostic::LoopDiagnostic::new(
+                repeated,
+                expected_samples,
+            );
+            Box::new(diagnostic)
+        };
+        
+        let (handle, format) = self.build_sink_with_fade(final_source);
         self.started_at = Some(std::time::Instant::now());
-        self.play_span = Some((span_start, span_start + span_length));
+        self.play_span = Some((start_seconds, end_seconds));
         self.looping = true;
-        self.loop_offset = Some(offset);
-        self.sink = Some(sink);
+        self.loop_offset = Some(offset_seconds);
         self.fade_out = Some(handle);
         self.sink_format = Some(format);
         #[cfg(test)]
@@ -248,6 +288,8 @@ impl AudioPlayer {
         }
         Ok(())
     }
+
+
 
     /// Calculate a Duration that covers at least `frames` full frames.
     /// This uses u64 arithmetic to avoid f32 precision loss which can cause rodio to drop one sample (half a frame)

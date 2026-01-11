@@ -1,10 +1,9 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-
-use rodio::{OutputStream, Sink};
+use tracing::info;
 
 use super::fade::FadeOutHandle;
-use super::output::ResolvedOutput;
+use super::output::{CpalAudioStream, ResolvedOutput};
 
 mod helpers;
 mod playback;
@@ -13,8 +12,8 @@ mod state;
 
 /// Simple audio helper that plays a loaded wav buffer and reports progress.
 pub struct AudioPlayer {
-    stream: OutputStream,
-    sink: Option<Sink>,
+    stream: CpalAudioStream,
+    active_sources: usize,
     fade_out: Option<FadeOutHandle>,
     sink_format: Option<(u32, u16)>,
     current_audio: Option<Arc<[u8]>>,

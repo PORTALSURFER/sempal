@@ -9,8 +9,9 @@ default = []
 
 [dependencies]
 hound = "3.5.1"
-cpal = "0.16.0"
+cpal = "0.17.1"
 rodio = { version = "0.21.1", default-features = true }
+ringbuf = "0.4"
 sysinfo = "0.37.2"
 rusqlite = { version = "0.37.0", features = ["bundled", "load_extension"] }
 uuid = { version = "1.19.0", features = ["v4", "serde"] }
@@ -68,7 +69,7 @@ rustfft = "6.2.0"
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 
 [target.'cfg(target_os = "windows")'.dependencies]
-cpal = { version = "0.16.0", features = ["asio"] }
+cpal = { version = "0.17.1", features = ["asio"] }
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",

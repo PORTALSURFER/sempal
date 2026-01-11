@@ -36,11 +36,8 @@ impl AudioPlayer {
 
     /// True while the sink is still playing the queued audio.
     pub fn is_playing(&self) -> bool {
-        self.sink
-            .as_ref()
-            .map(|sink| !sink.empty())
-            .unwrap_or(false)
-            && self.started_at.is_some()
+        let is_empty = self.stream.state.lock().unwrap().sources.is_empty();
+        !is_empty && self.started_at.is_some()
     }
 
     /// True when the current sink is configured to loop.

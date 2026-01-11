@@ -60,14 +60,14 @@ pub fn supported_input_sample_rates(
         }
     })? {
         supported.extend(sample_rates_in_range(
-            range.min_sample_rate().0,
-            range.max_sample_rate().0,
+            range.min_sample_rate(),
+            range.max_sample_rate(),
         ));
     }
     if supported.is_empty()
         && let Ok(default) = device.default_input_config()
     {
-        supported.push(default.sample_rate().0);
+        supported.push(default.sample_rate());
     }
     supported.sort_unstable();
     supported.dedup();

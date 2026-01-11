@@ -1,6 +1,5 @@
 use cpal;
 use cpal::traits::{DeviceTrait, HostTrait};
-use rodio::{OutputStream, OutputStreamBuilder};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::info;
@@ -17,12 +16,14 @@ pub enum AudioOutputError {
         host_id: String,
         source: cpal::SupportedStreamConfigsError,
     },
-    #[error("Failed to open stream: {source}")]
-    OpenStream { source: rodio::StreamError },
-    #[error("Failed to open default stream: {source}")]
-    OpenDefaultStream { source: rodio::StreamError },
-    #[error("Audio init failed: {source}")]
-    AudioInitFailed { source: rodio::StreamError },
+    #[error("Failed to build stream: {source}")]
+    BuildStream { source: cpal::BuildStreamError },
+    #[error("Failed to build default stream: {source}")]
+    BuildDefaultStream { source: cpal::BuildStreamError },
+    #[error("Playback failed to start: {source}")]
+    PlayStream { source: cpal::PlayStreamError },
+    #[error("Default config error for {host_id}: {source}")]
+    DefaultConfig { host_id: String, source: cpal::DefaultStreamConfigError },
 }
 
 /// Persisted audio output preferences chosen by the user.
@@ -78,9 +79,49 @@ impl Default for ResolvedOutput {
     }
 }
 
-/// Stream creation result that keeps both the Rodio handle and resolved settings.
+use std::sync::{Arc, Mutex};
+use cpal::traits::StreamTrait;
+
+/// Shared state between the player and the audio thread.
+pub struct StreamState {
+    pub sources: Vec<(Box<dyn rodio::Source<Item = f32> + Send>, f32)>,
+    pub volume: f32, // master volume
+}
+
+/// Custom container for cpal output stream.
+pub struct CpalAudioStream {
+    _stream: cpal::Stream,
+    pub state: Arc<Mutex<StreamState>>,
+}
+
+impl CpalAudioStream {
+    pub fn new(stream: cpal::Stream, state: Arc<Mutex<StreamState>>) -> Self {
+        Self { _stream: stream, state }
+    }
+}
+
+/// A bridge for input monitoring that mimics rodio::Sink interface.
+pub struct MonitorSink {
+    pub state: Arc<Mutex<StreamState>>,
+    pub volume: f32,
+}
+
+impl MonitorSink {
+    pub fn append<S: rodio::Source<Item = f32> + Send + 'static>(&self, source: S) {
+        let mut state = self.state.lock().unwrap();
+        state.sources.push((Box::new(source), self.volume));
+    }
+
+    pub fn play(&self) {}
+    pub fn stop(&self) {
+        let mut state = self.state.lock().unwrap();
+        state.sources.clear(); // Simple implementation: stop all
+    }
+}
+
+/// Stream creation result that keeps both the stream handle and resolved settings.
 pub struct OpenStreamOutcome {
-    pub stream: OutputStream,
+    pub stream: CpalAudioStream,
     pub resolved: ResolvedOutput,
 }
 
@@ -139,14 +180,14 @@ pub fn supported_sample_rates(
         }
     })? {
         supported.extend(sample_rates_in_range(
-            range.min_sample_rate().0,
-            range.max_sample_rate().0,
+            range.min_sample_rate(),
+            range.max_sample_rate(),
         ));
     }
     if supported.is_empty()
         && let Ok(default) = device.default_output_config()
     {
-        supported.push(default.sample_rate().0);
+        supported.push(default.sample_rate());
     }
     supported.sort_unstable();
     supported.dedup();
@@ -160,59 +201,121 @@ pub fn open_output_stream(
     let (host, host_id, host_fallback) = resolve_host(config.host.as_deref())?;
     let (device, device_name, device_fallback) = resolve_device(&host, config.device.as_deref())?;
 
-    let mut builder = OutputStreamBuilder::from_device(device)
-        .map_err(|source| AudioOutputError::OpenStream { source })?;
+    let stream_config = match device.default_output_config() {
+        Ok(c) => c,
+        Err(err) => return Err(AudioOutputError::DefaultConfig { host_id, source: err }),
+    };
+
+    let mut stream_config: cpal::StreamConfig = stream_config.into();
     if let Some(rate) = config.sample_rate {
-        builder = builder.with_sample_rate(rate);
+        stream_config.sample_rate = rate;
     }
     if let Some(size) = config.buffer_size.filter(|size| *size > 0) {
-        builder = builder.with_buffer_size(cpal::BufferSize::Fixed(size));
+        stream_config.buffer_size = cpal::BufferSize::Fixed(size);
     }
 
     let mut used_fallback = host_fallback || device_fallback;
     let mut resolved_host_id = host_id;
     let mut resolved_device_name = device_name;
-    let stream = match builder.open_stream_or_fallback() {
-        Ok(stream) => stream,
+
+    let state = Arc::new(Mutex::new(StreamState {
+        sources: Vec::new(),
+        volume: 1.0,
+    }));
+
+    let state_for_callback = state.clone();
+    let callback = move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+        let mut state = state_for_callback.lock().unwrap();
+        let volume = state.volume;
+        
+        // Fill with silence first
+        for sample in data.iter_mut() {
+            *sample = 0.0;
+        }
+
+        // Mix in all active sources
+        state.sources.retain_mut(|(source, source_volume)| {
+            let mut finished = false;
+            let combined_volume = volume * *source_volume;
+            for sample_out in data.iter_mut() {
+                if let Some(sample_in) = source.next() {
+                    *sample_out += sample_in * combined_volume;
+                } else {
+                    finished = true;
+                    break;
+                }
+            }
+            !finished
+        });
+    };
+
+    let stream = match device.build_output_stream(
+        &stream_config,
+        callback,
+        |err| tracing::error!("Stream error: {}", err),
+        None,
+    ) {
+        Ok(s) => s,
         Err(err) => {
             used_fallback = true;
             let default_host = cpal::default_host();
             let fallback_device = default_host
                 .default_output_device()
-                .ok_or_else(|| AudioOutputError::AudioInitFailed { source: err })?;
+                .ok_or_else(|| AudioOutputError::BuildStream { source: err.clone() })?;
             resolved_host_id = default_host.id().name().to_string();
             resolved_device_name =
                 device_label(&fallback_device).unwrap_or_else(|| "Default device".to_string());
-            let fallback_builder = OutputStreamBuilder::from_device(fallback_device)
-                .map_err(|source| AudioOutputError::OpenDefaultStream { source })?;
-            fallback_builder
-                .open_stream_or_fallback()
-                .map_err(|source| AudioOutputError::OpenDefaultStream { source })?
+            
+            let fallback_config = fallback_device.default_output_config()
+                .map_err(|source| AudioOutputError::DefaultConfig { host_id: resolved_host_id.clone(), source })?;
+            
+            let fallback_stream_config: cpal::StreamConfig = fallback_config.into();
+
+            let state_for_fallback = state.clone();
+            fallback_device.build_output_stream(
+                &fallback_stream_config,
+                move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                    let mut state = state_for_fallback.lock().unwrap();
+                    let volume = state.volume;
+                    
+                    for sample in data.iter_mut() {
+                        *sample = 0.0;
+                    }
+
+                    state.sources.retain_mut(|(source, source_volume)| {
+                        let mut finished = false;
+                        let combined_volume = volume * *source_volume;
+                        for sample_out in data.iter_mut() {
+                            if let Some(sample_in) = source.next() {
+                                *sample_out += sample_in * combined_volume;
+                            } else {
+                                finished = true;
+                                break;
+                            }
+                        }
+                        !finished
+                    });
+                },
+                |err| tracing::error!("Fallback stream error: {}", err),
+                None,
+            ).map_err(|source| AudioOutputError::BuildDefaultStream { source })?
         }
     };
 
-    let resolved_config = *stream.config();
-    let applied_buffer = match resolved_config.buffer_size() {
+    stream.play().map_err(|source| AudioOutputError::PlayStream { source })?;
+
+    let resolved_sample_rate = stream_config.sample_rate;
+    let applied_buffer = match stream_config.buffer_size {
         cpal::BufferSize::Default => None,
-        cpal::BufferSize::Fixed(size) => Some(*size),
+        cpal::BufferSize::Fixed(size) => Some(size),
     };
-    if let Some(rate) = config.sample_rate
-        && rate != resolved_config.sample_rate()
-    {
-        used_fallback = true;
-    }
-    if let Some(requested) = config.buffer_size
-        && applied_buffer != Some(requested)
-    {
-        used_fallback = true;
-    }
 
     let resolved = ResolvedOutput {
         host_id: resolved_host_id,
         device_name: resolved_device_name,
-        sample_rate: resolved_config.sample_rate(),
+        sample_rate: resolved_sample_rate,
         buffer_size_frames: applied_buffer,
-        channel_count: resolved_config.channel_count() as u16,
+        channel_count: stream_config.channels,
         used_fallback,
     };
     info!(
@@ -224,7 +327,7 @@ pub fn open_output_stream(
         resolved.buffer_size_frames,
         resolved.used_fallback
     );
-    Ok(OpenStreamOutcome { stream, resolved })
+    Ok(OpenStreamOutcome { stream: CpalAudioStream::new(stream, state), resolved })
 }
 
 fn resolve_host(id: Option<&str>) -> Result<(cpal::Host, String, bool), AudioOutputError> {

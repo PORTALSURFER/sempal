@@ -8,8 +8,8 @@ use std::time::Instant;
 
 use cpal::Stream;
 use cpal::traits::StreamTrait;
-use rodio::Sink;
 use rodio::buffer::SamplesBuffer;
+use super::output::MonitorSink;
 
 use super::input::{
     AudioInputConfig, AudioInputError, ResolvedInput, StreamChannelSelection, build_input_stream,
@@ -186,7 +186,7 @@ pub struct InputMonitor {
 }
 
 impl InputMonitor {
-    pub fn start(sink: Sink, channels: u16, sample_rate: u32) -> Self {
+    pub fn start(sink: MonitorSink, channels: u16, sample_rate: u32) -> Self {
         let (sender, receiver) = std::sync::mpsc::channel();
         let join = thread::spawn(move || monitor_loop(sink, channels, sample_rate, receiver));
         Self {
@@ -222,7 +222,7 @@ fn writer_loop(
     writer.finalize()
 }
 
-fn monitor_loop(sink: Sink, channels: u16, sample_rate: u32, receiver: Receiver<MonitorCommand>) {
+fn monitor_loop(sink: MonitorSink, channels: u16, sample_rate: u32, receiver: Receiver<MonitorCommand>) {
     let channels = channels.max(1);
     let sample_rate = sample_rate.max(1);
     sink.play();

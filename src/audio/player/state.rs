@@ -3,11 +3,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 #[cfg(test)]
-use rodio::{OutputStream, Source};
-
+use rodio::Source;
+ 
 use super::super::DEFAULT_ANTI_CLIP_FADE;
-use super::super::mixer::{decoder_duration, wav_header_duration, wav_spec_from_bytes};
-use super::super::output::{AudioOutputConfig, ResolvedOutput, open_output_stream};
+use super::super::output::{CpalAudioStream, AudioOutputConfig, ResolvedOutput, open_output_stream};
 use super::super::routing::duration_from_secs_f32;
 use super::AudioPlayer;
 
@@ -22,7 +21,7 @@ impl AudioPlayer {
         let outcome = open_output_stream(config).map_err(|err| err.to_string())?;
         Ok(Self {
             stream: outcome.stream,
-            sink: None,
+            active_sources: 0,
             fade_out: None,
             sink_format: None,
             current_audio: None,
@@ -45,6 +44,7 @@ impl AudioPlayer {
 
     /// Store audio bytes and duration for later playback.
     pub fn set_audio(&mut self, data: Vec<u8>, duration: f32) {
+        use super::super::mixer::{decoder_duration, wav_header_duration, wav_spec_from_bytes};
         let audio = Arc::from(data);
         let provided = duration.max(0.0);
         let fallback = decoder_duration(&audio)
@@ -63,11 +63,10 @@ impl AudioPlayer {
     pub fn set_volume(&mut self, volume: f32) {
         self.volume = volume.clamp(0.0, 1.0);
         let effective = self.effective_volume();
-        if let Some(sink) = self.sink.as_mut() {
-            sink.set_volume(effective);
-        }
+        let mut state = self.stream.state.lock().unwrap();
+        state.volume = effective;
     }
-
+ 
     /// Adjust normalized audition gain for current and future playback.
     pub fn set_playback_gain(&mut self, gain: f32) {
         self.playback_gain = if gain.is_finite() && gain > 0.0 {
@@ -76,9 +75,8 @@ impl AudioPlayer {
             1.0
         };
         let effective = self.effective_volume();
-        if let Some(sink) = self.sink.as_mut() {
-            sink.set_volume(effective);
-        }
+        let mut state = self.stream.state.lock().unwrap();
+        state.volume = effective;
     }
 
     /// Set the minimum span length (in seconds) enforced for playback ranges.
@@ -105,7 +103,7 @@ impl AudioPlayer {
 
     #[cfg(test)]
     pub(crate) fn test_with_state(
-        stream: OutputStream,
+        stream: CpalAudioStream,
         track_duration: Option<f32>,
         started_at: Option<Instant>,
         play_span: Option<(f32, f32)>,
@@ -115,7 +113,7 @@ impl AudioPlayer {
     ) -> Self {
         Self {
             stream,
-            sink: None,
+            active_sources: 0,
             fade_out: None,
             sink_format: None,
             current_audio: None,
@@ -147,7 +145,7 @@ impl AudioPlayer {
         // Loop the tone so playback stays active long enough for UI/controller tests to observe it.
         Some(Self {
             stream: outcome.stream,
-            sink: Some(sink),
+            active_sources: 1,
             fade_out: Some(handle),
             sink_format: Some(format),
             current_audio: None,

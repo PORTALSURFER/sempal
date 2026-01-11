@@ -12,7 +12,7 @@ pub fn resolve_input_stream_config(
     let (default_config, supported) = load_input_configs(&device, &host_id)?;
     let max_channels = max_supported_channels(&supported, default_config.channels());
     let selection = resolve_selected_input_channels(&config.channels, max_channels);
-    let default_rate = default_config.sample_rate().0;
+    let default_rate = default_config.sample_rate();
     let requested_rate = config.sample_rate;
     let mut used_fallback = host_fallback || device_fallback || selection.used_fallback;
     let preferred_stream_channels = selection.output_channels.max(selection.min_stream_channels);
@@ -26,10 +26,10 @@ pub fn resolve_input_stream_config(
     );
     let (stream_config, applied_buffer) =
         build_input_stream_config(range, rate, config.buffer_size);
-    if requested_rate.is_some_and(|rate| rate != stream_config.sample_rate.0) {
+    if requested_rate.is_some_and(|rate| rate != stream_config.sample_rate) {
         used_fallback = true;
     }
-    let sample_rate = stream_config.sample_rate.0;
+    let sample_rate = stream_config.sample_rate;
     Ok(ResolvedInputConfig {
         device,
         stream_config,
@@ -125,7 +125,7 @@ fn build_input_stream_config(
     rate: u32,
     buffer_size: Option<u32>,
 ) -> (cpal::StreamConfig, Option<u32>) {
-    let mut stream_config = range.with_sample_rate(cpal::SampleRate(rate)).config();
+    let mut stream_config = range.with_sample_rate(rate).config();
     if let Some(size) = buffer_size.filter(|size| *size > 0) {
         stream_config.buffer_size = cpal::BufferSize::Fixed(size);
     }
@@ -200,7 +200,7 @@ fn pick_stream_config<'a>(
         } else {
             let range = ranges[0];
             picked = Some(range);
-            rate = range.max_sample_rate().0;
+            rate = range.max_sample_rate();
             *used_fallback = true;
         }
     }
@@ -209,8 +209,8 @@ fn pick_stream_config<'a>(
 }
 
 fn rate_in_range(rate: u32, range: &cpal::SupportedStreamConfigRange) -> bool {
-    let min = range.min_sample_rate().0;
-    let max = range.max_sample_rate().0;
+    let min = range.min_sample_rate();
+    let max = range.max_sample_rate();
     rate >= min && rate <= max
 }
 

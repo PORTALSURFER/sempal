@@ -6,6 +6,7 @@ pub mod output;
 pub mod recording;
 
 mod fade;
+mod loop_diagnostic;
 mod mixer;
 mod player;
 mod time_stretch;
