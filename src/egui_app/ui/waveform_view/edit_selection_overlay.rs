@@ -1,5 +1,4 @@
 use super::selection_geometry::selection_rect_for_view;
-use super::selection_menu;
 use super::style;
 use super::*;
 use crate::egui_app::state::WaveformView;
@@ -24,12 +23,4 @@ pub(super) fn render_edit_selection_overlay(
     painter.rect_filled(selection_rect, 0.0, fill);
     painter.rect_stroke(selection_rect, 0.0, stroke, StrokeKind::Inside);
 
-    let selection_menu = ui.interact(
-        selection_rect,
-        ui.id().with("edit_selection_context_menu"),
-        egui::Sense::click(),
-    );
-    selection_menu.context_menu(|ui| {
-        selection_menu::render_selection_context_menu(app, ui);
-    });
 }

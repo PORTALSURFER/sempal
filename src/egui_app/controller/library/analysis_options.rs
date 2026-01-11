@@ -4,7 +4,6 @@ const MIN_MAX_ANALYSIS_DURATION_SECONDS: f32 = 1.0;
 const MAX_MAX_ANALYSIS_DURATION_SECONDS: f32 = 60.0 * 60.0;
 const MAX_ANALYSIS_WORKER_COUNT: u32 = 64;
 const MIN_FAST_PREP_SAMPLE_RATE: u32 = 8_000;
-const PANNS_BACKEND_ENV: &str = "SEMPAL_PANNS_BACKEND";
 const WGPU_POWER_ENV: &str = "WGPU_POWER_PREFERENCE";
 const WGPU_ADAPTER_ENV: &str = "WGPU_ADAPTER_NAME";
 
@@ -31,13 +30,6 @@ pub(crate) fn clamp_max_analysis_duration_seconds(seconds: f32) -> f32 {
 
 impl EguiController {
     pub(crate) fn sync_analysis_backend_from_env(&mut self) {
-        if let Ok(value) = std::env::var(PANNS_BACKEND_ENV) {
-            if let Some(parsed) =
-                crate::sample_sources::config::PannsBackendChoice::from_env(&value)
-            {
-                self.settings.analysis.panns_backend = parsed;
-            }
-        }
         if let Ok(value) = std::env::var(WGPU_POWER_ENV) {
             if let Some(parsed) =
                 crate::sample_sources::config::WgpuPowerPreference::from_env(&value)
@@ -56,28 +48,6 @@ impl EguiController {
     }
 
     pub(crate) fn apply_analysis_backend_env(&mut self) {
-        let mut backend = self.settings.analysis.panns_backend;
-        if matches!(
-            backend,
-            crate::sample_sources::config::PannsBackendChoice::Cuda
-        ) && !cfg!(feature = "panns-cuda")
-        {
-            backend = crate::sample_sources::config::PannsBackendChoice::Wgpu;
-            self.set_status(
-                "CUDA backend requested but not available in this build; using WGPU.".to_string(),
-                StatusTone::Warning,
-            );
-        }
-        if matches!(
-            backend,
-            crate::sample_sources::config::PannsBackendChoice::Cuda
-                | crate::sample_sources::config::PannsBackendChoice::Cpu
-        ) {
-            set_env_var(PANNS_BACKEND_ENV, backend.as_env());
-        } else {
-            remove_env_var(PANNS_BACKEND_ENV);
-        }
-
         match self.settings.analysis.wgpu_power_preference.as_env() {
             Some(value) => set_env_var(WGPU_POWER_ENV, value),
             None => remove_env_var(WGPU_POWER_ENV),
@@ -182,30 +152,6 @@ impl EguiController {
         self.set_analysis_worker_allowed_sources(sources);
     }
 
-    pub fn panns_backend(&self) -> crate::sample_sources::config::PannsBackendChoice {
-        self.settings.analysis.panns_backend
-    }
-
-    pub fn set_panns_backend(
-        &mut self,
-        backend: crate::sample_sources::config::PannsBackendChoice,
-    ) {
-        if self.settings.analysis.panns_backend == backend {
-            return;
-        }
-        self.settings.analysis.panns_backend = backend;
-        self.runtime.pending_backend_switch = Some(backend);
-        let applied = self.apply_pending_backend_switch();
-        if !applied {
-            self.set_status(
-                "Backend switch queued until analysis is idle".to_string(),
-                StatusTone::Info,
-            );
-        }
-        if let Err(err) = self.persist_config("Failed to save options") {
-            self.set_status(err, StatusTone::Warning);
-        }
-    }
 
     pub fn wgpu_power_preference(&self) -> crate::sample_sources::config::WgpuPowerPreference {
         self.settings.analysis.wgpu_power_preference
@@ -247,15 +193,7 @@ impl EguiController {
     }
 
     pub(crate) fn apply_pending_backend_switch(&mut self) -> bool {
-        let Some(backend) = self.runtime.pending_backend_switch.take() else {
-            return false;
-        };
         if self.analysis_jobs_active() {
-            self.runtime.pending_backend_switch = Some(backend);
-            return false;
-        }
-        if !crate::analysis::embedding::try_reset_panns_model() {
-            self.runtime.pending_backend_switch = Some(backend);
             return false;
         }
         self.apply_analysis_backend_env();

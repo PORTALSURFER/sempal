@@ -98,22 +98,12 @@ cp "target/${TARGET}/release/${BIN_NAME}" "${ROOT_DIR}/${BIN_NAME}"
 if [[ -n "$UPDATER_NAME" ]]; then
   cp "target/${TARGET}/release/${UPDATER_NAME}" "${ROOT_DIR}/${UPDATER_NAME}"
 fi
-MODEL_DIR="${ROOT_DIR}/models"
-mkdir -p "$MODEL_DIR"
-BURNPACK_PATH="${REPO_ROOT}/assets/ml/panns_cnn14_16k/panns_cnn14_16k.bpk"
-scripts/fetch_burnpack.sh --dest "$BURNPACK_PATH"
-if [[ ! -f "$BURNPACK_PATH" ]]; then
-  echo "Burnpack not found at ${BURNPACK_PATH} after download." >&2
-  exit 1
-fi
-cp "$BURNPACK_PATH" "${MODEL_DIR}/panns_cnn14_16k.bpk"
-
 MANIFEST_PATH="${ROOT_DIR}/update-manifest.json"
 FILES=()
 if [[ -n "$UPDATER_NAME" ]]; then
   FILES+=("$UPDATER_NAME")
 fi
-FILES+=("$BIN_NAME" "models/panns_cnn14_16k.bpk" "update-manifest.json")
+FILES+=("$BIN_NAME" "update-manifest.json")
 
 PYTHON_BIN="python3"
 if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then

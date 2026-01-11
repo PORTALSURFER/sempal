@@ -1,293 +1,29 @@
-   Compiling sempal v6.0.0 (X:\sempal)
-error[E0433]: failed to resolve: use of unresolved module or unlinked crate `wav_entries_loader`
-  --> src\egui_app\controller\ui\loading.rs:45:35
+   Compiling sempal v9.0.0 (X:\sempal)
+warning: unused imports: `infer_embedding_from_logmel` and `infer_embedding_query`
+  --> src\analysis\embedding\mod.rs:27:22
    |
-45 |             let (result, total) = wav_entries_loader::load_entries(&job);
-   |                                   ^^^^^^^^^^^^^^^^^^ use of unresolved module or unlinked crate `wav_entries_loader`
+27 |     infer_embedding, infer_embedding_from_logmel, infer_embedding_query,
+   |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^
    |
-   = help: if you wanted to use a crate named `wav_entries_loader`, use `cargo add wav_entries_loader` to add it to your `Cargo.toml`
-help: consider importing this module
-   |
- 1 + use crate::egui_app::controller::library::wav_entries_loader;
-   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
 
-error[E0433]: failed to resolve: use of unresolved module or unlinked crate `analysis_jobs`
-   --> src\egui_app\controller\ui\loading.rs:186:26
-    |
-186 |             let result = analysis_jobs::failed_samples_for_source(&source);
-    |                          ^^^^^^^^^^^^^ use of unresolved module or unlinked crate `analysis_jobs`
-    |
-    = help: if you wanted to use a crate named `analysis_jobs`, use `cargo add analysis_jobs` to add it to your `Cargo.toml`
-help: consider importing this module
-    |
-  1 + use crate::egui_app::controller::library::analysis_jobs;
-    |
+warning: unused imports: `PANNS_LOGMEL_LEN`, `PannsLogMelScratch`, and `build_panns_logmel_into`
+  --> src\analysis\embedding\mod.rs:29:25
+   |
+29 | pub(crate) use logmel::{PANNS_LOGMEL_LEN, PannsLogMelScratch, build_panns_logmel_into};
+   |                         ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^
 
-error[E0433]: failed to resolve: use of unresolved module or unlinked crate `analysis_jobs`
-   --> src\egui_app\controller\ui\map_view.rs:101:38
-    |
-101 |         let (source_id, _relative) = analysis_jobs::parse_sample_id(sample_id)?;
-    |                                      ^^^^^^^^^^^^^ use of unresolved module or unlinked crate `analysis_jobs`
-    |
-    = help: if you wanted to use a crate named `analysis_jobs`, use `cargo add analysis_jobs` to add it to your `Cargo.toml`
-help: consider importing this module
-    |
-  1 + use crate::egui_app::controller::library::analysis_jobs;
-    |
-
-error[E0433]: failed to resolve: use of unresolved module or unlinked crate `analysis_jobs`
-   --> src\egui_app\controller\ui\map_view.rs:172:5
-    |
-172 |     analysis_jobs::open_source_db(&source.root)
-    |     ^^^^^^^^^^^^^ use of unresolved module or unlinked crate `analysis_jobs`
-    |
-    = help: if you wanted to use a crate named `analysis_jobs`, use `cargo add analysis_jobs` to add it to your `Cargo.toml`
-help: consider importing this module
-    |
-  1 + use crate::egui_app::controller::library::analysis_jobs;
-    |
-
-error[E0433]: failed to resolve: use of unresolved module or unlinked crate `analysis_jobs`
-   --> src\egui_app\controller\ui\map_view.rs:182:5
-    |
-182 |     analysis_jobs::open_source_db(&source.root)
-    |     ^^^^^^^^^^^^^ use of unresolved module or unlinked crate `analysis_jobs`
-    |
-    = help: if you wanted to use a crate named `analysis_jobs`, use `cargo add analysis_jobs` to add it to your `Cargo.toml`
-help: consider importing this module
-    |
-  1 + use crate::egui_app::controller::library::analysis_jobs;
-    |
-
-error[E0603]: enum import `SimilarityPrepStage` is private
-  --> src\egui_app\controller\library\similarity_prep\orchestration.rs:3:19
+warning: unused imports: `reset_panns_model` and `warmup_panns`
+  --> src\analysis\embedding\mod.rs:30:36
    |
- 3 | use super::state::SimilarityPrepStage;
-   |                   ^^^^^^^^^^^^^^^^^^^ private enum import
-   |
-note: the enum import `SimilarityPrepStage` is defined here...
-  --> src\egui_app\controller\library\similarity_prep\state.rs:1:53
-   |
- 1 | use crate::egui_app::controller::controller_state::{SimilarityPrepStage, SimilarityPrepState};
-   |                                                     ^^^^^^^^^^^^^^^^^^^
-note: ...and refers to the enum import `SimilarityPrepStage` which is defined here...
-  --> src\egui_app\controller\controller_state.rs:13:75
-   |
-13 |     ControllerRuntimeState, LoadEntriesError, ScanJobMessage, ScanResult, SimilarityPrepStage,
-   |                                                                           ^^^^^^^^^^^^^^^^^^^
-note: ...and refers to the enum `SimilarityPrepStage` which is defined here
-  --> src\egui_app\controller\state\runtime.rs:73:1
-   |
-73 | pub(crate) enum SimilarityPrepStage {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-help: import `SimilarityPrepStage` through the re-export
-   |
- 3 - use super::state::SimilarityPrepStage;
- 3 + use egui_app::controller::controller_state::SimilarityPrepStage;
-   |
-
-error[E0603]: enum import `SimilarityPrepStage` is private
-  --> src\egui_app\controller\library\similarity_prep\progress.rs:2:43
-   |
- 2 | use super::{DbSimilarityPrepStore, state::SimilarityPrepStage};
-   |                                           ^^^^^^^^^^^^^^^^^^^ private enum import
-   |
-note: the enum import `SimilarityPrepStage` is defined here...
-  --> src\egui_app\controller\library\similarity_prep\state.rs:1:53
-   |
- 1 | use crate::egui_app::controller::controller_state::{SimilarityPrepStage, SimilarityPrepState};
-   |                                                     ^^^^^^^^^^^^^^^^^^^
-note: ...and refers to the enum import `SimilarityPrepStage` which is defined here...
-  --> src\egui_app\controller\controller_state.rs:13:75
-   |
-13 |     ControllerRuntimeState, LoadEntriesError, ScanJobMessage, ScanResult, SimilarityPrepStage,
-   |                                                                           ^^^^^^^^^^^^^^^^^^^
-note: ...and refers to the enum `SimilarityPrepStage` which is defined here
-  --> src\egui_app\controller\state\runtime.rs:73:1
-   |
-73 | pub(crate) enum SimilarityPrepStage {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-help: import `SimilarityPrepStage` through the re-export
-   |
- 2 | use super::{DbSimilarityPrepStore, egui_app::controller::controller_state::SimilarityPrepStage};
-   |                                    +++++++++++++++++++++++++++++++++
-
-error[E0603]: enum import `SimilarityPrepStage` is private
-  --> src\egui_app\controller\library\similarity_prep\transitions.rs:6:12
-   |
- 6 | use state::SimilarityPrepStage;
-   |            ^^^^^^^^^^^^^^^^^^^ private enum import
-   |
-note: the enum import `SimilarityPrepStage` is defined here...
-  --> src\egui_app\controller\library\similarity_prep\state.rs:1:53
-   |
- 1 | use crate::egui_app::controller::controller_state::{SimilarityPrepStage, SimilarityPrepState};
-   |                                                     ^^^^^^^^^^^^^^^^^^^
-note: ...and refers to the enum import `SimilarityPrepStage` which is defined here...
-  --> src\egui_app\controller\controller_state.rs:13:75
-   |
-13 |     ControllerRuntimeState, LoadEntriesError, ScanJobMessage, ScanResult, SimilarityPrepStage,
-   |                                                                           ^^^^^^^^^^^^^^^^^^^
-note: ...and refers to the enum `SimilarityPrepStage` which is defined here
-  --> src\egui_app\controller\state\runtime.rs:73:1
-   |
-73 | pub(crate) enum SimilarityPrepStage {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-help: import `SimilarityPrepStage` through the re-export
-   |
- 6 | use egui_app::controller::controller_state::SimilarityPrepStage;
-   |     +++++++++++++++++++++++++++++++++
-
-error[E0603]: struct import `SimilarityPrepState` is private
-  --> src\egui_app\controller\library\similarity_prep\transitions.rs:7:12
-   |
- 7 | use state::SimilarityPrepState;
-   |            ^^^^^^^^^^^^^^^^^^^ private struct import
-   |
-note: the struct import `SimilarityPrepState` is defined here...
-  --> src\egui_app\controller\library\similarity_prep\state.rs:1:74
-   |
- 1 | use crate::egui_app::controller::controller_state::{SimilarityPrepStage, SimilarityPrepState};
-   |                                                                          ^^^^^^^^^^^^^^^^^^^
-note: ...and refers to the struct import `SimilarityPrepState` which is defined here...
-  --> src\egui_app\controller\controller_state.rs:14:5
-   |
-14 |     SimilarityPrepState, UpdateCheckResult, WavLoadJob, WavLoadResult,
-   |     ^^^^^^^^^^^^^^^^^^^
-note: ...and refers to the struct `SimilarityPrepState` which is defined here
-  --> src\egui_app\controller\state\runtime.rs:63:1
-   |
-63 | pub(crate) struct SimilarityPrepState {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-help: import `SimilarityPrepState` through the re-export
-   |
- 7 | use egui_app::controller::controller_state::SimilarityPrepState;
-   |     +++++++++++++++++++++++++++++++++
-
-error[E0603]: enum import `ScanJobMessage` is private
-   --> src\egui_app\controller\jobs.rs:2:50
-    |
-  2 | use crate::egui_app::controller::library::scans::ScanJobMessage;
-    |                                                  ^^^^^^^^^^^^^^ private enum import
-    |
-note: the enum import `ScanJobMessage` is defined here...
-   --> src\egui_app\controller\library\scans.rs:1:5
-    |
-  1 | use super::*;
-    |     ^^^^^^^^
-note: ...and refers to the enum import `ScanJobMessage` which is defined here...
-   --> src\egui_app\controller\library\mod.rs:1:5
-    |
-  1 | use super::*;
-    |     ^^^^^^^^
-note: ...and refers to the enum import `ScanJobMessage` which is defined here...
-   --> src\egui_app\controller.rs:34:41
-    |
- 34 | pub(in crate::egui_app::controller) use controller_state::*;
-    |                                         ^^^^^^^^^^^^^^^^^^^
-note: ...and refers to the enum import `ScanJobMessage` which is defined here...
-   --> src\egui_app\controller\controller_state.rs:13:47
-    |
- 13 |     ControllerRuntimeState, LoadEntriesError, ScanJobMessage, ScanResult, SimilarityPrepStage,
-    |                                               ^^^^^^^^^^^^^^
-note: ...and refers to the enum `ScanJobMessage` which is defined here
-   --> src\egui_app\controller\state\runtime.rs:102:1
-    |
-102 | pub(crate) enum ScanJobMessage {
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-help: import `ScanJobMessage` through the re-export
-    |
-  2 - use crate::egui_app::controller::library::scans::ScanJobMessage;
-  2 + use state::runtime::ScanJobMessage;
-    |
-
-error[E0603]: module import `playback` is private
- --> src\egui_app\controller\jobs.rs:4:44
-  |
-4 | use crate::egui_app::controller::playback::playback::audio_loader::{AudioLoadJob, AudioLoadResult};
-  |                                            ^^^^^^^^ private module import
-  |
-help: consider importing this module instead:
-      crate::egui_app::controller::playback::audio_loader
- --> src\egui_app\controller\jobs.rs:4:66
-  |
-4 | use crate::egui_app::controller::playback::playback::audio_loader::{AudioLoadJob, AudioLoadResult};
-  |                                                                  ^^^
-note: the module import `playback` is defined here...
- --> src\egui_app\controller\playback\mod.rs:1:5
-  |
-1 | use super::*;
-  |     ^^^^^^^^
-note: ...and refers to the module `playback` which is defined here
- --> src\egui_app\controller.rs:6:1
-  |
-6 | mod playback;
-  | ^^^^^^^^^^^^^
-
-error[E0603]: module import `playback` is private
- --> src\egui_app\controller\jobs.rs:4:44
-  |
-4 | use crate::egui_app::controller::playback::playback::audio_loader::{AudioLoadJob, AudioLoadResult};
-  |                                            ^^^^^^^^ private module import
-  |
-help: consider importing this module instead:
-      crate::egui_app::controller::playback::audio_loader
- --> src\egui_app\controller\jobs.rs:4:66
-  |
-4 | use crate::egui_app::controller::playback::playback::audio_loader::{AudioLoadJob, AudioLoadResult};
-  |                                                                  ^^^^^^^^^^^^^^^^^
-note: the module import `playback` is defined here...
- --> src\egui_app\controller\playback\mod.rs:1:5
-  |
-1 | use super::*;
-  |     ^^^^^^^^
-note: ...and refers to the module `playback` which is defined here
- --> src\egui_app\controller.rs:6:1
-  |
-6 | mod playback;
-  | ^^^^^^^^^^^^^
-
-error[E0603]: module import `playback` is private
- --> src\egui_app\controller\library\wavs.rs:1:44
-  |
-1 | use crate::egui_app::controller::playback::playback::audio_cache::CacheKey;
-  |                                            ^^^^^^^^ private module import
-  |
-note: the module import `playback` is defined here...
- --> src\egui_app\controller\playback\mod.rs:1:5
-  |
-1 | use super::*;
-  |     ^^^^^^^^
-note: ...and refers to the module `playback` which is defined here
- --> src\egui_app\controller.rs:6:1
-  |
-6 | mod playback;
-  | ^^^^^^^^^^^^^
-help: consider importing this module instead
-  |
-1 - use crate::egui_app::controller::playback::playback::audio_cache::CacheKey;
-1 + use crate::egui_app::controller::playback::audio_cache::CacheKey;
-  |
-
-error[E0603]: function `spawn_search_worker` is private
-  --> src\egui_app\controller.rs:81:84
-   |
-81 |         let (search_job_tx, search_job_rx) = library::wavs::browser_search_worker::spawn_search_worker();
-   |                                                                                    ^^^^^^^^^^^^^^^^^^^ private function
-   |
-note: the function `spawn_search_worker` is defined here
-  --> src\egui_app\controller\library\wavs\browser_search_worker.rs:26:1
-   |
-26 | pub(in super::super) fn spawn_search_worker() -> (Sender<SearchJob>, Receiver<SearchResult>) {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+30 | pub(crate) use model::{PannsModel, reset_panns_model, try_reset_panns_model, warmup_panns};
+   |                                    ^^^^^^^^^^^^^^^^^                         ^^^^^^^^^^^^
 
 warning: unused import: `mel::PannsMelBank`
   --> src\analysis\panns_preprocess\mod.rs:11:16
    |
 11 | pub(crate) use mel::PannsMelBank;
    |                ^^^^^^^^^^^^^^^^^
-   |
-   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
 
 warning: unused import: `log_mel_frames`
   --> src\analysis\panns_preprocess\mod.rs:12:50
@@ -302,10 +38,10 @@ warning: unused imports: `stft_power_frames_into_flat` and `stft_power_frames`
    |                       ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 warning: unused import: `BPM_MIN_SELECTION_DIVISOR`
- --> src\egui_app\controller\library\mod.rs:2:73
+ --> src\egui_app\controller\library\mod.rs:3:54
   |
-2 | pub(crate) use super::{EguiController, StatusTone, MIN_SELECTION_WIDTH, BPM_MIN_SELECTION_DIVISOR};
-  |                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^
+3 |     EguiController, StatusTone, MIN_SELECTION_WIDTH, BPM_MIN_SELECTION_DIVISOR,
+  |                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^
 
 warning: unused import: `mark_failed`
   --> src\egui_app\controller\library\analysis_jobs\db\mod.rs:35:54
@@ -313,23 +49,35 @@ warning: unused import: `mark_failed`
 35 |     SampleAnalysisState, claim_next_jobs, mark_done, mark_failed, mark_failed_with_reason,
    |                                                      ^^^^^^^^^^^
 
-warning: unused import: `failures::failed_samples_for_source`
-  --> src\egui_app\controller\library\analysis_jobs\mod.rs:17:16
+warning: unused import: `update_sample_bpm`
+  --> src\egui_app\controller\library\analysis_jobs\mod.rs:12:51
    |
-17 | pub(crate) use failures::failed_samples_for_source;
-   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+12 |     build_sample_id, parse_sample_id, sample_bpm, update_sample_bpm, update_sample_bpms,
+   |                                                   ^^^^^^^^^^^^^^^^^
 
-warning: unused import: `crate::egui_app::controller::library::analysis_jobs`
- --> src\egui_app\controller\library\similarity_prep\orchestration.rs:5:5
+warning: unused import: `crate::sample_sources::Rating`
+  --> src\egui_app\controller\library\collections_controller\mod.rs:10:5
+   |
+10 | use crate::sample_sources::Rating;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `WavEntry`
+ --> src\egui_app\controller\library\wavs\browser_search_worker.rs:3:37
   |
-5 | use crate::egui_app::controller::library::analysis_jobs;
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+3 | use crate::sample_sources::{Rating, WavEntry};
+  |                                     ^^^^^^^^
 
-warning: unused import: `SimilarityPrepStore`
-  --> src\egui_app\controller\library\similarity_prep\mod.rs:10:47
-   |
-10 | pub(crate) use store::{DbSimilarityPrepStore, SimilarityPrepStore};
-   |                                               ^^^^^^^^^^^^^^^^^^^
+warning: unused import: `std::collections::HashMap`
+ --> src\egui_app\controller\library\wavs\browser_search_worker.rs:7:5
+  |
+7 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+ --> src\egui_app\controller\library\wavs\browser_search_worker.rs:9:5
+  |
+9 | use std::sync::Arc;
+  |     ^^^^^^^^^^^^^^
 
 warning: unused import: `MIN_SELECTION_WIDTH`
  --> src\egui_app\controller\playback\mod.rs:2:52
@@ -349,7 +97,7 @@ warning: unused import: `crate::egui_app::state::*`
 3 | pub(crate) use crate::egui_app::state::*;
   |                ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-warning: unused imports: `CollectionId`, `DecodedWaveform`, `FolderBrowserUiState`, `PlayheadState`, `ProgressOverlayState`, `SampleBrowserSort`, `SampleBrowserState`, `SampleTag`, `TriageFlagColumn`, `TriageFlagFilter`, `WaveformImage`, and `sample_sources::scanner::ScanMode`
+warning: unused imports: `CollectionId`, `DecodedWaveform`, `FolderBrowserUiState`, `PlayheadState`, `ProgressOverlayState`, `Rating`, `SampleBrowserSort`, `SampleBrowserState`, `TriageFlagColumn`, `TriageFlagFilter`, `WaveformImage`, and `sample_sources::scanner::ScanMode`
   --> src\egui_app\controller.rs:19:9
    |
 19 |         FolderBrowserUiState, PlayheadState, ProgressOverlayState, SampleBrowserSort,
@@ -360,116 +108,65 @@ warning: unused imports: `CollectionId`, `DecodedWaveform`, `FolderBrowserUiStat
 23 |     sample_sources::scanner::ScanMode,
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 24 |     sample_sources::{
-25 |         Collection, CollectionId, SampleSource, SampleTag, SourceDatabase, SourceDbError, SourceId,
-   |                     ^^^^^^^^^^^^                ^^^^^^^^^
+25 |         Collection, CollectionId, Rating, SampleSource, SourceDatabase, SourceDbError, SourceId,
+   |                     ^^^^^^^^^^^^  ^^^^^^
 ...
 29 |     waveform::{DecodedWaveform, WaveformRenderer},
    |                ^^^^^^^^^^^^^^^
 
-error[E0599]: no method named `current_analysis_progress` found for struct `DbSimilarityPrepStore` in the current scope
-  --> src\egui_app\controller\library\similarity_prep\progress.rs:43:44
-   |
-43 |                 let progress = match store.current_analysis_progress(&source) {
-   |                                            ^^^^^^^^^^^^^^^^^^^^^^^^^ method not found in `DbSimilarityPrepStore`
-   |
-  ::: src\egui_app\controller\library\similarity_prep\store.rs:10:8
-   |
-10 |     fn current_analysis_progress(
-   |        ------------------------- the method is available for `DbSimilarityPrepStore` here
-...
-31 | pub(crate) struct DbSimilarityPrepStore;
-   | --------------------------------------- method `current_analysis_progress` not found for this struct
-   |
-   = help: items from traits can only be used if the trait is in scope
-help: trait `SimilarityPrepStore` which provides `current_analysis_progress` is implemented but not in scope; perhaps you want to import it
-   |
- 1 + use crate::egui_app::controller::library::similarity_prep::store::SimilarityPrepStore;
-   |
-
-error[E0599]: no method named `current_embedding_backfill_progress` found for struct `DbSimilarityPrepStore` in the current scope
-  --> src\egui_app\controller\library\similarity_prep\progress.rs:68:26
-   |
-67 |                       let embed_progress = store
-   |  __________________________________________-
-68 | |                         .current_embedding_backfill_progress(&source)
-   | |_________________________-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-   |
-  ::: src\egui_app\controller\library\similarity_prep\store.rs:14:8
-   |
-14 |       fn current_embedding_backfill_progress(
-   |          ----------------------------------- the method is available for `DbSimilarityPrepStore` here
-...
-31 |   pub(crate) struct DbSimilarityPrepStore;
-   |   --------------------------------------- method `current_embedding_backfill_progress` not found for this struct
-   |
-   = help: items from traits can only be used if the trait is in scope
-help: trait `SimilarityPrepStore` which provides `current_embedding_backfill_progress` is implemented but not in scope; perhaps you want to import it
-   |
- 1 + use crate::egui_app::controller::library::similarity_prep::store::SimilarityPrepStore;
-   |
-help: there is a method `current_analysis_progress` with a similar name
-   |
-68 -                         .current_embedding_backfill_progress(&source)
-68 +                         .current_analysis_progress(&source)
-   |
-
-error[E0599]: no method named `source_has_embeddings` found for struct `DbSimilarityPrepStore` in the current scope
-  --> src\egui_app\controller\library\similarity_prep\progress.rs:96:31
-   |
-96 |                     if !store.source_has_embeddings(&source) {
-   |                               ^^^^^^^^^^^^^^^^^^^^^ method not found in `DbSimilarityPrepStore`
-   |
-  ::: src\egui_app\controller\library\similarity_prep\store.rs:8:8
-   |
- 8 |     fn source_has_embeddings(&self, source: &SampleSource) -> bool;
-   |        --------------------- the method is available for `DbSimilarityPrepStore` here
-...
-31 | pub(crate) struct DbSimilarityPrepStore;
-   | --------------------------------------- method `source_has_embeddings` not found for this struct
-   |
-   = help: items from traits can only be used if the trait is in scope
-help: trait `SimilarityPrepStore` which provides `source_has_embeddings` is implemented but not in scope; perhaps you want to import it
-   |
- 1 + use crate::egui_app::controller::library::similarity_prep::store::SimilarityPrepStore;
-   |
-
-error[E0282]: type annotations needed
-  --> src\egui_app\controller\ui\loading.rs:53:25
-   |
-53 |                         entries.clone(),
-   |                         ^^^^^^^ cannot infer type
-
-warning: use of deprecated method `egui::Ui::close_menu`: Use `ui.close()` or `ui.close_kind(UiKind::Menu)` instead
-   --> src\egui_app\ui\sources_panel\folder_actions.rs:182:24
+warning: use of deprecated associated function `egui::ComboBox::from_id_source`: Renamed from_id_salt
+   --> src\egui_app\ui\sample_browser_filter.rs:103:29
     |
-182 |                     ui.close_menu();
-    |                        ^^^^^^^^^^
+103 |             egui::ComboBox::from_id_source("browser_sort")
+    |                             ^^^^^^^^^^^^^^
     |
     = note: `#[warn(deprecated)]` on by default
 
-warning: use of deprecated method `egui::Ui::close_menu`: Use `ui.close()` or `ui.close_kind(UiKind::Menu)` instead
-   --> src\egui_app\ui\sources_panel\folder_actions.rs:189:24
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+   --> src\egui_app\ui\sources_panel\mod.rs:170:16
     |
-189 |                     ui.close_menu();
-    |                        ^^^^^^^^^^
+170 |             ui.allocate_ui_at_rect(folder_rect, |ui| {
+    |                ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+   --> src\egui_app\ui\sources_panel\mod.rs:181:16
+    |
+181 |             ui.allocate_ui_at_rect(drop_targets_rect, |ui| {
+    |                ^^^^^^^^^^^^^^^^^^^
 
 warning: variable does not need to be mutable
-  --> src\http_client.rs:29:9
+  --> src\egui_app\ui\sources_panel\mod.rs:86:17
    |
-29 |     let mut reader = response.into_reader();
-   |         ----^^^^^^
-   |         |
-   |         help: remove this `mut`
+86 |             let mut drop_targets_height = self
+   |                 ----^^^^^^^^^^^^^^^^^^^
+   |                 |
+   |                 help: remove this `mut`
    |
    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
 
 warning: variable does not need to be mutable
-  --> src\http_client.rs:49:9
+  --> src\http_client.rs:69:9
    |
-49 |     let mut reader = response.into_reader();
+69 |     let mut reader = response.into_reader();
    |         ----^^^^^^
    |         |
    |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+  --> src\http_client.rs:89:9
+   |
+89 |     let mut reader = response.into_reader();
+   |         ----^^^^^^
+   |         |
+   |         help: remove this `mut`
+
+warning: unused variable: `dir`
+   --> src\issue_gateway\token_store.rs:495:20
+    |
+495 | fn sync_parent_dir(dir: &Path) -> Result<(), IssueTokenStoreError> {
+    |                    ^^^ help: if this is intentional, prefix it with an underscore: `_dir`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
 
 warning: variable does not need to be mutable
    --> src\wav_sanitize.rs:186:9
@@ -479,7 +176,394 @@ warning: variable does not need to be mutable
     |         |
     |         help: remove this `mut`
 
-Some errors have detailed explanations: E0282, E0433, E0599, E0603.
-For more information about an error, try `rustc --explain E0282`.
-warning: `sempal` (lib) generated 17 warnings
-error: could not compile `sempal` (lib) due to 18 previous errors; 17 warnings emitted
+warning: variable does not need to be mutable
+   --> src\waveform\mod.rs:383:9
+    |
+383 |     let mut file = std::fs::File::open(path).map_err(|source| WaveformLoadError::Read {
+    |         ----^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: type `CollectionMoveResult` is more private than the item `collections_controller::delegates::<impl controller::EguiController>::apply_collection_move_result`
+   --> src\egui_app\controller\library\collections_controller\delegates.rs:182:5
+    |
+182 | /     pub(crate) fn apply_collection_move_result(
+183 | |         &mut self,
+184 | |         result: crate::egui_app::controller::jobs::CollectionMoveResult,
+185 | |     ) {
+    | |_____^ method `collections_controller::delegates::<impl controller::EguiController>::apply_collection_move_result` is reachable at visibility `pub(crate)`
+    |
+note: but type `CollectionMoveResult` is only usable at visibility `pub(in crate::egui_app::controller)`
+   --> src\egui_app\controller\jobs.rs:136:1
+    |
+136 | pub(super) struct CollectionMoveResult {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: `#[warn(private_interfaces)]` on by default
+
+warning: type `CollectionMoveResult` is more private than the item `r#move::<impl collections_controller::helpers::CollectionsController<'_>>::apply_collection_move_result`
+   --> src\egui_app\controller\library\collections_controller\helpers\move.rs:123:5
+    |
+123 | /     pub(crate) fn apply_collection_move_result(
+124 | |         &mut self,
+125 | |         result: crate::egui_app::controller::jobs::CollectionMoveResult,
+126 | |     ) {
+    | |_____^ method `r#move::<impl collections_controller::helpers::CollectionsController<'_>>::apply_collection_move_result` is reachable at visibility `pub(crate)`
+    |
+note: but type `CollectionMoveResult` is only usable at visibility `pub(in crate::egui_app::controller)`
+   --> src\egui_app\controller\jobs.rs:136:1
+    |
+136 | pub(super) struct CollectionMoveResult {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `SimilarityPrepResult` is more private than the item `transitions::<impl controller::EguiController>::handle_similarity_prep_result`
+   --> src\egui_app\controller\library\similarity_prep\transitions.rs:81:5
+    |
+ 81 | /     pub(crate) fn handle_similarity_prep_result(
+ 82 | |         &mut self,
+ 83 | |         result: jobs::SimilarityPrepResult,
+ 84 | |     ) {
+    | |_____^ method `transitions::<impl controller::EguiController>::handle_similarity_prep_result` is reachable at visibility `pub(crate)`
+    |
+note: but type `SimilarityPrepResult` is only usable at visibility `pub(in crate::egui_app::controller)`
+   --> src\egui_app\controller\jobs.rs:122:1
+    |
+122 | pub(super) struct SimilarityPrepResult {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `SimilarityPrepOutcome` is more private than the item `similarity_prep::ui::<impl controller::EguiController>::show_similarity_prep_ready`
+   --> src\egui_app\controller\library\similarity_prep\ui.rs:21:5
+    |
+ 21 |     pub(crate) fn show_similarity_prep_ready(&mut self, outcome: &jobs::SimilarityPrepOutcome) {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ method `similarity_prep::ui::<impl controller::EguiController>::show_similarity_prep_ready` is reachable at visibility `pub(crate)`
+    |
+note: but type `SimilarityPrepOutcome` is only usable at visibility `pub(in crate::egui_app::controller)`
+   --> src\egui_app\controller\jobs.rs:115:1
+    |
+115 | pub(super) struct SimilarityPrepOutcome {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `CollectionMoveResult` is more private than the item `controller::jobs::JobMessage::CollectionMove::0`
+   --> src\egui_app\controller\jobs.rs:27:20
+    |
+ 27 |     CollectionMove(CollectionMoveResult),
+    |                    ^^^^^^^^^^^^^^^^^^^^ field `controller::jobs::JobMessage::CollectionMove::0` is reachable at visibility `pub(crate)`
+    |
+note: but type `CollectionMoveResult` is only usable at visibility `pub(in crate::egui_app::controller)`
+   --> src\egui_app\controller\jobs.rs:136:1
+    |
+136 | pub(super) struct CollectionMoveResult {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `AnalysisFailuresResult` is more private than the item `controller::jobs::JobMessage::AnalysisFailuresLoaded::0`
+   --> src\egui_app\controller\jobs.rs:29:28
+    |
+ 29 |     AnalysisFailuresLoaded(AnalysisFailuresResult),
+    |                            ^^^^^^^^^^^^^^^^^^^^^^ field `controller::jobs::JobMessage::AnalysisFailuresLoaded::0` is reachable at visibility `pub(crate)`
+    |
+note: but type `AnalysisFailuresResult` is only usable at visibility `pub(in crate::egui_app::controller)`
+   --> src\egui_app\controller\jobs.rs:143:1
+    |
+143 | pub(super) struct AnalysisFailuresResult {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `UmapBuildResult` is more private than the item `controller::jobs::JobMessage::UmapBuilt::0`
+  --> src\egui_app\controller\jobs.rs:30:15
+   |
+30 |     UmapBuilt(UmapBuildResult),
+   |               ^^^^^^^^^^^^^^^ field `controller::jobs::JobMessage::UmapBuilt::0` is reachable at visibility `pub(crate)`
+   |
+note: but type `UmapBuildResult` is only usable at visibility `pub(in crate::egui_app::controller)`
+  --> src\egui_app\controller\jobs.rs:94:1
+   |
+94 | pub(super) struct UmapBuildResult {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `UmapClusterBuildResult` is more private than the item `controller::jobs::JobMessage::UmapClustersBuilt::0`
+   --> src\egui_app\controller\jobs.rs:31:23
+    |
+ 31 |     UmapClustersBuilt(UmapClusterBuildResult),
+    |                       ^^^^^^^^^^^^^^^^^^^^^^ field `controller::jobs::JobMessage::UmapClustersBuilt::0` is reachable at visibility `pub(crate)`
+    |
+note: but type `UmapClusterBuildResult` is only usable at visibility `pub(in crate::egui_app::controller)`
+   --> src\egui_app\controller\jobs.rs:107:1
+    |
+107 | pub(super) struct UmapClusterBuildResult {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `SimilarityPrepResult` is more private than the item `controller::jobs::JobMessage::SimilarityPrepared::0`
+   --> src\egui_app\controller\jobs.rs:32:24
+    |
+ 32 |     SimilarityPrepared(SimilarityPrepResult),
+    |                        ^^^^^^^^^^^^^^^^^^^^ field `controller::jobs::JobMessage::SimilarityPrepared::0` is reachable at visibility `pub(crate)`
+    |
+note: but type `SimilarityPrepResult` is only usable at visibility `pub(in crate::egui_app::controller)`
+   --> src\egui_app\controller\jobs.rs:122:1
+    |
+122 | pub(super) struct SimilarityPrepResult {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `IssueGatewayCreateResult` is more private than the item `controller::jobs::JobMessage::IssueGatewayCreated::0`
+  --> src\egui_app\controller\jobs.rs:34:25
+   |
+34 |     IssueGatewayCreated(IssueGatewayCreateResult),
+   |                         ^^^^^^^^^^^^^^^^^^^^^^^^ field `controller::jobs::JobMessage::IssueGatewayCreated::0` is reachable at visibility `pub(crate)`
+   |
+note: but type `IssueGatewayCreateResult` is only usable at visibility `pub(in crate::egui_app::controller)`
+  --> src\egui_app\controller\jobs.rs:74:1
+   |
+74 | pub(super) struct IssueGatewayCreateResult {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `IssueGatewayAuthResult` is more private than the item `controller::jobs::JobMessage::IssueGatewayAuthed::0`
+  --> src\egui_app\controller\jobs.rs:35:24
+   |
+35 |     IssueGatewayAuthed(IssueGatewayAuthResult),
+   |                        ^^^^^^^^^^^^^^^^^^^^^^ field `controller::jobs::JobMessage::IssueGatewayAuthed::0` is reachable at visibility `pub(crate)`
+   |
+note: but type `IssueGatewayAuthResult` is only usable at visibility `pub(in crate::egui_app::controller)`
+  --> src\egui_app\controller\jobs.rs:82:1
+   |
+82 | pub(super) struct IssueGatewayAuthResult {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `save_legacy_id_map` is never used
+  --> src\analysis\ann_index\storage.rs:78:15
+   |
+78 | pub(crate) fn save_legacy_id_map(path: &Path, id_map: &[String]) -> Result<(), String> {
+   |               ^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `infer_embedding_query` is never used
+  --> src\analysis\embedding\infer\mod.rs:22:15
+   |
+22 | pub(crate) fn infer_embedding_query(samples: &[f32], sample_rate: u32) -> Result<Vec<f32>, String> {
+   |               ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `infer_embedding_from_logmel` is never used
+  --> src\analysis\embedding\infer\mod.rs:50:15
+   |
+50 | pub(crate) fn infer_embedding_from_logmel(logmel: &[f32]) -> Result<Vec<f32>, String> {
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `PannsLogMelScratch` is never constructed
+  --> src\analysis\embedding\logmel.rs:19:19
+   |
+19 | pub(crate) struct PannsLogMelScratch {
+   |                   ^^^^^^^^^^^^^^^^^^
+
+warning: function `build_panns_logmel_into` is never used
+  --> src\analysis\embedding\logmel.rs:37:15
+   |
+37 | pub(crate) fn build_panns_logmel_into(
+   |               ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: static `PANNS_WARMED` is never used
+  --> src\analysis\embedding\model.rs:42:8
+   |
+42 | static PANNS_WARMED: OnceLock<()> = OnceLock::new();
+   |        ^^^^^^^^^^^^
+
+warning: function `reset_panns_model` is never used
+   --> src\analysis\embedding\model.rs:117:15
+    |
+117 | pub(crate) fn reset_panns_model() {
+    |               ^^^^^^^^^^^^^^^^^
+
+warning: function `warmup_panns` is never used
+   --> src\analysis\embedding\model.rs:134:15
+    |
+134 | pub(crate) fn warmup_panns() -> Result<(), String> {
+    |               ^^^^^^^^^^^^
+
+warning: constant `QUERY_WINDOW_SECONDS` is never used
+ --> src\analysis\embedding\query.rs:1:7
+  |
+1 | const QUERY_WINDOW_SECONDS: f32 = 2.0;
+  |       ^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `QUERY_HOP_SECONDS` is never used
+ --> src\analysis\embedding\query.rs:2:7
+  |
+2 | const QUERY_HOP_SECONDS: f32 = 1.0;
+  |       ^^^^^^^^^^^^^^^^^
+
+warning: constant `QUERY_MAX_WINDOWS` is never used
+ --> src\analysis\embedding\query.rs:3:7
+  |
+3 | const QUERY_MAX_WINDOWS: usize = 24;
+  |       ^^^^^^^^^^^^^^^^^
+
+warning: function `query_window_ranges` is never used
+ --> src\analysis\embedding\query.rs:5:15
+  |
+5 | pub(super) fn query_window_ranges(sample_len: usize, sample_rate: u32) -> Vec<(usize, usize)> {
+  |               ^^^^^^^^^^^^^^^^^^^
+
+warning: constant `BPM_MIN_SELECTION_WIDTH` is never used
+  --> src\egui_app\controller.rs:50:18
+   |
+50 | pub(crate) const BPM_MIN_SELECTION_WIDTH: f32 = 0.0001;
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `SIMILARITY_MIN_SELECTION_WIDTH` is never used
+  --> src\egui_app\controller.rs:51:18
+   |
+51 | pub(crate) const SIMILARITY_MIN_SELECTION_WIDTH: f32 = 0.002;
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `update_sample_bpm` is never used
+  --> src\egui_app\controller\library\analysis_jobs\db\jobs.rs:46:15
+   |
+46 | pub(crate) fn update_sample_bpm(
+   |               ^^^^^^^^^^^^^^^^^
+
+warning: function `mark_failed` is never used
+   --> src\egui_app\controller\library\analysis_jobs\db\jobs.rs:246:15
+    |
+246 | pub(crate) fn mark_failed(
+    |               ^^^^^^^^^^^
+
+warning: methods `add_browser_rows_to_collection` and `add_contexts_to_collection` are never used
+   --> src\egui_app\controller\library\collections_controller\helpers\members.rs:143:19
+    |
+  7 | impl CollectionsController<'_> {
+    | ------------------------------ methods in this implementation
+...
+143 |     pub(crate) fn add_browser_rows_to_collection(
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+225 |     fn add_contexts_to_collection(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `finalize_browser_collection_add` is never used
+   --> src\egui_app\controller\library\collections_controller\helpers\ui.rs:215:19
+    |
+  5 | impl CollectionsController<'_> {
+    | ------------------------------ method in this implementation
+...
+215 |     pub(crate) fn finalize_browser_collection_add(
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: field `needs_embeddings` is never read
+ --> src\egui_app\controller\library\similarity_prep\plan.rs:7:16
+  |
+6 | pub(crate) struct SimilarityPrepStartPlan {
+  |                   ----------------------- field in this struct
+7 |     pub(crate) needs_embeddings: bool,
+  |                ^^^^^^^^^^^^^^^^
+
+warning: function `selection_min_width` is never used
+  --> src\egui_app\controller\playback\mod.rs:57:4
+   |
+57 | fn selection_min_width(controller: &EguiController) -> f32 {
+   |    ^^^^^^^^^^^^^^^^^^^
+
+warning: methods `start_recording_in_current_source` and `refresh_output_after_recording` are never used
+  --> src\egui_app\controller\playback\recording.rs:23:19
+   |
+14 | impl EguiController {
+   | ------------------- methods in this implementation
+...
+23 |     pub(crate) fn start_recording_in_current_source(&mut self) -> Result<(), String> {
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+35 |     fn refresh_output_after_recording(&mut self) {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `zoom_waveform`, `create_selection_from_playhead`, and `nudge_selection_edge` are never used
+  --> src\egui_app\controller\ui\waveform_controller\actions.rs:6:8
+   |
+ 3 | pub(crate) trait WaveformActions {
+   |                  --------------- methods in this trait
+...
+ 6 |     fn zoom_waveform(&mut self, zoom_in: bool);
+   |        ^^^^^^^^^^^^^
+...
+16 |     fn create_selection_from_playhead(&mut self, to_left: bool, resume_playback: bool, fine: bool);
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+17 |     fn nudge_selection_edge(&mut self, edge: SelectionEdge, outward: bool, fine: bool);
+   |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `zoom_waveform`, `create_selection_from_playhead`, and `nudge_selection_edge` are never used
+  --> src\egui_app\controller\ui\waveform_controller\delegates.rs:13:19
+   |
+ 3 | impl EguiController {
+   | ------------------- methods in this implementation
+...
+13 |     pub(crate) fn zoom_waveform(&mut self, zoom_in: bool) {
+   |                   ^^^^^^^^^^^^^
+...
+41 |     pub(crate) fn create_selection_from_playhead(
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+51 |     pub(crate) fn nudge_selection_edge(&mut self, edge: SelectionEdge, outward: bool, fine: bool) {
+   |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `set_playhead_after_selection`, `set_playhead_and_seek`, and `set_playhead_no_seek` are never used
+   --> src\egui_app\controller\ui\waveform_controller\helpers.rs:191:19
+    |
+ 38 | impl WaveformController<'_> {
+    | --------------------------- methods in this implementation
+...
+191 |     pub(crate) fn set_playhead_after_selection(&mut self, position: f32, resume_playback: bool) {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+199 |     fn set_playhead_and_seek(&mut self, position: f32) {
+    |        ^^^^^^^^^^^^^^^^^^^^^
+...
+212 |     fn set_playhead_no_seek(&mut self, position: f32) {
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `clamp_selection_bounds` is never used
+   --> src\egui_app\controller\ui\waveform_controller\helpers.rs:357:15
+    |
+357 | pub(crate) fn clamp_selection_bounds(start: f32, end: f32, min_width: f32) -> (f32, f32) {
+    |               ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `begin_issue_gateway_auth` is never used
+   --> src\egui_app\controller\jobs.rs:476:19
+    |
+173 | impl ControllerJobs {
+    | ------------------- method in this implementation
+...
+476 |     pub(super) fn begin_issue_gateway_auth(&mut self) {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: field `channels` is never read
+  --> src\egui_app\controller\state\audio.rs:89:16
+   |
+82 | pub(crate) struct LoadedAudio {
+   |                   ----------- field in this struct
+...
+89 |     pub(crate) channels: u16,
+   |                ^^^^^^^^
+   |
+   = note: `LoadedAudio` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+
+warning: function `missing_prefix` is never used
+  --> src\egui_app\ui\status_badges.rs:13:15
+   |
+13 | pub(super) fn missing_prefix() -> &'static str {
+   |               ^^^^^^^^^^^^^^
+
+warning: field `ok` is never read
+   --> src\issue_gateway\api.rs:129:9
+    |
+128 |     struct PollResponse {
+    |            ------------ field in this struct
+129 |         ok: bool,
+    |         ^^
+
+warning: function `encodeURIComponent` should have a snake case name
+   --> src\issue_gateway\api.rs:151:4
+    |
+151 | fn encodeURIComponent(s: &str) -> String {
+    |    ^^^^^^^^^^^^^^^^^^ help: convert the identifier to snake case: `encode_uricomponent`
+    |
+    = note: `#[warn(non_snake_case)]` (part of `#[warn(nonstandard_style)]`) on by default
+
+warning: error finalizing incremental compilation session directory `\\?\X:\sempal\target\debug\incremental\sempal-227vq6bmk9sqi\s-heqwiev3lb-1r6tqu1-working`: Access is denied. (os error 5)
+
+warning: `sempal` (lib) generated 68 warnings (run `cargo fix --lib -p sempal` to apply 23 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 48.77s

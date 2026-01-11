@@ -4,7 +4,6 @@ use crate::egui_app::controller::library::analysis_jobs;
 use crate::egui_app::controller::jobs;
 use crate::sample_sources::{ScanMode, SourceId, WavEntry};
 use crate::sample_sources::db::SourceDbError;
-use crate::sample_sources::config::PannsBackendChoice;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -12,7 +11,6 @@ pub(crate) struct ControllerRuntimeState {
     pub(crate) jobs: jobs::ControllerJobs,
     pub(crate) analysis: analysis_jobs::AnalysisWorkerPool,
     pub(crate) performance: PerformanceGovernorState,
-    pub(crate) pending_backend_switch: Option<PannsBackendChoice>,
     pub(crate) similarity_prep: Option<SimilarityPrepState>,
     pub(crate) similarity_prep_last_error: Option<String>,
     pub(crate) similarity_prep_force_full_analysis_next: bool,
@@ -32,7 +30,6 @@ impl ControllerRuntimeState {
             jobs,
             analysis,
             performance: PerformanceGovernorState::new(),
-            pending_backend_switch: None,
             similarity_prep: None,
             similarity_prep_last_error: None,
             similarity_prep_force_full_analysis_next: false,

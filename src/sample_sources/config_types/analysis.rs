@@ -7,9 +7,8 @@ use super::super::config_defaults::{
 
 /// Global preferences for analysis and feature extraction.
 ///
-/// Config keys: `max_analysis_duration_seconds`, `analysis_worker_count`,
-/// `limit_similarity_prep_duration`, `fast_similarity_prep`, `fast_similarity_prep_sample_rate`,
-/// `panns_backend`, `wgpu_power_preference`, `wgpu_adapter_name`.
+///   `limit_similarity_prep_duration`, `fast_similarity_prep`, `fast_similarity_prep_sample_rate`,
+///   `wgpu_power_preference`, `wgpu_adapter_name`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalysisSettings {
     /// Skip analysis for files longer than this many seconds.
@@ -27,9 +26,6 @@ pub struct AnalysisSettings {
     /// Sample rate used during fast similarity prep analysis.
     #[serde(default = "default_fast_similarity_prep_sample_rate")]
     pub fast_similarity_prep_sample_rate: u32,
-    /// Backend used for PANNs inference.
-    #[serde(default)]
-    pub panns_backend: PannsBackendChoice,
     /// WGPU adapter power preference when using the WGPU backend.
     #[serde(default)]
     pub wgpu_power_preference: WgpuPowerPreference,
@@ -46,46 +42,12 @@ impl Default for AnalysisSettings {
             analysis_worker_count: default_analysis_worker_count(),
             fast_similarity_prep: default_false(),
             fast_similarity_prep_sample_rate: default_fast_similarity_prep_sample_rate(),
-            panns_backend: PannsBackendChoice::default(),
             wgpu_power_preference: WgpuPowerPreference::default(),
             wgpu_adapter_name: None,
         }
     }
 }
 
-/// Select which backend to use for PANNs inference.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum PannsBackendChoice {
-    Wgpu,
-    Cpu,
-    Cuda,
-}
-
-impl Default for PannsBackendChoice {
-    fn default() -> Self {
-        Self::Wgpu
-    }
-}
-
-impl PannsBackendChoice {
-    pub fn as_env(&self) -> &'static str {
-        match self {
-            Self::Wgpu => "wgpu",
-            Self::Cpu => "cpu",
-            Self::Cuda => "cuda",
-        }
-    }
-
-    pub fn from_env(value: &str) -> Option<Self> {
-        match value.trim().to_ascii_lowercase().as_str() {
-            "wgpu" | "vulkan" | "metal" => Some(Self::Wgpu),
-            "cpu" | "ndarray" => Some(Self::Cpu),
-            "cuda" => Some(Self::Cuda),
-            _ => None,
-        }
-    }
-}
 
 /// WGPU adapter power preference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

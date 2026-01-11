@@ -113,41 +113,19 @@ pub(in super::super) fn handle_waveform_pointer_interactions(
             app.controller.finish_selection_drag();
         }
     } else if response.clicked_by(egui::PointerButton::Secondary) {
-        if app.controller.ui.waveform.edit_selection.is_some() {
+        if let Some(selection) = app.controller.ui.waveform.edit_selection {
             let clicked_pos = pointer_pos.or_else(|| response.hover_pos());
             let on_selection = clicked_pos
                 .map(|pos| {
-                    app.controller
-                        .ui
-                        .waveform
-                        .selection
-                        .map(|selection| {
-                            selection_geometry::selection_rect_for_view(
-                                selection,
-                                rect,
-                                view,
-                                view_width,
-                            )
-                            .contains(pos)
-                        })
-                        .unwrap_or(false)
-                        || app
-                            .controller
-                            .ui
-                            .waveform
-                            .edit_selection
-                            .map(|selection| {
-                                selection_geometry::selection_rect_for_view(
-                                    selection,
-                                    rect,
-                                    view,
-                                    view_width,
-                                )
-                                .contains(pos)
-                            })
-                            .unwrap_or(false)
+                    selection_geometry::selection_rect_for_view(
+                        selection,
+                        rect,
+                        view,
+                        view_width,
+                    )
+                    .contains(pos)
                 })
-                .unwrap_or(true);
+                .unwrap_or(false);
             if !on_selection {
                 app.controller.clear_edit_selection();
             }

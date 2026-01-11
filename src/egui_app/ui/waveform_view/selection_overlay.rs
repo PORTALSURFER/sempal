@@ -3,7 +3,6 @@ use super::selection_geometry::{
     paint_selection_edge_bracket, selection_edge_handle_rect, selection_handle_height,
     selection_handle_rect, selection_rect_for_view,
 };
-use super::selection_menu;
 use super::style;
 use super::*;
 use crate::egui_app::state::WaveformView;
@@ -139,7 +138,6 @@ pub(super) fn render_selection_overlay(
         }
     }
     selection_drag::sync_selection_edge_drag_release(app, ui.ctx());
-    selection_menu::attach_selection_context_menu(app, ui, selection_rect);
 
     edge_dragging
 }

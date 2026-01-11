@@ -5,12 +5,6 @@ impl EguiController {
     /// Load persisted configuration and populate initial UI state.
     pub fn load_configuration(&mut self) -> Result<(), crate::sample_sources::config::ConfigError> {
         let cfg = crate::sample_sources::config::load_or_default()?;
-        if let Err(err) = crate::model_setup::sync_bundled_burnpack() {
-            self.set_status(
-                format!("Bundled model sync failed: {err}"),
-                StatusTone::Warning,
-            );
-        }
         self.settings.feature_flags = cfg.core.feature_flags;
         self.settings.analysis = cfg.core.analysis;
         self.settings.analysis.max_analysis_duration_seconds =

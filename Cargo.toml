@@ -6,7 +6,6 @@ default-run = "sempal"
 
 [features]
 default = []
-panns-cuda = ["burn/cuda"]
 
 [dependencies]
 hound = "3.5.1"
@@ -63,15 +62,10 @@ hnsw_rs = "0.3.3"
 symphonia = { version = "0.5.4", default-features = false, features = ["aiff"] }
 hdbscan = "0.12.0"
 rustfft = "6.2.0"
-burn-store = "0.20.0-pre.6"
-cubecl-runtime = "0.9.0-pre.6"
-burn-import = "0.20.0-pre.6"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-burn = { version = "0.20.0-pre.6", default-features = false, features = ["std", "wgpu", "metal", "ndarray"] }
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
-burn = { version = "0.20.0-pre.6", default-features = false, features = ["std", "wgpu", "vulkan", "ndarray"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 cpal = { version = "0.16.0", features = ["asio"] }

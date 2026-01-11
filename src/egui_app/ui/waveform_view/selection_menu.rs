@@ -3,26 +3,21 @@ use super::*;
 use crate::egui_app::state::DestructiveSelectionEdit;
 use eframe::egui::{self, RichText};
 
-pub(super) fn attach_selection_context_menu(
-    app: &mut EguiApp,
-    ui: &mut egui::Ui,
-    selection_rect: egui::Rect,
-) {
-    let selection_menu = ui.interact(
-        selection_rect,
-        ui.id().with("selection_context_menu"),
-        egui::Sense::click(),
-    );
-    selection_menu.context_menu(|ui| {
-        render_selection_context_menu(app, ui);
-    });
-}
 
 pub(super) fn render_selection_context_menu(app: &mut EguiApp, ui: &mut egui::Ui) {
     let palette = style::palette();
     let fade_ms = app.controller.ui.controls.anti_clip_fade_ms;
     let mut close_menu = false;
     let has_edit_selection = app.controller.ui.waveform.edit_selection.is_some();
+    let has_selection = app.controller.ui.waveform.selection.is_some();
+    let title = if has_edit_selection {
+        "Edit selection actions"
+    } else if has_selection {
+        "Selection actions"
+    } else {
+        "Audio actions"
+    };
+
     let mut request_edit = |edit: DestructiveSelectionEdit| match app
         .controller
         .request_destructive_selection_edit(edit)
@@ -32,11 +27,6 @@ pub(super) fn render_selection_context_menu(app: &mut EguiApp, ui: &mut egui::Ui
             true
         }
         Err(_) => false,
-    };
-    let title = if has_edit_selection {
-        "Edit selection actions"
-    } else {
-        "Selection actions"
     };
     ui.label(RichText::new(title).color(palette.text_primary));
     if ui

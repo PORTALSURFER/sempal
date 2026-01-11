@@ -3,13 +3,10 @@
 pub mod ann_index;
 pub(crate) mod audio;
 pub(crate) mod audio_decode;
-pub mod embedding;
 pub(crate) mod features;
 pub(crate) mod fft;
 pub(crate) mod frequency_domain;
 pub mod hdbscan;
-#[allow(dead_code)]
-pub(crate) mod panns_preprocess;
 pub mod similarity;
 pub(crate) mod time_domain;
 pub mod umap;
@@ -83,8 +80,8 @@ pub fn preprocess_mono_for_embedding(samples: &[f32], sample_rate: u32) -> Vec<f
 }
 
 /// Infer the embedding for a mono sample buffer.
-pub fn infer_embedding(samples: &[f32], sample_rate: u32) -> Result<Vec<f32>, String> {
-    embedding::infer_embedding(samples, sample_rate)
+pub fn infer_embedding(_samples: &[f32], _sample_rate: u32) -> Result<Vec<f32>, String> {
+    Err("PANNs embedding inference is deprecated and removed.".to_string())
 }
 
 /// Extract the lightweight DSP vector from a full V1 feature vector.

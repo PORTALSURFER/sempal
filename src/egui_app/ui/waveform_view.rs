@@ -57,6 +57,9 @@ impl EguiApp {
                 ui.id().with("waveform_area"),
                 egui::Sense::click_and_drag(),
             );
+            response.context_menu(|ui| {
+                selection_menu::render_selection_context_menu(self, ui);
+            });
             let target_width = rect.width().round().max(1.0) as u32;
             let target_height = waveform_rect.height().round().max(1.0) as u32;
             self.controller
