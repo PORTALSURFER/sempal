@@ -3,7 +3,7 @@ mod decode;
 mod normalize;
 mod peaks;
 mod resample;
-mod rodio_reader;
+mod symphonia_reader;
 mod wav_reader;
 
 use std::sync::Arc;

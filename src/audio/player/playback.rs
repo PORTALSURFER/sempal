@@ -1,6 +1,7 @@
 use std::time::Duration;
 
-use rodio::Source;
+use crate::audio::Source;
+use crate::audio::SamplesBuffer;
 
 use super::super::fade::{EdgeFade, fade_duration};
 use super::super::mixer::{decoder_from_bytes, map_seek_error};
@@ -50,7 +51,7 @@ impl AudioPlayer {
 
         self.fade_out_current_sink(self.anti_clip_fade());
 
-        let mut source = decoder_from_bytes(bytes)?;
+        let source = decoder_from_bytes(bytes)?;
         let sample_rate = source.sample_rate();
         let channels = source.channels();
         let aligned_duration = Self::aligned_span_duration(duration, sample_rate);
@@ -65,7 +66,7 @@ impl AudioPlayer {
             samples.push(0.0);
         }
         
-        let buffer = rodio::buffer::SamplesBuffer::new(channels, sample_rate, samples);
+        let buffer = SamplesBuffer::new(channels, sample_rate, samples);
         let offset = (start.clamp(0.0, 1.0) * duration).min(aligned_duration.as_secs_f32());
         let offset_dur = Self::aligned_offset_duration(offset, sample_rate);
         let repeated = buffer
@@ -150,6 +151,7 @@ impl AudioPlayer {
         let loop_duration = if looped {
             // Convert to duration using floor division
             let nanos = (frames_adjusted * 1_000_000_000) / sample_rate as u64;
+            let _needed_nanos = ((1.0f64 / 44100.0f64) * 1_000_000_000.0f64).ceil() as u64; // 22676?
             let duration = Duration::from_nanos(nanos);
             
             tracing::debug!(
@@ -183,7 +185,7 @@ impl AudioPlayer {
             }
             samples.truncate(expected_samples as usize);
             
-            let buffer = rodio::buffer::SamplesBuffer::new(channels, sample_rate, samples);
+            let buffer = SamplesBuffer::new(channels, sample_rate, samples);
             let diagnostic = crate::audio::loop_diagnostic::LoopDiagnostic::new(
                 buffer.repeat_infinite(),
                 expected_samples,
@@ -247,7 +249,7 @@ impl AudioPlayer {
         let frames = if channels == 2 && frames % 2 != 0 { frames + 1 } else { frames };
         let loop_duration = Duration::from_nanos((frames * 1_000_000_000) / sample_rate as u64);
         
-        let fade = fade_duration(aligned_span_sec, self.anti_clip_fade());
+        let _fade = fade_duration(aligned_span_sec, self.anti_clip_fade());
         let expected_samples = frames * channels as u64;
         
         let mut limited = source.take_duration(loop_duration);
@@ -264,7 +266,7 @@ impl AudioPlayer {
         }
         samples.truncate(expected_samples as usize);
         
-        let buffer = rodio::buffer::SamplesBuffer::new(channels, sample_rate, samples);
+        let buffer = SamplesBuffer::new(channels, sample_rate, samples);
         let final_source: Box<dyn Source<Item = f32> + Send> = {
             let offset_dur = Self::aligned_offset_duration(offset_seconds, sample_rate);
             let repeated = buffer.repeat_infinite().skip_duration(offset_dur);
@@ -292,9 +294,9 @@ impl AudioPlayer {
 
 
     /// Calculate a Duration that covers at least `frames` full frames.
-    /// This uses u64 arithmetic to avoid f32 precision loss which can cause rodio to drop one sample (half a frame)
+    /// This uses u64 arithmetic to avoid f32 precision loss which can cause audio decoders to drop one sample (half a frame)
     /// in stereo sources, leading to channel swapping.
-    fn aligned_span_duration(span_seconds: f32, sample_rate: u32) -> Duration {
+    pub(crate) fn aligned_span_duration(span_seconds: f32, sample_rate: u32) -> Duration {
         if sample_rate == 0 {
             return Duration::from_secs_f32(span_seconds);
         }
@@ -312,8 +314,7 @@ impl AudioPlayer {
         let frames = (seconds * sample_rate as f32).round().max(0.0) as u64;
          // Use the same ceiling logic? No, for offset, we want to be exact or slightly padded?
          // If we skip 1 frame, we want to skip exactly 1 frame.
-         // If `skip_duration` logic in rodio is "skip while duration > 0", then to skip N frames we need duration corresponding to N frames.
-         // And since rodio's duration handling might be "skip N samples", we need to be careful.
+         // And since duration handling might be frame-based, we need to be careful.
          // Based on analysis, CEIL causes us to skip into the next frame (Sample 2), causing stereo swap.
          // We must use FLOOR (integer truncation) to ensure we stop BEFORE the next frame starts.
          // nanos = frames * 1e9 / rate.

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use rodio::Source;
+use crate::audio::Source;
 
 pub(crate) fn fade_duration(span_seconds: f32, max_fade: Duration) -> Duration {
     if span_seconds <= 0.0 || max_fade.is_zero() {
@@ -41,7 +41,7 @@ pub(crate) struct EdgeFade<S> {
 impl<S> EdgeFade<S> {
     pub(crate) fn new(inner: S, fade: Duration) -> Self
     where
-        S: Source<Item = f32> + Clone,
+        S: Source,
     {
         let fade_secs = fade.as_secs_f32();
         let total_secs = inner.total_duration().map(|d| d.as_secs_f32());
@@ -68,7 +68,7 @@ impl<S> EdgeFade<S> {
 
 impl<S> Iterator for EdgeFade<S>
 where
-    S: Source<Item = f32>,
+    S: Source,
 {
     type Item = f32;
 
@@ -98,11 +98,11 @@ where
 
 impl<S> Source for EdgeFade<S>
 where
-    S: Source<Item = f32>,
+    S: Source,
 {
     #[inline]
-    fn current_span_len(&self) -> Option<usize> {
-        self.inner.current_span_len()
+    fn current_frame_len(&self) -> Option<usize> {
+        self.inner.current_frame_len()
     }
 
     #[inline]
@@ -160,7 +160,7 @@ pub(crate) struct FadeOutOnRequest<S> {
 
 impl<S> FadeOutOnRequest<S>
 where
-    S: Source<Item = f32>,
+    S: Source,
 {
     pub(crate) fn new(inner: S, handle: FadeOutHandle) -> Self {
         let sample_rate = inner.sample_rate();
@@ -227,7 +227,7 @@ where
 
 impl<S> Iterator for FadeOutOnRequest<S>
 where
-    S: Source<Item = f32>,
+    S: Source,
 {
     type Item = f32;
 
@@ -250,11 +250,11 @@ where
 
 impl<S> Source for FadeOutOnRequest<S>
 where
-    S: Source<Item = f32>,
+    S: Source,
 {
     #[inline]
-    fn current_span_len(&self) -> Option<usize> {
-        self.inner.current_span_len()
+    fn current_frame_len(&self) -> Option<usize> {
+        self.inner.current_frame_len()
     }
 
     #[inline]

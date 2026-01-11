@@ -9,6 +9,8 @@ mod fade;
 mod loop_diagnostic;
 mod mixer;
 mod player;
+mod source;
+pub mod decoder;
 mod time_stretch;
 mod routing;
 
@@ -25,6 +27,7 @@ pub use player::AudioPlayer;
 pub(crate) use time_stretch::Wsola;
 pub use recording::{AudioRecorder, InputMonitor, RecordingOutcome};
 
+pub use source::{Source, SamplesBuffer};
 #[cfg(test)]
 pub(crate) use fade::{EdgeFade, FadeOutHandle, FadeOutOnRequest, fade_duration};
 #[cfg(test)]

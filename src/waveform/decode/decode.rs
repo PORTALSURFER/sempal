@@ -26,7 +26,7 @@ impl WaveformRenderer {
         if let Some(decoded) = self.load_decoded_wav(bytes, cache_token, max_frames)? {
             return Ok(decoded);
         }
-        self.load_decoded_via_rodio(bytes, cache_token, max_frames)
+        self.load_decoded_via_symphonia(bytes, cache_token, max_frames)
     }
 
     #[cfg(test)]
@@ -42,7 +42,6 @@ impl WaveformRenderer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::waveform::decode::{rodio_reader, wav_reader};
     use hound::SampleFormat;
 
     fn wav_bytes_i16(channels: u16, samples: &[i16]) -> Vec<u8> {

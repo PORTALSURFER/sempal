@@ -1,6 +1,6 @@
 use super::super::AudioPlayer;
 use crate::waveform::WaveformRenderer;
-use rodio::Source;
+use crate::audio::Source;
 use std::{
     io::Cursor,
     path::PathBuf,
@@ -8,7 +8,7 @@ use std::{
 };
 
 pub(crate) fn test_player(
-    stream: rodio::OutputStream,
+    stream: crate::audio::output::CpalAudioStream,
     track_duration: Option<f32>,
     started_at: Option<Instant>,
     play_span: Option<(f32, f32)>,
@@ -189,7 +189,7 @@ impl Iterator for ConstantSource {
 }
 
 impl Source for ConstantSource {
-    fn current_span_len(&self) -> Option<usize> {
+    fn current_frame_len(&self) -> Option<usize> {
         None
     }
 

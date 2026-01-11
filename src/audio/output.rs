@@ -84,7 +84,7 @@ use cpal::traits::StreamTrait;
 
 /// Shared state between the player and the audio thread.
 pub struct StreamState {
-    pub sources: Vec<(Box<dyn rodio::Source<Item = f32> + Send>, f32)>,
+    pub sources: Vec<(Box<dyn crate::audio::Source + Send>, f32)>,
     pub volume: f32, // master volume
 }
 
@@ -100,14 +100,14 @@ impl CpalAudioStream {
     }
 }
 
-/// A bridge for input monitoring that mimics rodio::Sink interface.
+/// A bridge for input monitoring that mimics a Sink-like interface.
 pub struct MonitorSink {
     pub state: Arc<Mutex<StreamState>>,
     pub volume: f32,
 }
 
 impl MonitorSink {
-    pub fn append<S: rodio::Source<Item = f32> + Send + 'static>(&self, source: S) {
+    pub fn append<S: crate::audio::Source + Send + 'static>(&self, source: S) {
         let mut state = self.state.lock().unwrap();
         state.sources.push((Box::new(source), self.volume));
     }

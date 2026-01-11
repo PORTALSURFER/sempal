@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
-    use rodio::Source;
+    use sempal::audio::Source;
     
     // A dummy source that produces infinite stereo samples
     struct EndlessSource {
@@ -17,7 +17,7 @@ mod tests {
     }
 
     impl Source for EndlessSource {
-        fn current_span_len(&self) -> Option<usize> { None }
+        fn current_frame_len(&self) -> Option<usize> { None }
         fn channels(&self) -> u16 { self.channels }
         fn sample_rate(&self) -> u32 { self.sample_rate }
         fn total_duration(&self) -> Option<Duration> { None }

@@ -1,4 +1,4 @@
-use rodio::Source;
+use crate::audio::Source;
 use std::time::Duration;
 
 /// A source that loops a portion of another source, ensuring sample alignment.
@@ -12,7 +12,7 @@ pub struct LoopingSource<S> {
 
 impl<S> LoopingSource<S>
 where
-    S: Source<Item = f32> + Send,
+    S: Source + Send,
 {
     pub fn new(inner: S, frames_per_cycle: u64) -> Self {
         let channels = inner.channels();
@@ -29,7 +29,7 @@ where
 
 impl<S> Iterator for LoopingSource<S>
 where
-    S: Source<Item = f32> + Send,
+    S: Source + Send,
 {
     type Item = f32;
 
@@ -51,7 +51,7 @@ where
 
 impl<S> Source for LoopingSource<S>
 where
-    S: Source<Item = f32> + Send,
+    S: Source + Send,
 {
     fn current_frame_len(&self) -> Option<usize> {
         None // Infinite

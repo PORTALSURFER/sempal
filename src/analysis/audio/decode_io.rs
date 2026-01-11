@@ -1,9 +1,11 @@
 use std::cell::RefCell;
 use std::fs::File;
-use std::io::BufReader;
 use std::path::Path;
 
-use rodio::{Decoder, Source};
+use crate::audio::Source;
+use crate::audio::decoder::SymphoniaDecoder;
+use symphonia::core::io::MediaSourceStream;
+use std::time::Duration;
 
 use super::analysis_prep::{downmix_to_mono_into, prepare_mono_for_analysis_from_slice};
 use super::resample::resample_linear_into;
@@ -48,18 +50,14 @@ pub(crate) fn probe_metadata(path: &Path) -> Result<AudioProbe, String> {
         .extension()
         .and_then(|ext| ext.to_str())
         .map(str::to_ascii_lowercase);
-    let mut builder = Decoder::builder()
-        .with_data(BufReader::new(file))
-        .with_byte_len(byte_len)
-        .with_seekable(false);
-    if let Some(hint) = hint.as_deref() {
-        builder = builder.with_hint(hint);
-    }
-    let decoder = builder
-        .build()
+    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+    let mut decoder = SymphoniaDecoder::new(mss)
         .map_err(|err| format!("Audio metadata probe failed for {}: {err}", path.display()))?;
+    if let Some(hint) = hint.as_deref() {
+        decoder.set_hint(hint);
+    }
     Ok(AudioProbe {
-        duration_seconds: decoder.total_duration().map(|dur| dur.as_secs_f32()),
+        duration_seconds: decoder.total_duration().map(|dur: Duration| dur.as_secs_f32()),
         sample_rate: Some(decoder.sample_rate().max(1)),
         channels: Some(decoder.channels().max(1)),
     })

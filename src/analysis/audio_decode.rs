@@ -1,8 +1,7 @@
 use std::fs::File;
-use std::io::BufReader;
 use std::path::Path;
 
-use rodio::{Decoder, Source};
+use crate::audio::Source;
 use symphonia::core::{
     audio::SampleBuffer, codecs::DecoderOptions, errors::Error, formats::FormatOptions,
     io::MediaSourceStream, meta::MetadataOptions, probe::Hint,
@@ -16,53 +15,17 @@ pub(crate) struct DecodedAudio {
 }
 
 /// Decode audio into interleaved `f32` samples with sample rate and channel count.
-///
-/// Supported formats include wav/aiff/flac/mp3 via rodio, with a symphonia fallback.
 pub(crate) fn decode_audio(path: &Path, max_seconds: Option<f32>) -> Result<DecodedAudio, String> {
-    let file =
-        File::open(path).map_err(|err| format!("Failed to open {}: {err}", path.display()))?;
-    let byte_len = file.metadata().map(|meta| meta.len()).unwrap_or(0) as u64;
-    let hint = path
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .map(str::to_ascii_lowercase);
-    let mut builder = Decoder::builder()
-        .with_data(BufReader::new(file))
-        .with_byte_len(byte_len)
-        .with_seekable(false);
-    if let Some(hint) = hint.as_deref() {
-        builder = builder.with_hint(hint);
-    }
-    let decoder = builder.build();
-    match decoder {
-        Ok(decoder) => {
-            let sample_rate = decoder.sample_rate().max(1);
-            let channels = decoder.channels().max(1);
-            let max_samples = max_seconds.filter(|limit| *limit > 0.0).map(|limit| {
-                let frames = (limit * sample_rate as f32).ceil().max(1.0);
-                (frames as usize).saturating_mul(channels as usize).max(1)
-            });
-            let samples: Vec<f32> = match max_samples {
-                Some(limit) => decoder.take(limit).collect(),
-                None => decoder.collect(),
-            };
-            Ok(DecodedAudio {
-                samples,
-                sample_rate,
-                channels,
-            })
-        }
-        Err(err) => match decode_with_symphonia(path, max_seconds) {
-            Ok((samples, sample_rate, channels)) => Ok(DecodedAudio {
-                samples,
-                sample_rate: sample_rate.max(1),
-                channels: channels.max(1),
-            }),
-            Err(fallback_err) => Err(format!(
-                "Audio decode failed for {}: {err}. Symphonia fallback failed: {fallback_err}",
-                path.display()
-            )),
-        },
+    match decode_with_symphonia(path, max_seconds) {
+        Ok((samples, sample_rate, channels)) => Ok(DecodedAudio {
+            samples,
+            sample_rate: sample_rate.max(1),
+            channels: channels.max(1),
+        }),
+        Err(err) => Err(format!(
+            "Audio decode failed for {}: {err}",
+            path.display()
+        )),
     }
 }
 

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use rodio::Source;
+use crate::audio::Source;
 
 #[cfg(test)]
 use super::super::DEFAULT_ANTI_CLIP_FADE;
@@ -9,7 +9,7 @@ use super::super::DEFAULT_ANTI_CLIP_FADE;
 use super::super::fade::{EdgeFade, fade_duration};
 use super::super::fade::{FadeOutHandle, FadeOutOnRequest, fade_frames_for_duration};
 #[cfg(test)]
-use super::super::mixer::{decoder_from_bytes, map_seek_error};
+use crate::audio::mixer::{decoder_from_bytes, map_seek_error};
 use super::AudioPlayer;
 
 impl AudioPlayer {
@@ -33,11 +33,11 @@ impl AudioPlayer {
         }
     }
 
-    pub(super) fn build_sink_with_fade<S: Source<Item = f32> + Send + 'static>(
+    pub(super) fn build_sink_with_fade<S: Source + Send + 'static>(
         &mut self,
         source: S,
     ) -> (FadeOutHandle, (u32, u16)) {
-        let volume = self.effective_volume();
+        let _volume = self.effective_volume();
         let format = (source.sample_rate(), source.channels());
         let handle = FadeOutHandle::new();
         
@@ -56,8 +56,6 @@ impl AudioPlayer {
             volume,
         }
     }
-
-    // Removed build_sink_with_fade_for_stream as it was rodio-specific
 
     pub(super) fn elapsed_since(&self, started_at: Instant) -> Duration {
         #[cfg(test)]
@@ -142,7 +140,7 @@ impl AudioPlayer {
         start_seconds: f32,
         end_seconds: f32,
     ) -> Result<(usize, u32, u16), String> {
-        let mut source = decoder_from_bytes(bytes)?;
+        let source = decoder_from_bytes(bytes)?;
         source
             .try_seek(Duration::from_secs_f32(start_seconds))
             .map_err(map_seek_error)?;

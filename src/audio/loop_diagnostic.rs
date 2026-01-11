@@ -1,4 +1,4 @@
-use rodio::Source;
+use crate::audio::Source;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -61,10 +61,10 @@ where
 
 impl<S> Source for LoopDiagnostic<S>
 where
-    S: Source<Item = f32>,
+    S: Source,
 {
-    fn current_span_len(&self) -> Option<usize> {
-        self.inner.current_span_len()
+    fn current_frame_len(&self) -> Option<usize> {
+        self.inner.current_frame_len()
     }
 
     fn channels(&self) -> u16 {

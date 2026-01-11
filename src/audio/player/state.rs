@@ -3,10 +3,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 #[cfg(test)]
-use rodio::Source;
+use crate::audio::Source;
  
 use super::super::DEFAULT_ANTI_CLIP_FADE;
-use super::super::output::{CpalAudioStream, AudioOutputConfig, ResolvedOutput, open_output_stream};
+use super::super::output::{AudioOutputConfig, ResolvedOutput, open_output_stream};
 use super::super::routing::duration_from_secs_f32;
 use super::AudioPlayer;
 
@@ -103,7 +103,7 @@ impl AudioPlayer {
 
     #[cfg(test)]
     pub(crate) fn test_with_state(
-        stream: CpalAudioStream,
+        stream: crate::audio::output::CpalAudioStream,
         track_duration: Option<f32>,
         started_at: Option<Instant>,
         play_span: Option<(f32, f32)>,
@@ -136,32 +136,33 @@ impl AudioPlayer {
     #[cfg(test)]
     /// Build a looped playing instance for tests that need an active sink.
     pub fn playing_for_tests() -> Option<Self> {
-        use rodio::source::SineWave;
+        struct SineWave {
+            pos: f32,
+            step: f32,
+        }
+        impl Iterator for SineWave {
+            type Item = f32;
+            fn next(&mut self) -> Option<Self::Item> {
+                let val = self.pos.sin();
+                self.pos += self.step;
+                Some(val)
+            }
+        }
+        impl Source for SineWave {
+            fn current_frame_len(&self) -> Option<usize> { None }
+            fn channels(&self) -> u16 { 1 }
+            fn sample_rate(&self) -> u32 { 44100 }
+            fn total_duration(&self) -> Option<Duration> { None }
+        }
 
-        let outcome = open_output_stream(&AudioOutputConfig::default()).ok()?;
-        let source = SineWave::new(220.0).repeat_infinite();
-        let (sink, handle, format) =
-            Self::build_sink_with_fade_for_stream(&outcome.stream, 1.0, source);
-        // Loop the tone so playback stays active long enough for UI/controller tests to observe it.
-        Some(Self {
-            stream: outcome.stream,
-            active_sources: 1,
-            fade_out: Some(handle),
-            sink_format: Some(format),
-            current_audio: None,
-            track_duration: Some(1.0),
-            sample_rate: Some(44100),
-            started_at: Some(Instant::now()),
-            play_span: Some((0.0, 1.0)),
-            looping: true,
-            loop_offset: Some(0.0),
-            volume: 1.0,
-            playback_gain: 1.0,
-            anti_clip_enabled: true,
-            anti_clip_fade: DEFAULT_ANTI_CLIP_FADE,
-            min_span_seconds: None,
-            output: outcome.resolved,
-            elapsed_override: None,
-        })
+        let mut player = AudioPlayer::new().ok()?;
+        let source = SineWave { pos: 0.0, step: 220.0 * 2.0 * std::f32::consts::PI / 44100.0 };
+        player.build_sink_with_fade(source);
+        Some(player)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn aligned_span_seconds_for_tests(span_seconds: f32, sample_rate: u32) -> f32 {
+        Self::aligned_span_duration(span_seconds, sample_rate).as_secs_f32()
     }
 }

@@ -1,6 +1,5 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tracing::info;
 
 use super::fade::FadeOutHandle;
 use super::output::{CpalAudioStream, ResolvedOutput};

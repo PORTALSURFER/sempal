@@ -1,0 +1,195 @@
+   Compiling sempal v9.0.0 (X:\sempal)
+warning: unused import: `CpalAudioStream`
+ --> src\audio\player\state.rs:9:28
+  |
+9 | use super::super::output::{CpalAudioStream, AudioOutputConfig, ResolvedOutput, open_output_stream};
+  |                            ^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `std::net::TcpListener`
+   --> src\issue_gateway\api.rs:329:9
+    |
+329 |     use std::net::TcpListener;
+    |         ^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `Arc` and `Mutex`
+   --> src\issue_gateway\api.rs:330:21
+    |
+330 |     use std::sync::{Arc, Mutex};
+    |                     ^^^  ^^^^^
+
+warning: unused import: `std::thread`
+   --> src\issue_gateway\api.rs:331:9
+    |
+331 |     use std::thread;
+    |         ^^^^^^^^^^^
+
+warning: unused import: `std::fs`
+ --> src\sample_sources\library\tests.rs:4:5
+  |
+4 | use std::fs;
+  |     ^^^^^^^
+
+warning: use of deprecated method `cpal::traits::DeviceTrait::name`: Use `description()` for comprehensive device information including name, manufacturer, and device type. Use `id()` for a unique, stable device identifier that persists across reboots and reconnections.
+ --> src\audio\device.rs:4:12
+  |
+4 |     device.name().ok()
+  |            ^^^^
+  |
+  = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+   --> src\egui_app\ui\sources_panel\mod.rs:170:16
+    |
+170 |             ui.allocate_ui_at_rect(folder_rect, |ui| {
+    |                ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+   --> src\egui_app\ui\sources_panel\mod.rs:181:16
+    |
+181 |             ui.allocate_ui_at_rect(drop_targets_rect, |ui| {
+    |                ^^^^^^^^^^^^^^^^^^^
+
+error[E0308]: mismatched types
+  --> src\waveform\decode\symphonia_reader.rs:24:45
+   |
+24 |         let decoder = SymphoniaDecoder::new(owned)
+   |                       --------------------- ^^^^^ expected `MediaSourceStream`, found `Arc<[u8]>`
+   |                       |
+   |                       arguments to this function are incorrect
+   |
+   = note: expected struct `MediaSourceStream`
+              found struct `Arc<[u8]>`
+note: associated function defined here
+  --> src\audio\decoder.rs:24:12
+   |
+24 |     pub fn new(mss: MediaSourceStream) -> Result<Self, String> {
+   |            ^^^ ----------------------
+
+warning: unused import: `crate::audio::Source`
+ --> src\analysis\audio_decode.rs:4:5
+  |
+4 | use crate::audio::Source;
+  |     ^^^^^^^^^^^^^^^^^^^^
+
+error[E0596]: cannot borrow `decoder` as mutable, as it is not declared as mutable
+  --> src\analysis\audio\decode_io.rs:57:9
+   |
+57 |         decoder.set_hint(hint);
+   |         ^^^^^^^ cannot borrow as mutable
+   |
+help: consider changing this to be mutable
+   |
+54 |     let mut decoder = SymphoniaDecoder::new(mss)
+   |         +++
+
+warning: unused variable: `byte_len`
+  --> src\analysis\audio\decode_io.rs:48:9
+   |
+48 |     let byte_len = file.metadata().map(|meta| meta.len()).unwrap_or(0) as u64;
+   |         ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_byte_len`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `volume`
+  --> src\audio\player\helpers.rs:40:13
+   |
+40 |         let volume = self.effective_volume();
+   |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_volume`
+
+warning: variable does not need to be mutable
+  --> src\audio\player\playback.rs:54:13
+   |
+54 |         let mut source = decoder_from_bytes(bytes)?;
+   |             ----^^^^^^
+   |             |
+   |             help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `fade`
+   --> src\audio\player\playback.rs:251:13
+    |
+251 |         let fade = fade_duration(aligned_span_sec, self.anti_clip_fade());
+    |             ^^^^ help: if this is intentional, prefix it with an underscore: `_fade`
+
+warning: variable does not need to be mutable
+  --> src\audio\decoder.rs:36:13
+   |
+36 |         let mut reader = probed.format;
+   |             ----^^^^^^
+   |             |
+   |             help: remove this `mut`
+
+error[E0308]: mismatched types
+  --> src\waveform\decode\symphonia_reader.rs:24:45
+   |
+24 |         let decoder = SymphoniaDecoder::new(owned)
+   |                       --------------------- ^^^^^ expected `MediaSourceStream`, found `Arc<[u8]>`
+   |                       |
+   |                       arguments to this function are incorrect
+   |
+   = note: expected struct `MediaSourceStream`
+              found struct `std::sync::Arc<[u8]>`
+note: associated function defined here
+  --> src\audio\decoder.rs:24:12
+   |
+24 |     pub fn new(mss: MediaSourceStream) -> Result<Self, String> {
+   |            ^^^ ----------------------
+
+warning: variable does not need to be mutable
+  --> src\egui_app\ui\sources_panel\mod.rs:86:17
+   |
+86 |             let mut drop_targets_height = self
+   |                 ----^^^^^^^^^^^^^^^^^^^
+   |                 |
+   |                 help: remove this `mut`
+
+warning: variable does not need to be mutable
+  --> src\http_client.rs:69:9
+   |
+69 |     let mut reader = response.into_reader();
+   |         ----^^^^^^
+   |         |
+   |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+  --> src\http_client.rs:89:9
+   |
+89 |     let mut reader = response.into_reader();
+   |         ----^^^^^^
+   |         |
+   |         help: remove this `mut`
+
+warning: unused variable: `dir`
+   --> src\issue_gateway\token_store.rs:501:20
+    |
+501 | fn sync_parent_dir(dir: &Path) -> Result<(), IssueTokenStoreError> {
+    |                    ^^^ help: if this is intentional, prefix it with an underscore: `_dir`
+
+warning: variable does not need to be mutable
+   --> src\wav_sanitize.rs:186:9
+    |
+186 |     let mut changed = false;
+    |         ----^^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> src\waveform\mod.rs:383:9
+    |
+383 |     let mut file = std::fs::File::open(path).map_err(|source| WaveformLoadError::Read {
+    |         ----^^^^
+    |         |
+    |         help: remove this `mut`
+
+Some errors have detailed explanations: E0308, E0596.
+For more information about an error, try `rustc --explain E0308`.
+warning: `sempal` (lib) generated 16 warnings
+error: could not compile `sempal` (lib) due to 2 previous errors; 16 warnings emitted
+warning: build failed, waiting for other jobs to finish...
+warning: `sempal` (lib test) generated 19 warnings (15 duplicates)
+error: could not compile `sempal` (lib test) due to 2 previous errors; 19 warnings emitted

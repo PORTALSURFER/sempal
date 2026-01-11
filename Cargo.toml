@@ -10,7 +10,6 @@ default = []
 [dependencies]
 hound = "3.5.1"
 cpal = "0.17.1"
-rodio = { version = "0.21.1", default-features = true }
 ringbuf = "0.4"
 sysinfo = "0.37.2"
 rusqlite = { version = "0.37.0", features = ["bundled", "load_extension"] }
@@ -60,7 +59,7 @@ linfa-reduction = "0.8.0"
 linfa-tsne = "0.8.0"
 sprs = "=0.11.2"
 hnsw_rs = "0.3.3"
-symphonia = { version = "0.5.4", default-features = false, features = ["aiff"] }
+symphonia = { version = "0.5.4", features = ["wav", "pcm", "mp3", "flac"] }
 hdbscan = "0.12.0"
 rustfft = "6.2.0"
 

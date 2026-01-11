@@ -1,47 +1,41 @@
 use super::normalize::clamp_sample;
 use super::peaks;
 use crate::waveform::{DecodedWaveform, WaveformDecodeError, WaveformPeaks, WaveformRenderer};
-use rodio::{Decoder, Source};
+use crate::audio::decoder::SymphoniaDecoder;
+use crate::audio::Source;
 use std::sync::Arc;
 #[cfg(test)]
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[cfg(test)]
-static RODIO_DECODE_COUNT: AtomicUsize = AtomicUsize::new(0);
+static SYMPHONIA_DECODE_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 impl WaveformRenderer {
-    pub(super) fn load_decoded_via_rodio(
+    pub(super) fn load_decoded_via_symphonia(
         &self,
         bytes: &[u8],
         cache_token: u64,
         max_frames: usize,
     ) -> Result<DecodedWaveform, WaveformDecodeError> {
         #[cfg(test)]
-        RODIO_DECODE_COUNT.fetch_add(1, Ordering::Relaxed);
+        SYMPHONIA_DECODE_COUNT.fetch_add(1, Ordering::Relaxed);
 
         let owned: Arc<[u8]> = Arc::from(bytes.to_vec());
-        let byte_len = owned.len() as u64;
-        let decoder = Decoder::builder()
-            .with_data(std::io::Cursor::new(owned))
-            .with_byte_len(byte_len)
-            .with_seekable(false)
-            .with_hint("wav")
-            .build()
+        let decoder = SymphoniaDecoder::from_bytes(owned)
             .map_err(|error| WaveformDecodeError::Invalid {
                 message: error.to_string(),
             })?;
 
         let sample_rate = decoder.sample_rate().max(1);
         let channels = decoder.channels().max(1);
-        let duration_seconds = decoder
-            .total_duration()
+        let duration_seconds = decoder.total_duration()
             .map(|duration| duration.as_secs_f32());
         let frames_estimate = duration_seconds
             .map(|secs| (secs * sample_rate as f32).round().max(0.0) as usize)
             .unwrap_or(0);
 
         if frames_estimate > max_frames {
-            return self.build_rodio_peaks(
+            return self.build_symphonia_peaks(
                 decoder,
                 cache_token,
                 sample_rate,
@@ -63,7 +57,7 @@ impl WaveformRenderer {
         })
     }
 
-    fn build_rodio_peaks<I>(
+    fn build_symphonia_peaks<I>(
         &self,
         mut samples: I,
         cache_token: u64,
@@ -164,13 +158,13 @@ impl WaveformRenderer {
 }
 
 #[cfg(test)]
-pub(super) fn reset_rodio_decode_count() {
-    RODIO_DECODE_COUNT.store(0, Ordering::Relaxed);
+pub(super) fn reset_symphonia_decode_count() {
+    SYMPHONIA_DECODE_COUNT.store(0, Ordering::Relaxed);
 }
 
 #[cfg(test)]
-pub(super) fn rodio_decode_count() -> usize {
-    RODIO_DECODE_COUNT.load(Ordering::Relaxed)
+pub(super) fn symphonia_decode_count() -> usize {
+    SYMPHONIA_DECODE_COUNT.load(Ordering::Relaxed)
 }
 
 #[cfg(test)]
@@ -197,17 +191,12 @@ mod tests {
     }
 
     #[test]
-    fn rodio_fallback_decodes_ill_formed_riff_size() {
+    fn symphonia_fallback_decodes_ill_formed_riff_size() {
         let renderer = WaveformRenderer::new(12, 12);
         let mut bytes = wav_bytes_int(16, 1, &[0, 1000, -1000, 0]);
 
         // Corrupt the redundant `nAvgBytesPerSec` field (byte rate) in the fmt chunk so that
         // `hound` rejects the file as ill-formed, while tolerant decoders still accept it.
-        //
-        // Layout for a basic PCM wav:
-        // - RIFF header: 12 bytes
-        // - fmt chunk header: 8 bytes ("fmt " + len)
-        // - fmt chunk body starts with: u16 tag, u16 channels, u32 sample_rate, u32 byte_rate, ...
         let byte_rate_offset = 12 + 8 + 2 + 2 + 4;
         if bytes.len() >= byte_rate_offset + 4 {
             bytes[byte_rate_offset..byte_rate_offset + 4].copy_from_slice(&0u32.to_le_bytes());
@@ -220,7 +209,7 @@ mod tests {
 
         let decoded = renderer
             .decode_from_bytes(&bytes)
-            .expect("rodio fallback should decode");
+            .expect("symphonia fallback should decode");
         assert_eq!(decoded.channels, 1);
         assert_eq!(decoded.sample_rate, 48_000);
         assert!(!decoded.samples.is_empty());

@@ -281,7 +281,7 @@ fn default_input_channels(max_channels: u16) -> Vec<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cpal::{SampleFormat, SampleRate, SupportedBufferSize, SupportedStreamConfigRange};
+    use cpal::{SampleFormat, SupportedBufferSize, SupportedStreamConfigRange};
 
     #[test]
     fn resolve_selected_input_channels_falls_back_when_out_of_range() {
@@ -294,8 +294,8 @@ mod tests {
     fn pick_stream_config_marks_fallback_when_rate_missing() {
         let range = SupportedStreamConfigRange::new(
             2,
-            SampleRate(44_100),
-            SampleRate(48_000),
+            44_100,
+            48_000,
             SupportedBufferSize::Unknown,
             SampleFormat::F32,
         );

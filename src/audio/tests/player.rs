@@ -1,5 +1,6 @@
 use super::super::AudioPlayer;
 use super::support::{fixtures, silent_wav_bytes, test_player};
+use crate::audio::output::{open_output_stream, AudioOutputConfig};
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -7,9 +8,10 @@ use std::{
 
 #[test]
 fn remaining_loop_duration_reports_time_left_in_cycle() {
-    let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else {
+    let Ok(outcome) = open_output_stream(&AudioOutputConfig::default()) else {
         return;
     };
+    let stream = outcome.stream;
     let started_at = Instant::now() - Duration::from_secs_f32(0.75);
     let player = test_player(
         stream,
@@ -27,9 +29,10 @@ fn remaining_loop_duration_reports_time_left_in_cycle() {
 
 #[test]
 fn remaining_loop_duration_accounts_for_full_track_offset() {
-    let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else {
+    let Ok(outcome) = open_output_stream(&AudioOutputConfig::default()) else {
         return;
     };
+    let stream = outcome.stream;
     let started_at = Instant::now() - Duration::from_secs_f32(0.5);
     let player = test_player(
         stream,
@@ -47,9 +50,10 @@ fn remaining_loop_duration_accounts_for_full_track_offset() {
 
 #[test]
 fn remaining_loop_duration_none_when_not_looping() {
-    let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else {
+    let Ok(outcome) = open_output_stream(&AudioOutputConfig::default()) else {
         return;
     };
+    let stream = outcome.stream;
     let player = test_player(
         stream,
         Some(8.0),
@@ -65,9 +69,10 @@ fn remaining_loop_duration_none_when_not_looping() {
 
 #[test]
 fn progress_wraps_full_loop_from_offset() {
-    let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else {
+    let Ok(outcome) = open_output_stream(&AudioOutputConfig::default()) else {
         return;
     };
+    let stream = outcome.stream;
     let player = test_player(
         stream,
         Some(10.0),
@@ -84,9 +89,10 @@ fn progress_wraps_full_loop_from_offset() {
 
 #[test]
 fn progress_uses_elapsed_override_for_looping() {
-    let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else {
+    let Ok(outcome) = open_output_stream(&AudioOutputConfig::default()) else {
         return;
     };
+    let stream = outcome.stream;
     let player = test_player(
         stream,
         Some(10.0),
@@ -103,9 +109,10 @@ fn progress_uses_elapsed_override_for_looping() {
 
 #[test]
 fn remaining_loop_duration_uses_elapsed_override() {
-    let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else {
+    let Ok(outcome) = open_output_stream(&AudioOutputConfig::default()) else {
         return;
     };
+    let stream = outcome.stream;
     let player = test_player(
         stream,
         Some(8.0),
@@ -186,17 +193,14 @@ fn span_pipeline_preserves_sample_count() {
 
 #[test]
 fn play_range_accepts_zero_width_request() {
-    let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else {
+    let Ok(outcome) = open_output_stream(&AudioOutputConfig::default()) else {
         return;
     };
+    let stream = outcome.stream;
     let mut player = test_player(stream, None, None, None, false, None, None);
-    let bytes = vec![
-        0x52, 0x49, 0x46, 0x46, 0x24, 0x80, 0x00, 0x00, 0x57, 0x41, 0x56, 0x45, 0x66, 0x6D, 0x74,
-        0x20, 0x10, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x44, 0xAC, 0x00, 0x00, 0x88, 0x58,
-        0x01, 0x00, 0x02, 0x00, 0x10, 0x00, 0x64, 0x61, 0x74, 0x61, 0x00, 0x80, 0x00, 0x00, 0x00,
-        0x00,
-    ];
-    player.set_audio(bytes, 1.0);
+    let duration = 1.0;
+    let bytes = silent_wav_bytes(duration, 44_100, 1);
+    player.set_audio(bytes, duration);
     assert!(player.play_range(0.5, 0.5, false).is_ok());
 }
 

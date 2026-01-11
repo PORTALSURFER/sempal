@@ -1,4 +1,5 @@
 use super::super::{AudioPlayer, normalized_progress};
+use crate::audio::output::{open_output_stream, AudioOutputConfig};
 use std::time::{Duration, Instant};
 
 #[test]
@@ -14,9 +15,10 @@ fn normalized_progress_handles_tiny_selection_near_end() {
 
 #[test]
 fn remaining_loop_duration_stays_within_span_on_long_elapsed() {
-    let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else {
+    let Ok(outcome) = open_output_stream(&AudioOutputConfig::default()) else {
         return;
     };
+    let stream = outcome.stream;
     let span = (1.0_f32, 1.1_f32);
     let span_length = span.1 - span.0;
     let player = AudioPlayer::test_with_state(
@@ -36,9 +38,10 @@ fn remaining_loop_duration_stays_within_span_on_long_elapsed() {
 
 #[test]
 fn progress_math_is_stable_for_long_running_full_track_loops() {
-    let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else {
+    let Ok(outcome) = open_output_stream(&AudioOutputConfig::default()) else {
         return;
     };
+    let stream = outcome.stream;
     let duration = 8.0_f32;
     let offset = 2.0_f32;
     let elapsed = 60.0_f32 * 60.0_f32 * 5.0_f32 + 0.25_f32;

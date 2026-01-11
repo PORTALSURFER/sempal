@@ -1,0 +1,304 @@
+warning: unused import: `std::net::TcpListener`
+   --> src\issue_gateway\api.rs:329:9
+    |
+329 |     use std::net::TcpListener;
+    |         ^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `Arc` and `Mutex`
+   --> src\issue_gateway\api.rs:330:21
+    |
+330 |     use std::sync::{Arc, Mutex};
+    |                     ^^^  ^^^^^
+
+warning: unused import: `std::thread`
+   --> src\issue_gateway\api.rs:331:9
+    |
+331 |     use std::thread;
+    |         ^^^^^^^^^^^
+
+warning: unused import: `std::fs`
+ --> src\sample_sources\library\tests.rs:4:5
+  |
+4 | use std::fs;
+  |     ^^^^^^^
+
+warning: use of deprecated method `cpal::traits::DeviceTrait::name`: Use `description()` for comprehensive device information including name, manufacturer, and device type. Use `id()` for a unique, stable device identifier that persists across reboots and reconnections.
+ --> src\audio\device.rs:4:12
+  |
+4 |     device.name().ok()
+  |            ^^^^
+  |
+  = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+   --> src\egui_app\ui\sources_panel\mod.rs:170:16
+    |
+170 |             ui.allocate_ui_at_rect(folder_rect, |ui| {
+    |                ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+   --> src\egui_app\ui\sources_panel\mod.rs:181:16
+    |
+181 |             ui.allocate_ui_at_rect(drop_targets_rect, |ui| {
+    |                ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::audio::Source`
+ --> src\analysis\audio_decode.rs:4:5
+  |
+4 | use crate::audio::Source;
+  |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `byte_len`
+  --> src\analysis\audio\decode_io.rs:48:9
+   |
+48 |     let byte_len = file.metadata().map(|meta| meta.len()).unwrap_or(0) as u64;
+   |         ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_byte_len`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `volume`
+  --> src\audio\player\helpers.rs:40:13
+   |
+40 |         let volume = self.effective_volume();
+   |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_volume`
+
+warning: variable does not need to be mutable
+  --> src\audio\player\playback.rs:54:13
+   |
+54 |         let mut source = decoder_from_bytes(bytes)?;
+   |             ----^^^^^^
+   |             |
+   |             help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `fade`
+   --> src\audio\player\playback.rs:251:13
+    |
+251 |         let fade = fade_duration(aligned_span_sec, self.anti_clip_fade());
+    |             ^^^^ help: if this is intentional, prefix it with an underscore: `_fade`
+
+warning: variable does not need to be mutable
+  --> src\audio\decoder.rs:36:13
+   |
+36 |         let mut reader = probed.format;
+   |             ----^^^^^^
+   |             |
+   |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+  --> src\egui_app\ui\sources_panel\mod.rs:86:17
+   |
+86 |             let mut drop_targets_height = self
+   |                 ----^^^^^^^^^^^^^^^^^^^
+   |                 |
+   |                 help: remove this `mut`
+
+warning: variable does not need to be mutable
+  --> src\http_client.rs:69:9
+   |
+69 |     let mut reader = response.into_reader();
+   |         ----^^^^^^
+   |         |
+   |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+  --> src\http_client.rs:89:9
+   |
+89 |     let mut reader = response.into_reader();
+   |         ----^^^^^^
+   |         |
+   |         help: remove this `mut`
+
+warning: unused variable: `dir`
+   --> src\issue_gateway\token_store.rs:501:20
+    |
+501 | fn sync_parent_dir(dir: &Path) -> Result<(), IssueTokenStoreError> {
+    |                    ^^^ help: if this is intentional, prefix it with an underscore: `_dir`
+
+warning: variable does not need to be mutable
+   --> src\wav_sanitize.rs:186:9
+    |
+186 |     let mut changed = false;
+    |         ----^^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> src\waveform\mod.rs:383:9
+    |
+383 |     let mut file = std::fs::File::open(path).map_err(|source| WaveformLoadE...
+    |         ----^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: method `restart` is never used
+   --> src\egui_app\controller\library\analysis_jobs\pool\mod.rs:195:19
+    |
+ 40 | impl AnalysisWorkerPool {
+    | ----------------------- method in this implementation
+...
+195 |     pub(crate) fn restart(
+    |                   ^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: methods `apply_pending_backend_switch` and `analysis_jobs_active` are never used
+   --> src\egui_app\controller\library\analysis_options.rs:195:19
+    |
+ 31 | impl EguiController {
+    | ------------------- methods in this implementation
+...
+195 |     pub(crate) fn apply_pending_backend_switch(&mut self) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+206 |     fn analysis_jobs_active(&self) -> bool {
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: field `channels` is never read
+  --> src\egui_app\controller\state\audio.rs:89:16
+   |
+82 | pub(crate) struct LoadedAudio {
+   |                   ----------- field in this struct
+...
+89 |     pub(crate) channels: u16,
+   |                ^^^^^^^^
+   |
+   = note: `LoadedAudio` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+
+warning: constant `LEGACY_SCHEMA_SQL` is never used
+  --> src\sample_sources\library\tests.rs:12:7
+   |
+12 | const LEGACY_SCHEMA_SQL: &str = r#"
+   |       ^^^^^^^^^^^^^^^^^
+
+warning: function `create_legacy_schema` is never used
+  --> src\sample_sources\library\tests.rs:69:4
+   |
+69 | fn create_legacy_schema(conn: &Connection) {
+   |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `table_columns` is never used
+  --> src\sample_sources\library\tests.rs:73:4
+   |
+73 | fn table_columns(conn: &Connection, table: &str) -> HashSet<String> {
+   |    ^^^^^^^^^^^^^
+
+warning: function `assert_table_exists` is never used
+  --> src\sample_sources\library\tests.rs:83:4
+   |
+83 | fn assert_table_exists(conn: &Connection, table: &str) {
+   |    ^^^^^^^^^^^^^^^^^^^
+
+warning: function `assert_has_columns` is never used
+  --> src\sample_sources\library\tests.rs:95:4
+   |
+95 | fn assert_has_columns(conn: &Connection, table: &str, columns: &[&str]) {
+   |    ^^^^^^^^^^^^^^^^^^
+
+warning: function `reset_symphonia_decode_count` is never used
+   --> src\waveform\decode\symphonia_reader.rs:161:15
+    |
+161 | pub(super) fn reset_symphonia_decode_count() {
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `symphonia_decode_count` is never used
+   --> src\waveform\decode\symphonia_reader.rs:166:15
+    |
+166 | pub(super) fn symphonia_decode_count() -> usize {
+    |               ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `reset_wav_decode_count` is never used
+  --> src\waveform\decode\wav_reader.rs:91:15
+   |
+91 | pub(super) fn reset_wav_decode_count() {
+   |               ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `wav_decode_count` is never used
+  --> src\waveform\decode\wav_reader.rs:96:15
+   |
+96 | pub(super) fn wav_decode_count() -> usize {
+   |               ^^^^^^^^^^^^^^^^
+
+warning: `sempal` (lib test) generated 31 warnings (run `cargo fix --lib -p sempal --tests` to apply 15 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.24s
+     Running unittests src\lib.rs (target\debug\deps\sempal-1093511e49a52991.exe)
+
+running 29 tests
+test audio::tests::fade::edge_fade_handles_tiny_segments ... ok
+test audio::tests::fade::edge_fade_ramps_start_samples ... ok
+test audio::tests::fade::fade_duration_clamps_to_span_length ... ok
+test audio::tests::player::aligned_span_seconds_snaps_to_frames ... ok
+test audio::tests::fade::fade_out_on_request_ramps_to_zero_and_stops ... ok
+test audio::tests::fade::edge_fade_tracks_frames_for_multichannel ... ok
+test audio::tests::player::progress_wraps_full_loop_from_offset ... ok
+test audio::tests::player::remaining_loop_duration_accounts_for_full_track_offset ... ok
+test audio::tests::player::progress_uses_elapsed_override_for_looping ... ok
+test audio::tests::player::play_range_at_track_end_expands_backwards ... FAILED
+test audio::tests::decode::decode_handles_varied_sample_rates_and_channels ... ok
+test audio::tests::player::play_range_accepts_zero_width_request ... FAILED
+test audio::tests::player::span_pipeline_preserves_sample_count ... FAILED
+test audio::tests::player::remaining_loop_duration_none_when_not_looping ... ok
+test audio::tests::player::remaining_loop_duration_uses_elapsed_override ... ok
+test audio::tests::player::play_looped_range_from_keeps_full_span ... FAILED
+test audio::tests::player::remaining_loop_duration_reports_time_left_in_cycle ... ok
+test audio::tests::playhead_edges::normalized_progress_handles_tiny_selection_near_end ... ok
+test audio::tests::player::span_sample_count_tracks_requested_window ... FAILED
+test audio::tests::player::set_audio_prefers_provided_duration ... ok
+test audio::tests::routing::normalized_progress_handles_elapsed_beyond_span ... ok
+test audio::tests::routing::normalized_progress_handles_full_track ... ok
+test audio::tests::routing::normalized_progress_loops_within_range ... ok
+test audio::tests::player::set_audio_falls_back_to_header ... FAILED
+test audio::tests::playhead_edges::progress_math_is_stable_for_long_running_full_track_loops ... ok
+test audio::tests::playhead_edges::remaining_loop_duration_stays_within_span_on_long_elapsed ... ok
+test audio::tests::routing::normalized_progress_respects_span ... ok
+test audio::tests::routing::normalized_progress_returns_none_when_invalid_duration ... ok
+test audio::tests::routing::normalized_progress_wraps_partial_selection_when_looping ... ok
+
+failures:
+
+---- audio::tests::player::play_range_at_track_end_expands_backwards stdout ----
+
+thread 'audio::tests::player::play_range_at_track_end_expands_backwards' (22240) panicked at src\audio\tests\player.rs:138:5:
+assertion failed: player.play_range(1.0, 1.0, false).is_ok()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- audio::tests::player::play_range_accepts_zero_width_request stdout ----
+
+thread 'audio::tests::player::play_range_accepts_zero_width_request' (17772) panicked at src\audio\tests\player.rs:208:5:
+assertion failed: player.play_range(0.5, 0.5, false).is_ok()
+
+---- audio::tests::player::span_pipeline_preserves_sample_count stdout ----
+
+thread 'audio::tests::player::span_pipeline_preserves_sample_count' (15072) panicked at src\audio\tests\player.rs:188:57:
+span count: "Symphonia probe failed: unsupported feature: core (probe): no suitable format reader found"
+
+---- audio::tests::player::play_looped_range_from_keeps_full_span stdout ----
+
+thread 'audio::tests::player::play_looped_range_from_keeps_full_span' (1828) panicked at src\audio\tests\player.rs:154:5:
+assertion failed: player.play_looped_range_from(0.25, 0.75, 0.5).is_ok()
+
+---- audio::tests::player::span_sample_count_tracks_requested_window stdout ----
+
+thread 'audio::tests::player::span_sample_count_tracks_requested_window' (33344) panicked at src\audio\tests\player.rs:224:59:
+span count: "Symphonia probe failed: unsupported feature: core (probe): no suitable format reader found"
+
+---- audio::tests::player::set_audio_falls_back_to_header stdout ----
+
+thread 'audio::tests::player::set_audio_falls_back_to_header' (2732) panicked at src\audio\tests\player.rs:181:5:
+assertion failed: (duration - 2.0).abs() < 0.01
+
+
+failures:
+    audio::tests::player::play_looped_range_from_keeps_full_span
+    audio::tests::player::play_range_accepts_zero_width_request
+    audio::tests::player::play_range_at_track_end_expands_backwards
+    audio::tests::player::set_audio_falls_back_to_header
+    audio::tests::player::span_pipeline_preserves_sample_count
+    audio::tests::player::span_sample_count_tracks_requested_window
+
+test result: FAILED. 23 passed; 6 failed; 0 ignored; 0 measured; 580 filtered out; finished in 0.52s
+
+error: test failed, to rerun pass `--lib`

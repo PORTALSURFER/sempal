@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use cpal::Stream;
 use cpal::traits::StreamTrait;
-use rodio::buffer::SamplesBuffer;
+use crate::audio::SamplesBuffer;
 use super::output::MonitorSink;
 
 use super::input::{
