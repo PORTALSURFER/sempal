@@ -37,14 +37,14 @@ pub(super) fn handle_selection_slide_drag(
     ui: &mut egui::Ui,
     rect: egui::Rect,
     view: WaveformView,
-    view_width: f32,
+    view_width: f64,
     selection: SelectionRange,
     response: &egui::Response,
 ) {
     let primary_down = ui.input(|i| i.pointer.button_down(egui::PointerButton::Primary));
     let to_wave_pos = |pos: egui::Pos2| {
-        let normalized = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
-        normalized.mul_add(view_width, view.start).clamp(0.0, 1.0)
+        let normalized = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0) as f64;
+        normalized.mul_add(view_width, view.start).clamp(0.0, 1.0) as f32
     };
     if response.drag_started() && primary_down {
         if let Some(pos) = response.interact_pointer_pos() {
@@ -152,7 +152,7 @@ pub(super) fn handle_selection_edge_drag(
     app: &mut EguiApp,
     rect: egui::Rect,
     view: WaveformView,
-    view_width: f32,
+    view_width: f64,
     edge: SelectionEdge,
     alt_down: bool,
     shift_down: bool,
@@ -178,9 +178,9 @@ pub(super) fn handle_selection_edge_drag(
         && let Some(pos) = edge_response.interact_pointer_pos()
     {
         let offset = app.selection_edge_offset.unwrap_or(0.0);
-        let view_fraction = ((pos.x - offset - rect.left()) / rect.width()).clamp(0.0, 1.0);
-        let absolute = view.start + view_width.max(f32::EPSILON) * view_fraction;
-        let clamped = absolute.clamp(0.0, 1.0);
+        let view_fraction = ((pos.x - offset - rect.left()) / rect.width()).clamp(0.0, 1.0) as f64;
+        let absolute = view.start + view_width.max(1e-9) * view_fraction;
+        let clamped = absolute.clamp(0.0, 1.0) as f32;
         app.controller.update_selection_drag(clamped, shift_down);
     }
     if edge_response.drag_stopped() && !primary_down {

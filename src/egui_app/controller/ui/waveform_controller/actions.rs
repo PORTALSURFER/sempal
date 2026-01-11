@@ -7,14 +7,14 @@ pub(crate) trait WaveformActions {
         &mut self,
         zoom_in: bool,
         steps: u32,
-        focus: Option<f32>,
+        focus: Option<f64>,
         factor_override: Option<f32>,
         playhead_focus_when_playing: bool,
         keep_playhead_visible: bool,
     );
     fn nudge_selection_range(&mut self, steps: isize, fine: bool);
     fn slide_selection_range(&mut self, steps: isize);
-    fn scroll_waveform_view(&mut self, center: f32);
+    fn scroll_waveform_view(&mut self, center: f64);
 }
 
 impl WaveformActions for WaveformController<'_> {
@@ -49,7 +49,7 @@ impl WaveformActions for WaveformController<'_> {
         &mut self,
         zoom_in: bool,
         steps: u32,
-        focus: Option<f32>,
+        focus: Option<f64>,
         factor_override: Option<f32>,
         playhead_focus_when_playing: bool,
         keep_playhead_visible: bool,
@@ -140,22 +140,23 @@ impl WaveformActions for WaveformController<'_> {
         self.push_selection_undo("Selection", before, Some(range));
     }
 
-    fn scroll_waveform_view(&mut self, center: f32) {
-        let mut view = self.display_view();
-        let min_width = self.min_view_width();
-        let width = view.width().max(min_width);
+    fn scroll_waveform_view(&mut self, center: f64) {
+        let view = self.ui.waveform.view;  // Use actual view, not display_view
+        let width = view.width();
         if width >= 1.0 {
-            view.start = 0.0;
-            view.end = 1.0;
-            self.ui.waveform.view = view;
+            self.ui.waveform.view = WaveformView {
+                start: 0.0,
+                end: 1.0,
+            };
             self.refresh_waveform_image();
             return;
         }
         let half = width * 0.5;
         let start = (center - half).clamp(0.0, 1.0 - width);
-        view.start = start;
-        view.end = (start + width).min(1.0);
-        self.ui.waveform.view = view.clamp();
+        self.ui.waveform.view = WaveformView {
+            start,
+            end: (start + width).min(1.0),
+        }.clamp();
         self.refresh_waveform_image();
     }
 }

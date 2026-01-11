@@ -5,26 +5,26 @@ use crate::waveform::DecodedWaveform;
 use std::fs;
 use std::path::Path;
 
-const MIN_VIEW_WIDTH_BASE: f32 = 1e-9;
+const MIN_VIEW_WIDTH_BASE: f64 = 1e-9;
 const MIN_SAMPLES_PER_PIXEL: f32 = 1.0;
 pub(crate) const MAX_ZOOM_MULTIPLIER: f32 = 64.0;
 // Cap oversampling to avoid subpixel waveform columns that shimmer when downscaled.
 const MAX_COLUMNS_PER_PIXEL: f32 = 1.0;
 const DEFAULT_TRANSIENT_SENSITIVITY: f32 = 0.6;
 
-fn min_view_width_for_frames(frame_count: usize, width_px: u32) -> f32 {
+fn min_view_width_for_frames(frame_count: usize, width_px: u32) -> f64 {
     if frame_count == 0 {
         return 1.0;
     }
-    let samples = frame_count as f32;
-    let pixels = width_px.max(1) as f32;
-    (pixels * MIN_SAMPLES_PER_PIXEL / samples).clamp(MIN_VIEW_WIDTH_BASE, 1.0)
+    let samples = frame_count as f64;
+    let pixels = width_px.max(1) as f64;
+    (pixels * MIN_SAMPLES_PER_PIXEL as f64 / samples).clamp(MIN_VIEW_WIDTH_BASE, 1.0)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct WaveformRenderMeta {
-    pub view_start: f32,
-    pub view_end: f32,
+    pub view_start: f64,
+    pub view_end: f64,
     pub size: [u32; 2],
     pub samples_len: usize,
     pub texture_width: u32,
@@ -38,9 +38,9 @@ impl WaveformRenderMeta {
         let width = (self.view_end - self.view_start)
             .abs()
             .max((other.view_end - other.view_start).abs())
-            .max(1e-6);
-        let pixels = self.size[0].max(1) as f32;
-        let eps = (width / pixels).max(1e-6);
+            .max(1e-9);
+        let pixels = self.size[0].max(1) as f64;
+        let eps = (width / pixels).max(1e-9);
         self.samples_len == other.samples_len
             && self.size == other.size
             && self.texture_width == other.texture_width
@@ -52,7 +52,7 @@ impl WaveformRenderMeta {
 }
 
 impl EguiController {
-    pub(crate) fn min_view_width(&self) -> f32 {
+    pub(crate) fn min_view_width(&self) -> f64 {
         if let Some(decoded) = self.sample_view.waveform.decoded.as_ref() {
             min_view_width_for_frames(decoded.frame_count(), self.sample_view.waveform.size[0])
         } else {
@@ -61,7 +61,7 @@ impl EguiController {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn apply_view_bounds_with_min(&mut self, min_width: f32) -> WaveformView {
+    pub(crate) fn apply_view_bounds_with_min(&mut self, min_width: f64) -> WaveformView {
         let mut view = self.ui.waveform.view.clamp();
         let width = view.width().max(min_width);
         view.start = view.start.min(1.0 - width);
@@ -106,27 +106,25 @@ impl EguiController {
         let [width, height] = self.sample_view.waveform.size;
         let total_frames = decoded.frame_count();
         let min_view_width = min_view_width_for_frames(total_frames, width);
-        let mut view = self.ui.waveform.view.clamp();
-        let width_clamped = view.width().max(min_view_width);
-        view.start = view.start.min(1.0 - width_clamped);
-        view.end = (view.start + width_clamped).min(1.0);
-        let view = view;
-        let max_zoom = (1.0 / min_view_width).min(MAX_ZOOM_MULTIPLIER);
-        let zoom_scale = (1.0 / width_clamped).min(max_zoom).max(1.0);
-        let max_target = (width as f32 * MAX_COLUMNS_PER_PIXEL)
+        let view = self.ui.waveform.view.clamp();
+        // Allow deep zooming - don't clamp to min_view_width
+        let width_for_rendering = view.width();
+        let max_zoom = 1.0 / MIN_VIEW_WIDTH_BASE;  // Remove MAX_ZOOM_MULTIPLIER limit
+        let zoom_scale = (1.0 / width_for_rendering).min(max_zoom).max(1.0);
+        let max_target = (width as f64 * MAX_COLUMNS_PER_PIXEL as f64)
             .ceil()
-            .max(width as f32) as usize;
-        let target = (width as f32 * zoom_scale).ceil().max(width as f32) as usize;
+            .max(width as f64) as usize;
+        let target = (width as f64 * zoom_scale).ceil().max(width as f64) as usize;
         let target = target.min(max_target);
 
         if (decoded.samples.is_empty() && decoded.peaks.is_none()) || total_frames == 0 {
             self.ui.waveform.image = None;
             return;
         }
-        let start_frame = ((view.start * total_frames as f32).floor() as usize)
+        let start_frame = ((view.start * total_frames as f64).floor() as usize)
             .min(total_frames.saturating_sub(1));
         let mut end_frame =
-            ((view.end * total_frames as f32).ceil() as usize).clamp(start_frame + 1, total_frames);
+            ((view.end * total_frames as f64).ceil() as usize).clamp(start_frame + 1, total_frames);
         if end_frame <= start_frame {
             end_frame = (start_frame + 1).min(total_frames);
         }
@@ -157,8 +155,8 @@ impl EguiController {
             .renderer
             .render_color_image_for_view_with_size(
                 decoded,
-                view.start,
-                view.end,
+                view.start as f32,
+                view.end as f32,
                 self.ui.waveform.channel_view,
                 effective_width,
                 height,
@@ -166,12 +164,15 @@ impl EguiController {
         let (view_start, view_end) = self
             .sample_view
             .renderer
-            .cached_view_window(decoded, view.start, view.end, effective_width)
+            .cached_view_window(decoded, view.start as f32, view.end as f32, effective_width)
+            .map(|(s, e)| (s as f64, e as f64))
             .unwrap_or((view.start, view.end));
         let snapped_view = WaveformView {
             start: view_start,
             end: view_end,
         };
+        // Store the actual rendered view bounds in the image
+        // but DON'T modify self.ui.waveform.view to preserve f64 precision
         if self.is_waveform_circular_slide_active() {
             self.ui.waveform.image = Some(WaveformImage {
                 image: color_image,
@@ -184,7 +185,8 @@ impl EguiController {
                 view_start,
                 view_end,
             });
-            self.ui.waveform.view = snapped_view;
+            // Don't snap the view - this causes precision loss and desync at deep zoom
+            // self.ui.waveform.view = snapped_view;
         }
         self.sample_view.waveform.render_meta = Some(desired_meta);
     }

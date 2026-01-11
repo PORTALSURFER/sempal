@@ -297,7 +297,7 @@ fn selection_start_snap_radius(controller: &EguiController) -> f32 {
     let mut radius = SELECTION_START_SNAP_RADIUS;
     let view_width = controller.ui.waveform.view.width();
     if view_width.is_finite() && view_width > 0.0 {
-        radius = radius.min(view_width * SELECTION_START_SNAP_VIEW_FRACTION);
+        radius = radius.min((view_width * SELECTION_START_SNAP_VIEW_FRACTION as f64) as f32);
     }
     if let Some(duration) = controller.loaded_audio_duration_seconds() {
         if duration.is_finite() && duration > 0.0 {

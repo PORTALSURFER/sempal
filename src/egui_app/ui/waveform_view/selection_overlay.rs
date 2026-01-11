@@ -15,7 +15,7 @@ pub(super) fn render_selection_overlay(
     rect: egui::Rect,
     palette: &style::Palette,
     view: WaveformView,
-    view_width: f32,
+    view_width: f64,
     highlight: Color32,
     pointer_pos: Option<egui::Pos2>,
 ) -> bool {
@@ -148,7 +148,7 @@ fn draw_bpm_guides(
     rect: egui::Rect,
     selection: crate::selection::SelectionRange,
     view: WaveformView,
-    view_width: f32,
+    view_width: f64,
     highlight: Color32,
     top_cut: f32,
     bottom_cut: f32,
@@ -186,13 +186,13 @@ fn draw_bpm_guides(
     let mut beat_index = 1usize;
     while beat <= end + eps {
         let beat_pos = if beat > end { end } else { beat };
-        let normalized = ((beat_pos - view.start) / view_width).clamp(0.0, 1.0);
-        let x = rect.left() + rect.width() * normalized;
+        let normalized = ((beat_pos as f64 - view.start) / view_width).clamp(0.0, 1.0);
+        let x = rect.left() + rect.width() * normalized as f32;
         let is_emphasis = beat_index % 4 == 0;
         if is_emphasis {
             let prev = (beat_pos - step).max(selection.start());
-            let prev_norm = ((prev - view.start) / view_width).clamp(0.0, 1.0);
-            let prev_x = rect.left() + rect.width() * prev_norm;
+            let prev_norm = ((prev as f64 - view.start) / view_width).clamp(0.0, 1.0);
+            let prev_x = rect.left() + rect.width() * prev_norm as f32;
             if x > prev_x {
                 let mut mesh = egui::epaint::Mesh::default();
                 let top_left = egui::pos2(prev_x, line_top);

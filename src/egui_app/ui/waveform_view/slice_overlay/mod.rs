@@ -11,7 +11,7 @@ use crate::egui_app::ui::style;
 struct SliceOverlayEnv<'a> {
     rect: egui::Rect,
     view: WaveformView,
-    view_width: f32,
+    view_width: f64,
     pointer_pos: Option<egui::Pos2>,
     palette: &'a style::Palette,
     slice_color: Color32,
@@ -43,7 +43,7 @@ pub(super) fn render_slice_overlays(
     rect: egui::Rect,
     palette: &style::Palette,
     view: WaveformView,
-    view_width: f32,
+    view_width: f64,
     pointer_pos: Option<egui::Pos2>,
 ) -> SliceOverlayResult {
     render::render_slice_overlays(app, ui, rect, palette, view, view_width, pointer_pos)

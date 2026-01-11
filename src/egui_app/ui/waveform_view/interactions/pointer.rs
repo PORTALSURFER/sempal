@@ -10,13 +10,12 @@ pub(in super::super) fn handle_waveform_pointer_interactions(
     rect: egui::Rect,
     response: &egui::Response,
     view: WaveformView,
-    view_width: f32,
+    view_width: f64,
 ) {
     let pointer_pos = response.interact_pointer_pos();
     let normalize_to_waveform = |pos: egui::Pos2| {
-        ((pos.x - rect.left()) / rect.width())
-            .mul_add(view_width, view.start)
-            .clamp(0.0, 1.0)
+        ((pos.x - rect.left()) / rect.width()) as f64
+            * view_width + view.start
     };
     let current_pointer_pos = ui.ctx().input(|i| i.pointer.latest_pos());
     let drag_start_normalized = if response.drag_started() || (response.hovered() && ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary))) {
@@ -51,7 +50,7 @@ pub(in super::super) fn handle_waveform_pointer_interactions(
         let delta = pos - last;
         app.controller.ui.waveform.pan_drag_pos = Some(pos);
         if response.dragged_by(egui::PointerButton::Middle) && view_width < 1.0 {
-            let fraction_delta = (delta.x / rect.width()) * view_width;
+            let fraction_delta = (delta.x / rect.width()) as f64 * view_width;
             let view_center = view.start + view_width * 0.5;
             let target_center = (view_center - fraction_delta).clamp(0.0, 1.0);
             app.controller.scroll_waveform_view(target_center);
@@ -66,12 +65,12 @@ pub(in super::super) fn handle_waveform_pointer_interactions(
                 if app.controller.ui.waveform.image.is_some() {
                     app.controller.focus_waveform_context();
                 }
-                if let Err(err) = app.controller.start_waveform_circular_slide(value) {
+                if let Err(err) = app.controller.start_waveform_circular_slide(value as f32) {
                     app.controller.set_status(err, StatusTone::Error);
                     return;
                 }
             } else {
-                app.controller.update_waveform_circular_slide(value);
+                app.controller.update_waveform_circular_slide(value as f32);
             }
         }
         if ui.input(|i| i.pointer.button_released(egui::PointerButton::Primary)) {
@@ -84,11 +83,11 @@ pub(in super::super) fn handle_waveform_pointer_interactions(
     if response.drag_started() {
         if let Some(value) = drag_start_normalized {
             if secondary_down {
-                app.controller.start_edit_selection_drag(value);
+                app.controller.start_edit_selection_drag(value as f32);
             } else if app.controller.ui.waveform.slice_mode_enabled {
-                start_slice_paint(app, value);
+                start_slice_paint(app, value as f32);
             } else if primary_down {
-                app.controller.start_selection_drag(value);
+                app.controller.start_selection_drag(value as f32);
             }
         }
     } else if response.dragged() {
@@ -97,11 +96,11 @@ pub(in super::super) fn handle_waveform_pointer_interactions(
                 app.controller.focus_waveform_context();
             }
             if response.dragged_by(egui::PointerButton::Secondary) {
-                app.controller.update_edit_selection_drag(value, false);
+                app.controller.update_edit_selection_drag(value as f32, false);
             } else if app.controller.ui.waveform.slice_mode_enabled {
-                update_slice_paint(app, value);
+                update_slice_paint(app, value as f32);
             } else if response.dragged_by(egui::PointerButton::Primary) {
-                app.controller.update_selection_drag(value, false);
+                app.controller.update_selection_drag(value as f32, false);
             }
         }
     } else if response.drag_stopped() {
@@ -138,7 +137,7 @@ pub(in super::super) fn handle_waveform_pointer_interactions(
             app.controller.clear_selection();
         }
         if let Some(value) = normalized {
-            app.controller.seek_to(value);
+            app.controller.seek_to(value as f32);
         }
     }
 }

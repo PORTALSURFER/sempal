@@ -4,13 +4,13 @@ use eframe::egui;
 use super::SliceOverlayEnv;
 
 pub(super) fn slice_rect(env: &SliceOverlayEnv<'_>, slice: SelectionRange) -> Option<egui::Rect> {
-    let start_norm = ((slice.start() - env.view.start) / env.view_width).clamp(0.0, 1.0);
-    let end_norm = ((slice.end() - env.view.start) / env.view_width).clamp(0.0, 1.0);
-    let width = env.rect.width() * (end_norm - start_norm).max(0.0);
+    let start_norm = ((slice.start() as f64 - env.view.start) / env.view_width).clamp(0.0, 1.0);
+    let end_norm = ((slice.end() as f64 - env.view.start) / env.view_width).clamp(0.0, 1.0);
+    let width = env.rect.width() * (end_norm - start_norm).max(0.0) as f32;
     if width <= 0.0 {
         return None;
     }
-    let x = env.rect.left() + env.rect.width() * start_norm;
+    let x = env.rect.left() + env.rect.width() * start_norm as f32;
     Some(egui::Rect::from_min_size(
         egui::pos2(x, env.rect.top()),
         egui::vec2(width, env.rect.height()),
@@ -43,10 +43,10 @@ pub(super) fn edge_position_px(edge: SelectionEdge, slice_rect: egui::Rect) -> f
 }
 
 pub(super) fn to_wave_pos(env: &SliceOverlayEnv<'_>, pos: egui::Pos2) -> f32 {
-    let normalized = ((pos.x - env.rect.left()) / env.rect.width()).clamp(0.0, 1.0);
+    let normalized = ((pos.x - env.rect.left()) / env.rect.width()).clamp(0.0, 1.0) as f64;
     normalized
         .mul_add(env.view_width, env.view.start)
-        .clamp(0.0, 1.0)
+        .clamp(0.0, 1.0) as f32
 }
 
 #[cfg(test)]

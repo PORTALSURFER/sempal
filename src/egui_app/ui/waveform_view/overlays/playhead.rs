@@ -32,11 +32,18 @@ pub(super) fn render_playhead(
         if window.len() < 2 {
             continue;
         }
-        let stops = gradient_stops_from_trail_window(&window, rect, view, view_width, |time| {
-            let base_age = last_time.saturating_duration_since(time);
-            let t = 1.0 - (base_age.as_secs_f32() / TRAIL_DURATION.as_secs_f32()).clamp(0.0, 1.0);
-            ((t * t) * 105.0 * fade_strength).round().clamp(0.0, 255.0) as u8
-        });
+        let stops = gradient_stops_from_trail_window(
+            &window,
+            rect,
+            view,
+            view_width as f64,
+            |time| {
+                let base_age = last_time.saturating_duration_since(time);
+                let t = 1.0
+                    - (base_age.as_secs_f32() / TRAIL_DURATION.as_secs_f32()).clamp(0.0, 1.0);
+                ((t * t) * 105.0 * fade_strength).round().clamp(0.0, 255.0) as u8
+            },
+        );
         paint_playhead_trail_mesh(ui, rect, &stops, highlight);
     }
 
@@ -44,11 +51,18 @@ pub(super) fn render_playhead(
         let cutoff = now.checked_sub(TRAIL_DURATION).unwrap_or(now);
         let window = trail_samples_in_window(&playhead.trail, cutoff);
         if window.len() >= 2 {
-            let stops = gradient_stops_from_trail_window(&window, rect, view, view_width, |time| {
-                let age = now.saturating_duration_since(time);
-                let t = 1.0 - (age.as_secs_f32() / TRAIL_DURATION.as_secs_f32()).clamp(0.0, 1.0);
-                ((t * t) * 119.0).round().clamp(0.0, 255.0) as u8
-            });
+            let stops = gradient_stops_from_trail_window(
+                &window,
+                rect,
+                view,
+                view_width as f64,
+                |time| {
+                    let age = now.saturating_duration_since(time);
+                    let t =
+                        1.0 - (age.as_secs_f32() / TRAIL_DURATION.as_secs_f32()).clamp(0.0, 1.0);
+                    ((t * t) * 119.0).round().clamp(0.0, 255.0) as u8
+                },
+            );
             paint_playhead_trail_mesh(ui, rect, &stops, highlight);
         }
     }
@@ -67,9 +81,10 @@ fn to_screen_x_unclamped(
     position: f32,
     rect: egui::Rect,
     view: crate::egui_app::state::WaveformView,
-    view_width: f32,
+    view_width: f64,
 ) -> f32 {
-    rect.left() + rect.width() * ((position - view.start) / view_width)
+    rect.left()
+        + rect.width() * ((position as f64 - view.start) / view_width) as f32
 }
 
 fn playhead_trail_mesh(
@@ -168,7 +183,7 @@ fn gradient_stops_from_trail_window(
     window: &[crate::egui_app::state::PlayheadTrailSample],
     rect: egui::Rect,
     view: crate::egui_app::state::WaveformView,
-    view_width: f32,
+    view_width: f64,
     alpha_for_time: impl Fn(Instant) -> u8,
 ) -> Vec<(f32, u8)> {
     if window.len() < 2 {

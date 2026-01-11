@@ -8,7 +8,7 @@ pub(in super::super) fn handle_waveform_interactions(
     rect: egui::Rect,
     response: &egui::Response,
     view: WaveformView,
-    view_width: f32,
+    view_width: f64,
 ) {
     if !response.hovered() {
         return;
@@ -32,7 +32,7 @@ pub(in super::super) fn handle_waveform_interactions(
         } * invert;
         if delta_x.abs() > 0.0 {
             let view_center = view.start + view_width * 0.5;
-            let fraction_delta = (delta_x / rect.width()) * view_width;
+            let fraction_delta = (delta_x / rect.width()) as f64 * view_width;
             let target_center = view_center + fraction_delta;
             app.controller.scroll_waveform_view(target_center);
         }
@@ -46,10 +46,10 @@ pub(in super::super) fn handle_waveform_interactions(
         .hover_pos()
         .or_else(|| response.interact_pointer_pos())
         .map(|pos| {
-            ((pos.x - rect.left()) / rect.width())
-                .mul_add(view_width, view.start)
-                .clamp(0.0, 1.0)
-        });
+            ((pos.x - rect.left()) / rect.width()) as f64
+                * view_width + view.start
+        })
+        .map(|pos| pos.clamp(0.0, 1.0));
     app.controller.zoom_waveform_steps_with_factor(
         zoom_in,
         zoom_steps,

@@ -29,17 +29,9 @@ impl EguiApp {
         let frame = style::section_frame();
         let frame_response = frame.show(ui, |ui| {
             let view = self.controller.ui.waveform.view;
-            let display_view = self
-                .controller
-                .ui
-                .waveform
-                .image
-                .as_ref()
-                .map(|image| crate::egui_app::state::WaveformView {
-                    start: image.view_start,
-                    end: image.view_end,
-                })
-                .unwrap_or(view);
+            // Always use the actual f64 view for precision
+            // Don't use the image's snapped view as it causes desync
+            let display_view = view;
             let view_width = display_view.width();
             let scrollbar_height = if view_width < 1.0 {
                 WAVEFORM_SCROLLBAR_HEIGHT
@@ -66,8 +58,8 @@ impl EguiApp {
                 .update_waveform_size(target_width, target_height);
             let pointer_pos = response.hover_pos();
             let to_screen_x = |position: f32, rect: egui::Rect| {
-                let normalized = ((position - display_view.start) / view_width).clamp(0.0, 1.0);
-                rect.left() + rect.width() * normalized
+                let normalized = ((position as f64 - display_view.start) / view_width).clamp(0.0, 1.0);
+                rect.left() + rect.width() * normalized as f32
             };
             if !base_render::render_waveform_base(self, ui, waveform_rect, &palette, is_loading) {
                 return;

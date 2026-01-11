@@ -112,21 +112,21 @@ impl Default for WaveformState {
 #[derive(Clone, Debug)]
 pub struct WaveformImage {
     pub image: egui::ColorImage,
-    pub view_start: f32,
-    pub view_end: f32,
+    pub view_start: f64,
+    pub view_end: f64,
 }
 
 /// Normalized bounds describing the visible region of the waveform.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WaveformView {
-    pub start: f32,
-    pub end: f32,
+    pub start: f64,
+    pub end: f64,
 }
 
 impl WaveformView {
     /// Clamp the view to a valid range while keeping the width positive.
     pub fn clamp(mut self) -> Self {
-        let width = (self.end - self.start).clamp(0.001, 1.0);
+        let width = (self.end - self.start).clamp(1e-9, 1.0);
         let start = self.start.clamp(0.0, 1.0 - width);
         self.start = start;
         self.end = (start + width).min(1.0);
@@ -134,8 +134,8 @@ impl WaveformView {
     }
 
     /// Width of the viewport.
-    pub fn width(&self) -> f32 {
-        (self.end - self.start).max(0.001)
+    pub fn width(&self) -> f64 {
+        (self.end - self.start).max(1e-9)
     }
 }
 

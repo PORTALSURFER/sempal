@@ -9,7 +9,7 @@ pub(super) fn render_edit_selection_overlay(
     ui: &mut egui::Ui,
     rect: egui::Rect,
     view: WaveformView,
-    view_width: f32,
+    view_width: f64,
 ) {
     let Some(selection) = app.controller.ui.waveform.edit_selection else {
         return;

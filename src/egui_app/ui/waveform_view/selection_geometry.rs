@@ -6,19 +6,19 @@ pub(super) fn normalized_range_in_view(
     start: f32,
     end: f32,
     view: WaveformView,
-    view_width: f32,
+    view_width: f64,
 ) -> (f32, f32) {
-    let width = view_width.max(1.0e-6);
-    let start_norm = ((start - view.start) / width).clamp(0.0, 1.0);
-    let end_norm = ((end - view.start) / width).clamp(start_norm, 1.0);
-    (start_norm, end_norm)
+    let width = view_width.max(1e-9);
+    let start_norm = ((start as f64 - view.start) / width).clamp(0.0, 1.0);
+    let end_norm = ((end as f64 - view.start) / width).clamp(start_norm, 1.0);
+    (start_norm as f32, end_norm as f32)
 }
 
 pub(super) fn selection_rect_for_view(
     selection: SelectionRange,
     rect: egui::Rect,
     view: WaveformView,
-    view_width: f32,
+    view_width: f64,
 ) -> egui::Rect {
     let (start_norm, end_norm) =
         normalized_range_in_view(selection.start(), selection.end(), view, view_width);
@@ -30,7 +30,7 @@ pub(super) fn selection_rect_for_view(
 pub(super) fn loop_bar_rect(
     rect: egui::Rect,
     view: WaveformView,
-    view_width: f32,
+    view_width: f64,
     selection: Option<SelectionRange>,
     bar_height: f32,
 ) -> egui::Rect {

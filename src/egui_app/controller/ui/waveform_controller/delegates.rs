@@ -12,7 +12,7 @@ impl EguiController {
 
 
     #[cfg(test)]
-    pub(crate) fn zoom_waveform_steps(&mut self, zoom_in: bool, steps: u32, focus: Option<f32>) {
+    pub(crate) fn zoom_waveform_steps(&mut self, zoom_in: bool, steps: u32, focus: Option<f64>) {
         self.waveform().zoom_waveform_steps(zoom_in, steps, focus);
     }
 
@@ -20,7 +20,7 @@ impl EguiController {
         &mut self,
         zoom_in: bool,
         steps: u32,
-        focus: Option<f32>,
+        focus: Option<f64>,
         factor_override: Option<f32>,
         playhead_focus_when_playing: bool,
         keep_playhead_visible: bool,
@@ -60,7 +60,7 @@ impl EguiController {
         self.waveform().waveform_cursor_alpha(hovering)
     }
 
-    pub(crate) fn scroll_waveform_view(&mut self, center: f32) {
+    pub(crate) fn scroll_waveform_view(&mut self, center: f64) {
         self.waveform().scroll_waveform_view(center);
     }
 }

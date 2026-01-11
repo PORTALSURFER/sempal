@@ -22,7 +22,7 @@ pub(super) fn render_loop_bar(
     }
 
     let selection = app.controller.ui.waveform.selection;
-    let bar_rect = loop_bar_rect(rect, view, view_width, selection, super::LOOP_BAR_HEIGHT);
+    let bar_rect = loop_bar_rect(rect, view, view_width as f64, selection, super::LOOP_BAR_HEIGHT);
     if let Some(selection) = selection {
         let response = ui.interact(
             bar_rect,
@@ -47,7 +47,13 @@ pub(super) fn render_loop_bar(
             );
         }
         selection_drag::handle_selection_slide_drag(
-            app, ui, rect, view, view_width, selection, &response,
+            app,
+            ui,
+            rect,
+            view,
+            view_width as f64,
+            selection,
+            &response,
         );
     } else {
         ui.painter()

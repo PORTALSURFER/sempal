@@ -14,7 +14,7 @@ pub(super) fn render_waveform_beat_grid(
     rect: egui::Rect,
     _palette: &style::Palette,
     view: WaveformView,
-    view_width: f32,
+    view_width: f64,
 ) {
     if !app.controller.ui.waveform.bpm_snap_enabled
         && !app.controller.ui.waveform.bpm_stretch_enabled
@@ -40,7 +40,7 @@ pub(super) fn render_waveform_beat_grid(
         return;
     }
     let quarter_step = beat_step * 0.25;
-    let quarter_spacing_px = rect.width() * (quarter_step / view_width);
+    let quarter_spacing_px = rect.width() * ((quarter_step as f64 / view_width) as f32);
     if !quarter_spacing_px.is_finite() || quarter_spacing_px < MIN_QUARTER_SPACING_PX {
         return;
     }
@@ -60,8 +60,8 @@ pub(super) fn render_waveform_beat_grid(
 
     let painter = ui.painter();
     let draw_line = |position: f32, stroke: egui::Stroke| {
-        let normalized = ((position - view.start) / view_width).clamp(0.0, 1.0);
-        let x = rect.left() + rect.width() * normalized;
+        let normalized = ((position as f64 - view.start) / view_width as f64).clamp(0.0, 1.0);
+        let x = rect.left() + rect.width() * normalized as f32;
         painter.line_segment(
             [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
             stroke,
@@ -69,8 +69,8 @@ pub(super) fn render_waveform_beat_grid(
     };
 
     if draw_eighths {
-        let start_index = (visible_start / eighth_step).floor() as i64;
-        let end_index = (visible_end / eighth_step).ceil() as i64;
+        let start_index = (visible_start / eighth_step as f64).floor() as i64;
+        let end_index = (visible_end / eighth_step as f64).ceil() as i64;
         let line_count = (end_index - start_index + 1).max(0) as usize;
         if line_count > MAX_GRID_LINES {
             draw_eighths = false;
@@ -88,8 +88,8 @@ pub(super) fn render_waveform_beat_grid(
     }
 
     if !draw_eighths {
-        let start_index = (visible_start / quarter_step).floor() as i64;
-        let end_index = (visible_end / quarter_step).ceil() as i64;
+        let start_index = (visible_start / quarter_step as f64).floor() as i64;
+        let end_index = (visible_end / quarter_step as f64).ceil() as i64;
         let line_count = (end_index - start_index + 1).max(0) as usize;
         if line_count > MAX_GRID_LINES {
             return;

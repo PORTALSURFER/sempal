@@ -8,7 +8,7 @@ pub(super) fn render_hover_overlay(
     rect: egui::Rect,
     pointer_pos: Option<egui::Pos2>,
     view: crate::egui_app::state::WaveformView,
-    view_width: f32,
+    view_width: f64,
     cursor_color: Color32,
     to_screen_x: &impl Fn(f32, egui::Rect) -> f32,
 ) {
@@ -29,9 +29,8 @@ pub(super) fn render_hover_overlay(
             app.controller.ui.waveform.suppress_hover_cursor = false;
         }
 
-        let normalized = ((pos.x - rect.left()) / rect.width())
-            .mul_add(view_width, view.start)
-            .clamp(0.0, 1.0);
+        let normalized = ((pos.x - rect.left()) / rect.width()) as f64 * view_width + view.start;
+        let normalized = normalized.clamp(0.0, 1.0) as f32;
         hovering = true;
         let suppress_hover = app.controller.ui.waveform.suppress_hover_cursor
             && !moved

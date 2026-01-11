@@ -11,8 +11,8 @@ pub(super) fn render_markers(
     to_screen_x: &impl Fn(f32, egui::Rect) -> f32,
 ) {
     if let Some(marker_pos) = app.controller.ui.waveform.last_start_marker
-        && marker_pos >= view.start
-        && marker_pos <= view.end
+        && (marker_pos as f64) >= view.start
+        && (marker_pos as f64) <= view.end
     {
         let x = to_screen_x(marker_pos, rect);
         let stroke = Stroke::new(1.5, style::with_alpha(start_marker_color, 230));
@@ -49,7 +49,8 @@ fn draw_transient_markers(
     let triangle_half = 4.0;
     let top = rect.top() + super::LOOP_BAR_HEIGHT;
     for &marker in transients {
-        if marker < view.start || marker > view.end {
+        let m = marker as f64;
+        if m < view.start || m > view.end {
             continue;
         }
         let x = to_screen_x(marker, rect);
