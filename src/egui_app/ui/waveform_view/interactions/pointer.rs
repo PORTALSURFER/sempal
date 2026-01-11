@@ -18,7 +18,8 @@ pub(in super::super) fn handle_waveform_pointer_interactions(
             .mul_add(view_width, view.start)
             .clamp(0.0, 1.0)
     };
-    let drag_start_normalized = if response.drag_started() {
+    let current_pointer_pos = ui.ctx().input(|i| i.pointer.latest_pos());
+    let drag_start_normalized = if response.drag_started() || (response.hovered() && ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary))) {
         if app.controller.ui.waveform.image.is_some() {
             app.controller.focus_waveform_context();
         }
@@ -31,7 +32,7 @@ pub(in super::super) fn handle_waveform_pointer_interactions(
                     .unwrap_or(pos)
             })
             .map(normalize_to_waveform)
-            .or_else(|| pointer_pos.map(normalize_to_waveform))
+            .or_else(|| pointer_pos.or(current_pointer_pos).map(normalize_to_waveform))
     } else {
         None
     };
@@ -58,26 +59,25 @@ pub(in super::super) fn handle_waveform_pointer_interactions(
         return;
     }
     app.controller.ui.waveform.pan_drag_pos = None;
-    if response.drag_started() && slide_modifiers && primary_down {
-        if let Some(value) = drag_start_normalized.or(normalized) {
-            if app.controller.ui.waveform.image.is_some() {
-                app.controller.focus_waveform_context();
+    let slide_active = app.controller.is_waveform_circular_slide_active();
+    if (slide_modifiers && primary_down && response.hovered()) || slide_active {
+        if let Some(value) = normalized.or_else(|| current_pointer_pos.map(normalize_to_waveform)) {
+            if !slide_active {
+                if app.controller.ui.waveform.image.is_some() {
+                    app.controller.focus_waveform_context();
+                }
+                if let Err(err) = app.controller.start_waveform_circular_slide(value) {
+                    app.controller.set_status(err, StatusTone::Error);
+                    return;
+                }
+            } else {
+                app.controller.update_waveform_circular_slide(value);
             }
-            if let Err(err) = app.controller.start_waveform_circular_slide(value) {
+        }
+        if ui.input(|i| i.pointer.button_released(egui::PointerButton::Primary)) {
+            if let Err(err) = app.controller.finish_waveform_circular_slide() {
                 app.controller.set_status(err, StatusTone::Error);
             }
-        }
-        return;
-    }
-    if response.dragged() && app.controller.is_waveform_circular_slide_active() {
-        if let Some(value) = normalized {
-            app.controller.update_waveform_circular_slide(value);
-        }
-        return;
-    }
-    if response.drag_stopped() && app.controller.is_waveform_circular_slide_active() {
-        if let Err(err) = app.controller.finish_waveform_circular_slide() {
-            app.controller.set_status(err, StatusTone::Error);
         }
         return;
     }

@@ -74,6 +74,12 @@ impl EguiController {
         &mut self,
         decoded: DecodedWaveform,
     ) {
+        if self.sample_view.waveform.decoded.as_ref().is_some_and(|d| d.cache_token == decoded.cache_token) {
+            // Content matches, no need to invalidate the current render or transients.
+            self.sample_view.waveform.decoded = Some(decoded);
+            return;
+        }
+
         // Force a rerender whenever decoded samples change, even if the view metadata is
         // identical to the previous render.
         self.sample_view.waveform.render_meta = None;
@@ -166,12 +172,20 @@ impl EguiController {
             start: view_start,
             end: view_end,
         };
-        self.ui.waveform.image = Some(WaveformImage {
-            image: color_image,
-            view_start,
-            view_end,
-        });
-        self.ui.waveform.view = snapped_view;
+        if self.is_waveform_circular_slide_active() {
+            self.ui.waveform.image = Some(WaveformImage {
+                image: color_image,
+                view_start: view.start,
+                view_end: view.end,
+            });
+        } else {
+            self.ui.waveform.image = Some(WaveformImage {
+                image: color_image,
+                view_start,
+                view_end,
+            });
+            self.ui.waveform.view = snapped_view;
+        }
         self.sample_view.waveform.render_meta = Some(desired_meta);
     }
 

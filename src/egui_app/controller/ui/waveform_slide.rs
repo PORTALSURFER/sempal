@@ -134,6 +134,11 @@ impl EguiController {
         };
         let offset_frames = state.last_offset_frames;
         if offset_frames == 0 {
+            self.apply_waveform_slide_preview(
+                state.original_samples.clone(),
+                state.spec_channels,
+                state.sample_rate,
+            );
             return Ok(());
         }
         let rotated =
@@ -183,13 +188,7 @@ impl EguiController {
             return;
         }
         let duration_seconds = total_frames as f32 / sample_rate.max(1) as f32;
-        let cache_token = self
-            .sample_view
-            .waveform
-            .decoded
-            .as_ref()
-            .map(|decoded| decoded.cache_token.wrapping_add(1))
-            .unwrap_or(1);
+        let cache_token = crate::waveform::next_cache_token();
         self.sample_view.waveform.decoded = Some(DecodedWaveform {
             cache_token,
             samples: Arc::from(samples),

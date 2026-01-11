@@ -42,6 +42,10 @@ pub struct DecodedWaveform {
     pub channels: u16,
 }
 
+pub fn next_cache_token() -> u64 {
+    decode::next_cache_token()
+}
+
 /// Decimated min/max envelope of a waveform, used when retaining full samples is too expensive.
 #[derive(Clone)]
 pub struct WaveformPeaks {

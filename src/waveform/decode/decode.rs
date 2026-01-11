@@ -3,6 +3,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT_CACHE_TOKEN: AtomicU64 = AtomicU64::new(1);
 
+pub(crate) fn next_cache_token() -> u64 {
+    NEXT_CACHE_TOKEN.fetch_add(1, Ordering::Relaxed)
+}
+
 impl WaveformRenderer {
     pub(super) const MAX_FULL_SAMPLE_FRAMES: usize = 2_500_000;
 

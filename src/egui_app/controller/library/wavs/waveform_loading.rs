@@ -139,18 +139,7 @@ impl EguiController {
         bytes: Vec<u8>,
         intent: AudioLoadIntent,
     ) -> Result<(DecodedWaveform, Vec<u8>, bool), String> {
-        if matches!(intent, AudioLoadIntent::Selection) {
-            if let Some(ratio) = self.stretch_ratio_for_sample(source, relative_path) {
-                let stretched = self.stretch_wav_bytes(&bytes, ratio)?;
-                let decoded = self
-                    .sample_view
-                    .renderer
-                    .decode_from_bytes(&stretched)
-                    .map_err(|err| err.to_string())?;
-                return Ok((decoded, stretched, true));
-            }
-        }
-        let decoded = match decoded {
+        let original_decoded = match decoded {
             Some(decoded) => decoded,
             None => self
                 .sample_view
@@ -158,7 +147,15 @@ impl EguiController {
                 .decode_from_bytes(&bytes)
                 .map_err(|err| err.to_string())?,
         };
-        Ok((decoded, bytes, false))
+
+        if matches!(intent, AudioLoadIntent::Selection) {
+            if let Some(ratio) = self.stretch_ratio_for_sample(source, relative_path) {
+                let stretched = self.stretch_wav_bytes(&bytes, ratio)?;
+                return Ok((original_decoded, stretched, true));
+            }
+        }
+
+        Ok((original_decoded, bytes, false))
     }
 
     pub(crate) fn stretch_ratio_for_sample(

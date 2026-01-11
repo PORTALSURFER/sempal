@@ -134,10 +134,24 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
         if stretch_toggle.clicked() {
             app.controller.set_bpm_stretch_enabled(bpm_stretch);
         }
+        if ui.button("⏴").on_hover_text("Decrease BPM by 1").clicked() {
+            if let Some(bpm) = app.controller.ui.waveform.bpm_value {
+                let next = (bpm - 1.0).max(1.0);
+                app.controller.set_bpm_value(next);
+                app.controller.ui.waveform.bpm_input = helpers::format_bpm_input(next);
+            }
+        }
         let bpm_edit = egui::TextEdit::singleline(&mut app.controller.ui.waveform.bpm_input)
             .desired_width(64.0)
             .hint_text("120")
             .show(ui);
+        if ui.button("⏵").on_hover_text("Increase BPM by 1").clicked() {
+            if let Some(bpm) = app.controller.ui.waveform.bpm_value {
+                let next = bpm + 1.0;
+                app.controller.set_bpm_value(next);
+                app.controller.ui.waveform.bpm_input = helpers::format_bpm_input(next);
+            }
+        }
         app.controller.ui.hotkeys.suppress_for_bpm_input = bpm_edit.response.has_focus();
         if bpm_edit.response.gained_focus() {
             let mut state = bpm_edit.state;

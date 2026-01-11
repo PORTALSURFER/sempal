@@ -31,6 +31,10 @@ impl WaveformRenderer {
     }
 }
 
+pub(crate) fn next_cache_token() -> u64 {
+    decode::next_cache_token()
+}
+
 pub(super) fn default_decode_cache() -> Mutex<cache::DecodeCache> {
     Mutex::new(cache::DecodeCache::new(DEFAULT_DECODE_CACHE_LIMIT))
 }
