@@ -1,3 +1,4 @@
+use crate::egui_app::state::TriageFlagColumn;
 use super::super::test_support::{sample_entry, write_test_wav};
 use super::super::*;
 use crate::egui_app::state::{DragPayload, DragSource, DragTarget};

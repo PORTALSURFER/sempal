@@ -1,5 +1,4 @@
 use super::super::test_support::{dummy_controller, sample_entry, write_test_wav};
-use super::super::*;
 use super::common::prepare_browser_sample;
 use crate::egui_app::state::FocusContext;
 use crate::waveform::DecodedWaveform;
@@ -28,7 +27,7 @@ fn cursor_step_size_tracks_view_zoom() {
     assert!((controller.ui.waveform.cursor.unwrap() - 0.66).abs() < 0.001);
     assert!((controller.ui.waveform.playhead.position - 0.1).abs() < 0.001);
 
-    controller.zoom_waveform(true);
+    controller.waveform().zoom_waveform_steps_with_factor(true, 1, None, None, false, false);
     controller.move_playhead_steps(1, false, false);
     assert!((controller.ui.waveform.cursor.unwrap() - 0.804).abs() < 0.001);
     assert!((controller.ui.waveform.playhead.position - 0.1).abs() < 0.001);
@@ -52,7 +51,7 @@ fn batched_zoom_matches_sequential_steps() {
 
     batched.zoom_waveform_steps(true, 3, None);
     for _ in 0..3 {
-        stepped.zoom_waveform(true);
+        stepped.waveform().zoom_waveform_steps_with_factor(true, 1, None, None, false, false);
     }
 
     let view_a = batched.ui.waveform.view;

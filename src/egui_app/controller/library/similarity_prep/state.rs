@@ -6,7 +6,7 @@ pub(crate) struct SimilarityPrepInit {
     pub(crate) umap_version: String,
     pub(crate) scan_completed_at: Option<i64>,
     pub(crate) skip_scan: bool,
-    pub(crate) needs_embeddings: bool,
+    pub(crate) skip_backfill: bool,
     pub(crate) force_full_analysis: bool,
 }
 
@@ -31,7 +31,7 @@ pub(crate) fn build_initial_state(init: SimilarityPrepInit) -> SimilarityPrepSta
         stage,
         umap_version: init.umap_version,
         scan_completed_at: init.scan_completed_at,
-        skip_backfill: init.skip_scan && !init.needs_embeddings && !init.force_full_analysis,
+        skip_backfill: init.skip_backfill,
         force_full_analysis: init.force_full_analysis,
     }
 }
@@ -67,13 +67,13 @@ pub(crate) fn start_finalize_if_ready(
 mod tests {
     use super::*;
 
-    fn build_init(skip_scan: bool, needs_embeddings: bool, force_full: bool) -> SimilarityPrepInit {
+    fn build_init(skip_scan: bool, skip_backfill: bool, force_full: bool) -> SimilarityPrepInit {
         SimilarityPrepInit {
             source_id: SourceId::new(),
             umap_version: "v1".to_string(),
             scan_completed_at: Some(10),
             skip_scan,
-            needs_embeddings,
+            skip_backfill,
             force_full_analysis: force_full,
         }
     }
@@ -86,11 +86,11 @@ mod tests {
 
         let state = build_initial_state(build_init(true, false, false));
         assert_eq!(state.stage, SimilarityPrepStage::AwaitEmbeddings);
-        assert!(state.skip_backfill);
+        assert!(!state.skip_backfill);
 
         let state = build_initial_state(build_init(true, true, false));
         assert_eq!(state.stage, SimilarityPrepStage::AwaitEmbeddings);
-        assert!(!state.skip_backfill);
+        assert!(state.skip_backfill);
 
         let state = build_initial_state(build_init(true, false, true));
         assert_eq!(state.stage, SimilarityPrepStage::AwaitEmbeddings);

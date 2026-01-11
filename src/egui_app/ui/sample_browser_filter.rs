@@ -100,7 +100,7 @@ impl EguiApp {
                 SampleBrowserSort::PlaybackAgeDesc => "Playback age (recent)",
             };
             let mut sort = current_sort;
-            egui::ComboBox::from_id_source("browser_sort")
+            egui::ComboBox::from_id_salt("browser_sort")
                 .selected_text(sort_label)
                 .show_ui(ui, |ui| {
                     ui.selectable_value(&mut sort, SampleBrowserSort::ListOrder, "List order");

@@ -1,6 +1,5 @@
 use super::*;
-pub(crate) use super::{EguiController, StatusTone, MIN_SELECTION_WIDTH, BPM_MIN_SELECTION_DIVISOR};
-pub(crate) use crate::egui_app::state::*;
+pub(crate) use super::{EguiController, StatusTone, BPM_MIN_SELECTION_DIVISOR};
 pub(crate) use crate::sample_sources::*;
 pub(crate) use crate::selection::SelectionRange;
 
@@ -54,20 +53,6 @@ fn selection_meets_bpm_min(controller: &EguiController, range: SelectionRange) -
     selection_seconds + epsilon >= min_seconds
 }
 
-fn selection_min_width(controller: &EguiController) -> f32 {
-    if !controller.ui.waveform.bpm_snap_enabled {
-        return 0.0;
-    }
-    let duration = match controller.loaded_audio_duration_seconds() {
-        Some(duration) if duration.is_finite() && duration > 0.0 => duration,
-        _ => return 0.0,
-    };
-    let min_seconds = bpm_min_selection_seconds(controller).unwrap_or(0.0);
-    if min_seconds <= 0.0 {
-        return 0.0;
-    }
-    min_seconds / duration
-}
 
 pub(crate) fn bpm_min_selection_seconds(controller: &EguiController) -> Option<f32> {
     if !controller.ui.waveform.bpm_snap_enabled {

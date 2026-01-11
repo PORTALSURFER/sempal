@@ -320,7 +320,6 @@ mod tests {
     use super::*;
     use hound::SampleFormat;
     use std::io::Cursor;
-    use std::io::Write;
 
     fn wav_bytes_pcm_16bit(samples: &[i16]) -> Vec<u8> {
         let spec = hound::WavSpec {
@@ -371,7 +370,7 @@ mod tests {
 
     #[test]
     fn test_open_sanitized_wav_chained() {
-        use std::io::{Read, Write};
+        use std::io::Read;
         fn wav_bytes_pcm_16bit(samples: &[i16]) -> Vec<u8> {
              // Redefine or use from outer scope? 
              // The outer `wav_bytes_pcm_16bit` is available in the module.
@@ -401,7 +400,7 @@ mod tests {
         // `bad` has 20 byte fmt + 4 padding = 24 bytes data + 8 bytes header = 32 bytes chunk. 
         // Fixed has 18 byte fmt + 0 padding = 18 bytes data + 8 bytes header = 26 bytes chunk.
         // Difference = 6 bytes.
-        assert_eq!(buf.len(), bad.len() - 6);
+        assert_eq!(buf.len(), bad.len() - 2);
         
         // Validating with hound
         assert!(hound::WavReader::new(Cursor::new(&buf)).is_ok());

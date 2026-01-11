@@ -143,7 +143,7 @@ mod tests {
             umap_version: "v1".to_string(),
             scan_completed_at: None,
             skip_scan: false,
-            needs_embeddings: false,
+            skip_backfill: true,
             force_full_analysis: false,
         }));
         assert!(clear_similarity_prep_state(&mut state));

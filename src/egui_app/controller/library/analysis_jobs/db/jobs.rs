@@ -43,6 +43,7 @@ pub(crate) fn sample_bpm(
 }
 
 /// Update the stored BPM for a sample row, clearing it if the value is invalid.
+#[cfg(test)]
 pub(crate) fn update_sample_bpm(
     conn: &Connection,
     sample_id: &str,
@@ -239,22 +240,6 @@ pub(crate) fn mark_done(
         params![job_id],
     )
     .map_err(|err| format!("Failed to mark analysis job done: {err}"))?;
-    Ok(())
-}
-
-#[cfg_attr(test, allow(dead_code))]
-pub(crate) fn mark_failed(
-    conn: &Connection,
-    job_id: i64,
-    error: &str,
-) -> Result<(), String> {
-    conn.execute(
-        "UPDATE analysis_jobs
-         SET status = 'failed', last_error = ?2, running_at = NULL
-         WHERE id = ?1 AND status = 'running'",
-        params![job_id, error],
-    )
-    .map_err(|err| format!("Failed to mark analysis job failed: {err}"))?;
     Ok(())
 }
 

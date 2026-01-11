@@ -15,18 +15,14 @@ pub(crate) mod updates;
 
 use crate::{
     audio::AudioPlayer,
-    egui_app::state::{
-        FolderBrowserUiState, PlayheadState, ProgressOverlayState, SampleBrowserSort,
-        SampleBrowserState, TriageFlagColumn, TriageFlagFilter, UiState, WaveformImage,
-    },
+    egui_app::state::UiState,
     egui_app::{ui::style, view_model},
-    sample_sources::scanner::ScanMode,
     sample_sources::{
-        Collection, CollectionId, Rating, SampleSource, SourceDatabase, SourceDbError, SourceId,
+        Collection, SampleSource, SourceDatabase, SourceDbError, SourceId,
         WavEntry,
     },
     selection::SelectionRange,
-    waveform::{DecodedWaveform, WaveformRenderer},
+    waveform::WaveformRenderer,
 };
 pub(in crate::egui_app::controller) use library::analysis_jobs::AnalysisJobMessage;
 use library::analysis_jobs::AnalysisWorkerPool;
@@ -47,8 +43,6 @@ use std::{
 
 pub(crate) const MIN_SELECTION_WIDTH: f32 = 0.001;
 pub(crate) const BPM_MIN_SELECTION_DIVISOR: f32 = 16.0;
-pub(crate) const BPM_MIN_SELECTION_WIDTH: f32 = 0.0001;
-pub(crate) const SIMILARITY_MIN_SELECTION_WIDTH: f32 = 0.002;
 pub(crate) const AUDIO_CACHE_CAPACITY: usize = 12;
 pub(crate) const AUDIO_HISTORY_LIMIT: usize = 8;
 pub(crate) const RANDOM_HISTORY_LIMIT: usize = 20;

@@ -1,6 +1,6 @@
 use super::super::super::config_types::{
     AnalysisSettings, AppSettingsCore, DropTargetColor, DropTargetConfig, FeatureFlags,
-    HintSettings, InteractionOptions, PannsBackendChoice, UpdateChannel, UpdateSettings,
+    HintSettings, InteractionOptions, UpdateChannel, UpdateSettings,
     WgpuPowerPreference,
 };
 use super::super::load::load_settings_from;
@@ -156,7 +156,6 @@ fn settings_round_trip_preserves_fields() {
                 analysis_worker_count: 2,
                 fast_similarity_prep: true,
                 fast_similarity_prep_sample_rate: 8_000,
-                panns_backend: PannsBackendChoice::Cpu,
                 wgpu_power_preference: WgpuPowerPreference::High,
                 wgpu_adapter_name: Some("adapter".into()),
             },
@@ -250,10 +249,6 @@ fn settings_round_trip_preserves_fields() {
     assert_eq!(
         round_trip.core.analysis.fast_similarity_prep_sample_rate,
         cfg.core.analysis.fast_similarity_prep_sample_rate
-    );
-    assert_eq!(
-        round_trip.core.analysis.panns_backend,
-        cfg.core.analysis.panns_backend
     );
     assert_eq!(
         round_trip.core.analysis.wgpu_power_preference,

@@ -51,7 +51,7 @@ impl SimilarityPrepStore for DbSimilarityPrepStore {
         &self,
         source: &SampleSource,
     ) -> Result<analysis_jobs::AnalysisProgress, String> {
-        analysis_jobs::current_progress_for_source(source).map_err(|err| err.to_string())
+        analysis_jobs::current_progress_for_source(source).map_err(|err: String| err.to_string())
     }
 
     fn current_embedding_backfill_progress(
@@ -59,7 +59,7 @@ impl SimilarityPrepStore for DbSimilarityPrepStore {
         source: &SampleSource,
     ) -> Result<analysis_jobs::AnalysisProgress, String> {
         analysis_jobs::current_embedding_backfill_progress_for_source(source)
-            .map_err(|err| err.to_string())
+            .map_err(|err: String| err.to_string())
     }
 
     fn open_source_db_for_similarity(

@@ -1,6 +1,5 @@
 use super::*;
 pub(crate) use super::{EguiController, StatusTone, MIN_SELECTION_WIDTH, BPM_MIN_SELECTION_DIVISOR};
-pub(crate) use crate::egui_app::state::*;
 pub(crate) use crate::sample_sources::*;
 pub(crate) use crate::selection::SelectionRange;
 

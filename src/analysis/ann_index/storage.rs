@@ -74,22 +74,17 @@ pub(crate) fn legacy_id_map_path_for(index_path: &Path) -> PathBuf {
     parent.join(format!("{basename}.{LEGACY_ANN_ID_MAP_SUFFIX}"))
 }
 
-/// Persist the legacy id map JSON alongside legacy ANN files.
-pub(crate) fn save_legacy_id_map(path: &Path, id_map: &[String]) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|err| format!("Failed to create ANN dir: {err}"))?;
-    }
-    let data = serde_json::to_vec_pretty(id_map)
-        .map_err(|err| format!("Failed to encode id map: {err}"))?;
-    std::fs::write(path, data).map_err(|err| format!("Failed to write id map: {err}"))?;
-    Ok(())
-}
 
 /// Load the legacy id map JSON from legacy ANN files.
 pub(crate) fn load_legacy_id_map(path: &Path) -> Result<Vec<String>, String> {
     let bytes = std::fs::read(path).map_err(|err| format!("Failed to read id map: {err}"))?;
     serde_json::from_slice(&bytes).map_err(|err| format!("Failed to decode id map: {err}"))
+}
+
+/// Save the legacy id map JSON (needed for testing migrations).
+pub(crate) fn save_legacy_id_map(path: &Path, id_map: &[String]) -> Result<(), String> {
+    let file = std::fs::File::create(path).map_err(|e| e.to_string())?;
+    serde_json::to_writer(file, id_map).map_err(|e| e.to_string())
 }
 
 /// Resolve the current ANN container path for a source database.

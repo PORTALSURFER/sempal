@@ -481,9 +481,15 @@ fn replace_file(temp_path: &Path, path: &Path) -> Result<(), IssueTokenStoreErro
         Ok(()) => Ok(()),
         Err(err) => {
             #[cfg(target_os = "windows")]
-            if err.kind() == std::io::ErrorKind::AlreadyExists {
+            if err.kind() == std::io::ErrorKind::AlreadyExists
+                || err.kind() == std::io::ErrorKind::PermissionDenied
+            {
                 clear_windows_readonly(path);
-                std::fs::remove_file(path)?;
+                if let Err(e) = std::fs::remove_file(path) {
+                    if e.kind() != std::io::ErrorKind::NotFound {
+                        return Err(e.into());
+                    }
+                }
                 std::fs::rename(temp_path, path)?;
                 return Ok(());
             }

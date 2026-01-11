@@ -140,37 +140,6 @@ impl CollectionsController<'_> {
         self.finalize_collection_add(collection_id, &new_member, relative_path)
     }
 
-    pub(crate) fn add_browser_rows_to_collection(
-        &mut self,
-        collection_id: &CollectionId,
-        rows: &[usize],
-    ) {
-        if !self.settings.feature_flags.collections_enabled {
-            self.set_status("Collections are disabled", StatusTone::Warning);
-            return;
-        }
-        let Some(collection_index) = self
-            .library
-            .collections
-            .iter()
-            .position(|collection| &collection.id == collection_id)
-        else {
-            self.set_status("Collection not found", StatusTone::Error);
-            return;
-        };
-        let collection_name = self.library.collections[collection_index].name.clone();
-        let (contexts, last_error) = self.collect_browser_contexts(rows);
-        let (added, already, new_members, last_error) =
-            self.add_contexts_to_collection(collection_index, contexts, last_error);
-        self.finalize_browser_collection_add(
-            collection_id,
-            &collection_name,
-            added,
-            already,
-            new_members,
-            last_error,
-        );
-    }
 
     pub(crate) fn normalize_collection_hotkey(
         &self,
@@ -222,39 +191,6 @@ impl CollectionsController<'_> {
         }
     }
 
-    fn add_contexts_to_collection(
-        &mut self,
-        collection_index: usize,
-        contexts: Vec<BrowserSampleContext>,
-        mut last_error: Option<String>,
-    ) -> (usize, usize, Vec<CollectionMember>, Option<String>) {
-        let mut added = 0;
-        let mut already = 0;
-        let mut new_members = Vec::new();
-        for ctx in contexts {
-            if let Err(err) = self.ensure_sample_db_entry(&ctx.source, &ctx.entry.relative_path) {
-                last_error = Some(err);
-                continue;
-            }
-            let contains = self.library.collections[collection_index]
-                .contains(&ctx.source.id, &ctx.entry.relative_path);
-            if contains {
-                already += 1;
-                continue;
-            }
-            let member = CollectionMember {
-                source_id: ctx.source.id.clone(),
-                relative_path: ctx.entry.relative_path.clone(),
-                clip_root: None,
-            };
-            self.library.collections[collection_index]
-                .members
-                .push(member.clone());
-            new_members.push(member);
-            added += 1;
-        }
-        (added, already, new_members, last_error)
-    }
 }
 
 pub(crate) struct BrowserSampleContext {

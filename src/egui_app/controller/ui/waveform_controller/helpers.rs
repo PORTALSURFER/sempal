@@ -188,36 +188,6 @@ impl WaveformController<'_> {
         (view.start + view.end) * 0.5
     }
 
-    pub(crate) fn set_playhead_after_selection(&mut self, position: f32, resume_playback: bool) {
-        if resume_playback && self.is_playing() {
-            self.set_playhead_and_seek(position);
-        } else {
-            self.set_playhead_no_seek(position);
-        }
-    }
-
-    fn set_playhead_and_seek(&mut self, position: f32) {
-        if !self.waveform_ready() {
-            return;
-        }
-        self.set_waveform_cursor_with_source(position, CursorUpdateSource::Navigation);
-        self.ui.waveform.playhead.position = position.clamp(0.0, 1.0);
-        self.ui.waveform.playhead.visible = true;
-        self.ensure_playhead_visible_in_view();
-        let looped = self.ui.waveform.loop_enabled;
-        let pos = self.ui.waveform.playhead.position;
-        let _ = self.play_audio(looped, Some(pos));
-    }
-
-    fn set_playhead_no_seek(&mut self, position: f32) {
-        if !self.waveform_ready() {
-            return;
-        }
-        self.set_waveform_cursor_with_source(position, CursorUpdateSource::Navigation);
-        self.ui.waveform.playhead.position = position.clamp(0.0, 1.0);
-        self.ui.waveform.playhead.visible = true;
-        self.ensure_playhead_visible_in_view();
-    }
 
     pub(crate) fn ensure_playhead_visible_in_view(&mut self) {
         let mut view = self.ui.waveform.view;
@@ -354,19 +324,6 @@ impl WaveformController<'_> {
     }
 }
 
-pub(crate) fn clamp_selection_bounds(start: f32, end: f32, min_width: f32) -> (f32, f32) {
-    let mut a = start.clamp(0.0, 1.0);
-    let mut b = end.clamp(0.0, 1.0);
-    if a > b {
-        std::mem::swap(&mut a, &mut b);
-    }
-    let min_width = min_width.clamp(0.0, 1.0);
-    if (b - a) < min_width {
-        b = (a + min_width).min(1.0);
-        a = (b - min_width).max(0.0);
-    }
-    (a, b)
-}
 
 pub(crate) fn views_differ(a: WaveformView, b: WaveformView) -> bool {
     (a.start - b.start).abs() > VIEW_EPSILON || (a.end - b.end).abs() > VIEW_EPSILON

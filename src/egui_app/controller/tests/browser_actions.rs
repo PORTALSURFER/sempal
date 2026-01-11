@@ -1,7 +1,8 @@
 use super::super::test_support::{
-    dummy_controller, load_waveform_selection, prepare_with_source_and_wav_entries, sample_entry,
-    write_test_wav,
+    dummy_controller, load_waveform_selection, prepare_with_source_and_wav_entries,
+    sample_entry, write_test_wav,
 };
+use crate::sample_sources::Rating;
 use super::super::*;
 use super::common::{max_sample_amplitude, visible_indices};
 use crate::egui_app::controller::library::collection_export;
@@ -204,6 +205,7 @@ fn focused_row_actions_work_without_explicit_selection() {
         sample_entry("two.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
 
+    controller.settings.controls.advance_after_rating = false;
     controller.nudge_selection(0);
     assert!(controller.ui.browser.selected_paths.is_empty());
 

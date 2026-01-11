@@ -10,9 +10,6 @@ impl EguiController {
             .move_playhead_steps(steps, fine, resume_playback);
     }
 
-    pub(crate) fn zoom_waveform(&mut self, zoom_in: bool) {
-        self.waveform().zoom_waveform(zoom_in);
-    }
 
     #[cfg(test)]
     pub(crate) fn zoom_waveform_steps(&mut self, zoom_in: bool, steps: u32, focus: Option<f32>) {
@@ -38,19 +35,6 @@ impl EguiController {
         );
     }
 
-    pub(crate) fn create_selection_from_playhead(
-        &mut self,
-        to_left: bool,
-        resume_playback: bool,
-        fine: bool,
-    ) {
-        self.waveform()
-            .create_selection_from_playhead(to_left, resume_playback, fine);
-    }
-
-    pub(crate) fn nudge_selection_edge(&mut self, edge: SelectionEdge, outward: bool, fine: bool) {
-        self.waveform().nudge_selection_edge(edge, outward, fine);
-    }
 
     pub(crate) fn nudge_selection_range(&mut self, steps: isize, fine: bool) {
         self.waveform().nudge_selection_range(steps, fine);

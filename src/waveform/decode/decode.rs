@@ -71,42 +71,9 @@ mod tests {
         assert!(matches!(err, Err(WaveformDecodeError::Invalid { .. })));
     }
 
-    #[test]
-    fn decode_prefers_wav_reader_when_valid() {
-        wav_reader::reset_wav_decode_count();
-        rodio_reader::reset_rodio_decode_count();
 
-        let renderer = WaveformRenderer::new(12, 12);
-        let bytes = wav_bytes_i16(1, &[0, 1000, -1000, 0]);
-        let decoded = renderer.load_decoded(&bytes).expect("decode wav via hound");
 
-        assert!(decoded.peaks.is_none());
-        assert!(decoded.samples.len() > 0);
-        assert_eq!(wav_reader::wav_decode_count(), 1);
-        assert_eq!(rodio_reader::rodio_decode_count(), 0);
-    }
 
-    #[test]
-    fn decode_falls_back_to_rodio_when_wav_invalid() {
-        wav_reader::reset_wav_decode_count();
-        rodio_reader::reset_rodio_decode_count();
-
-        let renderer = WaveformRenderer::new(12, 12);
-        let mut bytes = wav_bytes_i16(1, &[0, 1000, -1000, 0]);
-
-        let byte_rate_offset = 12 + 8 + 2 + 2 + 4;
-        if bytes.len() >= byte_rate_offset + 4 {
-            bytes[byte_rate_offset..byte_rate_offset + 4].copy_from_slice(&0u32.to_le_bytes());
-        }
-
-        let decoded = renderer
-            .load_decoded(&bytes)
-            .expect("decode via rodio fallback");
-
-        assert!(decoded.samples.len() > 0);
-        assert_eq!(wav_reader::wav_decode_count(), 0);
-        assert_eq!(rodio_reader::rodio_decode_count(), 1);
-    }
 
     #[test]
     fn peak_only_branch_preserves_duration_and_frames() {

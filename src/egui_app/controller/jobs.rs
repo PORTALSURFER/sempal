@@ -60,51 +60,51 @@ pub(crate) struct SearchResult {
 }
 
 #[derive(Debug)]
-pub(super) struct IssueGatewayJob {
-    pub(super) token: String,
-    pub(super) request: crate::issue_gateway::api::CreateIssueRequest,
+pub(crate) struct IssueGatewayJob {
+    pub(crate) token: String,
+    pub(crate) request: crate::issue_gateway::api::CreateIssueRequest,
 }
 
 #[derive(Debug)]
-pub(super) struct IssueGatewayPollJob {
-    pub(super) request_id: String,
+pub(crate) struct IssueGatewayPollJob {
+    pub(crate) request_id: String,
 }
 
 #[derive(Debug)]
-pub(super) struct IssueGatewayCreateResult {
-    pub(super) result: Result<
+pub(crate) struct IssueGatewayCreateResult {
+    pub(crate) result: Result<
         crate::issue_gateway::api::CreateIssueResponse,
         crate::issue_gateway::api::CreateIssueError,
     >,
 }
 
 #[derive(Debug)]
-pub(super) struct IssueGatewayAuthResult {
-    pub(super) result: Result<String, crate::issue_gateway::api::IssueAuthError>,
+pub(crate) struct IssueGatewayAuthResult {
+    pub(crate) result: Result<String, crate::issue_gateway::api::IssueAuthError>,
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct UmapBuildJob {
+pub(crate) struct UmapBuildJob {
     pub(super) model_id: String,
     pub(super) umap_version: String,
     pub(super) source_id: SourceId,
 }
 
 #[derive(Debug)]
-pub(super) struct UmapBuildResult {
+pub(crate) struct UmapBuildResult {
     pub(super) umap_version: String,
     pub(super) result: Result<(), String>,
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct UmapClusterBuildJob {
+pub(crate) struct UmapClusterBuildJob {
     pub(super) model_id: String,
     pub(super) umap_version: String,
     pub(super) source_id: Option<SourceId>,
 }
 
 #[derive(Debug)]
-pub(super) struct UmapClusterBuildResult {
+pub(crate) struct UmapClusterBuildResult {
     #[allow(dead_code)]
     pub(super) umap_version: String,
     pub(super) source_id: Option<SourceId>,
@@ -112,37 +112,37 @@ pub(super) struct UmapClusterBuildResult {
 }
 
 #[derive(Debug)]
-pub(super) struct SimilarityPrepOutcome {
-    pub(super) cluster_stats: crate::analysis::hdbscan::HdbscanStats,
+pub(crate) struct SimilarityPrepOutcome {
+    pub(crate) cluster_stats: crate::analysis::hdbscan::HdbscanStats,
     #[allow(dead_code)]
     pub(super) umap_version: String,
 }
 
 #[derive(Debug)]
-pub(super) struct SimilarityPrepResult {
-    pub(super) source_id: SourceId,
-    pub(super) result: Result<SimilarityPrepOutcome, String>,
+pub(crate) struct SimilarityPrepResult {
+    pub(crate) source_id: SourceId,
+    pub(crate) result: Result<SimilarityPrepOutcome, String>,
 }
 
 #[derive(Debug)]
-pub(super) struct CollectionMoveSuccess {
-    pub(super) source_id: SourceId,
-    pub(super) relative_path: PathBuf,
-    pub(super) clip_root: PathBuf,
-    pub(super) clip_relative: PathBuf,
+pub(crate) struct CollectionMoveSuccess {
+    pub(crate) source_id: SourceId,
+    pub(crate) relative_path: PathBuf,
+    pub(crate) clip_root: PathBuf,
+    pub(crate) clip_relative: PathBuf,
 }
 
 #[derive(Debug)]
-pub(super) struct CollectionMoveResult {
-    pub(super) collection_id: crate::sample_sources::CollectionId,
-    pub(super) moved: Vec<CollectionMoveSuccess>,
-    pub(super) errors: Vec<String>,
+pub(crate) struct CollectionMoveResult {
+    pub(crate) collection_id: crate::sample_sources::CollectionId,
+    pub(crate) moved: Vec<CollectionMoveSuccess>,
+    pub(crate) errors: Vec<String>,
 }
 
 #[derive(Debug)]
-pub(super) struct AnalysisFailuresResult {
-    pub(super) source_id: SourceId,
-    pub(super) result: Result<std::collections::HashMap<PathBuf, String>, String>,
+pub(crate) struct AnalysisFailuresResult {
+    pub(crate) source_id: SourceId,
+    pub(crate) result: Result<std::collections::HashMap<PathBuf, String>, String>,
 }
 
 pub(crate) struct ControllerJobs {
@@ -473,19 +473,6 @@ impl ControllerJobs {
         self.issue_gateway_in_progress = false;
     }
 
-    pub(super) fn begin_issue_gateway_auth(&mut self) {
-        if self.issue_gateway_auth_in_progress {
-            return;
-        }
-        self.issue_gateway_auth_in_progress = true;
-        let tx = self.message_tx.clone();
-        thread::spawn(move || {
-            let result = crate::issue_gateway::api::fetch_issue_token();
-            let _ = tx.send(JobMessage::IssueGatewayAuthed(IssueGatewayAuthResult {
-                result,
-            }));
-        });
-    }
 
     pub(super) fn clear_issue_gateway_auth(&mut self) {
         self.issue_gateway_auth_in_progress = false;

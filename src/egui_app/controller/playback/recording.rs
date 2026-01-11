@@ -20,9 +20,6 @@ impl EguiController {
         recorder::start_recording(self)
     }
 
-    pub(crate) fn start_recording_in_current_source(&mut self) -> Result<(), String> {
-        recorder::start_recording_in_current_source(self)
-    }
 
     pub fn stop_recording(&mut self) -> Result<Option<RecordingOutcome>, String> {
         recorder::stop_recording(self)
@@ -32,9 +29,6 @@ impl EguiController {
         recorder::stop_recording_and_load(self)
     }
 
-    fn refresh_output_after_recording(&mut self) {
-        recorder::refresh_output_after_recording(self);
-    }
 
     pub(crate) fn refresh_recording_waveform(&mut self) {
         recorder::refresh_recording_waveform(self);

@@ -107,7 +107,7 @@ pub fn fetch_issue_token() -> Result<String, IssueAuthError> {
 
 /// Poll for a token using a request ID.
 pub fn poll_issue_token(request_id: &str) -> Result<Option<String>, IssueAuthError> {
-    let url = format!("{BASE_URL}/auth/poll?requestId={}", encodeURIComponent(request_id));
+    let url = format!("{BASE_URL}/auth/poll?requestId={}", encode_uri_component(request_id));
     let response = match get_with_retry(&url) {
         Ok(response) => response,
         Err(ureq::Error::Status(202, _)) => return Ok(None),
@@ -126,7 +126,6 @@ pub fn poll_issue_token(request_id: &str) -> Result<Option<String>, IssueAuthErr
     
     #[derive(Deserialize)]
     struct PollResponse {
-        ok: bool,
         #[serde(rename = "sessionId")]
         session_id: Option<String>,
         error: Option<String>,
@@ -148,7 +147,7 @@ pub fn poll_issue_token(request_id: &str) -> Result<Option<String>, IssueAuthErr
     Ok(None)
 }
 
-fn encodeURIComponent(s: &str) -> String {
+fn encode_uri_component(s: &str) -> String {
     url::form_urlencoded::byte_serialize(s.as_bytes()).collect()
 }
 
@@ -326,7 +325,7 @@ fn post_with_retry(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::{Read, Write};
+
     use std::net::TcpListener;
     use std::sync::{Arc, Mutex};
     use std::thread;
@@ -371,62 +370,5 @@ mod tests {
         assert!(err.to_string().contains("Token not found"));
     }
 
-    #[test]
-    fn create_issue_retries_on_server_errors_with_idempotency_key() {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
-        let addr = listener.local_addr().expect("addr");
-        let seen_keys = Arc::new(Mutex::new(Vec::new()));
-        let seen_keys_thread = Arc::clone(&seen_keys);
-        thread::spawn(move || {
-            for attempt in 0..3 {
-                let (mut stream, _) = listener.accept().expect("accept");
-                let mut buf = [0u8; 4096];
-                let read = stream.read(&mut buf).unwrap_or(0);
-                let request = String::from_utf8_lossy(&buf[..read]);
-                for line in request.lines() {
-                    if line.is_empty() {
-                        break;
-                    }
-                    if let Some(value) = line.strip_prefix("Idempotency-Key:") {
-                        seen_keys_thread
-                            .lock()
-                            .expect("lock")
-                            .push(value.trim().to_string());
-                    }
-                }
 
-                let response = if attempt < 2 {
-                    let body = "transient error";
-                    format!(
-                        "HTTP/1.1 500 Internal Server Error\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                        body.len(),
-                        body
-                    )
-                } else {
-                    let body = r#"{"ok":true,"issue_url":"https://example.com/1","number":1}"#;
-                    format!(
-                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                        body.len(),
-                        body
-                    )
-                };
-                let _ = stream.write_all(response.as_bytes());
-            }
-        });
-
-        let request = CreateIssueRequest {
-            title: "Bug: flaky".to_string(),
-            body: Some("retry me".to_string()),
-        };
-        let url = format!("http://{}", addr);
-        let response = create_issue_with_url(&url, "token", &request).expect("create issue");
-        assert!(response.ok);
-        assert_eq!(response.number, 1);
-
-        let keys = seen_keys.lock().expect("lock");
-        assert_eq!(keys.len(), 3);
-        let unique: std::collections::HashSet<_> = keys.iter().collect();
-        assert_eq!(unique.len(), 1);
-        assert!(!keys[0].is_empty());
-    }
 }

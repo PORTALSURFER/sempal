@@ -1,4 +1,4 @@
-use super::progress;
+use super::super::analysis_jobs::{self, RunningJobInfo};
 use super::*;
 use crate::egui_app::state::ProgressTaskKind;
 use crate::egui_app::state::RunningJobSnapshot;
@@ -95,7 +95,7 @@ pub(crate) fn handle_analysis_message(
                 let running_jobs = if let Some(source) = controller.current_source() {
                     analysis_jobs::current_running_jobs_for_source(&source, 3)
                         .ok()
-                        .map(|jobs| {
+                        .map(|jobs: Vec<RunningJobInfo>| {
                             let now_epoch = SystemTime::now()
                                 .duration_since(UNIX_EPOCH)
                                 .ok()
@@ -107,7 +107,7 @@ pub(crate) fn handle_analysis_message(
                                         job.sample_id.as_str(),
                                     )
                                     .ok()
-                                    .map(|(_, path)| path.to_string_lossy().to_string())
+                                    .map(|(_, path): (String, PathBuf)| path.to_string_lossy().to_string())
                                     .unwrap_or(job.sample_id);
                                     RunningJobSnapshot::from_heartbeat(
                                         label,

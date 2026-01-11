@@ -341,6 +341,20 @@ pub(crate) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         command: HotkeyCommand::TagNeutralSelected,
     },
     HotkeyAction {
+        id: "tag-keep",
+        label: "Keep sample(s)",
+        gesture: HotkeyGesture::new(Key::Num5),
+        scope: HotkeyScope::Global,
+        command: HotkeyCommand::TagKeepSelected,
+    },
+    HotkeyAction {
+        id: "tag-trash",
+        label: "Trash sample(s)",
+        gesture: HotkeyGesture::new(Key::Num1),
+        scope: HotkeyScope::Global,
+        command: HotkeyCommand::TagTrashSelected,
+    },
+    HotkeyAction {
         id: "trim-selection",
         label: "Trim selection",
         gesture: HotkeyGesture::with_shift(Key::T),

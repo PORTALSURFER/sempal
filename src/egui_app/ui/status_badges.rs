@@ -10,9 +10,6 @@ pub(super) struct StatusBadgeLabel {
     pub hover_text: Option<String>,
 }
 
-pub(super) fn missing_prefix() -> &'static str {
-    MISSING_PREFIX
-}
 
 pub(super) fn missing_text_color() -> egui::Color32 {
     style::missing_text()

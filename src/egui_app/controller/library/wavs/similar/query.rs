@@ -37,7 +37,7 @@ pub(crate) fn build_similarity_query_for_loaded_sample(
         .loaded_audio
         .as_ref()
         .ok_or_else(|| "Load a sample to sort by similarity".to_string())?;
-    let source_id = loaded_audio.source_id.clone();
+    let source_id: crate::sample_sources::SourceId = loaded_audio.source_id.clone();
     if controller.selection_state.ctx.selected_source.as_ref() != Some(&source_id) {
         return Err("Select the loaded sample's source to sort by similarity".to_string());
     }

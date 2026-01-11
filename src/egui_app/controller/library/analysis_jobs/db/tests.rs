@@ -200,7 +200,7 @@ fn mark_failed_updates_status_and_error() {
     let job_id: i64 = conn
         .query_row("SELECT id FROM analysis_jobs", [], |row| row.get(0))
         .unwrap();
-    mark_failed(&conn, job_id, "boom").unwrap();
+    mark_failed_with_reason(&conn, job_id, "boom").unwrap();
     let (status, last_error): (String, Option<String>) = conn
         .query_row(
             "SELECT status, last_error FROM analysis_jobs WHERE id = ?1",

@@ -1,7 +1,7 @@
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use rusqlite::{Connection, params};
 use sempal::analysis::vector::encode_f32_le_blob;
-use sempal::analysis::{ann_index, embedding};
+use sempal::analysis::{ann_index, similarity};
 use std::path::Path;
 use tempfile::tempdir;
 
@@ -31,7 +31,7 @@ fn setup_tables(conn: &Connection) {
 }
 
 fn seed_embeddings(conn: &Connection, start: usize, count: usize) {
-    let dim = embedding::EMBEDDING_DIM;
+    let dim = similarity::SIMILARITY_DIM;
     for i in start..start + count {
         let vec = unit_vec(dim, i);
         let blob = encode_f32_le_blob(&vec);
@@ -40,7 +40,7 @@ fn seed_embeddings(conn: &Connection, start: usize, count: usize) {
              VALUES (?1, ?2, ?3, 'f32', 1, ?4, 0)",
             params![
                 format!("s{i}"),
-                embedding::EMBEDDING_MODEL_ID,
+                similarity::SIMILARITY_MODEL_ID,
                 dim as i64,
                 blob
             ],
@@ -92,7 +92,7 @@ fn bench_ann_index(c: &mut Criterion) {
                 ann_index::rebuild_index(&conn).expect("rebuild index");
                 seed_embeddings(&conn, SAMPLE_COUNT, EXTRA_COUNT);
                 for i in SAMPLE_COUNT..SAMPLE_COUNT + EXTRA_COUNT {
-                    let vec = unit_vec(embedding::EMBEDDING_DIM, i);
+                    let vec = unit_vec(similarity::SIMILARITY_DIM, i);
                     ann_index::upsert_embedding(&conn, &format!("s{i}"), &vec)
                         .expect("incremental upsert");
                 }

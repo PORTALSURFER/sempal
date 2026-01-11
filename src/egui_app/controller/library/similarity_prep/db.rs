@@ -41,13 +41,13 @@ pub(crate) fn source_has_embeddings(source: &SampleSource) -> bool {
     };
     let model_id = crate::analysis::similarity::SIMILARITY_MODEL_ID;
     let sample_id_prefix = format!("{}::%", source.id.as_str());
-    let count: Result<i64, _> = conn.query_row(
+    let count: Result<i64, rusqlite::Error> = conn.query_row(
         "SELECT COUNT(*) FROM embeddings WHERE model_id = ?1 AND sample_id LIKE ?2",
         rusqlite::params![model_id, sample_id_prefix],
         |row| row.get(0),
     );
     count
-        .map(|value| value.max(0) as usize >= expected)
+        .map(|value: i64| value.max(0) as usize >= expected)
         .unwrap_or(false)
 }
 

@@ -1,12 +1,10 @@
 use crate::egui_app::controller::jobs::{SearchJob, SearchResult};
 use crate::egui_app::state::{SampleBrowserSort, TriageFlagFilter, VisibleRows};
-use crate::sample_sources::{Rating, WavEntry};
+use crate::sample_sources::Rating;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use std::cmp::Ordering;
-use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::Arc;
 use std::thread;
 
 struct CompactSearchEntry {
@@ -295,6 +293,7 @@ fn sort_visible_by_playback_age(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sample_sources::WavEntry;
 
     #[test]
     fn test_compact_search_entry() {

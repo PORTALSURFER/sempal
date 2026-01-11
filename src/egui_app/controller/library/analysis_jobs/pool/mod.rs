@@ -33,7 +33,7 @@ pub(crate) struct AnalysisWorkerPool {
     worker_count_override: Arc<AtomicU32>,
     #[cfg_attr(test, allow(dead_code))]
     decode_worker_count_override: Arc<AtomicU32>,
-    progress_cache: Arc<RwLock<ProgressCache>>,
+    _progress_cache: Arc<RwLock<ProgressCache>>,
     threads: Vec<JoinHandle<()>>,
 }
 
@@ -52,11 +52,10 @@ impl AnalysisWorkerPool {
             analysis_version_override: Arc::new(RwLock::new(None)),
             worker_count_override: Arc::new(AtomicU32::new(0)),
             decode_worker_count_override: Arc::new(AtomicU32::new(0)),
-            progress_cache: Arc::new(RwLock::new(ProgressCache::default())),
+            _progress_cache: Arc::new(RwLock::new(ProgressCache::default())),
             threads: Vec::new(),
         }
     }
-
     pub(crate) fn set_max_analysis_duration_seconds(&self, value: f32) {
         let clamped = value.clamp(0.0, 60.0 * 60.0);
         self.max_duration_bits
@@ -180,7 +179,7 @@ impl AnalysisWorkerPool {
                     self.max_duration_bits.clone(),
                     self.analysis_sample_rate.clone(),
                     self.analysis_version_override.clone(),
-                    self.progress_cache.clone(),
+                    self._progress_cache.clone(),
                 ));
             }
             self.threads.push(job_progress::spawn_progress_poller(
@@ -188,7 +187,7 @@ impl AnalysisWorkerPool {
                 self.cancel.clone(),
                 self.shutdown.clone(),
                 self.allowed_source_ids.clone(),
-                self.progress_cache.clone(),
+                self._progress_cache.clone(),
             ));
         }
     }

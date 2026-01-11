@@ -132,6 +132,8 @@ pub(crate) enum HotkeyCommand {
     FocusHistoryNext,
     MoveTrashedToFolder,
     TagNeutralSelected,
+    TagKeepSelected,
+    TagTrashSelected,
     IncrementRatingSelected,
     DecrementRatingSelected,
     TrimSelection,

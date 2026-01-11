@@ -23,7 +23,6 @@ pub(crate) use decode::{
     probe_metadata,
 };
 pub(crate) use normalize::sanitize_samples_in_place;
-pub(crate) use resample::resample_linear_into;
 pub(crate) use silence::detect_non_silent_ranges;
 
 /// Decoded mono audio ready for analysis.

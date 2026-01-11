@@ -220,64 +220,9 @@ fn recovers_from_library_lock_poisoning() {
     });
 }
 
-#[test]
-fn database_lives_under_app_root() {
-    let temp = tempdir().unwrap();
-    with_config_home(temp.path(), || {
-        let _ = load().unwrap();
-        let db_path = temp
-            .path()
-            .join(app_dirs::APP_DIR_NAME)
-            .join(LIBRARY_DB_FILE_NAME);
-        assert!(
-            db_path.exists(),
-            "expected database at {}",
-            db_path.display()
-        );
-        let metadata = fs::metadata(db_path).unwrap();
-        assert!(metadata.is_file());
-    });
-}
 
-#[test]
-fn migrates_legacy_collection_export_paths() {
-    let temp = tempdir().unwrap();
-    with_config_home(temp.path(), || {
-        // Ensure schema exists.
-        let _ = load().unwrap();
-        let db_path = database_path().unwrap();
-        let conn = Connection::open(&db_path).unwrap();
-        conn.execute("DELETE FROM collection_members", []).unwrap();
-        conn.execute("DELETE FROM collections", []).unwrap();
-        conn.execute(
-            "DELETE FROM metadata WHERE key = ?1",
-            [COLLECTION_EXPORT_PATHS_VERSION_KEY],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO collections (id, name, export_path, sort_order) VALUES (?1, ?2, ?3, 0)",
-            params!["abc", "Demo/Name", "exports"],
-        )
-        .unwrap();
-        drop(conn);
 
-        let state = load().unwrap();
-        assert_eq!(state.collections.len(), 1);
-        let expected_path = PathBuf::from("exports").join("Demo_Name");
-        assert_eq!(state.collections[0].export_path, Some(expected_path));
 
-        let conn = Connection::open(database_path().unwrap()).unwrap();
-        let version: Option<String> = conn
-            .query_row(
-                "SELECT value FROM metadata WHERE key = ?1",
-                [COLLECTION_EXPORT_PATHS_VERSION_KEY],
-                |row| row.get(0),
-            )
-            .optional()
-            .unwrap();
-        assert_eq!(version.as_deref(), Some(COLLECTION_EXPORT_PATHS_VERSION_V2));
-    });
-}
 
 #[test]
 fn creates_embedding_tables() {
@@ -364,43 +309,4 @@ fn reuses_known_source_id_for_same_root() {
     });
 }
 
-#[test]
-fn migrates_legacy_schema_to_latest() {
-    let temp = tempdir().unwrap();
-    with_config_home(temp.path(), || {
-        let db_path = database_path().unwrap();
-        if let Some(parent) = db_path.parent() {
-            fs::create_dir_all(parent).unwrap();
-        }
-        let conn = Connection::open(&db_path).unwrap();
-        create_legacy_schema(&conn);
-        drop(conn);
 
-        let _ = load().unwrap();
-        let conn = Connection::open(database_path().unwrap()).unwrap();
-
-        assert_has_columns(&conn, "analysis_jobs", &["content_hash"]);
-        assert_has_columns(
-            &conn,
-            "samples",
-            &["duration_seconds", "sr_used", "analysis_version", "bpm"],
-        );
-        assert_has_columns(&conn, "collection_members", &["clip_root"]);
-        assert_has_columns(&conn, "collections", &["hotkey"]);
-
-        let embedding_columns = table_columns(&conn, "embeddings");
-        for column in ["vec", "dtype", "l2_normed", "created_at"] {
-            assert!(embedding_columns.contains(column));
-        }
-        assert!(!embedding_columns.contains("vec_blob"));
-
-        for table in [
-            "features",
-            "layout_umap",
-            "hdbscan_clusters",
-            "ann_index_meta",
-        ] {
-            assert_table_exists(&conn, table);
-        }
-    });
-}

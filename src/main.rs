@@ -8,6 +8,7 @@ use egui::viewport::IconData;
 use sempal::audio::AudioPlayer;
 use sempal::egui_app::ui::{EguiApp, MIN_VIEWPORT_SIZE};
 use sempal::logging;
+use sempal::waveform::WaveformRenderer;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(all(target_os = "windows", not(debug_assertions)))]
     if log_console_requested() {

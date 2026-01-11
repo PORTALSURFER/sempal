@@ -86,6 +86,11 @@ pub(super) fn visit_dir(
                 continue;
             }
             if file_type.is_dir() {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    if name.starts_with('.') {
+                        continue;
+                    }
+                }
                 stack.push(path);
                 continue;
             }

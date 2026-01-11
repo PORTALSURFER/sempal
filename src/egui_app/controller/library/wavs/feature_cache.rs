@@ -83,12 +83,12 @@ impl EguiController {
                 .next()
                 .map_err(|err| format!("Query feature cache failed: {err}"))?
             {
-                let sample_id: String = row.get(0).map_err(|err| err.to_string())?;
-                let duration_seconds: Option<f64> = row.get(1).map_err(|err| err.to_string())?;
-                let sr_used: Option<i64> = row.get(2).map_err(|err| err.to_string())?;
-                let has_features_v1: i64 = row.get(3).map_err(|err| err.to_string())?;
-                let has_embedding: i64 = row.get(4).map_err(|err| err.to_string())?;
-                let status: Option<String> = row.get(5).map_err(|err| err.to_string())?;
+                let sample_id: String = row.get::<_, String>(0).map_err(|err| err.to_string())?;
+                let duration_seconds: Option<f64> = row.get::<_, Option<f64>>(1).map_err(|err| err.to_string())?;
+                let sr_used: Option<i64> = row.get::<_, Option<i64>>(2).map_err(|err| err.to_string())?;
+                let has_features_v1: i64 = row.get::<_, i64>(3).map_err(|err| err.to_string())?;
+                let has_embedding: i64 = row.get::<_, i64>(4).map_err(|err| err.to_string())?;
+                let status: Option<String> = row.get::<_, Option<String>>(5).map_err(|err| err.to_string())?;
                 let analysis_status = status.as_deref().and_then(parse_job_status);
                 let Some(relative_path) = sample_id.split_once("::").map(|(_, p)| p) else {
                     continue;

@@ -1,5 +1,4 @@
 use super::super::test_support::{dummy_controller, sample_entry};
-use super::super::*;
 use std::path::{Path, PathBuf};
 
 #[test]

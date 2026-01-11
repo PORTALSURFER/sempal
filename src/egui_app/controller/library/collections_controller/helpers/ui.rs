@@ -212,39 +212,6 @@ impl CollectionsController<'_> {
         }
     }
 
-    pub(crate) fn finalize_browser_collection_add(
-        &mut self,
-        collection_id: &CollectionId,
-        collection_name: &str,
-        added: usize,
-        already: usize,
-        new_members: Vec<CollectionMember>,
-        last_error: Option<String>,
-    ) {
-        if added > 0 {
-            if let Err(err) = self.persist_config("Failed to save collection") {
-                self.set_status(err, StatusTone::Error);
-                return;
-            }
-            self.refresh_collections_ui();
-            for member in &new_members {
-                if let Err(err) = self.export_member_if_needed(collection_id, member) {
-                    self.set_status(err, StatusTone::Warning);
-                }
-            }
-        }
-        if added > 0 {
-            let mut message = format!("Added {added} sample(s) to '{collection_name}'");
-            if already > 0 {
-                message.push_str(&format!(" ({already} already there)"));
-            }
-            self.set_status(message, StatusTone::Info);
-        } else if already > 0 {
-            self.set_status("Samples already in collection", StatusTone::Info);
-        } else if let Some(err) = last_error {
-            self.set_status(err, StatusTone::Error);
-        }
-    }
 
     pub(crate) fn finalize_collection_add(
         &mut self,

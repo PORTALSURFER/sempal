@@ -165,6 +165,22 @@ impl HotkeysController<'_> {
                 }
                 true
             }
+            HotkeyCommand::TagKeepSelected => {
+                if matches!(focus, FocusContext::CollectionSample) {
+                    self.tag_selected_collection_sample(Rating::KEEP_1);
+                } else {
+                    self.tag_selected(Rating::KEEP_1);
+                }
+                true
+            }
+            HotkeyCommand::TagTrashSelected => {
+                if matches!(focus, FocusContext::CollectionSample) {
+                    self.tag_selected_collection_sample(Rating::TRASH_3);
+                } else {
+                    self.tag_selected(Rating::TRASH_3);
+                }
+                true
+            }
             HotkeyCommand::IncrementRatingSelected => {
                 if matches!(focus, FocusContext::CollectionSample) {
                     // Collections don't support rating adjustments yet or verify if tag_selected_collection_sample supports it.

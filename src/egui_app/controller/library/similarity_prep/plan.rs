@@ -4,7 +4,6 @@ use crate::egui_app::controller::SimilarityPrepState;
 use crate::sample_sources::SampleSource;
 
 pub(crate) struct SimilarityPrepStartPlan {
-    pub(crate) needs_embeddings: bool,
     pub(crate) skip_scan: bool,
     pub(crate) state: SimilarityPrepState,
 }
@@ -24,11 +23,10 @@ pub(crate) fn plan_similarity_prep_start(
         umap_version,
         scan_completed_at,
         skip_scan,
-        needs_embeddings,
+        skip_backfill: !needs_embeddings,
         force_full_analysis,
     });
     SimilarityPrepStartPlan {
-        needs_embeddings,
         skip_scan,
         state,
     }
@@ -108,7 +106,6 @@ mod tests {
         let plan = plan_similarity_prep_start(&store, &sample_source(), "v1".to_string(), false);
         assert!(plan.skip_scan);
         assert!(plan.state.skip_backfill);
-        assert!(!plan.needs_embeddings);
 
         let store = FakeStore {
             scan_completed_at: Some(10),
@@ -118,6 +115,5 @@ mod tests {
         let plan = plan_similarity_prep_start(&store, &sample_source(), "v1".to_string(), false);
         assert!(plan.skip_scan);
         assert!(!plan.state.skip_backfill);
-        assert!(plan.needs_embeddings);
     }
 }

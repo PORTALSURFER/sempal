@@ -30,7 +30,7 @@ fn cursor_step_size_tracks_view_zoom() {
     assert!((controller.ui.waveform.cursor.unwrap() - 0.66).abs() < 0.001);
     assert!((controller.ui.waveform.playhead.position - 0.1).abs() < 0.001);
 
-    controller.zoom_waveform(true);
+    controller.waveform().zoom_waveform_steps_with_factor(true, 1, None, None, false, false);
     controller.move_playhead_steps(1, false, false);
     assert!((controller.ui.waveform.cursor.unwrap() - 0.804).abs() < 0.001);
     assert!((controller.ui.waveform.playhead.position - 0.1).abs() < 0.001);
