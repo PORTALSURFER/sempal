@@ -417,4 +417,18 @@ pub(crate) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         scope: HotkeyScope::Focus(FocusContext::Waveform),
         command: HotkeyCommand::MuteSelection,
     },
+    HotkeyAction {
+        id: "zoom-in-selection",
+        label: "Zoom to selection",
+        gesture: HotkeyGesture::new(Key::Z),
+        scope: HotkeyScope::Focus(FocusContext::Waveform),
+        command: HotkeyCommand::ZoomInSelection,
+    },
+    HotkeyAction {
+        id: "zoom-out-selection",
+        label: "Zoom out",
+        gesture: HotkeyGesture::new(Key::X),
+        scope: HotkeyScope::Focus(FocusContext::Waveform),
+        command: HotkeyCommand::ZoomOutSelection,
+    },
 ];

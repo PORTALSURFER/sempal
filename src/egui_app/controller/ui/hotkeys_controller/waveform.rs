@@ -98,6 +98,14 @@ pub(crate) fn handle_waveform_command(
             controller.toggle_transient_markers();
             true
         }
+        HotkeyCommand::ZoomInSelection => {
+            controller.waveform().zoom_to_selection();
+            true
+        }
+        HotkeyCommand::ZoomOutSelection => {
+            controller.waveform().zoom_out_full();
+            true
+        }
         _ => false,
     }
 }

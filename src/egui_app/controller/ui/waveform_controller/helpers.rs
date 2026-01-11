@@ -322,6 +322,55 @@ impl WaveformController<'_> {
         }
         views_differ(original, self.ui.waveform.view)
     }
+
+    pub(crate) fn zoom_to_selection(&mut self) {
+        if !self.waveform_ready() {
+            return;
+        }
+        let Some(selection) = self
+            .selection_state
+            .range
+            .range()
+            .or(self.ui.waveform.selection)
+        else {
+            // Fallback to regular zoom in if no selection
+            self.zoom_waveform_steps_with_factor(true, 1, None, None, true, true);
+            return;
+        };
+        if selection.width() <= VIEW_EPSILON {
+            self.zoom_waveform_steps_with_factor(
+                true,
+                1,
+                Some(selection.start()),
+                None,
+                true,
+                true,
+            );
+            return;
+        }
+
+        // Calculate target view
+        let width = selection.width().max(self.min_view_width());
+        // Center the view on selection center
+        let center = (selection.start() + selection.end()) * 0.5;
+        let start = (center - width * 0.5).clamp(0.0, 1.0 - width);
+        let end = (start + width).min(1.0);
+
+        let view = WaveformView { start, end };
+        self.ui.waveform.view = view.clamp();
+        self.refresh_waveform_image();
+    }
+
+    pub(crate) fn zoom_out_full(&mut self) {
+        if !self.waveform_ready() {
+            return;
+        }
+        self.ui.waveform.view = WaveformView {
+            start: 0.0,
+            end: 1.0,
+        };
+        self.refresh_waveform_image();
+    }
 }
 
 

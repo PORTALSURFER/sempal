@@ -153,6 +153,8 @@ pub(crate) enum HotkeyCommand {
     CopyStatusLog,
     SelectAllBrowser,
     RenameFocusedCollection,
+    ZoomInSelection,
+    ZoomOutSelection,
 }
 
 /// Hotkey metadata surfaced to the UI.
