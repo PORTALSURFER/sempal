@@ -8,9 +8,8 @@ use std::path::Path;
 const MIN_VIEW_WIDTH_BASE: f64 = 1e-9;
 const MIN_SAMPLES_PER_PIXEL: f32 = 1.0;
 pub(crate) const MAX_ZOOM_MULTIPLIER: f32 = 64.0;
-// Allow higher resolution textures at deep zoom for smooth rendering
-// This provides enough detail without excessive memory usage
-const MAX_COLUMNS_PER_PIXEL: f32 = 16.0;
+// Reduced for better performance
+const MAX_COLUMNS_PER_PIXEL: f32 = 2.0;
 const DEFAULT_TRANSIENT_SENSITIVITY: f32 = 0.6;
 
 fn min_view_width_for_frames(frame_count: usize, width_px: u32) -> f64 {
@@ -85,6 +84,13 @@ impl EguiController {
         // identical to the previous render.
         self.sample_view.waveform.render_meta = None;
         self.sample_view.waveform.decoded = Some(decoded);
+        
+        // Reset view to show full waveform when loading new audio
+        self.ui.waveform.view = WaveformView {
+            start: 0.0,
+            end: 1.0,
+        };
+        
         self.refresh_waveform_transients();
         self.refresh_waveform_image();
     }

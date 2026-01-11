@@ -151,7 +151,13 @@ impl EguiController {
         if matches!(intent, AudioLoadIntent::Selection) {
             if let Some(ratio) = self.stretch_ratio_for_sample(source, relative_path) {
                 let stretched = self.stretch_wav_bytes(&bytes, ratio)?;
-                return Ok((original_decoded, stretched, true));
+                // Decode the stretched bytes to get the correct duration
+                let stretched_decoded = self
+                    .sample_view
+                    .renderer
+                    .decode_from_bytes(&stretched)
+                    .map_err(|err| err.to_string())?;
+                return Ok((stretched_decoded, stretched, true));
             }
         }
 
