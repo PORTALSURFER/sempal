@@ -86,6 +86,7 @@ use cpal::traits::StreamTrait;
 pub struct StreamState {
     pub sources: Vec<(Box<dyn crate::audio::Source + Send>, f32)>,
     pub volume: f32, // master volume
+    pub error: Option<String>,
 }
 
 /// Custom container for cpal output stream.
@@ -221,6 +222,7 @@ pub fn open_output_stream(
     let state = Arc::new(Mutex::new(StreamState {
         sources: Vec::new(),
         volume: 1.0,
+        error: None,
     }));
 
     let state_for_callback = state.clone();
@@ -243,6 +245,11 @@ pub fn open_output_stream(
                 } else {
                     finished = true;
                     break;
+                }
+            }
+            if finished {
+                if let Some(err) = source.last_error() {
+                    state.error = Some(err);
                 }
             }
             !finished
@@ -291,6 +298,11 @@ pub fn open_output_stream(
                             } else {
                                 finished = true;
                                 break;
+                            }
+                        }
+                        if finished {
+                            if let Some(err) = source.last_error() {
+                                state.error = Some(err);
                             }
                         }
                         !finished

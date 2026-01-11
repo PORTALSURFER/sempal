@@ -72,4 +72,9 @@ impl AudioPlayer {
         let elapsed_in_span = duration_mod(base_offset.saturating_add(elapsed), span_length);
         Some(span_length.saturating_sub(elapsed_in_span))
     }
+
+    /// Returns and clears the last error from the audio stream.
+    pub fn take_error(&mut self) -> Option<String> {
+        self.stream.state.lock().unwrap().error.take()
+    }
 }

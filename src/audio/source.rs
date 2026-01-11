@@ -14,6 +14,11 @@ pub trait Source: Iterator<Item = f32> + Send {
     /// Returns the total duration of the source, if known.
     fn total_duration(&self) -> Option<Duration>;
 
+    /// Returns the last error encountered by the source, if any.
+    fn last_error(&self) -> Option<String> {
+        None
+    }
+
     /// Limits the duration of the source.
     fn take_duration(self, duration: Duration) -> TakeDuration<Self>
     where
@@ -94,6 +99,10 @@ impl Source for Box<dyn Source + Send> {
 
     fn total_duration(&self) -> Option<Duration> {
         (**self).total_duration()
+    }
+
+    fn last_error(&self) -> Option<String> {
+        (**self).last_error()
     }
 }
 

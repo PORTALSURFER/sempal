@@ -162,6 +162,9 @@ pub(crate) fn tick_playhead(controller: &mut EguiController) {
         }
         return;
     };
+    if let Some(err) = player.borrow_mut().take_error() {
+        controller.set_status(format!("Playback error: {}", err), StatusTone::Error);
+    }
     let should_resume = {
         let player_ref = player.borrow();
         match controller.audio.pending_loop_disable_at {

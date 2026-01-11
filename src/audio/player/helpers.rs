@@ -140,7 +140,7 @@ impl AudioPlayer {
         start_seconds: f32,
         end_seconds: f32,
     ) -> Result<(usize, u32, u16), String> {
-        let source = decoder_from_bytes(bytes)?;
+        let mut source = decoder_from_bytes(bytes)?;
         source
             .try_seek(Duration::from_secs_f32(start_seconds))
             .map_err(map_seek_error)?;

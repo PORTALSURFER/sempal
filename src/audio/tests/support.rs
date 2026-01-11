@@ -44,6 +44,8 @@ pub(crate) mod fixtures {
         pub sample_rate: u32,
         pub channels: u16,
         pub duration_seconds: f32,
+        pub bits_per_sample: u16,
+        pub sample_format: SampleFormat,
         pub pulses: Vec<TonePulse>,
     }
 
@@ -53,8 +55,16 @@ pub(crate) mod fixtures {
                 sample_rate,
                 channels,
                 duration_seconds,
+                bits_per_sample: 32,
+                sample_format: SampleFormat::Float,
                 pulses: Vec::new(),
             }
+        }
+
+        pub fn with_bit_depth(mut self, bits: u16, format: SampleFormat) -> Self {
+            self.bits_per_sample = bits;
+            self.sample_format = format;
+            self
         }
 
         pub fn with_pulse(mut self, pulse: TonePulse) -> Self {
@@ -97,15 +107,26 @@ pub(crate) mod fixtures {
         let wav_spec = WavSpec {
             channels: spec.channels,
             sample_rate: spec.sample_rate,
-            bits_per_sample: 32,
-            sample_format: SampleFormat::Float,
+            bits_per_sample: spec.bits_per_sample,
+            sample_format: spec.sample_format,
         };
         let mut writer = WavWriter::create(&path, wav_spec).expect("create wav file");
         for frame in 0..frames {
             let time = frame as f32 / spec.sample_rate as f32;
             let clamped = pulse_amplitude(time, &spec.pulses);
             for _ in 0..spec.channels {
-                writer.write_sample::<f32>(clamped).expect("write sample");
+                match spec.sample_format {
+                    SampleFormat::Float => writer.write_sample::<f32>(clamped).expect("write sample"),
+                    SampleFormat::Int => {
+                        match spec.bits_per_sample {
+                            8 => writer.write_sample::<i8>((clamped * 127.0) as i8).expect("write sample"),
+                            16 => writer.write_sample::<i16>((clamped * 32767.0) as i16).expect("write sample"),
+                            24 => writer.write_sample::<i32>((clamped * 8388607.0) as i32).expect("write sample"),
+                            32 => writer.write_sample::<i32>((clamped * 2147483647.0) as i32).expect("write sample"),
+                            _ => panic!("Unsupported bit depth for tests"),
+                        }
+                    }
+                }
             }
         }
         writer.finalize().expect("finalize wav");
@@ -225,7 +246,12 @@ pub(crate) fn assert_fixture_decodes(renderer: &WaveformRenderer, fixture: fixtu
     let sample_time = pulse.start_seconds + pulse.duration_seconds * 0.5;
     let idx = fixture.sample_index_at(sample_time);
     let expected = fixture.expected_amplitude_at(sample_time);
-    assert!((decoded.samples[idx] - expected).abs() < 1e-6);
+    let actual = decoded.samples[idx];
+    assert!(
+        (actual - expected).abs() < 1e-4,
+        "Amplitude mismatch at time {}: expected {}, got {} (bits={}, format={:?})",
+        sample_time, expected, actual, fixture.spec.bits_per_sample, fixture.spec.sample_format
+    );
 
     let tail_time = (fixture.spec.duration_seconds - 0.01).max(0.0);
     let tail_idx = fixture.sample_index_at(tail_time);

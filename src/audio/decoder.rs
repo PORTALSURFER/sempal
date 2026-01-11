@@ -18,6 +18,7 @@ pub struct SymphoniaDecoder {
     sample_rate: u32,
     channels: u16,
     total_duration: Option<Duration>,
+    last_error: Option<String>,
 }
 
 impl SymphoniaDecoder {
@@ -55,6 +56,7 @@ impl SymphoniaDecoder {
             sample_rate,
             channels,
             total_duration,
+            last_error: None,
         })
     }
 
@@ -164,8 +166,46 @@ impl Iterator for SymphoniaDecoder {
                         }
                     }
                 }
+                AudioBufferRef::S24(buf) => {
+                    let channels = buf.spec().channels.count();
+                    let frames = buf.frames();
+                    for frame in 0..frames {
+                        for chan in 0..channels {
+                            self.buffer.push(buf.chan(chan)[frame].0 as f32 / 8388608.0);
+                        }
+                    }
+                }
+                AudioBufferRef::U24(buf) => {
+                    let channels = buf.spec().channels.count();
+                    let frames = buf.frames();
+                    for frame in 0..frames {
+                        for chan in 0..channels {
+                            self.buffer.push(buf.chan(chan)[frame].0 as f32 / 8388608.0 - 1.0);
+                        }
+                    }
+                }
+                AudioBufferRef::U32(buf) => {
+                    let channels = buf.spec().channels.count();
+                    let frames = buf.frames();
+                    for frame in 0..frames {
+                        for chan in 0..channels {
+                            self.buffer.push(buf.chan(chan)[frame] as f32 / 2147483648.0 - 1.0);
+                        }
+                    }
+                }
+                AudioBufferRef::S8(buf) => {
+                    let channels = buf.spec().channels.count();
+                    let frames = buf.frames();
+                    for frame in 0..frames {
+                        for chan in 0..channels {
+                            self.buffer.push(buf.chan(chan)[frame] as f32 / 128.0);
+                        }
+                    }
+                }
                 _ => {
-                    tracing::warn!("Unsupported audio format in symphonia decoder");
+                    let msg = "Unsupported audio format in symphonia decoder".to_string();
+                    tracing::warn!("{}", msg);
+                    self.last_error = Some(msg);
                     return None;
                 }
             }
@@ -188,5 +228,9 @@ impl Source for SymphoniaDecoder {
 
     fn total_duration(&self) -> Option<Duration> {
         self.total_duration
+    }
+
+    fn last_error(&self) -> Option<String> {
+        self.last_error.clone()
     }
 }
