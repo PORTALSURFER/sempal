@@ -88,8 +88,12 @@ impl AudioPlayer {
         if duration <= 0.0 {
             return Err("Load a .wav file first".into());
         }
-        let bounded_start = start_seconds.clamp(0.0, duration);
-        let bounded_end = end_seconds.clamp(bounded_start, duration);
+        let mut bounded_start = start_seconds.clamp(0.0, duration);
+        let mut bounded_end = end_seconds.clamp(bounded_start, duration);
+        if let Some(rate) = self.sample_rate {
+            bounded_start = self.frame_align(bounded_start, rate);
+            bounded_end = self.frame_align(bounded_end, rate);
+        }
         let span_length = (bounded_end - bounded_start).max(0.001);
 
         self.fade_out_current_sink(self.anti_clip_fade());
@@ -138,6 +142,15 @@ impl AudioPlayer {
         let bytes = self.audio_bytes()?;
         if duration <= 0.0 {
             return Err("Load a .wav file first".into());
+        }
+        let rate = self.sample_rate;
+        let mut start_seconds = start_seconds;
+        let mut end_seconds = end_seconds;
+        let mut offset_seconds = offset_seconds;
+        if let Some(rate) = rate {
+            start_seconds = self.frame_align(start_seconds, rate);
+            end_seconds = self.frame_align(end_seconds, rate);
+            offset_seconds = self.frame_align(offset_seconds, rate);
         }
         let span_length = (end_seconds - start_seconds).max(0.001);
         self.fade_out_current_sink(self.anti_clip_fade());
@@ -192,5 +205,13 @@ impl AudioPlayer {
     #[cfg(test)]
     pub(crate) fn aligned_span_seconds_for_tests(span_length: f32, sample_rate: u32) -> f32 {
         Self::aligned_span_seconds(span_length, sample_rate)
+    }
+
+    fn frame_align(&self, seconds: f32, sample_rate: u32) -> f32 {
+        if sample_rate == 0 {
+            return seconds;
+        }
+        let frames = (seconds * sample_rate as f32).round();
+        frames / sample_rate as f32
     }
 }

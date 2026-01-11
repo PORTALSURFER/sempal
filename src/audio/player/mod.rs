@@ -19,6 +19,7 @@ pub struct AudioPlayer {
     sink_format: Option<(u32, u16)>,
     current_audio: Option<Arc<[u8]>>,
     track_duration: Option<f32>,
+    sample_rate: Option<u32>,
     started_at: Option<Instant>,
     play_span: Option<(f32, f32)>,
     looping: bool,

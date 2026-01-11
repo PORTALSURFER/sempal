@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use rodio::{OutputStream, Source};
 
 use super::super::DEFAULT_ANTI_CLIP_FADE;
-use super::super::mixer::{decoder_duration, wav_header_duration};
+use super::super::mixer::{decoder_duration, wav_header_duration, wav_spec_from_bytes};
 use super::super::output::{AudioOutputConfig, ResolvedOutput, open_output_stream};
 use super::super::routing::duration_from_secs_f32;
 use super::AudioPlayer;
@@ -27,6 +27,7 @@ impl AudioPlayer {
             sink_format: None,
             current_audio: None,
             track_duration: None,
+            sample_rate: None,
             started_at: None,
             play_span: None,
             looping: false,
@@ -49,8 +50,11 @@ impl AudioPlayer {
         let fallback = decoder_duration(&audio)
             .or_else(|| wav_header_duration(&audio))
             .unwrap_or(0.0);
+        
+        let sample_rate = wav_spec_from_bytes(&audio).map(|(_, rate)| rate);
         let chosen = if provided > 0.0 { provided } else { fallback };
         self.track_duration = Some(chosen);
+        self.sample_rate = sample_rate;
         self.current_audio = Some(audio);
         self.reset_playback_state();
     }
@@ -116,6 +120,7 @@ impl AudioPlayer {
             sink_format: None,
             current_audio: None,
             track_duration,
+            sample_rate: None,
             started_at,
             play_span,
             looping,
@@ -147,6 +152,7 @@ impl AudioPlayer {
             sink_format: Some(format),
             current_audio: None,
             track_duration: Some(1.0),
+            sample_rate: Some(44100),
             started_at: Some(Instant::now()),
             play_span: Some((0.0, 1.0)),
             looping: true,
