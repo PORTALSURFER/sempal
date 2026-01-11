@@ -151,7 +151,9 @@ impl WaveformRenderer {
         let height = height.max(1);
         let frame_count = samples.len() / channels.max(1);
         let frames_per_column = (frame_count as f32 / width as f32).max(1.0);
-        if frames_per_column <= 1.2 {
+        // Use line-based rendering (smooth) when zoomed in
+        // High threshold to ensure smooth rendering at deep zoom
+        if frames_per_column <= 10.0 {
             return match view {
                 WaveformChannelView::Mono => Self::paint_line_image(
                     samples,

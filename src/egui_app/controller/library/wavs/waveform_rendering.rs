@@ -8,8 +8,9 @@ use std::path::Path;
 const MIN_VIEW_WIDTH_BASE: f64 = 1e-9;
 const MIN_SAMPLES_PER_PIXEL: f32 = 1.0;
 pub(crate) const MAX_ZOOM_MULTIPLIER: f32 = 64.0;
-// Cap oversampling to avoid subpixel waveform columns that shimmer when downscaled.
-const MAX_COLUMNS_PER_PIXEL: f32 = 1.0;
+// Allow higher resolution textures at deep zoom for smooth rendering
+// This provides enough detail without excessive memory usage
+const MAX_COLUMNS_PER_PIXEL: f32 = 16.0;
 const DEFAULT_TRANSIENT_SENSITIVITY: f32 = 0.6;
 
 fn min_view_width_for_frames(frame_count: usize, width_px: u32) -> f64 {
@@ -109,13 +110,9 @@ impl EguiController {
         let view = self.ui.waveform.view.clamp();
         // Allow deep zooming - don't clamp to min_view_width
         let width_for_rendering = view.width();
-        let max_zoom = 1.0 / MIN_VIEW_WIDTH_BASE;  // Remove MAX_ZOOM_MULTIPLIER limit
-        let zoom_scale = (1.0 / width_for_rendering).min(max_zoom).max(1.0);
-        let max_target = (width as f64 * MAX_COLUMNS_PER_PIXEL as f64)
-            .ceil()
-            .max(width as f64) as usize;
-        let target = (width as f64 * zoom_scale).ceil().max(width as f64) as usize;
-        let target = target.min(max_target);
+        // Render at screen resolution - let GPU handle scaling
+        // No need to create massive textures at deep zoom
+        let target = width as usize;
 
         if (decoded.samples.is_empty() && decoded.peaks.is_none()) || total_frames == 0 {
             self.ui.waveform.image = None;
