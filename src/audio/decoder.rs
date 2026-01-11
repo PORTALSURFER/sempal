@@ -72,7 +72,7 @@ impl SymphoniaDecoder {
     }
 
     pub fn try_seek(&mut self, duration: Duration) -> Result<(), String> {
-        self.reader.seek(symphonia::core::formats::SeekMode::Accurate, symphonia::core::formats::SeekTo::Time {
+        self.reader.seek(symphonia::core::formats::SeekMode::Coarse, symphonia::core::formats::SeekTo::Time {
             time: symphonia::core::units::Time::new(duration.as_secs(), duration.subsec_nanos() as f64 / 1_000_000_000.0),
             track_id: None,
         }).map_err(|e| format!("Seek failed: {}", e))?;
