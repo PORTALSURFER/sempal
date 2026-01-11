@@ -212,16 +212,51 @@ impl EguiController {
         let root = audio.root.clone();
         let relative_path = audio.relative_path.clone();
         let played_at = now_epoch_seconds();
-        let source = SampleSource {
-            id: source_id.clone(),
+
+        self.audio.pending_age_update = Some(PendingAgeUpdate {
+            source_id: source_id.clone(),
             root,
+            relative_path: relative_path.clone(),
+            played_at,
+        });
+
+        if self.selection_state.ctx.selected_source.as_ref() == Some(&source_id)
+            && let Some(index) = self.wav_index_for_path(&relative_path)
+        {
+            let _ = self.ensure_wav_page_loaded(index);
+            if let Some(entry) = self.wav_entries.entry_mut(index) {
+                entry.last_played_at = Some(played_at);
+            }
+        }
+        if let Some(cache) = self.cache.wav.entries.get_mut(&source_id) {
+            if let Some(index) = cache.lookup.get(&relative_path).copied()
+                && let Some(entry) = cache.entry_mut(index)
+            {
+                entry.last_played_at = Some(played_at);
+            }
+        }
+        for sample in &mut self.ui.collections.samples {
+            if sample.source_id == source_id && sample.path == relative_path {
+                sample.last_played_at = Some(played_at);
+            }
+        }
+    }
+
+    /// Commit any pending playback age update to the database and refresh the UI.
+    pub fn commit_pending_age_update(&mut self) {
+        let Some(update) = self.audio.pending_age_update.take() else {
+            return;
+        };
+        let source = SampleSource {
+            id: update.source_id.clone(),
+            root: update.root,
         };
         match self.database_for(&source) {
             Ok(db) => {
-                if let Err(err) = db.set_last_played_at(&relative_path, played_at) {
+                if let Err(err) = db.set_last_played_at(&update.relative_path, update.played_at) {
                     warn!(
                         "Failed to update playback age for {}: {}",
-                        relative_path.display(),
+                        update.relative_path.display(),
                         err
                     );
                 }
@@ -229,40 +264,13 @@ impl EguiController {
             Err(err) => {
                 warn!(
                     "Database unavailable for playback age update {}: {}",
-                    relative_path.display(),
+                    update.relative_path.display(),
                     err
                 );
             }
         }
-        let mut updated_browser = false;
-        if self.selection_state.ctx.selected_source.as_ref() == Some(&source_id)
-            && let Some(index) = self.wav_index_for_path(&relative_path)
-        {
-            let _ = self.ensure_wav_page_loaded(index);
-            if let Some(entry) = self.wav_entries.entry(index).cloned() {
-                let mut updated_entry = entry.clone();
-                updated_entry.last_played_at = Some(played_at);
-                updated_browser = self
-                    .wav_entries
-                    .update_entry(&relative_path, updated_entry);
-            }
-        }
-        if let Some(cache) = self.cache.wav.entries.get_mut(&source_id) {
-            if let Some(index) = cache.lookup.get(&relative_path).copied()
-                && let Some(entry) = cache.entry(index).cloned()
-            {
-                let mut updated_entry = entry.clone();
-                updated_entry.last_played_at = Some(played_at);
-                cache.update_entry(&relative_path, updated_entry);
-            }
-        }
-        if updated_browser {
+        if self.selection_state.ctx.selected_source.as_ref() == Some(&update.source_id) {
             self.rebuild_browser_lists();
-        }
-        for sample in &mut self.ui.collections.samples {
-            if sample.source_id == source_id && sample.path == relative_path {
-                sample.last_played_at = Some(played_at);
-            }
         }
     }
 

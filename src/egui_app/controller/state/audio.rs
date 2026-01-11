@@ -16,6 +16,7 @@ pub(crate) struct ControllerAudioState {
     pub(crate) recorder: Option<AudioRecorder>,
     pub(crate) recording_target: Option<RecordingTarget>,
     pub(crate) input_monitor: Option<InputMonitor>,
+    pub(crate) pending_age_update: Option<PendingAgeUpdate>,
 }
 
 impl ControllerAudioState {
@@ -31,8 +32,17 @@ impl ControllerAudioState {
             recorder: None,
             recording_target: None,
             input_monitor: None,
+            pending_age_update: None,
         }
     }
+}
+
+#[derive(Clone)]
+pub(crate) struct PendingAgeUpdate {
+    pub(crate) source_id: SourceId,
+    pub(crate) root: PathBuf,
+    pub(crate) relative_path: PathBuf,
+    pub(crate) played_at: i64,
 }
 
 #[derive(Clone)]

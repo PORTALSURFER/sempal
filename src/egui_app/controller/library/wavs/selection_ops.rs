@@ -11,6 +11,14 @@ pub(crate) fn select_wav_by_path_with_rebuild(
     path: &Path,
     rebuild: bool,
 ) {
+    if controller
+        .audio
+        .pending_age_update
+        .as_ref()
+        .is_some_and(|u| u.relative_path != path)
+    {
+        controller.commit_pending_age_update();
+    }
     let Some(index) = controller.wav_index_for_path(path) else {
         return;
     };

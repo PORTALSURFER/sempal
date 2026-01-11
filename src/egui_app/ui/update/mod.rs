@@ -29,6 +29,10 @@ impl eframe::App for EguiApp {
         }
         self.render_ui(ctx, &input, focus_context);
     }
+
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.controller.commit_pending_age_update();
+    }
 }
 
 pub(super) fn consume_keypress(ctx: &egui::Context, input: &InputSnapshot, key: egui::Key) {
