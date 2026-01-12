@@ -207,6 +207,7 @@ fn settings_round_trip_preserves_fields() {
                 input_monitoring_enabled: false,
                 normalized_audition_enabled: true,
                 advance_after_rating: true,
+                hover_hints_enabled: true,
             },
         },
     };
@@ -343,5 +344,9 @@ fn settings_round_trip_preserves_fields() {
     assert_eq!(
         round_trip.core.controls.advance_after_rating,
         cfg.core.controls.advance_after_rating
+    );
+    assert_eq!(
+        round_trip.core.controls.hover_hints_enabled,
+        cfg.core.controls.hover_hints_enabled
     );
 }

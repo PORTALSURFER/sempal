@@ -152,7 +152,7 @@ impl EguiController {
             .map_err(|err| format!("{error_prefix}: {err}"))
     }
 
-    pub(super) fn save_full_config(
+    pub(crate) fn save_full_config(
         &self,
     ) -> Result<(), crate::sample_sources::config::ConfigError> {
         crate::sample_sources::config::save(&crate::sample_sources::config::AppConfig {

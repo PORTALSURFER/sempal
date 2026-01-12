@@ -134,6 +134,23 @@ impl EguiApp {
                                 {
                                     self.controller.open_feedback_issue_prompt();
                                 }
+                                let hints_enabled = self.controller.settings.controls.hover_hints_enabled;
+                                let hints_btn = egui::Button::new(
+                                    egui::RichText::new("?").color(if hints_enabled {
+                                        palette.accent_mint
+                                    } else {
+                                        palette.text_muted
+                                    }),
+                                )
+                                .frame(false);
+                                if ui
+                                    .add(hints_btn)
+                                    .on_hover_text("Toggle hover hints")
+                                    .clicked()
+                                {
+                                    self.controller.settings.controls.hover_hints_enabled = !hints_enabled;
+                                    let _ = self.controller.save_full_config();
+                                }
                                 if ui
                                     .add(crate::egui_app::ui::chrome::buttons::action_button(
                                         "Donate",

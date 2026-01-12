@@ -38,7 +38,7 @@ use eframe::egui::{self, TextureHandle};
 
 /// Renders the egui UI using the shared controller state.
 pub struct EguiApp {
-    controller: EguiController,
+    pub(crate) controller: EguiController,
     visuals_set: bool,
     waveform_tex: Option<TextureHandle>,
     #[allow(dead_code)]

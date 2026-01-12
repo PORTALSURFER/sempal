@@ -44,6 +44,14 @@ pub(super) fn render_selection_overlay(
         let painter = ui.painter();
         painter.rect_filled(selection_rect, 0.0, style::with_alpha(highlight, 60));
         painter.rect_filled(handle_rect, 0.0, handle_color);
+
+        if handle_hovered || (pointer_pos.is_some_and(|p| selection_rect.contains(p)) && !app.controller.is_selection_dragging()) {
+            helpers::show_hover_hint(
+                ui,
+                app.controller.settings.controls.hover_hints_enabled,
+                "Drag: Move | Shift+Drag: Fine Move | Ctrl+Drag: BPM Snap\nEnter: Create Sample | Right-click: Menu",
+            );
+        }
     }
     selection_drag::handle_selection_handle_drag(app, ui, selection, &handle_response);
 

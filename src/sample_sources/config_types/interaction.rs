@@ -51,6 +51,8 @@ pub struct InteractionOptions {
     pub normalized_audition_enabled: bool,
     #[serde(default = "default_true")]
     pub advance_after_rating: bool,
+    #[serde(default = "default_true")]
+    pub hover_hints_enabled: bool,
 }
 
 impl Default for InteractionOptions {
@@ -73,6 +75,7 @@ impl Default for InteractionOptions {
             input_monitoring_enabled: default_true(),
             normalized_audition_enabled: default_false(),
             advance_after_rating: true,
+            hover_hints_enabled: true,
         }
     }
 }

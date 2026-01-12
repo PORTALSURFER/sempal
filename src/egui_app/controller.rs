@@ -60,7 +60,7 @@ pub struct EguiController {
     ui_cache: ControllerUiCacheState,
     wav_entries: WavEntriesState,
     selection_state: ControllerSelectionState,
-    settings: AppSettingsState,
+    pub(crate) settings: AppSettingsState,
     runtime: ControllerRuntimeState,
     history: ControllerHistoryState,
     #[cfg(target_os = "windows")]

@@ -202,5 +202,12 @@ impl EguiApp {
                 style::high_contrast_text(),
             );
         }
+        if panel_rect.contains(ui.input(|i| i.pointer.hover_pos()).unwrap_or(egui::Pos2::ZERO)) {
+            helpers::show_hover_hint(
+                ui,
+                self.controller.settings.controls.hover_hints_enabled,
+                "Drop folders here to add to library | Right-click folders for actions",
+            );
+        }
     }
 }

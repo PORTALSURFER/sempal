@@ -27,6 +27,7 @@ impl EguiApp {
         let is_loading = self.controller.ui.waveform.loading.is_some();
         controls::render_waveform_controls(self, ui, &palette);
         let frame = style::section_frame();
+        let hints_enabled = self.controller.settings.controls.hover_hints_enabled;
         let frame_response = frame.show(ui, |ui| {
             let view = self.controller.ui.waveform.view;
             // Always use the actual f64 view for precision
@@ -62,7 +63,7 @@ impl EguiApp {
                 rect.left() + rect.width() * normalized as f32
             };
             if !base_render::render_waveform_base(self, ui, waveform_rect, &palette, is_loading) {
-                return;
+                return (false, false);
             }
             beat_grid::render_waveform_beat_grid(
                 self,
@@ -155,7 +156,16 @@ impl EguiApp {
                     view_width,
                 );
             }
+            (edge_dragging, slice_dragging)
         });
+        let (edge_dragging, slice_dragging) = frame_response.inner;
+        if frame_response.response.hovered() && !edge_dragging && !slice_dragging {
+            helpers::show_hover_hint(
+                ui,
+                hints_enabled,
+                "Left-click: Seek | Primary Drag: Select | Secondary Drag: Edit Selection\nMiddle Drag: Pan | Ctrl+Shift+Alt+Primary Drag: Circular Slide",
+            );
+        }
         style::paint_section_border(ui, frame_response.response.rect, false);
         if let Some(prompt) = self.controller.ui.waveform.pending_destructive.clone() {
             self.render_destructive_edit_prompt(ui.ctx(), prompt);

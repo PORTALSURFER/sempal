@@ -2,6 +2,26 @@ use super::style;
 use eframe::egui::{self, Align2, Color32, TextStyle, Ui};
 use crate::sample_sources::Rating;
 
+/// Display a contextual hint tooltip if hints are enabled and the last response was hovered.
+pub(super) fn show_hover_hint(ui: &mut Ui, enabled: bool, hint: &str) {
+    if !enabled {
+        return;
+    }
+    ui.ctx().input(|i| {
+        if i.pointer.any_down() {
+            return;
+        }
+    });
+    egui::show_tooltip_at_pointer(
+        ui.ctx(),
+        egui::LayerId::new(egui::Order::Tooltip, ui.id().with("__hover_hint_layer")),
+        ui.id().with("__hover_hint"),
+        |ui: &mut egui::Ui| {
+            ui.label(hint);
+        },
+    );
+}
+
 /// Metadata for rendering a fixed-width number column alongside a list row.
 pub(super) struct NumberColumn<'a> {
     pub text: &'a str,

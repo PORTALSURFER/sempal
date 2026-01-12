@@ -302,6 +302,14 @@ impl EguiApp {
             self.controller.ui.browser.autoscroll = false;
         }
 
+        if list_response.frame_rect.contains(ui.input(|i| i.pointer.hover_pos()).unwrap_or(egui::Pos2::ZERO)) {
+            helpers::show_hover_hint(
+                ui,
+                self.controller.settings.controls.hover_hints_enabled,
+                "Click: Select/Play | Shift+Click: Range Select | Ctrl+Click: Toggle Select\nDrag: Export / Reorder",
+            );
+        }
+
         let drag_source = self
             .controller
             .ui
