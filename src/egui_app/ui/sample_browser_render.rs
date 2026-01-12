@@ -2,7 +2,8 @@ use super::drag_targets;
 use super::flat_items_list::{FlatItemsListConfig, render_flat_items_list};
 use super::helpers::{
     NumberColumn, RowBackground, RowMarker, bpm_badge_space, clamp_label_for_width,
-    format_bpm_input, loop_badge_space, render_list_row,
+    external_dropped_paths, external_hover_has_audio, format_bpm_input, loop_badge_space,
+    render_list_row,
 };
 use super::status_badges;
 use super::style;
@@ -54,6 +55,8 @@ impl EguiApp {
         let list_height = ui.available_height().max(0.0);
         let drag_active = self.controller.ui.drag.payload.is_some();
         let pointer_pos = drag_targets::pointer_pos_for_drag(ui, self.controller.ui.drag.position);
+        let external_pointer_pos = pointer_pos.or(self.external_drop_hover_pos);
+        let external_drop_ready = external_hover_has_audio(ui.ctx());
         let autoscroll_enabled = self.controller.ui.browser.autoscroll
             && self.controller.ui.collections.selected_sample.is_none();
         let total_rows = self.controller.visible_browser_len();
@@ -338,15 +341,9 @@ impl EguiApp {
         );
 
         if !self.external_drop_handled {
-            let dropped_paths = ui.ctx().input(|i| {
-                i.raw
-                    .dropped_files
-                    .iter()
-                    .filter_map(|file| file.path.clone())
-                    .collect::<Vec<_>>()
-            });
+            let dropped_paths = external_dropped_paths(ui.ctx());
             if !dropped_paths.is_empty()
-                && pointer_pos.is_some_and(|pos| list_response.frame_rect.contains(pos))
+                && external_pointer_pos.is_some_and(|pos| list_response.frame_rect.contains(pos))
             {
                 self.external_drop_handled = true;
                 self.controller.import_external_files_to_source_folder(
@@ -354,6 +351,19 @@ impl EguiApp {
                     dropped_paths,
                 );
             }
+        }
+        if external_drop_ready
+            && external_pointer_pos.is_some_and(|pos| list_response.frame_rect.contains(pos))
+        {
+            let highlight = style::with_alpha(style::semantic_palette().drag_highlight, 32);
+            ui.painter()
+                .rect_filled(list_response.frame_rect, 6.0, highlight);
+            ui.painter().rect_stroke(
+                list_response.frame_rect,
+                6.0,
+                style::drag_target_stroke(),
+                StrokeKind::Inside,
+            );
         }
     }
 }

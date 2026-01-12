@@ -57,6 +57,7 @@ pub struct EguiApp {
     key_feedback: hotkey_runtime::KeyFeedback,
     requested_initial_focus: bool,
     external_drop_handled: bool,
+    external_drop_hover_pos: Option<egui::Pos2>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -117,6 +118,7 @@ impl EguiApp {
             key_feedback: hotkey_runtime::KeyFeedback::default(),
             requested_initial_focus: false,
             external_drop_handled: false,
+            external_drop_hover_pos: None,
         })
     }
 }

@@ -509,6 +509,10 @@ fn sync_parent_dir(dir: &Path) -> Result<(), IssueTokenStoreError> {
         let dir_handle = std::fs::File::open(dir)?;
         dir_handle.sync_all()?;
     }
+    #[cfg(not(unix))]
+    {
+        let _ = dir;
+    }
     Ok(())
 }
 

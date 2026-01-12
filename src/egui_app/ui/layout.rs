@@ -104,6 +104,7 @@ impl EguiApp {
         focus_context: FocusContext,
     ) {
         self.external_drop_handled = false;
+        self.update_external_drop_hover(ctx);
         self.controller.refresh_recording_waveform();
         self.render_panels(ctx);
         self.render_overlays(ctx, input, focus_context);
@@ -234,5 +235,23 @@ impl EguiApp {
                 &mut self.controller.ui.hotkeys.overlay_visible,
             );
         }
+    }
+
+    fn update_external_drop_hover(&mut self, ctx: &egui::Context) {
+        let (hovered_files, dropped_files, pointer_pos) = ctx.input(|i| {
+            let pointer_pos = i.pointer.hover_pos().or_else(|| i.pointer.interact_pos());
+            (
+                !i.raw.hovered_files.is_empty(),
+                !i.raw.dropped_files.is_empty(),
+                pointer_pos,
+            )
+        });
+        if hovered_files || dropped_files {
+            if let Some(pos) = pointer_pos {
+                self.external_drop_hover_pos = Some(pos);
+            }
+            return;
+        }
+        self.external_drop_hover_pos = None;
     }
 }

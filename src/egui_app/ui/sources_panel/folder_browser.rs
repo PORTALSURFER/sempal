@@ -1,6 +1,7 @@
 use super::EguiApp;
 use super::helpers::{
-    NumberColumn, RowBackground, list_row_height, number_column_width, render_list_row,
+    NumberColumn, RowBackground, external_dropped_paths, external_hover_has_audio, list_row_height,
+    number_column_width, render_list_row,
 };
 use super::style;
 use super::utils::{folder_row_label, sample_housing_folders};
@@ -18,15 +19,8 @@ impl EguiApp {
         folder_drop_active: bool,
         pointer_pos: Option<egui::Pos2>,
     ) {
-        let external_drop_paths = ui
-            .ctx()
-            .input(|i| {
-                i.raw
-                    .dropped_files
-                    .iter()
-                    .filter_map(|file| file.path.clone())
-                    .collect::<Vec<_>>()
-            });
+        let pointer_pos = pointer_pos.or(self.external_drop_hover_pos);
+        let external_drop_paths = external_dropped_paths(ui.ctx());
         let mut external_drop_paths = if external_drop_paths.is_empty() {
             None
         } else {
@@ -40,6 +34,7 @@ impl EguiApp {
         if !external_drop_has_audio {
             external_drop_paths = None;
         }
+        let external_drop_ready = external_hover_has_audio(ui.ctx());
         let mut external_drop_consumed = false;
         self.controller
             .refresh_folder_browser_if_stale(Duration::from_millis(750));
@@ -215,6 +210,16 @@ impl EguiApp {
                             StrokeKind::Inside,
                         );
                     }
+                }
+                if external_drop_ready
+                    && pointer_pos.is_some_and(|pos| response.rect.contains(pos))
+                {
+                    ui.painter().rect_stroke(
+                        response.rect.expand(2.0),
+                        0.0,
+                        style::drag_target_stroke(),
+                        StrokeKind::Inside,
+                    );
                 }
                 if response.clicked() {
                     let modifiers = ui.input(|i| i.modifiers);
@@ -426,6 +431,16 @@ impl EguiApp {
                             );
                         }
                     }
+                    if external_drop_ready
+                        && pointer_pos.is_some_and(|pos| response.rect.contains(pos))
+                    {
+                        ui.painter().rect_stroke(
+                            response.rect.expand(2.0),
+                            0.0,
+                            style::drag_target_stroke(),
+                            StrokeKind::Inside,
+                        );
+                    }
                     if rename_match {
                         self.render_folder_rename_editor(ui, &response, row);
                     } else if !started_drag && response.clicked() {
@@ -519,6 +534,16 @@ impl EguiApp {
                     alt_down,
                 );
             }
+        }
+        if external_drop_ready
+            && pointer_pos.is_some_and(|pos| frame_response.response.rect.contains(pos))
+        {
+            ui.painter().rect_stroke(
+                frame_response.response.rect,
+                6.0,
+                style::drag_target_stroke(),
+                StrokeKind::Inside,
+            );
         }
         style::paint_section_border(ui, frame_response.response.rect, focused);
         self.controller.ui.sources.folders.scroll_to = None;

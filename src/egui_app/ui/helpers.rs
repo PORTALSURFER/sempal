@@ -1,6 +1,8 @@
 use super::style;
+use crate::sample_sources::is_supported_audio;
 use eframe::egui::{self, Align2, Color32, PopupAnchor, TextStyle, Tooltip, Ui};
 use crate::sample_sources::Rating;
+use std::path::PathBuf;
 
 /// Display a contextual hint tooltip if hints are enabled and the last response was hovered.
 pub(super) fn show_hover_hint(ui: &mut Ui, enabled: bool, hint: &str) {
@@ -18,6 +20,28 @@ pub(super) fn show_hover_hint(ui: &mut Ui, enabled: bool, hint: &str) {
         .show(|ui: &mut egui::Ui| {
             ui.label(hint);
         });
+}
+
+/// Return true if an external file drag contains supported audio paths.
+pub(super) fn external_hover_has_audio(ctx: &egui::Context) -> bool {
+    ctx.input(|i| {
+        i.raw.hovered_files.iter().any(|file| {
+            file.path
+                .as_ref()
+                .is_some_and(|path| path.is_file() && is_supported_audio(path))
+        })
+    })
+}
+
+/// Collect file paths that were dropped into the app in the current frame.
+pub(super) fn external_dropped_paths(ctx: &egui::Context) -> Vec<PathBuf> {
+    ctx.input(|i| {
+        i.raw
+            .dropped_files
+            .iter()
+            .filter_map(|file| file.path.clone())
+            .collect()
+    })
 }
 
 /// Metadata for rendering a fixed-width number column alongside a list row.

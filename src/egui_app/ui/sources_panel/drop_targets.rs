@@ -1,6 +1,7 @@
 use super::EguiApp;
 use super::helpers::{
-    RowBackground, RowMarker, clamp_label_for_width, list_row_height, render_list_row,
+    RowBackground, RowMarker, clamp_label_for_width, external_dropped_paths,
+    external_hover_has_audio, list_row_height, render_list_row,
 };
 use super::style;
 use crate::egui_app::state::{DragPayload, DragSource, DragTarget};
@@ -37,6 +38,14 @@ impl EguiApp {
             Some(DragPayload::DropTargetReorder { .. })
         );
         let pointer_pos = pointer_pos_for_drag(ui, self.controller.ui.drag.position);
+        let external_pointer_pos = pointer_pos.or(self.external_drop_hover_pos);
+        let external_drop_ready = external_hover_has_audio(ui.ctx());
+        let external_drop_paths = external_dropped_paths(ui.ctx());
+        let mut external_drop_paths = if external_drop_paths.is_empty() {
+            None
+        } else {
+            Some(external_drop_paths)
+        };
         let rows = self.controller.ui.sources.drop_targets.rows.clone();
         let selected = self.controller.ui.sources.drop_targets.selected;
         let frame = style::section_frame();
@@ -176,6 +185,49 @@ impl EguiApp {
                             style::drag_target_stroke(),
                             egui::StrokeKind::Inside,
                         );
+                        if external_drop_ready
+                            && external_pointer_pos
+                                .is_some_and(|pos| response.rect.contains(pos))
+                        {
+                            ui.painter().rect_stroke(
+                                response.rect.expand(2.0),
+                                0.0,
+                                style::drag_target_stroke(),
+                                StrokeKind::Inside,
+                            );
+                        }
+                        if !self.external_drop_handled
+                            && let Some(pointer) = external_pointer_pos
+                            && response.rect.contains(pointer)
+                            && let Some(paths) = external_drop_paths.take()
+                        {
+                            let Some(location) = self
+                                .controller
+                                .resolve_drop_target_location(&row.path)
+                            else {
+                                self.controller.set_status(
+                                    "Drop target is no longer inside a configured source",
+                                    style::StatusTone::Warning,
+                                );
+                                self.external_drop_handled = true;
+                                continue;
+                            };
+                            let target_dir = location.source.root.join(&location.relative_folder);
+                            if !target_dir.is_dir() {
+                                self.controller.set_status(
+                                    format!("Drop target missing: {}", target_dir.display()),
+                                    style::StatusTone::Warning,
+                                );
+                                self.external_drop_handled = true;
+                                continue;
+                            }
+                            self.controller.select_drop_target_by_index(index);
+                            self.controller.import_external_files_to_source_folder(
+                                location.relative_folder,
+                                paths,
+                            );
+                            self.external_drop_handled = true;
+                        }
                         self.drop_target_row_menu(&response, index, row);
                     }
                 });
@@ -202,6 +254,17 @@ impl EguiApp {
             style::drag_target_stroke(),
             egui::StrokeKind::Inside,
         );
+        if external_drop_ready
+            && external_pointer_pos
+                .is_some_and(|pos| frame_response.response.rect.contains(pos))
+        {
+            ui.painter().rect_stroke(
+                frame_response.response.rect,
+                6.0,
+                style::drag_target_stroke(),
+                StrokeKind::Inside,
+            );
+        }
         style::paint_section_border(ui, frame_response.response.rect, false);
     }
 
