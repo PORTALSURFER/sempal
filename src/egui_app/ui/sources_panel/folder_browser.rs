@@ -242,6 +242,8 @@ impl EguiApp {
                         TextStyle::Body.resolve(ui.style()),
                         palette.text_muted,
                     );
+                    let response = ui.interact(rect, ui.id().with("folder_empty_row"), egui::Sense::click());
+                    self.root_row_menu(&response);
                     return;
                 }
                 let focused_row = self.controller.ui.sources.folders.focused;
@@ -439,6 +441,14 @@ impl EguiApp {
                         shift_down,
                         alt_down,
                     );
+                }
+                let empty_height = ui.available_height();
+                if empty_height > 0.0 {
+                    let response = ui.allocate_exact_size(
+                        egui::vec2(ui.available_width(), empty_height),
+                        egui::Sense::click(),
+                    ).1;
+                    self.root_row_menu(&response);
                 }
             });
         });
