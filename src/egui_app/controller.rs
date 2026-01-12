@@ -5,6 +5,7 @@
 mod library;
 mod playback;
 mod ui;
+mod source_watcher;
 
 mod config;
 pub(crate) mod controller_state;

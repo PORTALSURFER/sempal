@@ -11,8 +11,8 @@ pub(super) use super::state::history::{
 };
 pub(super) use super::state::library::{LibraryState, MissingState, RowFlags};
 pub(crate) use super::state::runtime::{
-    ControllerRuntimeState, LoadEntriesError, ScanJobMessage, ScanResult, SimilarityPrepStage,
-    SimilarityPrepState, UpdateCheckResult, WavLoadJob, WavLoadResult,
+    ControllerRuntimeState, LoadEntriesError, ScanJobMessage, ScanKind, ScanResult,
+    SimilarityPrepStage, SimilarityPrepState, UpdateCheckResult, WavLoadJob, WavLoadResult,
 };
 pub(super) use super::state::selection::{
     ControllerSampleViewState, ControllerSelectionState, SelectionUndoState, WaveformSlidePreview,

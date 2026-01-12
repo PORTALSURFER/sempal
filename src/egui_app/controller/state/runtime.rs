@@ -4,6 +4,7 @@ use crate::egui_app::controller::library::analysis_jobs;
 use crate::egui_app::controller::jobs;
 use crate::sample_sources::{ScanMode, SourceId, WavEntry};
 use crate::sample_sources::db::SourceDbError;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -15,6 +16,7 @@ pub(crate) struct ControllerRuntimeState {
     pub(crate) similarity_prep_last_error: Option<String>,
     pub(crate) similarity_prep_last_attempt: Option<Instant>,
     pub(crate) similarity_prep_force_full_analysis_next: bool,
+    pub(crate) auto_sync_last_by_source: HashMap<SourceId, Instant>,
     #[cfg(test)]
     pub(crate) progress_cancel_after: Option<usize>,
     #[cfg(test)]
@@ -35,6 +37,7 @@ impl ControllerRuntimeState {
             similarity_prep_last_error: None,
             similarity_prep_last_attempt: None,
             similarity_prep_force_full_analysis_next: false,
+            auto_sync_last_by_source: HashMap::new(),
             #[cfg(test)]
             progress_cancel_after: None,
             #[cfg(test)]
@@ -97,10 +100,18 @@ pub(crate) struct WavLoadResult {
 pub(crate) struct ScanResult {
     pub(crate) source_id: SourceId,
     pub(crate) mode: ScanMode,
+    pub(crate) kind: ScanKind,
     pub(crate) result: Result<
         crate::sample_sources::scanner::ScanStats,
         crate::sample_sources::scanner::ScanError,
     >,
+}
+
+/// Indicates whether a scan was triggered by the user or automatically in the background.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ScanKind {
+    Manual,
+    Auto,
 }
 
 pub(crate) enum ScanJobMessage {

@@ -23,6 +23,7 @@ pub(crate) fn handle_scan_finished(controller: &mut EguiController, result: Scan
     }
     let is_selected_source =
         Some(&result.source_id) == controller.selection_state.ctx.selected_source.as_ref();
+    let is_auto = matches!(result.kind, ScanKind::Auto);
     let label = match result.mode {
         ScanMode::Quick => "Quick sync",
         ScanMode::Hard => "Hard sync",
@@ -36,7 +37,7 @@ pub(crate) fn handle_scan_finished(controller: &mut EguiController, result: Scan
                 .similarity_prep
                 .as_ref()
                 .is_some_and(|state| state.source_id == result.source_id);
-            if is_selected_source {
+            if is_selected_source && (!is_auto || scan_changed) {
                 controller.set_status(
                     format!(
                         "{label} complete: {} added, {} updated, {} missing",

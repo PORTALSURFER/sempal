@@ -2,6 +2,7 @@ use super::ScanJobMessage;
 use super::library::analysis_jobs::AnalysisJobMessage;
 use super::library::trash_move;
 use super::playback::audio_loader::{AudioLoadJob, AudioLoadResult};
+use super::source_watcher::{SourceWatchCommand, SourceWatchEntry, SourceWatchEvent};
 use super::state::audio::{PendingAudio, PendingPlayback};
 use super::state::runtime::{UpdateCheckResult, WavLoadJob, WavLoadResult};
 use crate::sample_sources::SourceId;
@@ -23,6 +24,7 @@ pub(crate) enum JobMessage {
     WavLoaded(WavLoadResult),
     AudioLoaded(AudioLoadResult),
     Scan(ScanJobMessage),
+    SourceWatch(SourceWatchEvent),
     TrashMove(trash_move::TrashMoveMessage),
     CollectionMove(CollectionMoveResult),
     Analysis(AnalysisJobMessage),
@@ -149,6 +151,7 @@ pub(crate) struct ControllerJobs {
     pub(crate) wav_job_tx: Sender<WavLoadJob>,
     pub(crate) audio_job_tx: Sender<AudioLoadJob>,
     pub(crate) search_job_tx: Sender<SearchJob>,
+    source_watch_tx: Sender<SourceWatchCommand>,
     message_tx: Sender<JobMessage>,
     message_rx: Receiver<JobMessage>,
     pub(super) pending_source: Option<SourceId>,
@@ -180,10 +183,13 @@ impl ControllerJobs {
         search_job_rx: Receiver<SearchResult>,
     ) -> Self {
         let (message_tx, message_rx) = std::sync::mpsc::channel::<JobMessage>();
+        let source_watch_tx =
+            super::source_watcher::spawn_source_watcher(message_tx.clone());
         let jobs = Self {
             wav_job_tx,
             audio_job_tx,
             search_job_tx,
+            source_watch_tx,
             message_tx,
             message_rx,
             pending_source: None,
@@ -216,6 +222,13 @@ impl ControllerJobs {
 
     pub(super) fn message_sender(&self) -> Sender<JobMessage> {
         self.message_tx.clone()
+    }
+
+    /// Update the source roots watched for on-disk changes.
+    pub(crate) fn update_source_watcher(&self, sources: Vec<SourceWatchEntry>) {
+        let _ = self
+            .source_watch_tx
+            .send(SourceWatchCommand::ReplaceSources(sources));
     }
 
     pub(super) fn forward_wav_results(&self, rx: Receiver<WavLoadResult>) {

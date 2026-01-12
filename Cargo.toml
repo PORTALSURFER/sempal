@@ -33,6 +33,7 @@ tracing-subscriber = { version = "0.3.19", features = [
     "time",
 ] }
 tracing-appender = "0.2.4"
+notify = "6.1.1"
 time = { version = "0.3.44", features = [
     "formatting",
     "macros",

@@ -7,6 +7,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+const AUTO_SYNC_INTERVAL: Duration = Duration::from_secs(10);
+
 fn is_root_path(path: &Path) -> bool {
     path.as_os_str().is_empty()
 }
@@ -147,6 +149,7 @@ impl EguiController {
         if needs_refresh {
             self.refresh_folder_browser();
         }
+        self.request_auto_quick_sync_if_due(AUTO_SYNC_INTERVAL);
     }
 
     pub(crate) fn current_folder_model_mut(&mut self) -> Option<&mut FolderBrowserModel> {

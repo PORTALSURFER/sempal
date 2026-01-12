@@ -104,6 +104,9 @@ impl EguiController {
                         scan::handle_scan_finished(self, result);
                     }
                 },
+                JobMessage::SourceWatch(message) => {
+                    self.handle_source_watch_event(&message.source_id);
+                }
                 JobMessage::TrashMove(message) => match message {
                     TrashMoveMessage::SetTotal(total) => {
                         self.ui

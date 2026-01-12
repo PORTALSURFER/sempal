@@ -97,6 +97,7 @@ impl EguiController {
             .map_err(|err| format!("Failed to create database: {err}"))?;
         let _ = self.cache_db(&source);
         self.library.sources.push(source.clone());
+        self.refresh_source_watcher();
         self.select_source(Some(source.id.clone()));
         self.persist_config("Failed to save config after adding source")?;
         self.prepare_similarity_for_selected_source();
@@ -138,6 +139,7 @@ impl EguiController {
             self.clear_waveform_view();
         }
         let _ = self.persist_config("Failed to save config after removing source");
+        self.refresh_source_watcher();
         self.refresh_sources_ui();
         let _ = self.refresh_wavs();
         self.refresh_collections_ui();
@@ -184,6 +186,23 @@ impl EguiController {
         self.refresh_drop_targets_ui();
     }
 
+    /// Update the file watcher configuration based on current source availability.
+    pub(crate) fn refresh_source_watcher(&mut self) {
+        let entries = self
+            .library
+            .sources
+            .iter()
+            .filter(|source| source.root.is_dir())
+            .map(|source| {
+                super::source_watcher::SourceWatchEntry::new(
+                    source.id.clone(),
+                    source.root.clone(),
+                )
+            })
+            .collect();
+        self.runtime.jobs.update_source_watcher(entries);
+    }
+
     pub(crate) fn current_source(&self) -> Option<SampleSource> {
         let selected = self.selection_state.ctx.selected_source.as_ref()?;
         self.library
@@ -205,6 +224,7 @@ impl EguiController {
                     .or_default();
             }
         }
+        self.refresh_source_watcher();
     }
 
     pub(crate) fn mark_source_missing(&mut self, source_id: &SourceId, reason: &str) {
@@ -226,6 +246,7 @@ impl EguiController {
         } else {
             self.set_status(reason, StatusTone::Warning);
         }
+        self.refresh_source_watcher();
     }
 
     pub(crate) fn clear_source_missing(&mut self, source_id: &SourceId) {
@@ -233,6 +254,7 @@ impl EguiController {
         self.library.missing.wavs.remove(source_id);
         if removed {
             self.refresh_sources_ui();
+            self.refresh_source_watcher();
         }
     }
 
