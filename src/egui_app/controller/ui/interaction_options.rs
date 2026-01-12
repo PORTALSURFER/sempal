@@ -287,10 +287,13 @@ impl EguiController {
     /// Enable/disable transient snapping and persist the setting.
     pub fn set_transient_snap_enabled(&mut self, enabled: bool) {
         if self.settings.controls.transient_snap_enabled == enabled {
+            self.ui.waveform.transient_snap_enabled =
+                enabled && self.ui.waveform.transient_markers_enabled;
             return;
         }
         self.settings.controls.transient_snap_enabled = enabled;
-        self.ui.waveform.transient_snap_enabled = enabled;
+        self.ui.waveform.transient_snap_enabled =
+            enabled && self.ui.waveform.transient_markers_enabled;
         self.persist_controls();
     }
 
@@ -301,10 +304,11 @@ impl EguiController {
         }
         self.settings.controls.transient_markers_enabled = enabled;
         self.ui.waveform.transient_markers_enabled = enabled;
-        if !enabled {
-            self.settings.controls.transient_snap_enabled = false;
-            self.ui.waveform.transient_snap_enabled = false;
-        }
+        self.ui.waveform.transient_snap_enabled = if enabled {
+            self.settings.controls.transient_snap_enabled
+        } else {
+            false
+        };
         self.persist_controls();
     }
 

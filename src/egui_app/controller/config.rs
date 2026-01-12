@@ -51,7 +51,8 @@ impl EguiController {
         self.ui.waveform.bpm_value = normalize_bpm_value(self.settings.controls.bpm_value);
         self.ui.waveform.transient_markers_enabled =
             self.settings.controls.transient_markers_enabled;
-        self.ui.waveform.transient_snap_enabled = self.settings.controls.transient_snap_enabled;
+        self.ui.waveform.transient_snap_enabled = self.settings.controls.transient_snap_enabled
+            && self.settings.controls.transient_markers_enabled;
         self.ui.waveform.normalized_audition_enabled =
             self.settings.controls.normalized_audition_enabled;
         if let Some(value) = self.ui.waveform.bpm_value {

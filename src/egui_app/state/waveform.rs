@@ -41,7 +41,7 @@ pub struct WaveformState {
     pub transients: Vec<f32>,
     /// When true, transient markers are rendered on the waveform.
     pub transient_markers_enabled: bool,
-    /// When true, selection drags snap to nearby transient markers.
+    /// When true, selection drags snap to nearby transient markers (disabled while hidden).
     pub transient_snap_enabled: bool,
     /// Cache token for the waveform transients.
     pub transient_cache_token: Option<u64>,

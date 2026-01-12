@@ -17,6 +17,7 @@ mod playback_loop;
 mod recording;
 mod selection_bpm_scale;
 mod selection_undo;
+mod transient_options;
 mod trash;
 mod waveform;
 mod waveform_nav_cursor;
