@@ -136,10 +136,14 @@ impl EguiApp {
                 } else {
                     0.0
                 };
-                let bpm_space = bpm_label
-                    .as_deref()
-                    .map(|label| bpm_badge_space(ui, label))
-                    .unwrap_or(0.0);
+                let bpm_space = if rename_match {
+                    0.0
+                } else {
+                    bpm_label
+                        .as_deref()
+                        .map(|label| bpm_badge_space(ui, label))
+                        .unwrap_or(0.0)
+                };
                 let trailing_space = indicator_space
                     + triage_marker_width
                         .map(|width| width + metrics.padding * 0.5)
@@ -230,7 +234,7 @@ impl EguiApp {
                             marker: triage_marker,
                             rating: if rename_match { None } else { Some(tag) },
                             looped: looped && !rename_match,
-                            bpm_label: bpm_label.as_deref(),
+                            bpm_label: if rename_match { None } else { bpm_label.as_deref() },
                         },
                     );
                     let response = if let Some(hover) = status_label.hover_text.as_deref() {

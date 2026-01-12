@@ -114,7 +114,10 @@ impl EguiController {
                 Ok(()) => {
                     self.cancel_browser_rename();
                 }
-                Err(err) => self.set_status(err, StatusTone::Error),
+                Err(err) => {
+                    self.cancel_browser_rename();
+                    self.set_status(err, StatusTone::Error);
+                }
             }
         }
     }

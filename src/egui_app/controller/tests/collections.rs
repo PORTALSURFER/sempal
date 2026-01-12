@@ -201,11 +201,8 @@ fn applying_collection_rename_rejects_empty_name() {
 
     controller.apply_pending_collection_rename();
 
-    assert!(matches!(
-        controller.ui.collections.pending_action,
-        Some(crate::egui_app::state::CollectionActionPrompt::Rename { .. })
-    ));
-    assert!(controller.ui.collections.rename_focus_requested);
+    assert!(controller.ui.collections.pending_action.is_none());
+    assert!(!controller.ui.collections.rename_focus_requested);
     assert_eq!(controller.library.collections[0].name, "Keep Me");
     assert_eq!(controller.ui.status.text, "Collection name cannot be empty");
 }

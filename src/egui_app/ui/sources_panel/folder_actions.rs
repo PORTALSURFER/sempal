@@ -93,7 +93,10 @@ impl EguiApp {
                 Ok(()) => {
                     self.controller.cancel_folder_rename();
                 }
-                Err(err) => self.controller.set_status(err, style::StatusTone::Error),
+                Err(err) => {
+                    self.controller.cancel_folder_rename();
+                    self.controller.set_status(err, style::StatusTone::Error);
+                }
             }
         }
     }

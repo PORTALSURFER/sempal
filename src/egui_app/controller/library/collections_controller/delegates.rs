@@ -101,6 +101,7 @@ impl EguiController {
             let trimmed = name.trim();
             if trimmed.is_empty() {
                 self.set_status("Collection name cannot be empty", StatusTone::Error);
+                self.cancel_collection_rename();
                 return;
             }
             self.rename_collection(&target, trimmed.to_string());
