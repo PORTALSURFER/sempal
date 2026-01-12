@@ -12,6 +12,7 @@ use crate::egui_app::state::{
 };
 use crate::egui_app::view_model;
 use eframe::egui::{self, StrokeKind, Ui};
+use std::path::PathBuf;
 
 impl EguiApp {
     pub(super) fn render_sample_browser(&mut self, ui: &mut Ui) {
@@ -335,5 +336,24 @@ impl EguiApp {
             style::drag_target_stroke(),
             StrokeKind::Inside,
         );
+
+        if !self.external_drop_handled {
+            let dropped_paths = ui.ctx().input(|i| {
+                i.raw
+                    .dropped_files
+                    .iter()
+                    .filter_map(|file| file.path.clone())
+                    .collect::<Vec<_>>()
+            });
+            if !dropped_paths.is_empty()
+                && pointer_pos.is_some_and(|pos| list_response.frame_rect.contains(pos))
+            {
+                self.external_drop_handled = true;
+                self.controller.import_external_files_to_source_folder(
+                    PathBuf::new(),
+                    dropped_paths,
+                );
+            }
+        }
     }
 }

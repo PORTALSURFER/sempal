@@ -54,6 +54,7 @@ pub struct EguiApp {
     pending_chord: Option<hotkey_runtime::PendingChord>,
     key_feedback: hotkey_runtime::KeyFeedback,
     requested_initial_focus: bool,
+    external_drop_handled: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -113,6 +114,7 @@ impl EguiApp {
             pending_chord: None,
             key_feedback: hotkey_runtime::KeyFeedback::default(),
             requested_initial_focus: false,
+            external_drop_handled: false,
         })
     }
 }

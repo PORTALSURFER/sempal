@@ -53,6 +53,10 @@ impl EguiApp {
     }
 
     pub(super) fn consume_source_panel_drops(&mut self, ctx: &egui::Context) {
+        if self.external_drop_handled {
+            self.sources_panel_drop_armed = false;
+            return;
+        }
         let panel_hit = if self.sources_panel_drop_hovered || self.sources_panel_drop_armed {
             true
         } else if let Some(rect) = self.sources_panel_rect {
@@ -100,6 +104,7 @@ impl EguiApp {
         input: &InputSnapshot,
         focus_context: FocusContext,
     ) {
+        self.external_drop_handled = false;
         self.controller.refresh_recording_waveform();
         self.render_panels(ctx);
         self.render_overlays(ctx, input, focus_context);

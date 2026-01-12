@@ -9,6 +9,7 @@ mod drag_drop_folders;
 mod drag_drop_drop_targets;
 mod drag_drop_selection;
 mod drag_drop_waveform;
+mod external_drop_import;
 mod focus_random;
 mod folders_core;
 mod folders_search;

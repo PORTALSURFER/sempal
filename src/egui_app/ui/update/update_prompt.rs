@@ -147,6 +147,7 @@ mod tests {
             pending_chord: None,
             key_feedback: KeyFeedback::default(),
             requested_initial_focus: false,
+            external_drop_handled: false,
         }
     }
 

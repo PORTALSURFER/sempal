@@ -18,6 +18,29 @@ impl EguiApp {
         folder_drop_active: bool,
         pointer_pos: Option<egui::Pos2>,
     ) {
+        let external_drop_paths = ui
+            .ctx()
+            .input(|i| {
+                i.raw
+                    .dropped_files
+                    .iter()
+                    .filter_map(|file| file.path.clone())
+                    .collect::<Vec<_>>()
+            });
+        let mut external_drop_paths = if external_drop_paths.is_empty() {
+            None
+        } else {
+            Some(external_drop_paths)
+        };
+        let external_drop_has_audio = external_drop_paths.as_ref().is_some_and(|paths| {
+            paths
+                .iter()
+                .any(|path| path.is_file() && crate::sample_sources::is_supported_audio(path))
+        });
+        if !external_drop_has_audio {
+            external_drop_paths = None;
+        }
+        let mut external_drop_consumed = false;
         self.controller
             .refresh_folder_browser_if_stale(Duration::from_millis(750));
         let mut sample_parent_folders = HashSet::<PathBuf>::new();
@@ -150,6 +173,16 @@ impl EguiApp {
                 }
                 if scroll_to == Some(0) {
                     ui.scroll_to_rect(response.rect, None);
+                }
+                if !external_drop_consumed
+                    && let Some(pointer) = pointer_pos
+                    && response.rect.contains(pointer)
+                    && let Some(paths) = external_drop_paths.take()
+                {
+                    external_drop_consumed = true;
+                    self.external_drop_handled = true;
+                    self.controller
+                        .import_external_files_to_source_folder(root_row.path.clone(), paths);
                 }
                 if folder_drop_active {
                     if let Some(pointer) = pointer_pos
@@ -341,6 +374,16 @@ impl EguiApp {
                     }
                     if Some(index) == scroll_to {
                         ui.scroll_to_rect(response.rect, None);
+                    }
+                    if !external_drop_consumed
+                        && let Some(pointer) = pointer_pos
+                        && response.rect.contains(pointer)
+                        && let Some(paths) = external_drop_paths.take()
+                    {
+                        external_drop_consumed = true;
+                        self.external_drop_handled = true;
+                        self.controller
+                            .import_external_files_to_source_folder(row.path.clone(), paths);
                     }
                     if row.selected {
                         let marker_width = 4.0;

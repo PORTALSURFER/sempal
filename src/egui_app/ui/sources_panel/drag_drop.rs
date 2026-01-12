@@ -10,8 +10,12 @@ impl EguiApp {
         self.sources_panel_drop_hovered = ctx.input(|i| {
             let pointer_pos = i.pointer.hover_pos().or_else(|| i.pointer.interact_pos());
             let pointer_over = pointer_pos.is_none_or(|pos| rect.contains(pos));
-            let hovered_has_path = i.raw.hovered_files.iter().any(|file| file.path.is_some());
-            hovered_has_path && pointer_over
+            let hovered_has_dir = i.raw.hovered_files.iter().any(|file| {
+                file.path
+                    .as_ref()
+                    .is_some_and(|path| path.is_dir())
+            });
+            hovered_has_dir && pointer_over
         });
         if self.sources_panel_drop_hovered {
             self.sources_panel_drop_armed = true;
