@@ -9,13 +9,17 @@ use std::time::Instant;
 /// Cached waveform image and playback overlays.
 #[derive(Clone, Debug)]
 pub struct WaveformState {
+    /// Cached rendered waveform image.
     pub image: Option<WaveformImage>,
+    /// Playhead position and trail state.
     pub playhead: PlayheadState,
     /// Last play start position chosen by the user (normalized 0-1).
     pub last_start_marker: Option<f32>,
     /// Persistent navigation cursor (normalized 0-1) used by keyboard navigation.
     pub cursor: Option<f32>,
+    /// Current selection range.
     pub selection: Option<SelectionRange>,
+    /// Cached selection duration label.
     pub selection_duration: Option<String>,
     /// Optional edit selection range used for destructive edits (normalized 0-1).
     pub edit_selection: Option<SelectionRange>,
@@ -25,7 +29,9 @@ pub struct WaveformState {
     pub selected_slices: Vec<usize>,
     /// When true, waveform drags paint slice ranges instead of selection.
     pub slice_mode_enabled: bool,
+    /// Label showing the hovered time position.
     pub hover_time_label: Option<String>,
+    /// Current waveform channel view mode.
     pub channel_view: WaveformChannelView,
     /// When true, selection edits snap to beat-sized steps using the bpm value.
     pub bpm_snap_enabled: bool,
@@ -47,8 +53,11 @@ pub struct WaveformState {
     pub transient_cache_token: Option<u64>,
     /// Current visible viewport within the waveform (0.0-1.0 normalized).
     pub view: WaveformView,
+    /// Whether looped playback is enabled.
     pub loop_enabled: bool,
+    /// Whether to normalize audition playback.
     pub normalized_audition_enabled: bool,
+    /// Optional notice text displayed near the waveform.
     pub notice: Option<String>,
     /// Optional path for the sample currently loading to drive UI affordances.
     pub loading: Option<PathBuf>,
@@ -111,15 +120,20 @@ impl Default for WaveformState {
 /// Raw pixels ready to upload to an egui texture.
 #[derive(Clone, Debug)]
 pub struct WaveformImage {
+    /// Pixel data for the waveform texture.
     pub image: egui::ColorImage,
+    /// View start used for rendering, normalized.
     pub view_start: f64,
+    /// View end used for rendering, normalized.
     pub view_end: f64,
 }
 
 /// Normalized bounds describing the visible region of the waveform.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WaveformView {
+    /// Normalized view start (0.0-1.0).
     pub start: f64,
+    /// Normalized view end (0.0-1.0).
     pub end: f64,
 }
 
@@ -151,7 +165,9 @@ impl Default for WaveformView {
 /// Current playhead position/visibility.
 #[derive(Clone, Debug)]
 pub struct PlayheadState {
+    /// Normalized playhead position.
     pub position: f32,
+    /// Whether the playhead is visible.
     pub visible: bool,
     /// Normalized end of the currently playing span, when any.
     pub active_span_end: Option<f32>,
@@ -188,7 +204,9 @@ pub struct PlayheadSeek {
 /// Cached samples for a playhead trail that is fading out.
 #[derive(Clone, Debug)]
 pub struct FadingPlayheadTrail {
+    /// Timestamp when the trail started fading.
     pub started_at: Instant,
+    /// Sampled playhead positions in the trail.
     pub samples: VecDeque<PlayheadTrailSample>,
 }
 

@@ -17,40 +17,58 @@ use super::super::config_defaults::{
 /// `normalized_audition_enabled`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InteractionOptions {
+    /// Invert mouse wheel direction for waveform scrolling.
     #[serde(default = "default_true")]
     pub invert_waveform_scroll: bool,
+    /// Scroll speed multiplier for waveform navigation.
     #[serde(default = "default_scroll_speed")]
     pub waveform_scroll_speed: f32,
+    /// Zoom factor for mouse wheel zoom.
     #[serde(default = "default_wheel_zoom_factor")]
     pub wheel_zoom_factor: f32,
+    /// Zoom factor for keyboard shortcuts.
     #[serde(default = "default_keyboard_zoom_factor")]
     pub keyboard_zoom_factor: f32,
+    /// Whether to apply anti-clip fades at playback edges.
     #[serde(default = "default_true")]
     pub anti_clip_fade_enabled: bool,
+    /// Anti-clip fade duration in milliseconds.
     #[serde(default = "default_anti_clip_fade_ms")]
     pub anti_clip_fade_ms: f32,
+    /// Allow destructive edits without confirmation.
     #[serde(default)]
     pub destructive_yolo_mode: bool,
+    /// Default waveform channel visualization mode.
     #[serde(default)]
     pub waveform_channel_view: WaveformChannelView,
+    /// Enable BPM snapping for selections and cursor moves.
     #[serde(default = "default_false")]
     pub bpm_snap_enabled: bool,
+    /// Lock BPM input to the detected value.
     #[serde(default = "default_false")]
     pub bpm_lock_enabled: bool,
+    /// Enable BPM-based time stretching for playback.
     #[serde(default = "default_false")]
     pub bpm_stretch_enabled: bool,
+    /// BPM value used for snapping and stretching.
     #[serde(default = "default_bpm_value")]
     pub bpm_value: f32,
+    /// Snap selections to detected transient markers.
     #[serde(default = "default_false")]
     pub transient_snap_enabled: bool,
+    /// Render transient markers in the waveform UI.
     #[serde(default = "default_true")]
     pub transient_markers_enabled: bool,
+    /// Enable live input monitoring during recording.
     #[serde(default = "default_true")]
     pub input_monitoring_enabled: bool,
+    /// Normalize audition playback levels.
     #[serde(default = "default_false")]
     pub normalized_audition_enabled: bool,
+    /// Advance selection after rating a sample.
     #[serde(default = "default_true")]
     pub advance_after_rating: bool,
+    /// Show hover hints in the UI.
     #[serde(default = "default_true")]
     pub hover_hints_enabled: bool,
 }

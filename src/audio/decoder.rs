@@ -1,4 +1,6 @@
-use std::io::{Cursor};
+//! Symphonia-based audio decoder implementing the `Source` trait.
+
+use std::io::Cursor;
 use std::sync::Arc;
 use symphonia::core::audio::{AudioBufferRef, Signal};
 use symphonia::core::codecs::{Decoder, DecoderOptions};
@@ -10,6 +12,7 @@ use std::time::Duration;
 
 use super::Source;
 
+/// Streaming decoder that yields interleaved `f32` samples.
 pub struct SymphoniaDecoder {
     reader: Box<dyn FormatReader>,
     decoder: Box<dyn Decoder>,
@@ -22,10 +25,12 @@ pub struct SymphoniaDecoder {
 }
 
 impl SymphoniaDecoder {
+    /// Create a decoder for a media source stream using a WAV hint.
     pub fn new(mss: MediaSourceStream) -> Result<Self, String> {
         Self::new_with_hint(mss, "wav")
     }
 
+    /// Create a decoder for a media source stream with an explicit extension hint.
     pub fn new_with_hint(mss: MediaSourceStream, hint_str: &str) -> Result<Self, String> {
         let mut hint = Hint::new();
         hint.with_extension(hint_str);
@@ -34,7 +39,7 @@ impl SymphoniaDecoder {
             .format(&hint, mss, &FormatOptions::default(), &Default::default())
             .map_err(|e| format!("Symphonia probe failed: {}", e))?;
 
-        let mut reader = probed.format;
+        let reader = probed.format;
         let track = reader.default_track().ok_or("No default track found")?;
         
         let decoder = symphonia::default::get_codecs()
@@ -60,17 +65,20 @@ impl SymphoniaDecoder {
         })
     }
 
+    /// Create a decoder from an in-memory byte buffer.
     pub fn from_bytes(data: Arc<[u8]>) -> Result<Self, String> {
         let cursor = Cursor::new(data);
         let mss = MediaSourceStream::new(Box::new(cursor), Default::default());
         Self::new(mss)
     }
 
+    /// Record a hint for the decoder (currently a no-op).
     pub fn set_hint(&mut self, _hint: &str) {
         // Hint must be provided at probe time in Symphonia.
         // For now we just ignore this or we'd have to re-probe.
     }
 
+    /// Attempt to seek to an absolute playback timestamp.
     pub fn try_seek(&mut self, duration: Duration) -> Result<(), String> {
         self.reader.seek(symphonia::core::formats::SeekMode::Coarse, symphonia::core::formats::SeekTo::Time {
             time: symphonia::core::units::Time::new(duration.as_secs(), duration.subsec_nanos() as f64 / 1_000_000_000.0),

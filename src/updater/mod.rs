@@ -32,7 +32,9 @@ pub(crate) const CHECKSUMS_PUBLIC_KEY_BASE64: &str = "kicipwnHITr+xoX96bXvp85X2e
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum UpdateChannel {
+    /// Stable release channel.
     Stable,
+    /// Nightly/pre-release channel.
     Nightly,
 }
 
@@ -45,19 +47,28 @@ impl Default for UpdateChannel {
 /// Context for the running app used to validate manifests.
 #[derive(Debug, Clone)]
 pub struct RuntimeIdentity {
+    /// Application name.
     pub app: String,
+    /// Update channel.
     pub channel: UpdateChannel,
+    /// Target triple identifier.
     pub target: String,
+    /// Platform identifier (windows/linux/macos).
     pub platform: String,
+    /// Architecture identifier (x86_64/aarch64).
     pub arch: String,
 }
 
 /// Updater run configuration (used by `sempal-updater`).
 #[derive(Debug, Clone)]
 pub struct UpdaterRunArgs {
+    /// GitHub repository slug.
     pub repo: String,
+    /// Runtime identity for the update.
     pub identity: RuntimeIdentity,
+    /// Installation directory for the update.
     pub install_dir: PathBuf,
+    /// Whether to relaunch after update.
     pub relaunch: bool,
     /// Optional release tag override (e.g. `v0.384.0` or `nightly`).
     pub requested_tag: Option<String>,
@@ -66,10 +77,12 @@ pub struct UpdaterRunArgs {
 /// Progress update emitted during apply steps.
 #[derive(Debug, Clone)]
 pub struct UpdateProgress {
+    /// Human-readable progress message.
     pub message: String,
 }
 
 impl UpdateProgress {
+    /// Create a new progress message.
     pub fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
@@ -77,22 +90,32 @@ impl UpdateProgress {
     }
 }
 
+/// Errors returned by update checks or apply steps.
 #[derive(Debug, thiserror::Error)]
 pub enum UpdateError {
+    /// HTTP/transport error.
     #[error("HTTP error: {0}")]
     Http(String),
+    /// IO error during update.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+    /// JSON parse/serialize error.
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
+    /// Archive/zip processing error.
     #[error("Zip error: {0}")]
     Zip(String),
+    /// Downloaded checksum did not match.
     #[error("Checksum mismatch for {filename}: expected {expected}, got {actual}")]
     ChecksumMismatch {
+        /// File name that failed verification.
         filename: String,
+        /// Expected checksum value.
         expected: String,
+        /// Actual checksum value.
         actual: String,
     },
+    /// Update was invalid or incompatible.
     #[error("Invalid update: {0}")]
     Invalid(String),
 }

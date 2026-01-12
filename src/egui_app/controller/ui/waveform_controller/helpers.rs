@@ -37,18 +37,6 @@ pub(crate) enum CursorUpdateSource {
 }
 
 impl WaveformController<'_> {
-    pub(crate) fn display_view(&self) -> WaveformView {
-        self.ui
-            .waveform
-            .image
-            .as_ref()
-            .map(|image| WaveformView {
-                start: image.view_start,
-                end: image.view_end,
-            })
-            .unwrap_or(self.ui.waveform.view)
-    }
-
     pub(crate) fn waveform_ready(&self) -> bool {
         self.sample_view.waveform.decoded.is_some()
     }
@@ -65,7 +53,6 @@ impl WaveformController<'_> {
         } else {
             PLAYHEAD_STEP_PX
         };
-        let px_fraction = (px / width_px).min(1.0);
         let px_fraction = (px / width_px).min(1.0);
         (self.ui.waveform.view.width() as f32) * px_fraction
     }

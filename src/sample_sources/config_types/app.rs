@@ -23,9 +23,12 @@ use super::{AnalysisSettings, InteractionOptions, UpdateSettings};
 /// `sources` and `collections` are stored in the library database.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
+    /// Sample sources loaded from the library database.
     pub sources: Vec<SampleSource>,
+    /// Collections loaded from the library database.
     pub collections: Vec<Collection>,
     #[serde(default, flatten)]
+    /// Core settings persisted in the config file.
     pub core: AppSettingsCore,
 }
 
@@ -66,31 +69,41 @@ impl From<(AppSettings, LibraryState)> for AppConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettingsCore {
     #[serde(default)]
+    /// Feature flags for experimental or optional UI behavior.
     pub feature_flags: FeatureFlags,
     #[serde(default)]
+    /// Analysis settings.
     pub analysis: AnalysisSettings,
     #[serde(default)]
+    /// Update check settings.
     pub updates: UpdateSettings,
     /// Optional override for the `.sempal` data folder.
     #[serde(default)]
     pub app_data_dir: Option<PathBuf>,
     #[serde(default)]
+    /// Optional trash folder path.
     pub trash_folder: Option<PathBuf>,
     /// Optional default root used when creating collection export folders.
     #[serde(default)]
     pub collection_export_root: Option<PathBuf>,
     /// User-defined drop target folders used by the sidebar, with optional colors.
     #[serde(default, deserialize_with = "deserialize_drop_targets")]
+    /// Drop target configurations for the sidebar.
     pub drop_targets: Vec<DropTargetConfig>,
     #[serde(default)]
+    /// Last selected source id.
     pub last_selected_source: Option<SourceId>,
     #[serde(default = "default_audio_output")]
+    /// Output audio configuration.
     pub audio_output: AudioOutputConfig,
     #[serde(default = "default_audio_input")]
+    /// Input audio configuration.
     pub audio_input: AudioInputConfig,
     #[serde(default = "default_volume")]
+    /// Master volume (0.0-1.0).
     pub volume: f32,
     #[serde(default)]
+    /// Interaction option defaults.
     pub controls: InteractionOptions,
 }
 
@@ -107,13 +120,21 @@ impl AppSettingsCore {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum DropTargetColor {
+    /// Mint accent color.
     Mint,
+    /// Ice accent color.
     Ice,
+    /// Copper accent color.
     Copper,
+    /// Fog accent color.
     Fog,
+    /// Amber accent color.
     Amber,
+    /// Rose accent color.
     Rose,
+    /// Spruce accent color.
     Spruce,
+    /// Clay accent color.
     Clay,
 }
 
@@ -139,8 +160,10 @@ impl DropTargetConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeatureFlags {
     #[serde(default = "default_true")]
+    /// Enable collections UI.
     pub collections_enabled: bool,
     #[serde(default = "default_true")]
+    /// Auto-play when selection changes.
     pub autoplay_selection: bool,
 }
 

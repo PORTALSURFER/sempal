@@ -4,6 +4,10 @@ version = "11.0.0"
 edition = "2024"
 default-run = "sempal"
 
+[lints.rust]
+warnings = "deny"
+missing_docs = "deny"
+
 [features]
 default = []
 

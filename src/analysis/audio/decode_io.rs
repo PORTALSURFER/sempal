@@ -45,7 +45,6 @@ pub(crate) fn probe_metadata(path: &Path) -> Result<AudioProbe, String> {
 
     let file =
         File::open(path).map_err(|err| format!("Failed to open {}: {err}", path.display()))?;
-    let byte_len = file.metadata().map(|meta| meta.len()).unwrap_or(0) as u64;
     let hint = path
         .extension()
         .and_then(|ext| ext.to_str())

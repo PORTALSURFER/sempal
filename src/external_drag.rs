@@ -21,6 +21,9 @@ pub fn start_file_drag(
 }
 
 #[cfg(not(target_os = "windows"))]
+/// Start dragging the given file paths to an external target.
+///
+/// Returns an error because non-Windows platforms are not supported here.
 pub fn start_file_drag(_hwnd: (), _paths: &[PathBuf]) -> Result<(), String> {
     Err("External drag-out is only supported on Windows in this build".into())
 }

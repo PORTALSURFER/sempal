@@ -86,5 +86,4 @@ pub(crate) struct LoadedAudio {
     pub(crate) bytes: Vec<u8>,
     pub(crate) duration_seconds: f32,
     pub(crate) sample_rate: u32,
-    pub(crate) channels: u16,
 }

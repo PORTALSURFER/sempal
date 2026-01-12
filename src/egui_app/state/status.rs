@@ -4,9 +4,13 @@ use egui::Color32;
 /// Status badge + text shown in the footer.
 #[derive(Clone, Debug, PartialEq)]
 pub struct StatusBarState {
+    /// Main status message text.
     pub text: String,
+    /// Badge label shown next to the status.
     pub badge_label: String,
+    /// Badge color.
     pub badge_color: Color32,
+    /// Rolling status log entries.
     pub log: Vec<String>,
 }
 
@@ -21,6 +25,7 @@ impl StatusBarState {
         }
     }
 
+    /// Concatenate log entries into a single displayable string.
     pub fn log_text(&self) -> String {
         if self.log.is_empty() {
             return String::new();

@@ -1,5 +1,5 @@
 use super::style;
-use eframe::egui::{self, Align2, Color32, TextStyle, Ui};
+use eframe::egui::{self, Align2, Color32, PopupAnchor, TextStyle, Tooltip, Ui};
 use crate::sample_sources::Rating;
 
 /// Display a contextual hint tooltip if hints are enabled and the last response was hovered.
@@ -12,14 +12,12 @@ pub(super) fn show_hover_hint(ui: &mut Ui, enabled: bool, hint: &str) {
             return;
         }
     });
-    egui::show_tooltip_at_pointer(
-        ui.ctx(),
-        egui::LayerId::new(egui::Order::Tooltip, ui.id().with("__hover_hint_layer")),
-        ui.id().with("__hover_hint"),
-        |ui: &mut egui::Ui| {
+    let layer_id = egui::LayerId::new(egui::Order::Tooltip, ui.id().with("__hover_hint_layer"));
+    Tooltip::always_open(ui.ctx().clone(), layer_id, ui.id().with("__hover_hint"), PopupAnchor::Pointer)
+        .gap(12.0)
+        .show(|ui: &mut egui::Ui| {
             ui.label(hint);
-        },
-    );
+        });
 }
 
 /// Metadata for rendering a fixed-width number column alongside a list row.
@@ -344,7 +342,9 @@ pub(super) fn render_inline_text_edit(
         .hint_text(hint)
         .frame(false)
         .desired_width(rect.width());
-    let edit_output = ui.allocate_ui_at_rect(rect, |ui| edit.show(ui)).inner;
+    let edit_output = ui
+        .scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| edit.show(ui))
+        .inner;
     let response = edit_output.response;
     let mut select_all = response.gained_focus();
     if *focus_requested {

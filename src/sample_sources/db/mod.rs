@@ -4,11 +4,15 @@ use rusqlite::{Connection, Transaction};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+/// Read-only database queries for sample sources.
 pub mod read;
+/// SQLite schema management for sample source databases.
 pub mod schema;
+/// Write-focused database helpers for sample sources.
 pub mod write;
 
-pub mod util; // Restored
+/// Database path helpers and normalization utilities.
+pub mod util;
 
 mod rating_tests;
 
@@ -16,7 +20,9 @@ pub use util::normalize_relative_path;
 
 /// Hidden filename used for per-source databases.
 pub const DB_FILE_NAME: &str = ".sempal_samples.db";
+/// Metadata key for the last completed scan timestamp.
 pub const META_LAST_SCAN_COMPLETED_AT: &str = "last_scan_completed_at";
+/// Metadata key for the last similarity-prep scan timestamp.
 pub const META_LAST_SIMILARITY_PREP_SCAN_AT: &str = "last_similarity_prep_scan_at";
 
 /// Rating applied to a wav file to mark keep/trash decisions.
@@ -33,28 +39,38 @@ impl Default for Rating {
 }
 
 impl Rating {
+    /// Neutral rating (no keep/trash decision).
     pub const NEUTRAL: Self = Self(0);
+    /// Keep rating at level 1.
     pub const KEEP_1: Self = Self(1);
+    /// Keep rating at level 3.
     pub const KEEP_3: Self = Self(3);
+    /// Trash rating at level 1.
     pub const TRASH_1: Self = Self(-1);
+    /// Trash rating at level 3 (full trash).
     pub const TRASH_3: Self = Self(-3); // Full Trash
 
+    /// Clamp a raw rating into the supported range.
     pub fn new(val: i8) -> Self {
         Self(val.clamp(-3, 3))
     }
 
+    /// Return the underlying rating value.
     pub fn val(&self) -> i8 {
         self.0
     }
 
+    /// Return true when the rating is neutral.
     pub fn is_neutral(&self) -> bool {
         self.0 == 0
     }
 
+    /// Return true when the rating indicates keep.
     pub fn is_keep(&self) -> bool {
         self.0 > 0
     }
 
+    /// Return true when the rating indicates trash.
     pub fn is_trash(&self) -> bool {
         self.0 < 0
     }
@@ -81,14 +97,20 @@ impl Rating {
 /// Details about a wav file stored in a source database.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WavEntry {
+    /// File path relative to the source root.
     pub relative_path: PathBuf,
+    /// File size in bytes.
     pub file_size: u64,
+    /// Last modified timestamp in epoch nanoseconds.
     pub modified_ns: i64,
+    /// Optional content hash for change detection.
     pub content_hash: Option<String>,
+    /// Current rating/tag for the file.
     pub tag: Rating,
     /// True when the sample is marked as a loop for quick filtering in the UI.
     #[serde(default)]
     pub looped: bool,
+    /// Whether the file is missing on disk.
     pub missing: bool,
     /// Epoch seconds of the most recent playback, if any.
     #[serde(default)]
@@ -98,19 +120,27 @@ pub struct WavEntry {
 /// Errors returned when managing a source database.
 #[derive(Debug, Error)]
 pub enum SourceDbError {
+    /// The provided root path is not a directory.
     #[error("Source folder is not a directory: {0}")]
     InvalidRoot(PathBuf),
+    /// SQLite query failed.
     #[error("Database query failed: {0}")]
     Sql(#[from] rusqlite::Error),
+    /// Failed to create a parent directory.
     #[error("Could not write to {path}: {source}")]
     CreateDir {
+        /// Path that could not be created.
         path: PathBuf,
+        /// Underlying IO error.
         source: std::io::Error,
     },
+    /// Provided path was not relative to the source root.
     #[error("Path must be relative to the source root: {0}")]
     PathMustBeRelative(PathBuf),
+    /// Database is locked or busy.
     #[error("Database is busy, please retry")]
     Busy,
+    /// SQLite returned an unexpected result.
     #[error("SQLite returned an unexpected result")]
     Unexpected,
 }

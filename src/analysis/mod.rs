@@ -1,5 +1,6 @@
 //! Background analysis helpers (decoding, normalization, feature extraction).
 
+/// Approximate nearest neighbor index helpers for similarity search.
 pub mod ann_index;
 pub(crate) mod audio;
 pub(crate) mod audio_decode;
@@ -9,7 +10,9 @@ pub(crate) mod frequency_domain;
 pub mod hdbscan;
 pub mod similarity;
 pub(crate) mod time_domain;
+/// UMAP layout generation utilities for visualization.
 pub mod umap;
+/// Feature vector encoding/decoding helpers.
 pub mod vector;
 pub(crate) mod version;
 

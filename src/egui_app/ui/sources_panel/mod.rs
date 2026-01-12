@@ -80,7 +80,7 @@ impl EguiApp {
             let min_folder_height = 60.0;
             let min_drop_targets_height = 40.0;
             let default_drop_targets_height = (remaining * 0.25).clamp(60.0, 160.0);
-            let mut drop_targets_height = self
+            let drop_targets_height = self
                 .controller
                 .ui
                 .sources
@@ -164,17 +164,23 @@ impl EguiApp {
             }
             let (_layout_rect, folder_rect, handle_rect, drop_targets_rect) =
                 build_layout(folder_height, drop_targets_height);
-            ui.allocate_ui_at_rect(folder_rect, |ui| {
-                self.render_folder_browser(ui, folder_height, folder_drop_active, pointer_pos);
-            });
+            ui.scope_builder(
+                egui::UiBuilder::new().max_rect(folder_rect),
+                |ui| {
+                    self.render_folder_browser(ui, folder_height, folder_drop_active, pointer_pos);
+                },
+            );
             let handle_stroke = style::inner_border();
             ui.painter().line_segment(
                 [handle_rect.center_top(), handle_rect.center_bottom()],
                 handle_stroke,
             );
-            ui.allocate_ui_at_rect(drop_targets_rect, |ui| {
-                self.render_drop_targets(ui, drop_targets_height);
-            });
+            ui.scope_builder(
+                egui::UiBuilder::new().max_rect(drop_targets_rect),
+                |ui| {
+                    self.render_drop_targets(ui, drop_targets_height);
+                },
+            );
             self.controller.ui.sources.drop_targets.height_override = height_override;
             self.controller.ui.sources.drop_targets.resize_origin_height = resize_origin;
 

@@ -1,3 +1,4 @@
+//! Windows installer entry point for Sempal.
 #![cfg_attr(
     all(not(debug_assertions), target_os = "windows"),
     windows_subsystem = "windows"
@@ -13,7 +14,9 @@ mod shortcuts;
 mod ui;
 
 const APP_NAME: &str = "SemPal";
+#[cfg(target_os = "windows")]
 const APP_PUBLISHER: &str = "SemPal";
+#[cfg(target_os = "windows")]
 const UNINSTALL_KEY: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\SemPal";
 
 fn main() -> eframe::Result<()> {

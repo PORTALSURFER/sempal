@@ -1,8 +1,11 @@
 use std::time::Duration;
 
 mod device;
+/// Audio input device enumeration and configuration helpers.
 pub mod input;
+/// Audio output device enumeration and stream helpers.
 pub mod output;
+/// Recording and input monitoring helpers.
 pub mod recording;
 
 mod fade;
@@ -10,6 +13,7 @@ mod loop_diagnostic;
 mod mixer;
 mod player;
 mod source;
+/// Low-level decoder wrapper for Symphonia.
 pub mod decoder;
 mod time_stretch;
 mod routing;

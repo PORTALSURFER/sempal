@@ -1,3 +1,5 @@
+//! Audio recording pipeline and monitoring utilities.
+
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
@@ -16,13 +18,19 @@ use super::input::{
     resolve_input_stream_config,
 };
 
+/// Summary returned when a recording completes.
 pub struct RecordingOutcome {
+    /// Path to the recorded WAV file on disk.
     pub path: PathBuf,
+    /// Input configuration used for the capture.
     pub resolved: ResolvedInput,
+    /// Number of audio frames written.
     pub frames: u64,
+    /// Duration of the recording in seconds.
     pub duration_seconds: f32,
 }
 
+/// Active audio recorder that streams samples to a WAV file.
 pub struct AudioRecorder {
     stream: Stream,
     writer: RecorderWriter,
@@ -33,6 +41,7 @@ pub struct AudioRecorder {
 }
 
 impl AudioRecorder {
+    /// Start recording to the provided output path using the given input config.
     pub fn start(config: &AudioInputConfig, path: PathBuf) -> Result<Self, AudioInputError> {
         let resolved = resolve_input_stream_config(config)?;
         let selection = StreamChannelSelection::new(
@@ -77,6 +86,7 @@ impl AudioRecorder {
         })
     }
 
+    /// Stop recording and return summary metadata.
     pub fn stop(mut self) -> Result<RecordingOutcome, AudioInputError> {
         drop(self.stream);
         let _ = self.writer.stop();
@@ -94,22 +104,27 @@ impl AudioRecorder {
         })
     }
 
+    /// Return true while the recorder has been started.
     pub fn is_active(&self) -> bool {
         self.started_at.elapsed().as_secs_f32() >= 0.0
     }
 
+    /// Return the resolved input configuration used for recording.
     pub fn resolved(&self) -> &ResolvedInput {
         &self.resolved
     }
 
+    /// Return the output path for the recording.
     pub fn output_path(&self) -> &Path {
         &self.path
     }
 
+    /// Attach a monitor that receives live audio samples.
     pub fn attach_monitor(&self, monitor: &InputMonitor) {
         self.set_monitor_sender(Some(monitor.sender()));
     }
 
+    /// Detach any active input monitor.
     pub fn detach_monitor(&self) {
         self.set_monitor_sender(None);
     }
@@ -175,17 +190,22 @@ enum RecorderCommand {
     Stop,
 }
 
+/// Commands sent to the input monitor worker.
 pub enum MonitorCommand {
+    /// Forward live samples to the monitor sink.
     Samples(Vec<f32>),
+    /// Stop the monitor worker.
     Stop,
 }
 
+/// Optional live monitor that replays captured samples.
 pub struct InputMonitor {
     sender: Sender<MonitorCommand>,
     join: Option<JoinHandle<()>>,
 }
 
 impl InputMonitor {
+    /// Start a monitoring worker that forwards samples into a sink.
     pub fn start(sink: MonitorSink, channels: u16, sample_rate: u32) -> Self {
         let (sender, receiver) = std::sync::mpsc::channel();
         let join = thread::spawn(move || monitor_loop(sink, channels, sample_rate, receiver));
@@ -195,10 +215,12 @@ impl InputMonitor {
         }
     }
 
+    /// Return a sender for pushing monitor commands.
     pub fn sender(&self) -> Sender<MonitorCommand> {
         self.sender.clone()
     }
 
+    /// Stop the monitor worker and wait for the thread to exit.
     pub fn stop(mut self) {
         let _ = self.sender.send(MonitorCommand::Stop);
         if let Some(join) = self.join.take() {

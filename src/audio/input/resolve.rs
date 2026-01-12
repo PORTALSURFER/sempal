@@ -4,6 +4,7 @@ use cpal::traits::{DeviceTrait, HostTrait};
 use super::{AudioInputConfig, AudioInputError, ResolvedInput, ResolvedInputConfig};
 use crate::audio::device::device_label;
 
+/// Resolve an input stream configuration from user preferences.
 pub fn resolve_input_stream_config(
     config: &AudioInputConfig,
 ) -> Result<ResolvedInputConfig, AudioInputError> {

@@ -86,6 +86,7 @@ fn now_epoch_seconds() -> i64 {
 }
 
 impl EguiController {
+    /// Begin a selection drag gesture at the given position.
     pub fn start_selection_drag(&mut self, position: f32) {
         transport::start_selection_drag(self, position);
     }
@@ -95,6 +96,7 @@ impl EguiController {
         transport::start_edit_selection_drag(self, position);
     }
 
+    /// Begin dragging a selection edge, optionally scaling for BPM.
     pub fn start_selection_edge_drag(
         &mut self,
         edge: crate::selection::SelectionEdge,
@@ -103,6 +105,7 @@ impl EguiController {
         transport::start_selection_edge_drag(self, edge, bpm_scale)
     }
 
+    /// Update the active selection drag with the latest position.
     pub fn update_selection_drag(&mut self, position: f32, snap_override: bool) {
         transport::update_selection_drag(self, position, snap_override);
     }
@@ -112,6 +115,7 @@ impl EguiController {
         transport::update_edit_selection_drag(self, position, snap_override);
     }
 
+    /// Finish the active selection drag gesture.
     pub fn finish_selection_drag(&mut self) {
         transport::finish_selection_drag(self);
     }
@@ -121,6 +125,7 @@ impl EguiController {
         transport::finish_edit_selection_drag(self);
     }
 
+    /// Set the active selection range.
     pub fn set_selection_range(&mut self, range: SelectionRange) {
         transport::set_selection_range(self, range);
     }
@@ -130,6 +135,7 @@ impl EguiController {
         transport::set_edit_selection_range(self, range);
     }
 
+    /// True while a selection drag gesture is active.
     pub fn is_selection_dragging(&self) -> bool {
         transport::is_selection_dragging(self)
     }
@@ -139,6 +145,7 @@ impl EguiController {
         transport::is_edit_selection_dragging(self)
     }
 
+    /// Clear the active selection.
     pub fn clear_selection(&mut self) {
         transport::clear_selection(self);
     }
@@ -148,42 +155,52 @@ impl EguiController {
         transport::clear_edit_selection(self);
     }
 
+    /// Toggle loop playback for the current selection.
     pub fn toggle_loop(&mut self) {
         transport::toggle_loop(self);
     }
 
+    /// Seek playback to the given normalized position.
     pub fn seek_to(&mut self, position: f32) {
         transport::seek_to(self, position);
     }
 
+    /// Restart playback from the last recorded start position.
     pub fn replay_from_last_start(&mut self) -> bool {
         transport::replay_from_last_start(self)
     }
 
+    /// Start playback from the current cursor position.
     pub fn play_from_cursor(&mut self) -> bool {
         transport::play_from_cursor(self)
     }
 
+    /// Record the most recent play start position.
     pub fn record_play_start(&mut self, position: f32) {
         transport::record_play_start(self, position);
     }
 
+    /// Set the output volume multiplier.
     pub fn set_volume(&mut self, volume: f32) {
         transport::set_volume(self, volume);
     }
 
+    /// Toggle between play and pause.
     pub fn toggle_play_pause(&mut self) {
         transport::toggle_play_pause(self);
     }
 
+    /// Stop playback if it is currently active.
     pub fn stop_playback_if_active(&mut self) -> bool {
         transport::stop_playback_if_active(self)
     }
 
+    /// Handle escape key behavior for playback and selection.
     pub fn handle_escape(&mut self) {
         transport::handle_escape(self);
     }
 
+    /// Start playback with the provided loop and start override settings.
     pub fn play_audio(&mut self, looped: bool, start_override: Option<f32>) -> Result<(), String> {
         player::play_audio(self, looped, start_override)
     }
@@ -259,10 +276,12 @@ impl EguiController {
         }
     }
 
+    /// Return true if audio playback is currently active.
     pub fn is_playing(&self) -> bool {
         player::is_playing(self)
     }
 
+    /// Advance the playhead position based on playback progress.
     pub fn tick_playhead(&mut self) {
         player::tick_playhead(self);
     }
@@ -308,6 +327,7 @@ impl EguiController {
         player::apply_edit_selection(self, range);
     }
 
+    /// Update the hover time indicator for the waveform.
     pub fn update_waveform_hover_time(&mut self, position: Option<f32>) {
         player::update_waveform_hover_time(self, position);
     }
@@ -408,7 +428,6 @@ mod tests {
             bytes: Vec::new(),
             duration_seconds: 4.0,
             sample_rate: 48_000,
-            channels: 2,
         });
         let label = controller.selection_duration_label(SelectionRange::new(0.25, 0.75));
         assert_eq!(label.as_deref(), Some("2.00 s"));

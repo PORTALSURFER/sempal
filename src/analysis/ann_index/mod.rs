@@ -21,9 +21,12 @@ use rusqlite::Connection;
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 
+/// Neighbor result returned by ANN similarity search.
 #[derive(Debug)]
 pub struct SimilarNeighbor {
+    /// Sample identifier for the neighbor.
     pub sample_id: String,
+    /// Distance between the query and the neighbor (lower is more similar).
     pub distance: f32,
 }
 
@@ -48,6 +51,7 @@ fn with_index_state<R>(
     f(state)
 }
 
+/// Insert or update a single embedding in the ANN index.
 pub fn upsert_embedding(
     conn: &Connection,
     sample_id: &str,
@@ -58,6 +62,7 @@ pub fn upsert_embedding(
     })
 }
 
+/// Insert or update a batch of embeddings in the ANN index.
 pub fn upsert_embeddings_batch<'a, I>(conn: &Connection, items: I) -> Result<(), String>
 where
     I: IntoIterator<Item = (&'a str, &'a [f32])>,
@@ -71,10 +76,12 @@ where
     })
 }
 
+/// Flush any buffered ANN insertions to the on-disk index.
 pub fn flush_pending_inserts(conn: &Connection) -> Result<(), String> {
     with_index_state(conn, |state| update::flush_pending_inserts(conn, state))
 }
 
+/// Find the `k` nearest neighbors for a stored sample id.
 pub fn find_similar(
     conn: &Connection,
     sample_id: &str,
@@ -112,6 +119,7 @@ pub fn find_similar(
     })
 }
 
+/// Find the `k` nearest neighbors for an in-memory embedding.
 pub fn find_similar_for_embedding(
     conn: &Connection,
     embedding: &[f32],
@@ -152,6 +160,7 @@ pub fn find_similar_for_embedding(
     })
 }
 
+/// Rebuild the ANN index from the embeddings stored in the database.
 pub fn rebuild_index(conn: &Connection) -> Result<(), String> {
     let params = state::default_params();
     let index_path = storage::default_index_path(conn)?;

@@ -19,10 +19,12 @@ pub(crate) struct UmapPoint {
 }
 
 impl EguiController {
+    /// Open the map view panel.
     pub fn open_map(&mut self) {
         self.ui.map.open = true;
     }
 
+    /// Enqueue a UMAP layout build for the selected source.
     pub fn build_umap_layout(&mut self, model_id: &str, umap_version: &str) {
         if self.runtime.jobs.umap_build_in_progress() {
             self.set_status_message(StatusMessage::TsneBuildAlreadyRunning);
@@ -44,6 +46,7 @@ impl EguiController {
         self.set_status_message(StatusMessage::BuildingTsneLayout);
     }
 
+    /// Enqueue cluster generation for the current UMAP layout.
     pub fn build_umap_clusters(&mut self, model_id: &str, umap_version: &str) {
         if self.runtime.jobs.umap_cluster_build_in_progress() {
             self.set_status_message(StatusMessage::ClusterBuildAlreadyRunning);
@@ -93,6 +96,7 @@ impl EguiController {
         )
     }
 
+    /// Lookup a UMAP point for a specific sample id.
     pub fn umap_point_for_sample(
         &mut self,
         model_id: &str,
@@ -105,6 +109,7 @@ impl EguiController {
         load_umap_point_for_sample(&conn, model_id, umap_version, sample_id)
     }
 
+    /// Load cluster centroids for the requested UMAP layout.
     pub fn umap_cluster_centroids(
         &mut self,
         model_id: &str,

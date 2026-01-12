@@ -21,6 +21,8 @@ pub(crate) fn default_bundle_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("bundle"))
 }
 
+/// Return the Start Menu folder path for the app (Windows only).
+#[cfg(target_os = "windows")]
 pub(crate) fn start_menu_dir() -> Option<PathBuf> {
     env::var("APPDATA").ok().map(|root| {
         PathBuf::from(root)

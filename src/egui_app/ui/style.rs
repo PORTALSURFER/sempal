@@ -8,10 +8,15 @@ use eframe::egui::{
 /// Status tone variants used to pick badge colours.
 #[derive(Clone, Copy, Debug)]
 pub enum StatusTone {
+    /// Idle/neutral status.
     Idle,
+    /// Busy/working status.
     Busy,
+    /// Informational status.
     Info,
+    /// Warning status.
     Warning,
+    /// Error status.
     Error,
 }
 
@@ -19,41 +24,72 @@ pub enum StatusTone {
 #[allow(dead_code)]
 #[derive(Clone, Copy)]
 pub struct Palette {
+    /// Primary background color.
     pub bg_primary: Color32,
+    /// Secondary background color.
     pub bg_secondary: Color32,
+    /// Tertiary background color.
     pub bg_tertiary: Color32,
+    /// Outline stroke for panels.
     pub panel_outline: Color32,
+    /// Strong grid line color.
     pub grid_strong: Color32,
+    /// Subtle grid line color.
     pub grid_soft: Color32,
+    /// Primary text color.
     pub text_primary: Color32,
+    /// Muted text color.
     pub text_muted: Color32,
+    /// Mint accent color.
     pub accent_mint: Color32,
+    /// Ice accent color.
     pub accent_ice: Color32,
+    /// Copper accent color.
     pub accent_copper: Color32,
+    /// Warning accent color.
     pub warning: Color32,
+    /// Success accent color.
     pub success: Color32,
 }
 
 /// Semantic colours used across the UI.
 #[derive(Clone, Copy)]
 pub struct SemanticPalette {
+    /// Idle badge color.
     pub badge_idle: Color32,
+    /// Busy badge color.
     pub badge_busy: Color32,
+    /// Info badge color.
     pub badge_info: Color32,
+    /// Warning badge color.
     pub badge_warning: Color32,
+    /// Error badge color.
     pub badge_error: Color32,
+    /// Drag highlight fill color.
     pub drag_highlight: Color32,
+    /// Destructive action color.
     pub destructive: Color32,
+    /// Soft warning fill color.
     pub warning_soft: Color32,
+    /// Duplicate hover fill color.
     pub duplicate_hover_fill: Color32,
+    /// Duplicate hover stroke color.
     pub duplicate_hover_stroke: Color32,
+    /// Triage trash color.
     pub triage_trash: Color32,
+    /// Subtle triage trash color.
     pub triage_trash_subtle: Color32,
+    /// Triage keep color.
     pub triage_keep: Color32,
+    /// Playback age light color.
     pub playback_age_light: Color32,
+    /// Playback age medium color.
     pub playback_age_medium: Color32,
+    /// Playback age dark color.
     pub playback_age_dark: Color32,
+    /// High-contrast text color.
     pub text_contrast: Color32,
+    /// Missing-item indicator color.
     pub missing: Color32,
 }
 

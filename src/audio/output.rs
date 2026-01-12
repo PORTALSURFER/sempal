@@ -5,36 +5,67 @@ use thiserror::Error;
 use tracing::info;
 
 use super::device::{device_label, host_label};
+/// Errors that can occur while enumerating or opening audio outputs.
 #[derive(Debug, Error)]
 pub enum AudioOutputError {
+    /// No audio output devices are available on the host.
     #[error("No audio output devices found")]
     NoOutputDevices,
+    /// Failed to enumerate output devices on the host.
     #[error("Could not list output devices: {source}")]
-    ListOutputDevices { source: cpal::DevicesError },
+    ListOutputDevices {
+        /// Underlying cpal error.
+        source: cpal::DevicesError,
+    },
+    /// Failed to query supported output configs for a host.
     #[error("Failed to read supported configs for {host_id}: {source}")]
     SupportedOutputConfigs {
+        /// Host identifier used for the query.
         host_id: String,
+        /// Underlying cpal error.
         source: cpal::SupportedStreamConfigsError,
     },
+    /// Failed to build an output stream.
     #[error("Failed to build stream: {source}")]
-    BuildStream { source: cpal::BuildStreamError },
+    BuildStream {
+        /// Underlying cpal error.
+        source: cpal::BuildStreamError,
+    },
+    /// Failed to build a default output stream.
     #[error("Failed to build default stream: {source}")]
-    BuildDefaultStream { source: cpal::BuildStreamError },
+    BuildDefaultStream {
+        /// Underlying cpal error.
+        source: cpal::BuildStreamError,
+    },
+    /// Failed to start playback on an output stream.
     #[error("Playback failed to start: {source}")]
-    PlayStream { source: cpal::PlayStreamError },
+    PlayStream {
+        /// Underlying cpal error.
+        source: cpal::PlayStreamError,
+    },
+    /// Failed to resolve the default output config for a host.
     #[error("Default config error for {host_id}: {source}")]
-    DefaultConfig { host_id: String, source: cpal::DefaultStreamConfigError },
+    DefaultConfig {
+        /// Host identifier used for the query.
+        host_id: String,
+        /// Underlying cpal error.
+        source: cpal::DefaultStreamConfigError,
+    },
 }
 
 /// Persisted audio output preferences chosen by the user.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct AudioOutputConfig {
+    /// Preferred host identifier (e.g., "wasapi").
     #[serde(default)]
     pub host: Option<String>,
+    /// Preferred device name.
     #[serde(default)]
     pub device: Option<String>,
+    /// Preferred sample rate in Hz.
     #[serde(default)]
     pub sample_rate: Option<u32>,
+    /// Preferred buffer size in frames.
     #[serde(default)]
     pub buffer_size: Option<u32>,
 }
@@ -42,27 +73,39 @@ pub struct AudioOutputConfig {
 /// Available audio host (backend) presented to the user.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AudioHostSummary {
+    /// Host identifier used by cpal.
     pub id: String,
+    /// Human-readable display label.
     pub label: String,
+    /// Whether this host is the system default.
     pub is_default: bool,
 }
 
 /// Available device on a specific audio host.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AudioDeviceSummary {
+    /// Host identifier that owns the device.
     pub host_id: String,
+    /// Human-readable device name.
     pub name: String,
+    /// Whether this device is the host default.
     pub is_default: bool,
 }
 
 /// Actual output parameters in use after opening an audio stream.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ResolvedOutput {
+    /// Host identifier used to open the stream.
     pub host_id: String,
+    /// Human-readable device name.
     pub device_name: String,
+    /// Sample rate in Hz.
     pub sample_rate: u32,
+    /// Buffer size in frames, if configurable.
     pub buffer_size_frames: Option<u32>,
+    /// Total channel count provided by the device.
     pub channel_count: u16,
+    /// Whether a fallback device/config was chosen.
     pub used_fallback: bool,
 }
 
@@ -84,18 +127,23 @@ use cpal::traits::StreamTrait;
 
 /// Shared state between the player and the audio thread.
 pub struct StreamState {
+    /// Active sources plus their per-source gain.
     pub sources: Vec<(Box<dyn crate::audio::Source + Send>, f32)>,
+    /// Master volume applied across sources.
     pub volume: f32, // master volume
+    /// Last error reported by the audio thread.
     pub error: Option<String>,
 }
 
 /// Custom container for cpal output stream.
 pub struct CpalAudioStream {
     _stream: cpal::Stream,
+    /// Shared stream state for source mixing and volume control.
     pub state: Arc<Mutex<StreamState>>,
 }
 
 impl CpalAudioStream {
+    /// Wrap a cpal stream with shared playback state.
     pub fn new(stream: cpal::Stream, state: Arc<Mutex<StreamState>>) -> Self {
         Self { _stream: stream, state }
     }
@@ -103,17 +151,22 @@ impl CpalAudioStream {
 
 /// A bridge for input monitoring that mimics a Sink-like interface.
 pub struct MonitorSink {
+    /// Shared stream state that receives appended sources.
     pub state: Arc<Mutex<StreamState>>,
+    /// Gain applied to appended sources.
     pub volume: f32,
 }
 
 impl MonitorSink {
+    /// Append a new source into the monitored stream.
     pub fn append<S: crate::audio::Source + Send + 'static>(&self, source: S) {
         let mut state = self.state.lock().unwrap();
         state.sources.push((Box::new(source), self.volume));
     }
 
+    /// Begin playback (no-op for the monitor sink).
     pub fn play(&self) {}
+    /// Stop playback by clearing queued sources.
     pub fn stop(&self) {
         let mut state = self.state.lock().unwrap();
         state.sources.clear(); // Simple implementation: stop all
@@ -122,7 +175,9 @@ impl MonitorSink {
 
 /// Stream creation result that keeps both the stream handle and resolved settings.
 pub struct OpenStreamOutcome {
+    /// Opened cpal stream with shared state.
     pub stream: CpalAudioStream,
+    /// Resolved output configuration used to open the stream.
     pub resolved: ResolvedOutput,
 }
 

@@ -1,3 +1,5 @@
+//! Build script for platform-specific build configuration.
+
 use std::env;
 
 fn main() {

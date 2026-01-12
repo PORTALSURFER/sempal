@@ -55,7 +55,9 @@ pub enum AppDirError {
     /// Failed to create the application directory.
     #[error("Failed to create application directory at {path}: {source}")]
     CreateDir {
+        /// Path that told the directory to be created.
         path: PathBuf,
+        /// Underlying IO error.
         source: std::io::Error,
     },
 }

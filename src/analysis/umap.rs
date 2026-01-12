@@ -17,18 +17,28 @@ const DEFAULT_MAX_ITER: usize = 1500;
 const DEFAULT_N_COMPONENTS: usize = 2;
 const DEFAULT_PCA_COMPONENTS: usize = 50;
 
+/// Report summarizing the UMAP/t-SNE layout coverage and bounds.
 #[derive(Debug, Serialize)]
 pub struct UmapReport {
+    /// Total number of embeddings considered.
     pub total: usize,
+    /// Number of embeddings included in the final layout.
     pub valid: usize,
+    /// Number of embeddings skipped due to invalid data.
     pub invalid: usize,
+    /// Ratio of valid points to total points.
     pub coverage_ratio: f32,
+    /// Minimum X coordinate of the layout.
     pub x_min: f32,
+    /// Maximum X coordinate of the layout.
     pub x_max: f32,
+    /// Minimum Y coordinate of the layout.
     pub y_min: f32,
+    /// Maximum Y coordinate of the layout.
     pub y_max: f32,
 }
 
+/// Build and persist a 2D layout for the given model embeddings.
 pub fn build_umap_layout(
     conn: &mut Connection,
     model_id: &str,
@@ -51,11 +61,13 @@ pub fn build_umap_layout(
     validate_layout(&layout, min_coverage)
 }
 
+/// Return the default JSON report path for a given database and UMAP version.
 pub fn default_report_path(db_path: &PathBuf, umap_version: &str) -> PathBuf {
     let parent = db_path.parent().unwrap_or_else(|| Path::new("."));
     parent.join(format!("umap_report_{}.json", umap_version))
 }
 
+/// Serialize and write a UMAP report to disk.
 pub fn write_report(path: &PathBuf, report: &UmapReport) -> Result<(), String> {
     let data = serde_json::to_vec_pretty(report)
         .map_err(|err| format!("Serialize report failed: {err}"))?;

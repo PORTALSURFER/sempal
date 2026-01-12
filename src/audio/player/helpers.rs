@@ -50,6 +50,7 @@ impl AudioPlayer {
         (handle, format)
     }
 
+    /// Create a monitor sink that taps the current output stream state.
     pub fn create_monitor_sink(&self, volume: f32) -> crate::audio::output::MonitorSink {
         crate::audio::output::MonitorSink {
             state: self.stream.state.clone(),

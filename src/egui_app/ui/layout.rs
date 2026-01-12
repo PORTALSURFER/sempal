@@ -35,7 +35,6 @@ impl EguiApp {
     pub(super) fn render_center(&mut self, ui: &mut Ui) {
         ui.set_min_height(ui.available_height());
         ui.vertical(|ui| {
-            let waveform_rect = ui.available_rect_before_wrap();
             self.render_waveform(ui);
             ui.add_space(8.0);
             let browser_rect = ui.available_rect_before_wrap();

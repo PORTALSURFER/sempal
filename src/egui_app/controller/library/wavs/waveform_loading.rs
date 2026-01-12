@@ -98,7 +98,6 @@ impl EguiController {
     ) -> Result<(), String> {
         let duration_seconds = decoded.duration_seconds;
         let sample_rate = decoded.sample_rate;
-        let channels = decoded.channels;
         self.apply_waveform_image(decoded);
         self.ui.waveform.view = WaveformView::default();
         self.ui.waveform.cursor = Some(0.0);
@@ -122,7 +121,6 @@ impl EguiController {
             relative_path,
             duration_seconds,
             sample_rate,
-            channels,
             bytes,
         )?;
         if matches!(intent, AudioLoadIntent::Selection) {
@@ -269,7 +267,6 @@ impl EguiController {
         relative_path: &Path,
         duration_seconds: f32,
         sample_rate: u32,
-        channels: u16,
         bytes: Vec<u8>,
     ) -> Result<(), String> {
         self.sample_view.wav.loaded_audio = Some(LoadedAudio {
@@ -279,7 +276,6 @@ impl EguiController {
             bytes: bytes.clone(),
             duration_seconds,
             sample_rate,
-            channels,
         });
         match self.ensure_player() {
             Ok(Some(player)) => {

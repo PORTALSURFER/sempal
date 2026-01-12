@@ -12,19 +12,23 @@ const RECORDING_MAX_FULL_FRAMES: usize = 2_500_000;
 const RECORDING_MAX_PEAK_BUCKETS: usize = 1_000_000;
 
 impl EguiController {
+    /// Return true if a recording session is active.
     pub fn is_recording(&self) -> bool {
         recorder::is_recording(self)
     }
 
+    /// Begin recording using the current input configuration.
     pub fn start_recording(&mut self) -> Result<(), String> {
         recorder::start_recording(self)
     }
 
 
+    /// Stop recording and return the outcome if a session existed.
     pub fn stop_recording(&mut self) -> Result<Option<RecordingOutcome>, String> {
         recorder::stop_recording(self)
     }
 
+    /// Stop recording, then load the new file into the waveform view.
     pub fn stop_recording_and_load(&mut self) -> Result<(), String> {
         recorder::stop_recording_and_load(self)
     }

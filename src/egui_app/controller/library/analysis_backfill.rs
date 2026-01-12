@@ -40,6 +40,7 @@ impl EguiController {
         });
     }
 
+    /// Queue analysis jobs to backfill missing features for the selected source.
     pub fn backfill_missing_features_for_selected_source(&mut self) {
         let Some(source) = self.current_source() else {
             self.set_status_message(StatusMessage::SelectSourceFirst {
@@ -68,6 +69,7 @@ impl EguiController {
         });
     }
 
+    /// Queue analysis jobs to backfill embeddings for the selected source.
     pub fn backfill_embeddings_for_selected_source(&mut self) {
         let Some(source) = self.current_source() else {
             self.set_status_message(StatusMessage::SelectSourceFirst {
@@ -98,6 +100,7 @@ impl EguiController {
         });
     }
 
+    /// Recalculate similarity for the visible browser rows by index.
     pub fn recalc_similarity_for_browser_rows(&mut self, rows: &[usize]) -> Result<(), String> {
         let Some(source) = self.current_source() else {
             return Err("Select a source first".to_string());
@@ -181,6 +184,7 @@ impl EguiController {
         Ok(())
     }
 
+    /// Return true if any sources are configured.
     pub fn has_any_sources(&self) -> bool {
         !self.library.sources.is_empty()
     }

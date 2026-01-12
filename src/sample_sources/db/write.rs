@@ -120,6 +120,7 @@ impl SourceDatabase {
         Ok(SourceWriteBatch { tx })
     }
 
+    /// Insert or update a metadata key/value pair.
     pub fn set_metadata(&self, key: &str, value: &str) -> Result<(), SourceDbError> {
         self.connection
             .execute(
@@ -181,6 +182,7 @@ impl<'conn> SourceWriteBatch<'conn> {
         Ok(())
     }
 
+    /// Insert or update a wav file row, including the content hash.
     pub fn upsert_file_with_hash(
         &mut self,
         relative_path: &Path,
@@ -219,6 +221,7 @@ impl<'conn> SourceWriteBatch<'conn> {
         Ok(())
     }
 
+    /// Insert or update a wav file row with a specific tag and missing flag.
     pub fn upsert_file_with_hash_and_tag(
         &mut self,
         relative_path: &Path,

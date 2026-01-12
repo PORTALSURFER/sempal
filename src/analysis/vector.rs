@@ -60,6 +60,7 @@ pub(crate) fn to_f32_vector_v1(features: &AnalysisFeaturesV1) -> Vec<f32> {
     out
 }
 
+/// Encode a `f32` slice into a little-endian byte buffer for storage.
 pub fn encode_f32_le_blob(values: &[f32]) -> Vec<u8> {
     let mut out = Vec::with_capacity(values.len().saturating_mul(4));
     for &v in values {

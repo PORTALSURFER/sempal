@@ -115,6 +115,7 @@ pub struct SamplesBuffer {
 }
 
 impl SamplesBuffer {
+    /// Create a new in-memory source from interleaved samples.
     pub fn new(channels: u16, sample_rate: u32, samples: Vec<f32>) -> Self {
         Self {
             samples,

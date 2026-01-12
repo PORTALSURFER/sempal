@@ -22,6 +22,7 @@ impl EguiController {
         }
     }
 
+    /// Copy the status log text to the system clipboard.
     pub fn copy_status_log_to_clipboard(&mut self) {
         let text = self.ui.status.log_text();
         if text.is_empty() {

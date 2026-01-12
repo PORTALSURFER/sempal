@@ -32,19 +32,25 @@ pub enum LoggingError {
     /// Failed to create or access the log directory.
     #[error("Failed to prepare log directory {path}: {source}")]
     CreateDir {
+        /// Log directory path.
         path: PathBuf,
+        /// Underlying IO error.
         source: std::io::Error,
     },
     /// Failed to enumerate existing log files for pruning.
     #[error("Failed to read log directory {path}: {source}")]
     ReadDir {
+        /// Log directory path.
         path: PathBuf,
+        /// Underlying IO error.
         source: std::io::Error,
     },
     /// Failed to remove an obsolete log file.
     #[error("Failed to remove old log file {path}: {source}")]
     RemoveFile {
+        /// Log file path that failed to delete.
         path: PathBuf,
+        /// Underlying IO error.
         source: std::io::Error,
     },
     /// Failed to format a timestamp for the log filename.
@@ -56,7 +62,9 @@ pub enum LoggingError {
     /// Failed to create the initial log file for this launch.
     #[error("Failed to create log file at {path}: {source}")]
     CreateLogFile {
+        /// Log file path.
         path: PathBuf,
+        /// Underlying IO error.
         source: std::io::Error,
     },
 }

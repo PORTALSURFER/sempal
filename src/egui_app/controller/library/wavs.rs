@@ -346,6 +346,7 @@ impl EguiController {
         self.wav_entries.entry(index)
     }
 
+    /// Return the last analysis failure message for a wav entry, if any.
     pub fn analysis_failure_for_entry(&mut self, index: usize) -> Option<&str> {
         let source_id = self.selection_state.ctx.selected_source.clone()?;
         let path = self

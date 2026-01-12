@@ -25,12 +25,14 @@ mod sample_browser_render;
 mod sample_menus;
 mod sources_panel;
 mod status_badges;
+/// Shared color/typography style helpers.
 pub mod style;
 mod update;
 mod waveform_view;
 
 /// Default viewport sizes used when creating or restoring the window.
 pub const DEFAULT_VIEWPORT_SIZE: [f32; 2] = [960.0, 560.0];
+/// Minimum viewport size for the app window.
 pub const MIN_VIEWPORT_SIZE: [f32; 2] = [640.0, 400.0];
 
 use crate::{audio::AudioPlayer, egui_app::controller::EguiController, waveform::WaveformRenderer};

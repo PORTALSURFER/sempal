@@ -53,6 +53,7 @@ pub(crate) const STATUS_LOG_LIMIT: usize = 200;
 
 /// Maintains app state and bridges core logic to the egui UI.
 pub struct EguiController {
+    /// Mutable UI state shared with egui rendering.
     pub ui: UiState,
     audio: ControllerAudioState,
     sample_view: ControllerSampleViewState,

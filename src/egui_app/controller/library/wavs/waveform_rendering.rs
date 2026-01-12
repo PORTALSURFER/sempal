@@ -7,9 +7,6 @@ use std::path::Path;
 
 const MIN_VIEW_WIDTH_BASE: f64 = 1e-9;
 const MIN_SAMPLES_PER_PIXEL: f32 = 1.0;
-pub(crate) const MAX_ZOOM_MULTIPLIER: f32 = 64.0;
-// Reduced for better performance
-const MAX_COLUMNS_PER_PIXEL: f32 = 2.0;
 const DEFAULT_TRANSIENT_SENSITIVITY: f32 = 0.6;
 
 fn min_view_width_for_frames(frame_count: usize, width_px: u32) -> f64 {
@@ -112,10 +109,7 @@ impl EguiController {
         };
         let [width, height] = self.sample_view.waveform.size;
         let total_frames = decoded.frame_count();
-        let min_view_width = min_view_width_for_frames(total_frames, width);
         let view = self.ui.waveform.view.clamp();
-        // Allow deep zooming - don't clamp to min_view_width
-        let width_for_rendering = view.width();
         // Render at screen resolution - let GPU handle scaling
         // No need to create massive textures at deep zoom
         let target = width as usize;
@@ -170,10 +164,6 @@ impl EguiController {
             .cached_view_window(decoded, view.start as f32, view.end as f32, effective_width)
             .map(|(s, e)| (s as f64, e as f64))
             .unwrap_or((view.start, view.end));
-        let snapped_view = WaveformView {
-            start: view_start,
-            end: view_end,
-        };
         // Store the actual rendered view bounds in the image
         // but DON'T modify self.ui.waveform.view to preserve f64 precision
         if self.is_waveform_circular_slide_active() {

@@ -17,6 +17,7 @@ pub(super) fn map_sql_error(err: rusqlite::Error) -> SourceDbError {
     }
 }
 
+/// Normalize a relative path for stable database storage.
 pub fn normalize_relative_path(path: &Path) -> Result<String, SourceDbError> {
     if path.is_absolute() {
         return Err(SourceDbError::PathMustBeRelative(path.to_path_buf()));

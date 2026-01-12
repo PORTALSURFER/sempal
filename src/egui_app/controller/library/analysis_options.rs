@@ -61,14 +61,17 @@ impl EguiController {
         }
     }
 
+    /// Return the maximum analysis duration in seconds.
     pub fn max_analysis_duration_seconds(&self) -> f32 {
         self.settings.analysis.max_analysis_duration_seconds
     }
 
+    /// Return whether similarity-prep duration capping is enabled.
     pub fn similarity_prep_duration_cap_enabled(&self) -> bool {
         self.settings.analysis.limit_similarity_prep_duration
     }
 
+    /// Enable or disable similarity-prep duration capping.
     pub fn set_similarity_prep_duration_cap_enabled(&mut self, enabled: bool) {
         if self.settings.analysis.limit_similarity_prep_duration == enabled {
             return;
@@ -79,6 +82,7 @@ impl EguiController {
         }
     }
 
+    /// Set the maximum analysis duration in seconds.
     pub fn set_max_analysis_duration_seconds(&mut self, seconds: f32) {
         let clamped = clamp_max_analysis_duration_seconds(seconds);
         if (self.settings.analysis.max_analysis_duration_seconds - clamped).abs() < f32::EPSILON {
@@ -93,18 +97,22 @@ impl EguiController {
         }
     }
 
+    /// Return the configured analysis worker count.
     pub fn analysis_worker_count(&self) -> u32 {
         self.settings.analysis.analysis_worker_count
     }
 
+    /// Return the auto-selected analysis worker count for this host.
     pub fn analysis_auto_worker_count(&self) -> u32 {
         crate::egui_app::controller::library::analysis_jobs::default_worker_count()
     }
 
+    /// Return whether fast similarity-prep mode is enabled.
     pub fn similarity_prep_fast_mode_enabled(&self) -> bool {
         self.settings.analysis.fast_similarity_prep
     }
 
+    /// Enable or disable fast similarity-prep mode.
     pub fn set_similarity_prep_fast_mode_enabled(&mut self, enabled: bool) {
         if self.settings.analysis.fast_similarity_prep == enabled {
             return;
@@ -115,10 +123,12 @@ impl EguiController {
         }
     }
 
+    /// Return the sample rate used for fast similarity prep.
     pub fn similarity_prep_fast_sample_rate(&self) -> u32 {
         self.settings.analysis.fast_similarity_prep_sample_rate
     }
 
+    /// Set the sample rate used for fast similarity prep.
     pub fn set_similarity_prep_fast_sample_rate(&mut self, value: u32) {
         let max_rate = crate::analysis::audio::ANALYSIS_SAMPLE_RATE;
         let clamped = value.clamp(MIN_FAST_PREP_SAMPLE_RATE, max_rate);
@@ -131,6 +141,7 @@ impl EguiController {
         }
     }
 
+    /// Set a fixed analysis worker count.
     pub fn set_analysis_worker_count(&mut self, value: u32) {
         let clamped = value.min(MAX_ANALYSIS_WORKER_COUNT);
         if self.settings.analysis.analysis_worker_count == clamped {
@@ -143,20 +154,24 @@ impl EguiController {
         }
     }
 
+    /// Restrict analysis workers to the provided source IDs.
     pub fn set_analysis_worker_allowed_sources(&mut self, sources: Option<Vec<SourceId>>) {
         self.runtime.analysis.set_allowed_sources(sources);
     }
 
+    /// Restrict analysis workers to the currently selected source.
     pub fn set_analysis_worker_allowed_sources_to_selected(&mut self) {
         let sources = self.current_source().map(|source| vec![source.id]);
         self.set_analysis_worker_allowed_sources(sources);
     }
 
 
+    /// Return the configured WGPU power preference.
     pub fn wgpu_power_preference(&self) -> crate::sample_sources::config::WgpuPowerPreference {
         self.settings.analysis.wgpu_power_preference
     }
 
+    /// Update the WGPU power preference and persist it.
     pub fn set_wgpu_power_preference(
         &mut self,
         preference: crate::sample_sources::config::WgpuPowerPreference,
@@ -171,10 +186,12 @@ impl EguiController {
         }
     }
 
+    /// Return the configured WGPU adapter name, if any.
     pub fn wgpu_adapter_name(&self) -> Option<&str> {
         self.settings.analysis.wgpu_adapter_name.as_deref()
     }
 
+    /// Update the WGPU adapter name and persist it.
     pub fn set_wgpu_adapter_name(&mut self, name: String) {
         let trimmed = name.trim();
         let next = if trimmed.is_empty() {
@@ -192,22 +209,4 @@ impl EguiController {
         }
     }
 
-    pub(crate) fn apply_pending_backend_switch(&mut self) -> bool {
-        if self.analysis_jobs_active() {
-            return false;
-        }
-        self.apply_analysis_backend_env();
-        self.runtime
-            .analysis
-            .restart(self.runtime.jobs.message_sender());
-        true
-    }
-
-    fn analysis_jobs_active(&self) -> bool {
-        self.ui
-            .progress
-            .analysis
-            .as_ref()
-            .is_some_and(|snapshot| snapshot.pending > 0 || snapshot.running > 0)
-    }
 }

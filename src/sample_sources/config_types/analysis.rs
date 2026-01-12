@@ -53,8 +53,11 @@ impl Default for AnalysisSettings {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum WgpuPowerPreference {
+    /// Let the system decide the adapter power preference.
     Default,
+    /// Prefer low-power adapters.
     Low,
+    /// Prefer high-performance adapters.
     High,
 }
 
@@ -65,6 +68,7 @@ impl Default for WgpuPowerPreference {
 }
 
 impl WgpuPowerPreference {
+    /// Return the environment variable value for this preference.
     pub fn as_env(&self) -> Option<&'static str> {
         match self {
             Self::Default => None,
@@ -73,6 +77,7 @@ impl WgpuPowerPreference {
         }
     }
 
+    /// Parse a power preference from an environment variable value.
     pub fn from_env(value: &str) -> Option<Self> {
         match value.trim().to_ascii_lowercase().as_str() {
             "low" | "low-power" | "lowpower" => Some(Self::Low),

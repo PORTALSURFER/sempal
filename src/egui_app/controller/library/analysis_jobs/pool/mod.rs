@@ -8,7 +8,6 @@ use crate::sample_sources::SourceId;
 use progress_cache::ProgressCache;
 #[cfg(not(test))]
 use std::collections::HashSet;
-use std::mem;
 #[cfg(not(test))]
 use std::sync::Mutex;
 use std::sync::{
@@ -190,32 +189,6 @@ impl AnalysisWorkerPool {
                 self._progress_cache.clone(),
             ));
         }
-    }
-
-    pub(crate) fn restart(
-        &mut self,
-        message_tx: Sender<crate::egui_app::controller::jobs::JobMessage>,
-    ) {
-        if self.threads.is_empty() {
-            self.start(message_tx);
-            return;
-        }
-        self.shutdown.store(true, Ordering::Relaxed);
-        self.cancel.store(true, Ordering::Relaxed);
-        self.pause_claiming.store(false, Ordering::Relaxed);
-        std::thread::spawn(|| {
-            let _ = job_cleanup::reset_running_jobs();
-        });
-        let old_threads = mem::take(&mut self.threads);
-        std::thread::spawn(move || {
-            for handle in old_threads {
-                let _ = handle.join();
-            }
-        });
-        self.shutdown = Arc::new(AtomicBool::new(false));
-        self.cancel = Arc::new(AtomicBool::new(false));
-        self.pause_claiming = Arc::new(AtomicBool::new(false));
-        self.start(message_tx);
     }
 
     pub(crate) fn cancel(&self) {

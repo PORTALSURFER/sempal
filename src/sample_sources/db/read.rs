@@ -227,6 +227,7 @@ impl SourceDatabase {
         Ok(value)
     }
 
+    /// Read a metadata value by key from the database.
     pub fn get_metadata(&self, key: &str) -> Result<Option<String>, SourceDbError> {
         let value: Option<String> = self
             .connection
@@ -240,6 +241,7 @@ impl SourceDatabase {
         Ok(value)
     }
 
+    /// Return the numeric metadata revision (0 if missing).
     pub fn get_revision(&self) -> Result<u64, SourceDbError> {
         let rev_str = self.get_metadata("revision")?;
         match rev_str {

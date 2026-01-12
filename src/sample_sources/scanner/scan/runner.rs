@@ -29,6 +29,7 @@ pub fn hard_rescan(db: &SourceDatabase) -> Result<ScanStats, ScanError> {
     scan(db, ScanMode::Hard, None, None)
 }
 
+/// Scan with a progress callback, optionally honoring a cancel flag.
 pub fn scan_with_progress(
     db: &SourceDatabase,
     mode: ScanMode,

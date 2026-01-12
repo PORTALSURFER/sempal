@@ -69,6 +69,7 @@ impl EguiController {
         self.persist_controls();
     }
 
+    /// Return the derived wheel zoom speed from the stored factor.
     pub fn wheel_zoom_speed(&self) -> f32 {
         wheel_zoom_factor_to_speed(self.ui.controls.wheel_zoom_factor)
     }

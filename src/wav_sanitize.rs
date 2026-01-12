@@ -9,7 +9,9 @@ use std::path::Path;
 /// it serves the fixed header from memory and then chains the rest of the
 /// file from disk. If no fix is needed, it acts as a pass-through to the file.
 pub enum SanitizedWavReader {
+    /// Read directly from the file without modification.
     PassThrough(File),
+    /// Read a sanitized header buffer followed by the original file body.
     Chained {
         /// The sanitized header data.
         header: Cursor<Vec<u8>>,
@@ -183,7 +185,6 @@ fn sanitize_wav_header(bytes: &mut Vec<u8>, total_file_len: u64) -> bool {
     }
 
     let mut offset = 12usize;
-    let mut changed = false;
 
     // We only iterate as long as we are within the buffer.
     // If a chunk extends beyond the buffer, we stop scanning (can't fix what we don't see).
@@ -219,7 +220,7 @@ fn sanitize_wav_header(bytes: &mut Vec<u8>, total_file_len: u64) -> bool {
         }
     }
 
-    changed
+    false
 }
 
 // Deprecate or keep for compatibility? The user asked to "Change `sanitize_wav_bytes` to accept a `Read` or `Seek` trait".
@@ -228,6 +229,7 @@ fn sanitize_wav_header(bytes: &mut Vec<u8>, total_file_len: u64) -> bool {
 // it using `sanitize_wav_header` (which is what I did basically, just extracted the logic).
 // I'll keep `read_sanitized_wav_bytes` for now to avoid breaking other potential usages not found by grep,
 // or just as a utility.
+/// Read a WAV file, sanitizing the header in-memory if required.
 pub fn read_sanitized_wav_bytes(path: &Path) -> Result<Vec<u8>, String> {
     let mut bytes =
         std::fs::read(path).map_err(|err| format!("Failed to read {}: {err}", path.display()))?;
@@ -309,6 +311,7 @@ fn shrink_pcm_fmt_chunk_with_padding(
 // Kept for backward compat in signatures primarily, but renamed/modified above.
 // Actually the original code had `sanitize_wav_bytes(mut bytes: Vec<u8>) -> Vec<u8>`.
 // I'll add a wrapper to keep the signature compatible for tests
+/// Sanitize a WAV header in-memory and return the updated bytes.
 pub fn sanitize_wav_bytes(mut bytes: Vec<u8>) -> Vec<u8> {
     let len = bytes.len() as u64;
     sanitize_wav_header(&mut bytes, len);

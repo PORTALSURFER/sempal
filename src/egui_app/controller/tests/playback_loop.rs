@@ -26,7 +26,6 @@ fn setup_looping_controller(selection: SelectionRange) -> Option<EguiController>
         bytes,
         duration_seconds: duration,
         sample_rate: 8,
-        channels: 1,
     });
     controller.audio.player = Some(std::rc::Rc::new(std::cell::RefCell::new(player)));
     controller.selection_state.range.set_range(Some(selection));
@@ -81,7 +80,6 @@ fn enabling_loop_while_playing_restarts_in_looped_mode() {
         bytes: std::fs::read(&wav_path).unwrap(),
         duration_seconds: 30.0,
         sample_rate: 8,
-        channels: 1,
     });
     controller.audio.player = Some(std::rc::Rc::new(std::cell::RefCell::new(player)));
 
@@ -128,7 +126,6 @@ fn enabling_loop_while_playing_uses_full_selection() {
         bytes: std::fs::read(&wav_path).unwrap(),
         duration_seconds: duration,
         sample_rate: 8,
-        channels: 1,
     });
     controller.audio.player = Some(std::rc::Rc::new(std::cell::RefCell::new(player)));
 

@@ -82,6 +82,7 @@ pub(crate) fn load_legacy_id_map(path: &Path) -> Result<Vec<String>, String> {
 }
 
 /// Save the legacy id map JSON (needed for testing migrations).
+#[cfg(test)]
 pub(crate) fn save_legacy_id_map(path: &Path, id_map: &[String]) -> Result<(), String> {
     let file = std::fs::File::create(path).map_err(|e| e.to_string())?;
     serde_json::to_writer(file, id_map).map_err(|e| e.to_string())

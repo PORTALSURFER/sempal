@@ -18,8 +18,11 @@ const MAX_WAVEFORM_BYTES: u64 = 512 * 1024 * 1024;
 
 /// Waveform pixels and audio payload loaded from disk.
 pub struct LoadedWaveform {
+    /// Rendered waveform image.
     pub image: ColorImage,
+    /// Raw audio bytes for playback or export.
     pub audio_bytes: Vec<u8>,
+    /// Duration of the audio in seconds.
     pub duration_seconds: f32,
 }
 
@@ -37,11 +40,15 @@ pub struct DecodedWaveform {
     pub samples: Arc<[f32]>,
     /// Decimated min/max envelope for very long files to avoid holding every sample in memory.
     pub peaks: Option<Arc<WaveformPeaks>>,
+    /// Total duration in seconds.
     pub duration_seconds: f32,
+    /// Sample rate in Hz.
     pub sample_rate: u32,
+    /// Number of audio channels.
     pub channels: u16,
 }
 
+/// Return a monotonic cache token for decoded waveforms.
 pub fn next_cache_token() -> u64 {
     decode::next_cache_token()
 }
@@ -49,19 +56,27 @@ pub fn next_cache_token() -> u64 {
 /// Decimated min/max envelope of a waveform, used when retaining full samples is too expensive.
 #[derive(Clone)]
 pub struct WaveformPeaks {
+    /// Total number of audio frames represented.
     pub total_frames: usize,
+    /// Number of channels represented by the peaks.
     pub channels: u16,
+    /// Number of frames aggregated into each peak bucket.
     pub bucket_size_frames: usize,
+    /// Mono min/max buckets.
     pub mono: Vec<(f32, f32)>,
+    /// Left channel buckets when in split-stereo mode.
     pub left: Option<Vec<(f32, f32)>>,
+    /// Right channel buckets when in split-stereo mode.
     pub right: Option<Vec<(f32, f32)>>,
 }
 
 impl DecodedWaveform {
+    /// Return the effective channel count (minimum 1).
     pub fn channel_count(&self) -> usize {
         self.channels.max(1) as usize
     }
 
+    /// Return the total number of frames in the decoded audio.
     pub fn frame_count(&self) -> usize {
         if let Some(peaks) = self.peaks.as_deref() {
             return peaks.total_frames;
@@ -202,16 +217,22 @@ pub enum WaveformChannelView {
     SplitStereo,
 }
 
+/// Render-ready column data derived from a waveform view.
 #[derive(Clone, Debug, PartialEq)]
 pub enum WaveformColumnView {
+    /// Mono min/max buckets.
     Mono(Vec<(f32, f32)>),
+    /// Split stereo buckets with left/right channels.
     SplitStereo {
+        /// Left channel min/max buckets.
         left: Vec<(f32, f32)>,
+        /// Right channel min/max buckets.
         right: Vec<(f32, f32)>,
     },
 }
 
 impl WaveformPeaks {
+    /// Sample a subset of columns for the requested viewport.
     pub fn sample_columns_for_view(
         &self,
         view_start: f32,
@@ -380,7 +401,7 @@ fn read_audio_bytes_with_limit(
         });
     }
 
-    let mut file = std::fs::File::open(path).map_err(|source| WaveformLoadError::Read {
+    let file = std::fs::File::open(path).map_err(|source| WaveformLoadError::Read {
         path: path.to_path_buf(),
         source,
     })?;

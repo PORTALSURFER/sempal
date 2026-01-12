@@ -24,7 +24,9 @@ pub const LIBRARY_DB_FILE_NAME: &str = "library.db";
 /// Aggregate state loaded from or written to the library database.
 #[derive(Debug, Clone, Default)]
 pub struct LibraryState {
+    /// All configured sample sources.
     pub sources: Vec<SampleSource>,
+    /// All saved collections.
     pub collections: Vec<Collection>,
 }
 
@@ -47,12 +49,15 @@ pub enum LibraryError {
     /// Failed to create the directory for the database file.
     #[error("Could not create library directory {path}: {source}")]
     CreateDir {
+        /// Path that could not be created.
         path: PathBuf,
+        /// Underlying IO error.
         source: std::io::Error,
     },
     /// Failed to open or query the database.
     #[error("Library database query failed: {0}")]
     Sql(#[from] rusqlite::Error),
+    /// Failed to deserialize JSON metadata from the DB.
     #[error("Library metadata parse failed: {0}")]
     Json(#[from] serde_json::Error),
 }

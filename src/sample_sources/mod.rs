@@ -4,11 +4,17 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 mod audio_support;
+/// Collection definitions and helpers.
 pub mod collections;
+/// User configuration loading/saving for sample sources.
 pub mod config;
+/// Per-source database helpers.
 pub mod db;
+/// Global library database helpers.
 pub mod library;
+/// Scan tracking state to avoid duplicate work.
 pub mod scan_state;
+/// Source scanning logic.
 pub mod scanner;
 
 pub(crate) use audio_support::{is_supported_audio, supported_audio_where_clause};
@@ -55,7 +61,9 @@ impl std::fmt::Display for SourceId {
 /// User-selected folder that owns its own SQLite database of wav files.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SampleSource {
+    /// Stable identifier for the source.
     pub id: SourceId,
+    /// Root folder path for the source.
     pub root: PathBuf,
 }
 

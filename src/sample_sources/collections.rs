@@ -41,7 +41,9 @@ impl std::fmt::Display for CollectionId {
 /// Link a sample (by source and relative path) to a collection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CollectionMember {
+    /// Source identifier for the sample.
     pub source_id: SourceId,
+    /// Path relative to the source root.
     pub relative_path: PathBuf,
     /// Optional root directory for collection-owned clips.
     ///
@@ -53,9 +55,12 @@ pub struct CollectionMember {
 /// User-managed grouping of samples.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Collection {
+    /// Collection identifier.
     pub id: CollectionId,
+    /// Display name for the collection.
     pub name: String,
     #[serde(default)]
+    /// Members belonging to this collection.
     pub members: Vec<CollectionMember>,
     /// Optional folder where collection members are exported.
     #[serde(default)]

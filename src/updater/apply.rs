@@ -16,15 +16,22 @@ use super::{
 /// Parsed `update-manifest.json` embedded in release archives.
 #[derive(Debug, Clone, Deserialize)]
 pub struct UpdateManifest {
+    /// Application name.
     pub app: String,
+    /// Channel label (stable/nightly).
     pub channel: String,
+    /// Target identifier.
     pub target: String,
+    /// Platform identifier.
     pub platform: String,
+    /// Architecture identifier.
     pub arch: String,
+    /// List of files expected in the archive.
     pub files: Vec<String>,
 }
 
 impl UpdateManifest {
+    /// Validate the manifest against a runtime identity.
     pub fn validate(&self, expected: &super::RuntimeIdentity) -> Result<(), UpdateError> {
         if self.app != expected.app {
             return Err(UpdateError::Invalid(format!(
@@ -64,12 +71,18 @@ impl UpdateManifest {
     }
 }
 
+/// Plan describing the changes applied by an update.
 #[derive(Debug, Clone)]
 pub struct ApplyPlan {
+    /// Release tag that was applied.
     pub release_tag: String,
+    /// Installation directory used for the update.
     pub install_dir: PathBuf,
+    /// Whether the app should relaunch afterward.
     pub relaunch: bool,
+    /// Files copied during the update.
     pub copied_files: Vec<String>,
+    /// Directories replaced during the update.
     pub replaced_dirs: Vec<String>,
 }
 

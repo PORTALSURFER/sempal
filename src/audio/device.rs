@@ -1,7 +1,10 @@
 use cpal::traits::DeviceTrait;
 
 pub(crate) fn device_label(device: &cpal::Device) -> Option<String> {
-    device.name().ok()
+    device
+        .description()
+        .ok()
+        .map(|description| description.name().to_string())
 }
 
 pub(crate) fn host_label(id: &str) -> String {

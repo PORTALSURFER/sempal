@@ -66,7 +66,7 @@ pub(crate) fn read_response_bytes(
     max_bytes: usize,
 ) -> Result<Vec<u8>, io::Error> {
     check_content_length(&response, max_bytes)?;
-    let mut reader = response.into_reader();
+    let reader = response.into_reader();
     let mut limited = reader.take(max_bytes as u64 + 1);
     let mut bytes = Vec::new();
     limited.read_to_end(&mut bytes)?;
@@ -86,7 +86,7 @@ pub(crate) fn copy_response_to_writer(
     max_bytes: usize,
 ) -> Result<(), io::Error> {
     check_content_length(&response, max_bytes)?;
-    let mut reader = response.into_reader();
+    let reader = response.into_reader();
     let mut limited = reader.take(max_bytes as u64 + 1);
     let mut total = 0usize;
     let mut buf = [0u8; 64 * 1024];

@@ -38,11 +38,17 @@ use std::path::PathBuf;
 /// Top-level UI model consumed by the egui renderer.
 #[derive(Clone, Debug)]
 pub struct UiState {
+    /// Status bar and status log state.
     pub status: StatusBarState,
+    /// Source list and folder browser state.
     pub sources: SourcePanelState,
+    /// Sample browser state.
     pub browser: SampleBrowserState,
+    /// Waveform rendering and selection state.
     pub waveform: WaveformState,
+    /// Drag-and-drop state.
     pub drag: DragState,
+    /// Collections panel state.
     pub collections: CollectionsState,
     /// Overlay for long-running tasks.
     pub progress: ProgressOverlayState,
@@ -64,6 +70,7 @@ pub struct UiState {
     pub volume: f32,
     /// Release update status / notification state.
     pub update: UpdateUiState,
+    /// Currently loaded wav path, if any.
     pub loaded_wav: Option<PathBuf>,
     /// Optional trash folder path configured by the user.
     pub trash_folder: Option<PathBuf>,

@@ -21,14 +21,19 @@ static FALLBACK_KEY_CACHE: OnceLock<Mutex<Option<[u8; 32]>>> = OnceLock::new();
 /// Errors returned by the issue token storage backend.
 #[derive(Debug, thiserror::Error)]
 pub enum IssueTokenStoreError {
+    /// Token storage is unavailable on this system.
     #[error("Token store unavailable: {0}")]
     Unavailable(String),
+    /// IO error while reading/writing storage.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+    /// Crypto error when encrypting or decrypting.
     #[error("Crypto error: {0}")]
     Crypto(String),
+    /// Decode error when parsing stored values.
     #[error("Decode error: {0}")]
     Decode(String),
+    /// Failed to resolve app directories.
     #[error("App dir error: {0}")]
     AppDir(#[from] crate::app_dirs::AppDirError),
 }

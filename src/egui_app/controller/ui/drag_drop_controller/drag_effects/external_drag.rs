@@ -1,4 +1,5 @@
 use super::super::DragDropController;
+#[cfg(target_os = "windows")]
 use std::path::PathBuf;
 
 impl DragDropController<'_> {

@@ -1,5 +1,7 @@
+#[cfg(target_os = "windows")]
 use std::{env, fs};
 
+#[cfg(target_os = "windows")]
 use crate::{UNINSTALL_KEY, paths};
 
 #[cfg(target_os = "windows")]

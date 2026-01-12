@@ -23,7 +23,9 @@ const ISSUE_RETRY_CONFIG: http_client::RetryConfig = http_client::RetryConfig {
 /// The kind of issue the user is submitting.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IssueKind {
+    /// Request a new feature.
     FeatureRequest,
+    /// Report a bug.
     Bug,
 }
 
@@ -61,16 +63,22 @@ pub struct CreateIssueResponse {
 /// Error states surfaced when creating a GitHub issue.
 #[derive(Debug, thiserror::Error)]
 pub enum CreateIssueError {
+    /// Token is invalid or expired.
     #[error("Token invalid or expired")]
     Unauthorized,
+    /// Request payload was invalid.
     #[error("Invalid input: {0}")]
     BadRequest(String),
+    /// Gateway rate limit was hit.
     #[error("Rate limited; try again later")]
     RateLimited,
+    /// Gateway returned a server error.
     #[error("Server error: {0}")]
     ServerError(String),
+    /// Transport error when calling the gateway.
     #[error("HTTP error: {0}")]
     Transport(String),
+    /// JSON parsing/serialization error.
     #[error("JSON error: {0}")]
     Json(String),
 }
@@ -78,10 +86,13 @@ pub enum CreateIssueError {
 /// Error states surfaced when fetching or polling auth tokens.
 #[derive(Debug, thiserror::Error)]
 pub enum IssueAuthError {
+    /// Auth response was malformed or missing data.
     #[error("Invalid auth response: {0}")]
     InvalidResponse(String),
+    /// Gateway returned a server error.
     #[error("Server error: {0}")]
     ServerError(String),
+    /// Transport error when calling the gateway.
     #[error("HTTP error: {0}")]
     Transport(String),
 }

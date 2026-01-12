@@ -6,8 +6,11 @@ use super::{RuntimeIdentity, UpdateChannel, UpdateError};
 /// Input for checking whether an update is available.
 #[derive(Debug, Clone)]
 pub struct UpdateCheckRequest {
+    /// GitHub repository slug.
     pub repo: String,
+    /// Channel to check.
     pub channel: UpdateChannel,
+    /// Runtime identity used to select assets.
     pub identity: RuntimeIdentity,
     /// Current app version (stable channel only).
     pub current_version: Version,
@@ -18,10 +21,15 @@ pub struct UpdateCheckRequest {
 /// Result of the update check used by the UI.
 #[derive(Debug, Clone)]
 pub enum UpdateCheckOutcome {
+    /// No newer release found.
     UpToDate,
+    /// A newer release is available.
     UpdateAvailable {
+        /// Release tag.
         tag: String,
+        /// HTML URL for the release page.
         html_url: String,
+        /// Published timestamp (RFC3339) when available.
         published_at: Option<String>,
     },
 }

@@ -1,3 +1,5 @@
+//! CLI tool to run similarity preparation workflows.
+
 use sempal::egui_app::controller::EguiController;
 use sempal::waveform::WaveformRenderer;
 use std::path::PathBuf;
