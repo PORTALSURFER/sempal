@@ -344,10 +344,23 @@ pub(super) fn render_inline_text_edit(
         .hint_text(hint)
         .frame(false)
         .desired_width(rect.width());
-    let response = ui.put(rect, edit);
-    if *focus_requested && !response.has_focus() {
-        response.request_focus();
-        *focus_requested = false;
+    let edit_output = ui.allocate_ui_at_rect(rect, |ui| edit.show(ui)).inner;
+    let response = edit_output.response;
+    let mut select_all = response.gained_focus();
+    if *focus_requested {
+        if response.has_focus() {
+            select_all = true;
+            *focus_requested = false;
+        } else {
+            response.request_focus();
+        }
+    }
+    if select_all {
+        let mut state = edit_output.state;
+        state.cursor.set_char_range(Some(egui::text::CCursorRange::select_all(
+            &edit_output.galley,
+        )));
+        state.store(ui.ctx(), response.id);
     }
     let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
     let escape_pressed = ui.input(|i| i.key_pressed(egui::Key::Escape));

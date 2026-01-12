@@ -131,7 +131,11 @@ impl EguiApp {
                 } else {
                     0.0
                 };
-                let loop_space = if looped { loop_badge_space(ui) } else { 0.0 };
+                let loop_space = if looped && !rename_match {
+                    loop_badge_space(ui)
+                } else {
+                    0.0
+                };
                 let bpm_space = bpm_label
                     .as_deref()
                     .map(|label| bpm_badge_space(ui, label))
@@ -224,8 +228,8 @@ impl EguiApp {
                                 color: palette.text_muted,
                             }),
                             marker: triage_marker,
-                            rating: Some(tag),
-                            looped,
+                            rating: if rename_match { None } else { Some(tag) },
+                            looped: looped && !rename_match,
                             bpm_label: bpm_label.as_deref(),
                         },
                     );
