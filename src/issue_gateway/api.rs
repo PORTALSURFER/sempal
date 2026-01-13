@@ -337,10 +337,6 @@ fn post_with_retry(
 mod tests {
     use super::*;
 
-    use std::net::TcpListener;
-    use std::sync::{Arc, Mutex};
-    use std::thread;
-
     #[test]
     fn issue_kind_prefixes_match_spec_examples() {
         assert_eq!(IssueKind::Bug.title_prefix(), "Bug: ");

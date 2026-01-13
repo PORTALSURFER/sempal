@@ -148,6 +148,7 @@ mod tests {
             key_feedback: KeyFeedback::default(),
             requested_initial_focus: false,
             external_drop_handled: false,
+            external_drop_hover_pos: None,
         }
     }
 

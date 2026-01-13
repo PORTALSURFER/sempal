@@ -1,7 +1,6 @@
 use super::*;
 use rusqlite::OptionalExtension;
 use std::collections::HashSet;
-use std::fs;
 use tempfile::tempdir;
 
 fn with_config_home<T>(dir: &Path, f: impl FnOnce() -> T) -> T {
@@ -308,5 +307,4 @@ fn reuses_known_source_id_for_same_root() {
         assert_eq!(reused.as_str(), id.as_str());
     });
 }
-
 
