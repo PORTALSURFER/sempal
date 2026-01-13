@@ -34,8 +34,10 @@ impl EguiController {
                 return;
             }
         }
-        self.wav_entries.clear();
-        self.sync_after_wav_entries_changed();
+        if self.wav_entries.source_id.as_ref() != Some(&source.id) {
+            self.wav_entries.clear();
+            self.sync_after_wav_entries_changed();
+        }
         if self.runtime.jobs.wav_load_pending_for(&source.id) {
             return;
         }
@@ -105,6 +107,9 @@ impl EguiController {
     ) {
         self.wav_entries.total = total;
         self.wav_entries.page_size = page_size.max(1);
+        if let Some(id) = &source_id {
+            self.wav_entries.source_id = Some(id.clone());
+        }
         if page_index == 0 {
             self.wav_entries.pages.clear();
             self.wav_entries.lookup.clear();

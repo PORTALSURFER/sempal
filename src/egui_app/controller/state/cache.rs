@@ -130,6 +130,7 @@ pub(crate) struct WavEntriesState {
     pub(crate) page_size: usize,
     pub(crate) pages: HashMap<usize, Vec<WavEntry>>,
     pub(crate) lookup: HashMap<PathBuf, usize>,
+    pub(crate) source_id: Option<SourceId>,
 }
 
 impl WavEntriesState {
@@ -139,6 +140,7 @@ impl WavEntriesState {
             page_size: page_size.max(1),
             pages: HashMap::new(),
             lookup: HashMap::new(),
+            source_id: None,
         }
     }
 
@@ -146,6 +148,7 @@ impl WavEntriesState {
         self.total = 0;
         self.pages.clear();
         self.lookup.clear();
+        self.source_id = None;
     }
 
     pub(crate) fn insert_page(
