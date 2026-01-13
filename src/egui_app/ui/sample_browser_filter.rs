@@ -1,5 +1,6 @@
 use super::style;
 use super::*;
+use crate::egui_app::controller::hotkeys;
 use crate::egui_app::state::{SampleBrowserSort, TriageFlagFilter};
 use eframe::egui::{self, RichText, Ui};
 
@@ -28,9 +29,13 @@ impl EguiApp {
             }
             ui.add_space(ui.spacing().item_spacing.x);
             let mut query = self.controller.ui.browser.search_query.clone();
+            let search_hint = format!(
+                "Search samples ({})...",
+                hotkeys::format_keypress(&hotkeys::KeyPress::with_command(egui::Key::F))
+            );
             let response = ui.add(
                 egui::TextEdit::singleline(&mut query)
-                    .hint_text("Search samples (f)...")
+                    .hint_text(search_hint)
                     .desired_width(160.0),
             );
             if self.controller.ui.browser.search_focus_requested {

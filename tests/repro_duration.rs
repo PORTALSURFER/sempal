@@ -1,3 +1,5 @@
+//! Regression tests for audio duration edge cases.
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
@@ -65,7 +67,6 @@ mod tests {
     #[test]
     fn test_skip_duration_precision() {
         let rate = 44100;
-        let channels = 2; // Stereo
         
         // Target: skip 1 frame.
         let target_frames = 1;
@@ -102,7 +103,7 @@ mod tests {
         // RESULT: Skips 1 sample. Channels SWAPPED.
         
         let precise_nanos = (1_000_000_000.0f64 / 44100.0f64) as u64; // 22675
-        let needed_nanos = ((1.0f64 / 44100.0f64) * 1_000_000_000.0f64).ceil() as u64; // 22676?
+        let _needed_nanos = ((1.0f64 / 44100.0f64) * 1_000_000_000.0f64).ceil() as u64; // 22676?
         
         println!("skip_f32: {}", skip_f32.as_nanos());
         println!("skip_u64: {}", skip_u64.as_nanos());

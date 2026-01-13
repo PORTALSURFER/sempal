@@ -140,6 +140,7 @@ pub struct ConfigBaseGuard {
 
 #[cfg(test)]
 impl ConfigBaseGuard {
+    /// Override the config base directory for the lifetime of the guard.
     pub fn set(path: PathBuf) -> Self {
         let previous = TEST_CONFIG_OVERRIDE.with(|override_path| {
             let mut slot = override_path.borrow_mut();

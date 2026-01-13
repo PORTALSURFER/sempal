@@ -1,4 +1,5 @@
 use super::*;
+use crate::egui_app::ui::style::StatusTone;
 use crate::egui_app::state::FocusContext;
 
 impl EguiController {
@@ -46,6 +47,30 @@ impl EguiController {
             return;
         };
         // Entering via the focus hotkey should not autoplay; suppress it for this selection.
+        self.selection_state.suppress_autoplay_once = true;
+        self.focus_browser_row_only(target_row);
+    }
+
+    /// Focus the currently loaded sample in the browser if it is visible.
+    pub(crate) fn focus_loaded_sample_in_browser(&mut self) {
+        let loaded_path = self
+            .sample_view
+            .wav
+            .loaded_wav
+            .clone()
+            .or_else(|| self.ui.loaded_wav.clone());
+        let Some(loaded_path) = loaded_path else {
+            self.set_status("Load a sample to focus it", StatusTone::Info);
+            return;
+        };
+        let Some(target_row) = self.visible_row_for_path(&loaded_path) else {
+            self.focus_browser_context();
+            self.set_status(
+                "Loaded sample is not visible in the browser",
+                StatusTone::Info,
+            );
+            return;
+        };
         self.selection_state.suppress_autoplay_once = true;
         self.focus_browser_row_only(target_row);
     }

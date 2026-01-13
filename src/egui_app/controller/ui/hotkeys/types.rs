@@ -122,6 +122,7 @@ pub(crate) enum HotkeyCommand {
     ToggleLoop,
     FocusWaveform,
     FocusBrowserSamples,
+    FocusLoadedSample,
     FocusCollectionSamples,
     FocusSourcesList,
     FocusCollectionsList,

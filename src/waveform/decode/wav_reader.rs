@@ -88,11 +88,13 @@ fn read_int_samples(
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 pub(super) fn reset_wav_decode_count() {
     WAV_DECODE_COUNT.store(0, Ordering::Relaxed);
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 pub(super) fn wav_decode_count() -> usize {
     WAV_DECODE_COUNT.load(Ordering::Relaxed)
 }

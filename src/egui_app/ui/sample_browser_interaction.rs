@@ -13,6 +13,11 @@ impl EguiApp {
         row: usize,
     ) {
         if response.clicked() {
+            ui.ctx().memory_mut(|mem| {
+                if let Some(focused) = mem.focused() {
+                    mem.surrender_focus(focused);
+                }
+            });
             let modifiers = ui.input(|i| i.modifiers);
             let ctrl = modifiers.command || modifiers.ctrl;
             if modifiers.shift && ctrl {

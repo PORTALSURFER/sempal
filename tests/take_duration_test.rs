@@ -1,3 +1,5 @@
+//! Integration tests for take duration behavior in audio sources.
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;

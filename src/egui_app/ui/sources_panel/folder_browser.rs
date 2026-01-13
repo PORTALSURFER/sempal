@@ -5,6 +5,7 @@ use super::helpers::{
 };
 use super::style;
 use super::utils::{folder_row_label, sample_housing_folders};
+use crate::egui_app::controller::hotkeys;
 use crate::egui_app::state::{DragSource, DragTarget, FocusContext};
 use eframe::egui::{self, Align, Align2, Layout, RichText, StrokeKind, TextStyle, Ui};
 use std::collections::HashSet;
@@ -55,9 +56,13 @@ impl EguiApp {
             ui.label(RichText::new("Folders").color(palette.text_primary));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let mut query = self.controller.ui.sources.folders.search_query.clone();
+                let search_hint = format!(
+                    "Search folders ({})...",
+                    hotkeys::format_keypress(&hotkeys::KeyPress::with_command(egui::Key::F))
+                );
                 let response = ui.add(
                     egui::TextEdit::singleline(&mut query)
-                        .hint_text("Search folders (f)...")
+                        .hint_text(search_hint)
                         .desired_width(180.0),
                 );
                 if self.controller.ui.sources.folders.search_focus_requested {

@@ -97,6 +97,10 @@ impl HotkeysController<'_> {
                 self.focus_browser_list();
                 true
             }
+            HotkeyCommand::FocusLoadedSample => {
+                self.focus_loaded_sample_in_browser();
+                true
+            }
             HotkeyCommand::FocusCollectionSamples => {
                 self.focus_collection_samples_list();
                 true
@@ -293,4 +297,3 @@ mod tests {
         assert!(controller.ui.collections.pending_action.is_none());
     }
 }
-

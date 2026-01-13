@@ -8,6 +8,7 @@ fn with_config_home<T>(dir: &Path, f: impl FnOnce() -> T) -> T {
     f()
 }
 
+#[allow(dead_code)]
 const LEGACY_SCHEMA_SQL: &str = r#"
 CREATE TABLE metadata (
     key TEXT PRIMARY KEY,
@@ -65,10 +66,12 @@ CREATE TABLE embeddings (
 ) WITHOUT ROWID;
 "#;
 
+#[allow(dead_code)]
 fn create_legacy_schema(conn: &Connection) {
     conn.execute_batch(LEGACY_SCHEMA_SQL).unwrap();
 }
 
+#[allow(dead_code)]
 fn table_columns(conn: &Connection, table: &str) -> HashSet<String> {
     let mut stmt = conn
         .prepare(&format!("PRAGMA table_info({})", table))
@@ -79,6 +82,7 @@ fn table_columns(conn: &Connection, table: &str) -> HashSet<String> {
         .collect()
 }
 
+#[allow(dead_code)]
 fn assert_table_exists(conn: &Connection, table: &str) {
     let exists: Option<String> = conn
         .query_row(
@@ -91,6 +95,7 @@ fn assert_table_exists(conn: &Connection, table: &str) {
     assert_eq!(exists.as_deref(), Some(table));
 }
 
+#[allow(dead_code)]
 fn assert_has_columns(conn: &Connection, table: &str, columns: &[&str]) {
     let present = table_columns(conn, table);
     for column in columns {
@@ -307,4 +312,3 @@ fn reuses_known_source_id_for_same_root() {
         assert_eq!(reused.as_str(), id.as_str());
     });
 }
-

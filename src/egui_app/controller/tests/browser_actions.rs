@@ -52,6 +52,29 @@ fn focus_hotkey_does_not_autoplay_browser_sample() {
 }
 
 #[test]
+fn f_hotkey_focuses_loaded_sample_in_browser() {
+    let (mut controller, _source) = prepare_with_source_and_wav_entries(vec![
+        sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("two.wav", crate::sample_sources::Rating::NEUTRAL),
+    ]);
+    controller.sample_view.wav.loaded_wav = Some(PathBuf::from("two.wav"));
+    controller.ui.focus.set_context(FocusContext::Waveform);
+
+    let action = hotkeys::iter_actions()
+        .find(|action| action.command() == hotkeys::HotkeyCommand::FocusLoadedSample)
+        .expect("missing focus loaded sample hotkey");
+
+    controller.handle_hotkey(action, FocusContext::Waveform);
+
+    assert_eq!(controller.ui.focus.context, FocusContext::SampleBrowser);
+    assert_eq!(
+        controller.sample_view.wav.selected_wav.as_deref(),
+        Some(Path::new("two.wav"))
+    );
+    assert_eq!(controller.ui.browser.selected_visible, Some(1));
+}
+
+#[test]
 fn x_key_toggle_respects_focus() {
     let (mut controller, _source) = prepare_with_source_and_wav_entries(vec![
         sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL),

@@ -1,3 +1,5 @@
+//! Integration tests for browser/controller interactions.
+
 mod support;
 
 use support::{sempal_env::SempalEnvGuard, wav::write_test_wav};

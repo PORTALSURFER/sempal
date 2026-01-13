@@ -104,16 +104,23 @@ pub(crate) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
     HotkeyAction {
         id: "search-folders",
         label: "Search folders",
-        gesture: HotkeyGesture::new(Key::F),
+        gesture: HotkeyGesture::with_command(Key::F),
         scope: HotkeyScope::Focus(FocusContext::SourceFolders),
         command: HotkeyCommand::FocusFolderSearch,
     },
     HotkeyAction {
         id: "search-browser",
         label: "Search samples",
-        gesture: HotkeyGesture::new(Key::F),
+        gesture: HotkeyGesture::with_command(Key::F),
         scope: HotkeyScope::Focus(FocusContext::SampleBrowser),
         command: HotkeyCommand::FocusBrowserSearch,
+    },
+    HotkeyAction {
+        id: "focus-loaded-sample",
+        label: "Focus loaded sample",
+        gesture: HotkeyGesture::new(Key::F),
+        scope: HotkeyScope::Global,
+        command: HotkeyCommand::FocusLoadedSample,
     },
     HotkeyAction {
         id: "find-similar",
