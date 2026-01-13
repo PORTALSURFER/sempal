@@ -1,40 +1,11 @@
 use super::super::test_support::{dummy_controller, sample_entry, write_test_wav};
 use crate::egui_app::controller::library::wavs;
 use super::super::*;
-use super::common::prepare_browser_sample;
 use crate::egui_app::state::WaveformView;
 use crate::waveform::DecodedWaveform;
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
-
-#[test]
-fn cursor_step_size_tracks_view_zoom() {
-    let (mut controller, source) = dummy_controller();
-    prepare_browser_sample(&mut controller, &source, "zoom.wav");
-    controller.update_waveform_size(200, 10);
-    controller.select_wav_by_path(Path::new("zoom.wav"));
-    controller.sample_view.waveform.decoded = Some(DecodedWaveform {
-        cache_token: 1,
-        samples: std::sync::Arc::from(vec![0.0; 10_000]),
-        peaks: None,
-        duration_seconds: 1.0,
-        sample_rate: 48_000,
-        channels: 1,
-    });
-    controller.ui.waveform.playhead.position = 0.1;
-    controller.ui.waveform.playhead.visible = true;
-    controller.set_waveform_cursor(0.5);
-
-    controller.move_playhead_steps(1, false, false);
-    assert!((controller.ui.waveform.cursor.unwrap() - 0.66).abs() < 0.001);
-    assert!((controller.ui.waveform.playhead.position - 0.1).abs() < 0.001);
-
-    controller.waveform().zoom_waveform_steps_with_factor(true, 1, None, None, false, false);
-    controller.move_playhead_steps(1, false, false);
-    assert!((controller.ui.waveform.cursor.unwrap() - 0.804).abs() < 0.001);
-    assert!((controller.ui.waveform.playhead.position - 0.1).abs() < 0.001);
-}
 
 #[test]
 fn waveform_refresh_respects_view_slice_and_caps_width() {

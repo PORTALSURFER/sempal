@@ -6,34 +6,6 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 #[test]
-fn cursor_step_size_tracks_view_zoom() {
-    let (mut controller, source) = dummy_controller();
-    prepare_browser_sample(&mut controller, &source, "zoom.wav");
-    controller.update_waveform_size(200, 10);
-    controller.select_wav_by_path(Path::new("zoom.wav"));
-    controller.sample_view.waveform.decoded = Some(DecodedWaveform {
-        cache_token: 1,
-        samples: std::sync::Arc::from(vec![0.0; 10_000]),
-        peaks: None,
-        duration_seconds: 1.0,
-        sample_rate: 48_000,
-        channels: 1,
-    });
-    controller.ui.waveform.playhead.position = 0.1;
-    controller.ui.waveform.playhead.visible = true;
-    controller.set_waveform_cursor(0.5);
-
-    controller.move_playhead_steps(1, false, false);
-    assert!((controller.ui.waveform.cursor.unwrap() - 0.66).abs() < 0.001);
-    assert!((controller.ui.waveform.playhead.position - 0.1).abs() < 0.001);
-
-    controller.waveform().zoom_waveform_steps_with_factor(true, 1, None, None, false, false);
-    controller.move_playhead_steps(1, false, false);
-    assert!((controller.ui.waveform.cursor.unwrap() - 0.804).abs() < 0.001);
-    assert!((controller.ui.waveform.playhead.position - 0.1).abs() < 0.001);
-}
-
-#[test]
 fn batched_zoom_matches_sequential_steps() {
     let (mut batched, source_a) = dummy_controller();
     prepare_browser_sample(&mut batched, &source_a, "zoom.wav");
@@ -321,30 +293,4 @@ fn cursor_does_not_fade_when_waveform_focused() {
 
     assert_eq!(alpha, 1.0);
     assert_eq!(controller.ui.waveform.cursor, Some(0.4));
-}
-
-#[test]
-fn navigation_steps_anchor_to_cursor_instead_of_playhead() {
-    let (mut controller, source) = dummy_controller();
-    prepare_browser_sample(&mut controller, &source, "nav.wav");
-    controller.update_waveform_size(200, 10);
-    controller.select_wav_by_path(Path::new("nav.wav"));
-    controller.sample_view.waveform.decoded = Some(DecodedWaveform {
-        cache_token: 1,
-        samples: std::sync::Arc::from(vec![0.0; 10_000]),
-        peaks: None,
-        duration_seconds: 1.0,
-        sample_rate: 48_000,
-        channels: 1,
-    });
-    controller.ui.waveform.playhead.position = 0.7;
-    controller.ui.waveform.playhead.visible = true;
-    controller.ui.waveform.cursor = Some(0.2);
-    controller.ui.waveform.last_start_marker = Some(0.2);
-
-    controller.move_playhead_steps(1, false, false);
-
-    let cursor = controller.ui.waveform.cursor.expect("cursor set");
-    assert!((cursor - 0.36).abs() < 0.001);
-    assert!((controller.ui.waveform.playhead.position - 0.7).abs() < 0.001);
 }

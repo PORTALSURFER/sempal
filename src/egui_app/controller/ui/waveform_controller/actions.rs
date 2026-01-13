@@ -2,7 +2,6 @@ use super::*;
 
 pub(crate) trait WaveformActions {
     fn focus_waveform(&mut self);
-    fn move_playhead_steps(&mut self, steps: isize, fine: bool, resume_playback: bool);
     fn zoom_waveform_steps_with_factor(
         &mut self,
         zoom_in: bool,
@@ -29,21 +28,6 @@ impl WaveformActions for WaveformController<'_> {
             self.set_status("Load a sample to focus the waveform", StatusTone::Info);
         }
     }
-
-    fn move_playhead_steps(&mut self, steps: isize, fine: bool, _resume_playback: bool) {
-        if !self.waveform_ready() {
-            return;
-        }
-        let step = self.waveform_step_size(fine);
-        if step <= 0.0 {
-            return;
-        }
-        let delta = step * steps as f32;
-        let start = self.waveform_navigation_anchor();
-        let next = (start + delta).clamp(0.0, 1.0);
-        self.set_waveform_cursor(next);
-    }
-
 
     fn zoom_waveform_steps_with_factor(
         &mut self,

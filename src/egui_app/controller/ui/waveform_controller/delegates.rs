@@ -5,12 +5,6 @@ impl EguiController {
         self.waveform().focus_waveform();
     }
 
-    pub(crate) fn move_playhead_steps(&mut self, steps: isize, fine: bool, resume_playback: bool) {
-        self.waveform()
-            .move_playhead_steps(steps, fine, resume_playback);
-    }
-
-
     #[cfg(test)]
     pub(crate) fn zoom_waveform_steps(&mut self, zoom_in: bool, steps: u32, focus: Option<f64>) {
         self.waveform().zoom_waveform_steps(zoom_in, steps, focus);
@@ -34,7 +28,6 @@ impl EguiController {
             keep_playhead_visible,
         );
     }
-
 
     pub(crate) fn nudge_selection_range(&mut self, steps: isize, fine: bool) {
         self.waveform().nudge_selection_range(steps, fine);

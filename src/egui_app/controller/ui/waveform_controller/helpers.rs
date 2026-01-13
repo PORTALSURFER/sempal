@@ -163,24 +163,6 @@ impl WaveformController<'_> {
         self.ensure_cursor_visible_in_view(clamped);
     }
 
-    pub(crate) fn waveform_navigation_anchor(&self) -> f32 {
-        if let Some(cursor) = self.ui.waveform.cursor {
-            return cursor;
-        }
-        if let Some(marker) = self.ui.waveform.last_start_marker {
-            return marker;
-        }
-        if self.ui.waveform.playhead.visible {
-            return self.ui.waveform.playhead.position;
-        }
-        if let Some(selection) = self.selection_state.range.range() {
-            return (selection.start() + selection.end()) * 0.5;
-        }
-        let view = self.ui.waveform.view;
-        ((view.start + view.end) * 0.5) as f32
-    }
-
-
     pub(crate) fn ensure_playhead_visible_in_view(&mut self) {
         let mut view = self.ui.waveform.view;
         let width = view.width();

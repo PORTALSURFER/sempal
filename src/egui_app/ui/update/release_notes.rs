@@ -147,28 +147,12 @@ impl EguiApp {
     }
 
     fn handle_waveform_arrow(&mut self, input: &InputSnapshot, move_right: bool) {
-        let was_playing = self.controller.is_playing();
         if input.alt {
             let step = if move_right { 1 } else { -1 };
             self.controller.nudge_selection_range(step, input.shift);
             return;
         }
-        if input.shift {
-            let step = if move_right { 1 } else { -1 };
-            self.controller.slide_selection_range(step);
-            return;
-        }
-        self.move_waveform_playhead(input, move_right, was_playing);
-    }
-
-    fn move_waveform_playhead(
-        &mut self,
-        input: &InputSnapshot,
-        move_right: bool,
-        was_playing: bool,
-    ) {
         let step = if move_right { 1 } else { -1 };
-        self.controller
-            .move_playhead_steps(step, input.alt, was_playing);
+        self.controller.slide_selection_range(step);
     }
 }
