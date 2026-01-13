@@ -136,6 +136,7 @@ impl EguiController {
         {
             self.selection_state.ctx.selected_source = None;
             self.sample_view.wav.selected_wav = None;
+            self.clear_focused_similarity_highlight();
             self.clear_waveform_view();
         }
         let _ = self.persist_config("Failed to save config after removing source");
@@ -289,6 +290,7 @@ impl EguiController {
         }
         self.selection_state.ctx.selected_source = id;
         self.sample_view.wav.selected_wav = None;
+        self.clear_focused_similarity_highlight();
         self.clear_waveform_view();
         self.ui.map.bounds = None;
         self.ui.map.last_query = None;
@@ -309,6 +311,7 @@ impl EguiController {
     fn clear_wavs(&mut self) {
         self.wav_entries.clear();
         self.sample_view.wav.selected_wav = None;
+        self.clear_focused_similarity_highlight();
         self.ui.browser = SampleBrowserState::default();
         self.ui.sources.folders = FolderBrowserUiState::default();
         self.clear_waveform_view();

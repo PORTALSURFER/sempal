@@ -41,6 +41,8 @@ pub struct SampleBrowserState {
     pub similarity_sort_follow_loaded: bool,
     /// Optional similar-sounds filter scoped to the current source.
     pub similar_query: Option<SimilarQuery>,
+    /// Near-duplicate highlight set for the focused sample.
+    pub focused_similarity: Option<FocusedSimilarity>,
     /// Pending inline action for the sample browser rows.
     pub pending_action: Option<SampleBrowserActionPrompt>,
     /// Flag to request focus on the active inline rename editor.
@@ -73,6 +75,7 @@ impl Default for SampleBrowserState {
             sort: SampleBrowserSort::ListOrder,
             similarity_sort_follow_loaded: false,
             similar_query: None,
+            focused_similarity: None,
             pending_action: None,
             rename_focus_requested: false,
             active_tab: SampleBrowserTab::List,
@@ -131,6 +134,27 @@ impl SimilarQuery {
             1.0
         };
         Some(normalized.clamp(0.0, 1.0))
+    }
+}
+
+/// Highlight metadata for near-duplicate rows relative to the focused sample.
+#[derive(Clone, Debug)]
+pub struct FocusedSimilarity {
+    /// Sample id used as the highlight anchor.
+    pub sample_id: String,
+    /// Entry indices for near-duplicate matches.
+    pub indices: Vec<usize>,
+    /// Similarity scores aligned with `indices`.
+    pub scores: Vec<f32>,
+    /// Absolute index of the focused sample, when known.
+    pub anchor_index: Option<usize>,
+}
+
+impl FocusedSimilarity {
+    /// Return the raw similarity score for a given entry index.
+    pub fn score_for_index(&self, entry_index: usize) -> Option<f32> {
+        let position = self.indices.iter().position(|idx| *idx == entry_index)?;
+        self.scores.get(position).copied()
     }
 }
 

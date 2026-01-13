@@ -150,6 +150,7 @@ impl EguiController {
         if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
             if self.sample_view.wav.selected_wav.as_deref() == Some(relative_path) {
                 self.sample_view.wav.selected_wav = None;
+                self.clear_focused_similarity_highlight();
             }
             if self.sample_view.wav.loaded_wav.as_deref() == Some(relative_path) {
                 self.sample_view.wav.loaded_wav = None;

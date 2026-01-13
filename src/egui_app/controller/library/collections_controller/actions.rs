@@ -45,6 +45,7 @@ impl CollectionsActions for CollectionsController<'_> {
             return;
         };
         self.sample_view.wav.selected_wav = None;
+        self.clear_focused_similarity_highlight();
         self.clear_waveform_view();
         if self.collection_member_missing(&member) {
             self.show_missing_waveform_notice(&target_path);

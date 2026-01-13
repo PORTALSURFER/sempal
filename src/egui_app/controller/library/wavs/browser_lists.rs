@@ -143,6 +143,7 @@ impl EguiController {
                 return;
             }
             self.sample_view.wav.selected_wav = None;
+            self.clear_focused_similarity_highlight();
             self.ui.browser.selected = None;
             self.ui.browser.selected_visible = None;
             self.clear_waveform_view();

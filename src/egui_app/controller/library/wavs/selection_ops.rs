@@ -1,4 +1,5 @@
 use super::*;
+use crate::egui_app::controller::library::analysis_jobs;
 use tracing::{debug, warn};
 use crate::sample_sources::Rating;
 
@@ -50,6 +51,7 @@ pub(crate) fn select_wav_by_path_with_rebuild(
     controller.ui.browser.last_focused_path = Some(path.to_path_buf());
     if path_changed {
         controller.record_focus_history(path);
+        controller.clear_focused_similarity_highlight();
     }
     let missing = controller
         .wav_entries
@@ -63,10 +65,19 @@ pub(crate) fn select_wav_by_path_with_rebuild(
             StatusTone::Warning,
         );
         controller.selection_state.suppress_autoplay_once = false;
+        controller.clear_focused_similarity_highlight();
         if rebuild {
             controller.rebuild_browser_lists();
         }
         return;
+    }
+    if path_changed {
+        if let Some(source) = controller.current_source() {
+            let sample_id = analysis_jobs::build_sample_id(source.id.as_str(), path);
+            controller.refresh_focused_similarity_highlight(&sample_id, Some(index));
+        } else {
+            controller.clear_focused_similarity_highlight();
+        }
     }
     if let Some(source) = controller.current_source() {
         let autoplay = controller.settings.feature_flags.autoplay_selection

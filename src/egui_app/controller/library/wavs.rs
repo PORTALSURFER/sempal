@@ -31,6 +31,27 @@ impl EguiController {
         waveform_view::clear_waveform_view(self);
     }
 
+    /// Clear near-duplicate highlights for the focused sample.
+    pub(crate) fn clear_focused_similarity_highlight(&mut self) {
+        self.ui.browser.focused_similarity = None;
+    }
+
+    /// Refresh near-duplicate highlights for the focused sample.
+    pub(crate) fn refresh_focused_similarity_highlight(
+        &mut self,
+        sample_id: &str,
+        anchor_index: Option<usize>,
+    ) {
+        self.ui.browser.focused_similarity = match similar::build_focused_similarity_highlight(
+            self,
+            sample_id,
+            anchor_index,
+        ) {
+            Ok(highlight) => highlight,
+            Err(_) => None,
+        };
+    }
+
     /// Expose wav indices for a given triage flag column (used by virtualized rendering).
     pub fn browser_indices(&self, column: TriageFlagColumn) -> &[usize] {
         match column {

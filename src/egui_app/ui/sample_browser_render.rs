@@ -114,6 +114,23 @@ impl EguiApp {
                 let is_anchor = similar_query.and_then(|sim| sim.anchor_index) == Some(entry_index);
                 let similar_strength =
                     similar_query.and_then(|sim| sim.display_strength_for_index(entry_index));
+                let focused_similarity_strength = if similar_query.is_none() {
+                    self.controller
+                        .ui
+                        .browser
+                        .focused_similarity
+                        .as_ref()
+                        .and_then(|sim| {
+                            if sim.anchor_index == Some(entry_index) {
+                                None
+                            } else {
+                                sim.score_for_index(entry_index)
+                            }
+                        })
+                        .map(style::similarity_display_strength)
+                } else {
+                    None
+                };
                 let marker_color = style::triage_marker_color(tag);
                 let triage_marker_width =
                     marker_color.as_ref().map(|_| style::triage_marker_width());
@@ -202,7 +219,8 @@ impl EguiApp {
                 if is_anchor {
                     row_bg = Some(style::similar_anchor_fill());
                 }
-                let row_background = if let Some(strength) = similar_strength.filter(|_| !is_anchor)
+                let highlight_strength = similar_strength.or(focused_similarity_strength);
+                let row_background = if let Some(strength) = highlight_strength.filter(|_| !is_anchor)
                 {
                     RowBackground::Gradient {
                         left: style::similar_score_fill(strength),
