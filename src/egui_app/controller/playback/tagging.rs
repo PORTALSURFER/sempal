@@ -172,7 +172,14 @@ pub(crate) fn adjust_selected_rating(controller: &mut EguiController, delta: i8)
 
     for ctx in contexts {
         let current_rating = ctx.entry.tag;
-        let new_val = (current_rating.val() + delta).clamp(-3, 3);
+        let mut new_val = current_rating.val() + delta;
+
+        // If we were rated and hit 0, skip it
+        if current_rating.val() != 0 && new_val == 0 {
+            new_val += delta;
+        }
+
+        let new_val = new_val.clamp(-3, 3);
         let target = crate::sample_sources::Rating::new(new_val);
 
         if target != current_rating {

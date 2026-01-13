@@ -110,30 +110,9 @@ impl SimilarQuery {
     pub fn display_strength_for_index(&self, entry_index: usize) -> Option<f32> {
         let position = self.indices.iter().position(|idx| *idx == entry_index)?;
         let score = *self.scores.get(position)?;
-        if score < -1.0 {
-            return Some(0.0);
-        }
-        let mut min_score = f32::INFINITY;
-        let mut max_score = f32::NEG_INFINITY;
-        for &value in &self.scores {
-            if !value.is_finite() {
-                continue;
-            }
-            if value < -1.0 {
-                continue;
-            }
-            min_score = min_score.min(value);
-            max_score = max_score.max(value);
-        }
-        let range = max_score - min_score;
-        let normalized = if range.is_finite() && range > 1.0e-4 {
-            (score - min_score) / range
-        } else if self.scores.len() > 1 {
-            1.0 - (position as f32 / (self.scores.len() - 1) as f32)
-        } else {
-            1.0
-        };
-        Some(normalized.clamp(0.0, 1.0))
+        // Use absolute scoring to match FocusedSimilarity and avoid misleading "relative best" highlighting.
+        let normalized = ((score.clamp(-1.0, 1.0) + 1.0) * 0.5).clamp(0.0, 1.0);
+        Some(normalized.powf(2.0))
     }
 }
 
