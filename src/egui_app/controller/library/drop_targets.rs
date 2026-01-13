@@ -230,8 +230,7 @@ impl EguiController {
             .drop_targets
             .iter()
             .map(|config| {
-                let missing = !config.path.is_dir()
-                    || self.resolve_drop_target_location(&config.path).is_none();
+                let missing = !config.path.is_dir();
                 view_model::drop_target_row(&config.path, config.color, missing)
             })
             .collect();
