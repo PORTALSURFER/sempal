@@ -105,14 +105,45 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
             app.controller.set_input_monitoring_enabled(monitor_enabled);
         }
         let is_playing = app.controller.is_playing();
-        let play_label = if is_playing {
-            RichText::new("▶").size(18.0).color(palette.accent_mint)
+        let play_size = eframe::egui::Vec2::new(32.0, 24.0);
+        let play_sense = if !is_recording {
+             eframe::egui::Sense::click()
         } else {
-            RichText::new("▶").size(18.0).color(palette.text_muted)
+             eframe::egui::Sense::hover()
         };
-        let play_button = ui
-            .add_enabled(!is_recording, egui::Button::new(play_label))
-            .on_hover_text("Play from the current selection or cursor");
+        let (play_rect, play_response) = ui.allocate_exact_size(play_size, play_sense);
+
+        let play_visuals = ui.style().interact(&play_response);
+        ui.painter().rect(
+            play_rect,
+            play_visuals.corner_radius,
+            play_visuals.bg_fill,
+            play_visuals.bg_stroke,
+            eframe::egui::StrokeKind::Inside,
+        );
+
+        let triangle_color = if is_recording {
+             // Disabled look
+             ui.visuals().widgets.noninteractive.fg_stroke.color.linear_multiply(0.3)
+        } else if is_playing {
+             palette.accent_mint
+        } else {
+             palette.text_muted
+        };
+
+        let center = play_rect.center();
+        // Right-pointing triangle
+        let tip = center + eframe::egui::Vec2::new(5.0, 0.0);
+        let back_top = center + eframe::egui::Vec2::new(-4.0, -6.0);
+        let back_bot = center + eframe::egui::Vec2::new(-4.0, 6.0);
+        
+        ui.painter().add(eframe::egui::Shape::convex_polygon(
+            vec![tip, back_bot, back_top],
+            triangle_color,
+            eframe::egui::Stroke::NONE,
+        ));
+
+        let play_button = play_response.on_hover_text("Play from the current selection or cursor");
         if play_button.clicked() {
             if let Err(err) = app
                 .controller
