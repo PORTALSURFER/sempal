@@ -59,13 +59,15 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
         
         // Custom painting for button frame
         let record_visuals = ui.style().interact(&record_response);
-        ui.painter().rect(
-            record_rect,
-            record_visuals.corner_radius,
-            record_visuals.bg_fill,
-            record_visuals.bg_stroke,
-            eframe::egui::StrokeKind::Inside,
-        );
+        if record_response.hovered() {
+            ui.painter().rect(
+                record_rect,
+                record_visuals.corner_radius,
+                record_visuals.bg_fill,
+                record_visuals.bg_stroke,
+                eframe::egui::StrokeKind::Inside,
+            );
+        }
 
         // Custom painting for Circle icon
         let circle_color = if is_recording {
@@ -114,13 +116,15 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
         let (play_rect, play_response) = ui.allocate_exact_size(play_size, play_sense);
 
         let play_visuals = ui.style().interact(&play_response);
-        ui.painter().rect(
-            play_rect,
-            play_visuals.corner_radius,
-            play_visuals.bg_fill,
-            play_visuals.bg_stroke,
-            eframe::egui::StrokeKind::Inside,
-        );
+        if play_response.hovered() {
+            ui.painter().rect(
+                play_rect,
+                play_visuals.corner_radius,
+                play_visuals.bg_fill,
+                play_visuals.bg_stroke,
+                eframe::egui::StrokeKind::Inside,
+            );
+        }
 
         let triangle_color = if is_recording {
              // Disabled look
@@ -152,14 +156,37 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
                 app.controller.set_status(err, style::StatusTone::Error);
             }
         }
-        let stop_label = if is_playing {
-            RichText::new("Stop").color(style::destructive_text())
+        let stop_size = eframe::egui::Vec2::new(32.0, 24.0);
+        let stop_sense = if is_playing {
+             eframe::egui::Sense::click()
         } else {
-            RichText::new("Stop").color(palette.text_muted)
+             eframe::egui::Sense::hover()
         };
-        let stop_button = ui
-            .add_enabled(is_playing, egui::Button::new(stop_label))
-            .on_hover_text("Stop playback");
+        let (stop_rect, stop_response) = ui.allocate_exact_size(stop_size, stop_sense);
+
+        let stop_visuals = ui.style().interact(&stop_response);
+        if stop_response.hovered() {
+            ui.painter().rect(
+                stop_rect,
+                stop_visuals.corner_radius,
+                stop_visuals.bg_fill,
+                stop_visuals.bg_stroke,
+                eframe::egui::StrokeKind::Inside,
+            );
+        }
+
+        let square_color = if is_playing {
+             style::destructive_text()
+        } else {
+             ui.visuals().widgets.noninteractive.fg_stroke.color.linear_multiply(0.3)
+        };
+        
+        let center = stop_rect.center();
+        let side = 10.0;
+        let square_rect = eframe::egui::Rect::from_center_size(center, eframe::egui::Vec2::splat(side));
+        ui.painter().rect_filled(square_rect, 1.0, square_color);
+
+        let stop_button = stop_response.on_hover_text("Stop playback");
         if stop_button.clicked() {
             app.controller.stop_playback_if_active();
         }
