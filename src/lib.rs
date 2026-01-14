@@ -1,3 +1,6 @@
+#![deny(missing_docs)]
+#![deny(warnings)]
+
 //! Library exports for reuse in benchmarks and tests.
 extern crate alloc;
 /// Background analysis helpers.

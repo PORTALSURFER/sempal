@@ -1,3 +1,6 @@
+#![deny(missing_docs)]
+#![deny(warnings)]
+
 //! Entry point for the egui-based Sempal UI.
 #![cfg_attr(
     all(not(debug_assertions), target_os = "windows"),

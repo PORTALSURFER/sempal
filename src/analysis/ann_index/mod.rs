@@ -19,7 +19,7 @@ mod update;
 use crate::analysis::{decode_f32_le_blob, similarity};
 use rusqlite::Connection;
 use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, RwLock};
 
 /// Neighbor result returned by ANN similarity search.
 #[derive(Debug)]
@@ -30,25 +30,57 @@ pub struct SimilarNeighbor {
     pub distance: f32,
 }
 
-static ANN_INDEX: LazyLock<Mutex<HashMap<String, state::AnnIndexState>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+static ANN_INDEX: LazyLock<RwLock<HashMap<String, Arc<RwLock<state::AnnIndexState>>>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
 
-fn with_index_state<R>(
+/// Get the index state wrapper, loading it if necessary.
+/// This minimizes the time the global lock is held.
+fn get_index_entry(
+    conn: &Connection,
+) -> Result<Arc<RwLock<state::AnnIndexState>>, String> {
+    let key = storage::index_key(conn)?;
+    
+    // Fast path: check with read lock
+    {
+        let guard = ANN_INDEX.read().map_err(|_| "ANN index lock poisoned")?;
+        if let Some(state) = guard.get(&key) {
+            return Ok(state.clone());
+        }
+    }
+
+    // Slow path: load or build index without holding global lock
+    // Note: This might do redundant work if multiple threads race here,
+    // but better than blocking the world.
+    let loaded_state = build::load_or_build_index(conn)?;
+    let loaded_state = Arc::new(RwLock::new(loaded_state));
+
+    // Write lock to insert
+    let mut guard = ANN_INDEX.write().map_err(|_| "ANN index lock poisoned")?;
+    // Double-check in case another thread won the race
+    if let Some(state) = guard.get(&key) {
+        return Ok(state.clone());
+    }
+    
+    guard.insert(key, loaded_state.clone());
+    Ok(loaded_state)
+}
+
+fn with_index_state_mut<R>(
     conn: &Connection,
     f: impl FnOnce(&mut state::AnnIndexState) -> Result<R, String>,
 ) -> Result<R, String> {
-    let key = storage::index_key(conn)?;
-    let mut guard = ANN_INDEX
-        .lock()
-        .map_err(|_| "ANN index lock poisoned".to_string())?;
-    if !guard.contains_key(&key) {
-        let state = build::load_or_build_index(conn)?;
-        guard.insert(key.clone(), state);
-    }
-    let state = guard
-        .get_mut(&key)
-        .ok_or_else(|| "ANN index missing".to_string())?;
-    f(state)
+    let state_arc = get_index_entry(conn)?;
+    let mut guard = state_arc.write().map_err(|_| "ANN index state lock poisoned")?;
+    f(&mut guard)
+}
+
+fn with_index_state_read<R>(
+    conn: &Connection,
+    f: impl FnOnce(&state::AnnIndexState) -> Result<R, String>,
+) -> Result<R, String> {
+    let state_arc = get_index_entry(conn)?;
+    let guard = state_arc.read().map_err(|_| "ANN index state lock poisoned")?;
+    f(&guard)
 }
 
 /// Insert or update a single embedding in the ANN index.
@@ -57,7 +89,7 @@ pub fn upsert_embedding(
     sample_id: &str,
     embedding: &[f32],
 ) -> Result<(), String> {
-    with_index_state(conn, |state| {
+    with_index_state_mut(conn, |state| {
         update::upsert_embedding(conn, state, sample_id, embedding)
     })
 }
@@ -71,14 +103,14 @@ where
     if iter.peek().is_none() {
         return Ok(());
     }
-    with_index_state(conn, |state| {
+    with_index_state_mut(conn, |state| {
         update::upsert_embeddings_batch(conn, state, iter)
     })
 }
 
 /// Flush any buffered ANN insertions to the on-disk index.
 pub fn flush_pending_inserts(conn: &Connection) -> Result<(), String> {
-    with_index_state(conn, |state| update::flush_pending_inserts(conn, state))
+    with_index_state_mut(conn, |state| update::flush_pending_inserts(conn, state))
 }
 
 /// Find the `k` nearest neighbors for a stored sample id.
@@ -91,31 +123,25 @@ pub fn find_similar(
         return Ok(Vec::new());
     }
     let embedding = load_embedding(conn, sample_id)?;
-    with_index_state(conn, |state| {
+
+    // Optimistic read
+    {
+        let state_arc = get_index_entry(conn)?;
+        let state = state_arc.read().map_err(|_| "ANN index state lock poisoned")?;
+        
+        // If the ID is already known, we can search with just the read lock
+        if state.id_lookup.contains_key(sample_id) {
+             return perform_search(&state, &embedding, k, Some(sample_id));
+        }
+        // If not found, drop read lock and fall through to write path
+    }
+
+    // Write path: update index with missing ID then search
+    with_index_state_mut(conn, |state| {
         if !state.id_lookup.contains_key(sample_id) {
-            update::upsert_embedding(conn, state, sample_id, embedding.as_slice())?;
+             update::upsert_embedding(conn, state, sample_id, embedding.as_slice())?;
         }
-        let ef = state.params.ef_search.max(k + 1);
-        let neighbours = state.hnsw.search(&embedding, k + 1, ef);
-        let mut results = Vec::with_capacity(neighbours.len());
-        for neighbour in neighbours {
-            if let Some(candidate) = state.id_map.get(neighbour.d_id) {
-                if candidate == sample_id {
-                    continue;
-                }
-                results.push(SimilarNeighbor {
-                    sample_id: candidate.clone(),
-                    distance: neighbour.distance,
-                });
-            }
-        }
-        results.sort_by(|a, b| {
-            a.distance
-                .partial_cmp(&b.distance)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        results.truncate(k);
-        Ok(results)
+        perform_search(state, &embedding, k, Some(sample_id))
     })
 }
 
@@ -135,29 +161,43 @@ pub fn find_similar_for_embedding(
             embedding.len()
         ));
     }
-    with_index_state(conn, |state| {
-        if state.id_map.is_empty() {
+    with_index_state_read(conn, |state| {
+         if state.id_map.is_empty() {
             return Err("ANN index has no embeddings".to_string());
         }
-        let ef = state.params.ef_search.max(k);
-        let neighbours = state.hnsw.search(embedding, k, ef);
-        let mut results = Vec::with_capacity(neighbours.len());
-        for neighbour in neighbours {
-            if let Some(candidate) = state.id_map.get(neighbour.d_id) {
-                results.push(SimilarNeighbor {
-                    sample_id: candidate.clone(),
-                    distance: neighbour.distance,
-                });
-            }
-        }
-        results.sort_by(|a, b| {
-            a.distance
-                .partial_cmp(&b.distance)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        results.truncate(k);
-        Ok(results)
+        perform_search(state, embedding, k, None)
     })
+}
+
+fn perform_search(
+    state: &state::AnnIndexState,
+    embedding: &[f32],
+    k: usize,
+    skip_id: Option<&str>,
+) -> Result<Vec<SimilarNeighbor>, String> {
+    let ef = state.params.ef_search.max(k + 1);
+    let neighbours = state.hnsw.search(embedding, k + 1, ef);
+    let mut results = Vec::with_capacity(neighbours.len());
+    for neighbour in neighbours {
+        if let Some(candidate) = state.id_map.get(neighbour.d_id) {
+            if let Some(skip) = skip_id {
+                if candidate == skip {
+                    continue;
+                }
+            }
+            results.push(SimilarNeighbor {
+                sample_id: candidate.clone(),
+                distance: neighbour.distance,
+            });
+        }
+    }
+    results.sort_by(|a, b| {
+        a.distance
+            .partial_cmp(&b.distance)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    results.truncate(k);
+    Ok(results)
 }
 
 /// Rebuild the ANN index from the embeddings stored in the database.
@@ -167,10 +207,12 @@ pub fn rebuild_index(conn: &Connection) -> Result<(), String> {
     let mut state = build::build_index_from_db(conn, params, index_path)?;
     update::flush_index(conn, &mut state)?;
     let key = storage::index_key(conn)?;
+    
+    let wrapped_state = Arc::new(RwLock::new(state));
     let mut guard = ANN_INDEX
-        .lock()
+        .write()
         .map_err(|_| "ANN index lock poisoned".to_string())?;
-    guard.insert(key, state);
+    guard.insert(key, wrapped_state);
     Ok(())
 }
 

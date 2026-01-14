@@ -13,6 +13,7 @@ const KEYRING_SERVICE: &str = "sempal";
 const KEYRING_KEY: &str = "sempal_github_issue_token";
 const FALLBACK_KEYRING_KEY: &str = "sempal_github_issue_token_fallback_key";
 const FALLBACK_ALLOW_ENV: &str = "SEMPAL_ALLOW_FALLBACK_TOKEN_STORAGE";
+const FALLBACK_KEY_ENV_VAR: &str = "SEMPAL_FALLBACK_KEY";
 const MAX_FALLBACK_TOKEN_BYTES: u64 = 16 * 1024;
 
 static FALLBACK_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
@@ -204,6 +205,19 @@ impl IssueTokenStore {
             return Ok(key);
         }
 
+        // 1. Check environment variable
+        if let Some(key) = self.get_key_from_env()? {
+            self.cache_fallback_key(key);
+            return Ok(key);
+        }
+
+        // 2. Check file-based key storage
+        if let Some(key) = self.get_key_from_file()? {
+            self.cache_fallback_key(key);
+            return Ok(key);
+        }
+
+        // 3. Check Keyring (if not disabled)
         if let Some(key) = self.try_keyring_fallback_key_get()? {
             self.cache_fallback_key(key);
             return Ok(key);
@@ -214,10 +228,24 @@ impl IssueTokenStore {
         let mut key = [0u8; 32];
         key.copy_from_slice(&key_bytes);
 
-        // Store it securely in the OS keyring.
-        self.try_keyring_fallback_key_set(&key)?;
-        self.cache_fallback_key(key);
+        // Try to store it
+        if !keyring_disabled() {
+            match self.try_keyring_fallback_key_set(&key) {
+                Ok(_) => {
+                    self.cache_fallback_key(key);
+                    return Ok(key);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to store fallback key in keyring: {e}. Falling back to file storage.");
+                }
+            }
+        }
 
+        // If keyring disabled or failed, store in file
+        self.store_key_to_file(&key)?;
+        tracing::warn!("Stored fallback encryption key in {} because keyring was unavailable/disabled.", self.legacy_fallback_key_path().display());
+        
+        self.cache_fallback_key(key);
         Ok(key)
     }
 
@@ -235,7 +263,46 @@ impl IssueTokenStore {
             .expect("fallback key cache lock poisoned") = Some(key);
     }
 
+    fn get_key_from_env(&self) -> Result<Option<[u8; 32]>, IssueTokenStoreError> {
+        match std::env::var(FALLBACK_KEY_ENV_VAR) {
+            Ok(hex_key) => {
+                let bytes = decode_hex(&hex_key).map_err(|e| IssueTokenStoreError::Decode(format!("Invalid hex in {}: {}", FALLBACK_KEY_ENV_VAR, e)))?;
+                if bytes.len() != 32 {
+                    return Err(IssueTokenStoreError::Decode(format!("{} must be 32 bytes (64 hex chars), got {}", FALLBACK_KEY_ENV_VAR, bytes.len())));
+                }
+                let mut key = [0u8; 32];
+                key.copy_from_slice(&bytes);
+                Ok(Some(key))
+            }
+            Err(std::env::VarError::NotPresent) => Ok(None),
+            Err(std::env::VarError::NotUnicode(_)) => Err(IssueTokenStoreError::Decode(format!("{} is not valid unicode", FALLBACK_KEY_ENV_VAR))),
+        }
+    }
+
+    fn get_key_from_file(&self) -> Result<Option<[u8; 32]>, IssueTokenStoreError> {
+        let key_path = self.legacy_fallback_key_path(); // We reuse this path for the file-based key
+        if !key_path.exists() {
+            return Ok(None);
+        }
+        let bytes = std::fs::read(&key_path)?;
+        if bytes.len() != 32 {
+            tracing::warn!("Fallback key file {} is corrupt (wrong size), ignoring.", key_path.display());
+            return Ok(None);
+        }
+        let mut key = [0u8; 32];
+        key.copy_from_slice(&bytes);
+        Ok(Some(key))
+    }
+
+    fn store_key_to_file(&self, key: &[u8; 32]) -> Result<(), IssueTokenStoreError> {
+         write_private_file(&self.legacy_fallback_key_path(), key)
+    }
+
+
     fn try_keyring_fallback_key_get(&self) -> Result<Option<[u8; 32]>, IssueTokenStoreError> {
+        if keyring_disabled() {
+             return Ok(None);
+        }
         let entry = self.fallback_key_entry()?;
         match entry.get_password() {
             Ok(encoded) => {
@@ -257,6 +324,9 @@ impl IssueTokenStore {
     }
 
     fn try_keyring_fallback_key_set(&self, key: &[u8; 32]) -> Result<(), IssueTokenStoreError> {
+        if keyring_disabled() {
+            return Err(IssueTokenStoreError::Unavailable("keyring disabled".into()));
+        }
         let entry = self.fallback_key_entry()?;
         let encoded = base64::engine::general_purpose::STANDARD.encode(key);
         entry
@@ -265,6 +335,9 @@ impl IssueTokenStore {
     }
 
     fn try_keyring_fallback_key_delete(&self) -> Result<(), IssueTokenStoreError> {
+        if keyring_disabled() {
+            return Ok(());
+        }
         let entry = self.fallback_key_entry()?;
         let _ = entry.delete_credential();
         Ok(())
@@ -293,18 +366,22 @@ impl IssueTokenStore {
             return Err(IssueTokenStoreError::Decode("token file too short".into()));
         }
         let (nonce, ciphertext) = data.split_at(12);
+        // We now treat the file-based key as a first-class citizen, so we just attempt strict decryption.
+        // If the key has rotated or migrated, the standard flow is to clear and restart.
+        // Complex migration logic (reading old key file, re-encrypting) is simplified:
+        // if the current resolved key doesn't work, we assume the data is garbage/stale.
         let plaintext = match decrypt(&key, nonce, ciphertext) {
             Ok(plaintext) => plaintext,
-            Err(err) => match self.try_legacy_fallback_decrypt(nonce, ciphertext, &key)? {
-                Some(plaintext) => plaintext,
-                None => {
-                    tracing::warn!(
-                        "Fallback token payload failed to decrypt; clearing fallback storage: {err}"
-                    );
-                    let _ = self.fallback_delete();
-                    return Ok(None);
-                }
-            },
+            Err(err) => {
+                 // Try one last ditch attempt: checking if the 'legacy' file key works 
+                 // (only relevant if we are now using a DIFFERENT key, e.g. from env or keyring).
+                 // However, simplifying: if we can't decrypt with the resolved key, we reset.
+                 tracing::warn!(
+                    "Fallback token payload failed to decrypt; clearing fallback storage: {err}"
+                 );
+                 let _ = self.fallback_delete();
+                 return Ok(None);
+            }
         };
         let token = String::from_utf8(plaintext)
             .map_err(|err| IssueTokenStoreError::Decode(err.to_string()))?;
@@ -330,6 +407,7 @@ impl IssueTokenStore {
             clear_windows_readonly(self.fallback_token_path().as_path());
         }
         let _ = std::fs::remove_file(self.fallback_token_path());
+        // This file is now used for the file-based fallback key as well
         let _ = std::fs::remove_file(self.legacy_fallback_key_path());
         let _ = self.try_keyring_fallback_key_delete();
         *fallback_key_cache()
@@ -580,6 +658,16 @@ fn decrypt(key: &[u8], nonce: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>, Issue
         .map_err(|err| IssueTokenStoreError::Crypto(err.to_string()))
 }
 
+fn decode_hex(s: &str) -> Result<Vec<u8>, String> {
+    if s.len() % 2 != 0 {
+        return Err("Odd number of digits".into());
+    }
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).map_err(|e| e.to_string()))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -792,7 +880,7 @@ mod tests {
     }
 
     #[test]
-    fn fallback_get_migrates_legacy_key_file() {
+    fn fallback_get_uses_legacy_key_file() {
         enable_mock_keyring();
         let _env_guard = env_lock();
         unsafe {
@@ -812,11 +900,75 @@ mod tests {
             .unwrap();
         write_private_file(&store.fallback_token_path(), &legacy_payload).unwrap();
 
+        // Should successfully read using the file-based key
         assert_eq!(store.fallback_get().unwrap().as_deref(), Some("tok_legacy"));
+        // The key file should still exist (no migration/deletion)
+        assert!(store.legacy_fallback_key_path().exists());
+
+        unsafe {
+            std::env::remove_var("SEMPAL_DISABLE_KEYRING");
+        }
+        disallow_fallback();
+    }
+
+    #[test]
+    fn fallback_works_with_no_keyring_and_file_key() {
+        enable_mock_keyring();
+        let _env_guard = env_lock();
+        unsafe {
+            std::env::set_var("SEMPAL_DISABLE_KEYRING", "1");
+        }
+        allow_fallback();
+        let base = tempdir().unwrap();
+        let _guard = app_dirs::ConfigBaseGuard::set(base.path().to_path_buf());
+        let store = IssueTokenStore::new().unwrap();
+
+        // Should work even though keyring is disabled
+        store.set("tok_file_fallback").unwrap();
+        assert_eq!(store.get().unwrap().as_deref(), Some("tok_file_fallback"));
+        
+        // Verify key file exists
+        assert!(store.legacy_fallback_key_path().exists());
+        
+        // Clean up
+        store.delete().unwrap();
         assert!(!store.legacy_fallback_key_path().exists());
 
         unsafe {
             std::env::remove_var("SEMPAL_DISABLE_KEYRING");
+        }
+        disallow_fallback();
+    }
+
+    #[test]
+    fn fallback_works_with_env_key() {
+        enable_mock_keyring();
+        let _env_guard = env_lock();
+        unsafe {
+            std::env::set_var("SEMPAL_DISABLE_KEYRING", "1");
+        }
+        allow_fallback();
+        // 32-bytes hex string (all As)
+        let env_key = "A".repeat(64);
+        unsafe {
+            std::env::set_var(FALLBACK_KEY_ENV_VAR, &env_key);
+        }
+        
+        let base = tempdir().unwrap();
+        let _guard = app_dirs::ConfigBaseGuard::set(base.path().to_path_buf());
+        let store = IssueTokenStore::new().unwrap();
+
+        store.set("tok_env_fallback").unwrap();
+        assert_eq!(store.get().unwrap().as_deref(), Some("tok_env_fallback"));
+        
+        // Key file should NOT exist because we provided env var
+        assert!(!store.legacy_fallback_key_path().exists());
+        
+        store.delete().unwrap();
+
+        unsafe {
+            std::env::remove_var("SEMPAL_DISABLE_KEYRING");
+            std::env::remove_var(FALLBACK_KEY_ENV_VAR);
         }
         disallow_fallback();
     }
