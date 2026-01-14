@@ -1,6 +1,6 @@
 mod cache_updates;
 mod db;
-mod io;
+pub(crate) mod io;
 mod naming;
 mod normalize;
 

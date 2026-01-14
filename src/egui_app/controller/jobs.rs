@@ -36,6 +36,7 @@ pub(crate) enum JobMessage {
     IssueGatewayCreated(IssueGatewayCreateResult),
     IssueGatewayAuthed(IssueGatewayAuthResult),
     BrowserSearchFinished(SearchResult),
+    Normalized(NormalizationResult),
 }
 
 #[derive(Debug)]
@@ -145,6 +146,20 @@ pub(crate) struct CollectionMoveResult {
 pub(crate) struct AnalysisFailuresResult {
     pub(crate) source_id: SourceId,
     pub(crate) result: Result<std::collections::HashMap<PathBuf, String>, String>,
+}
+
+#[derive(Debug)]
+pub(crate) struct NormalizationJob {
+    pub(crate) source: crate::sample_sources::SampleSource,
+    pub(crate) relative_path: PathBuf,
+    pub(crate) absolute_path: PathBuf,
+}
+
+#[derive(Debug)]
+pub(crate) struct NormalizationResult {
+    pub(crate) source_id: crate::sample_sources::SourceId,
+    pub(crate) relative_path: PathBuf,
+    pub(crate) result: Result<(u64, i64, crate::sample_sources::Rating), String>,
 }
 
 pub(crate) struct ControllerJobs {
@@ -531,5 +546,52 @@ impl ControllerJobs {
         if let Some(cancel) = self.issue_gateway_poll_cancel.take() {
             cancel.store(true, std::sync::atomic::Ordering::Relaxed);
         }
+    }
+
+    pub(super) fn begin_normalization(&mut self, job: NormalizationJob) {
+        let tx = self.message_tx.clone();
+        thread::spawn(move || {
+            // We need a way to call the normalization logic without the EguiController instance
+            // since that's not thread-safe. The core logic is in analysis::audio.
+            // But we also need database access for tags.
+            // I'll refer to the implementation in collection_items_helpers/normalize.rs
+            
+            let source_id = job.source.id.clone();
+            let relative_path = job.relative_path.clone();
+            
+            let result = (|| {
+                let (mut samples, spec) = super::library::collection_items_helpers::io::read_samples_for_normalization(&job.absolute_path)?;
+                if samples.is_empty() {
+                    return Err("No audio data to normalize".to_string());
+                }
+                
+                crate::analysis::audio::normalize_peak_in_place(&mut samples);
+
+                let target_spec = hound::WavSpec {
+                    channels: spec.channels.max(1),
+                    sample_rate: spec.sample_rate.max(1),
+                    bits_per_sample: 32,
+                    sample_format: hound::SampleFormat::Float,
+                };
+                super::library::collection_items_helpers::io::write_normalized_wav(&job.absolute_path, &samples, target_spec)?;
+
+                let (file_size, modified_ns) = super::library::collection_items_helpers::io::file_metadata(&job.absolute_path)?;
+                
+                // For the tag, we'll need to open the DB again since we don't have EguiController.
+                let db = job.source.open_db()
+                    .map_err(|err| format!("Database unavailable: {err}"))?;
+                let tag = db.tag_for_path(&job.relative_path)
+                    .map_err(|err| format!("Failed to read database: {err}"))?
+                    .ok_or_else(|| "Sample not found in database".to_string())?;
+
+                Ok((file_size, modified_ns, tag))
+            })();
+
+            let _ = tx.send(JobMessage::Normalized(NormalizationResult {
+                source_id,
+                relative_path,
+                result,
+            }));
+        });
     }
 }

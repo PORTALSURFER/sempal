@@ -1,0 +1,13 @@
+    Checking sempal v12.0.0 (X:\sempal)
+error: unexpected closing delimiter: `}`
+   --> src\egui_app\controller\library\browser_controller\helpers.rs:213:1
+    |
+195 |     ) -> Result<(u64, i64), String> {
+    |                                     - this opening brace...
+...
+212 |     }
+    |     - ...matches this closing brace
+213 | }
+    | ^ unexpected closing delimiter
+
+error: could not compile `sempal` (lib) due to 1 previous error

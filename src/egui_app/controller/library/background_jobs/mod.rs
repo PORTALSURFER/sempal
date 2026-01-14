@@ -243,6 +243,53 @@ impl EguiController {
                             .and_then(|idx| self.ui.browser.visible.position(idx));
                     }
                 }
+                JobMessage::Normalized(message) => {
+                    let source = self.library.sources.iter().find(|s| s.id == message.source_id).cloned();
+                    match message.result {
+                        Ok((file_size, modified_ns, tag)) => {
+                            if let Some(source) = &source {
+                                let updated = WavEntry {
+                                    relative_path: message.relative_path.clone(),
+                                    file_size,
+                                    modified_ns,
+                                    content_hash: None,
+                                    tag,
+                                    // These might need to be resolved if not in cache, but for now we'll try to preserve.
+                                    // Actually, we can try to look up the old one if it's still in wav_entries.
+                                    looped: self.wav_index_for_path(&message.relative_path)
+                                        .and_then(|idx| self.wav_entries.entry(idx))
+                                        .map(|e| e.looped)
+                                        .unwrap_or(false),
+                                    missing: false,
+                                    last_played_at: self.wav_index_for_path(&message.relative_path)
+                                        .and_then(|idx| self.wav_entries.entry(idx))
+                                        .and_then(|e| e.last_played_at),
+                                };
+                                self.update_cached_entry(source, &message.relative_path, updated);
+                                
+                                if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
+                                    self.rebuild_browser_lists();
+                                }
+                                self.refresh_waveform_for_sample(source, &message.relative_path);
+                                self.reexport_collections_for_sample(&source.id, &message.relative_path);
+                                
+                                self.set_status(
+                                    format!("Normalized {}", message.relative_path.display()),
+                                    StatusTone::Info,
+                                );
+                            }
+                        }
+                        Err(err) => {
+                            self.set_status(format!("Normalization failed: {err}"), StatusTone::Error);
+                        }
+                    }
+                    if self.ui.progress.task == Some(ProgressTaskKind::Normalization) {
+                        self.ui.progress.completed = self.ui.progress.completed.saturating_add(1);
+                        if self.ui.progress.completed >= self.ui.progress.total {
+                            self.clear_progress();
+                        }
+                    }
+                }
             }
         }
     }

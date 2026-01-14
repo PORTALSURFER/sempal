@@ -10,6 +10,8 @@ pub enum ProgressTaskKind {
     Scan,
     /// Running background analysis jobs.
     Analysis,
+    /// Normalizing audio samples.
+    Normalization,
 }
 
 use std::time::Instant;
