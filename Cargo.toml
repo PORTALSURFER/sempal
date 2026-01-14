@@ -67,6 +67,8 @@ hnsw_rs = "0.3.3"
 symphonia = { version = "0.5.4", features = ["wav", "pcm", "mp3", "flac"] }
 hdbscan = "0.12.0"
 rustfft = "6.2.0"
+rayon = "1.10"
+
 
 [target.'cfg(target_os = "macos")'.dependencies]
 

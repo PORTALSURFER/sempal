@@ -17,28 +17,22 @@ impl EguiController {
         relative_path: &Path,
         absolute_path: &Path,
     ) -> Result<(u64, i64, crate::sample_sources::Rating), String> {
-        let (samples, spec) = io::read_samples_for_normalization(absolute_path)?;
+        let (mut samples, spec) = io::read_samples_for_normalization(absolute_path)?;
         if samples.is_empty() {
             return Err("No audio data to normalize".into());
         }
-        let peak = samples
-            .iter()
-            .fold(0.0_f32, |acc, sample| acc.max(sample.abs()));
-        if peak <= f32::EPSILON {
-            return Err("Cannot normalize silent audio".into());
-        }
-        let scale = 1.0 / peak;
-        let normalized: Vec<f32> = samples
-            .iter()
-            .map(|s| (s * scale).clamp(-1.0, 1.0))
-            .collect();
+        
+        // Use optimized SIMD/Parallel normalization in-place.
+        crate::analysis::audio::normalize_peak_in_place(&mut samples);
+
         let target_spec = hound::WavSpec {
             channels: spec.channels.max(1),
             sample_rate: spec.sample_rate.max(1),
             bits_per_sample: 32,
             sample_format: SampleFormat::Float,
         };
-        io::write_normalized_wav(absolute_path, &normalized, target_spec)?;
+        io::write_normalized_wav(absolute_path, &samples, target_spec)?;
+
         let (file_size, modified_ns) = io::file_metadata(absolute_path)?;
         let tag = self.sample_tag_for(source, relative_path)?;
         Ok((file_size, modified_ns, tag))
