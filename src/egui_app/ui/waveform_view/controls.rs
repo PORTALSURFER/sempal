@@ -49,14 +49,38 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
         ui.add_space(10.0);
         let is_recording = app.controller.is_recording();
         let has_source = app.controller.current_source().is_some();
-        let record_label = if is_recording {
-            RichText::new("●").size(18.0).color(style::destructive_text())
+        let record_size = eframe::egui::Vec2::new(32.0, 24.0);
+        let record_sense = if is_recording || has_source {
+            eframe::egui::Sense::click()
         } else {
-            RichText::new("●").size(18.0).color(palette.text_muted)
+            eframe::egui::Sense::hover()
         };
-        let record_button = ui
-            .add_enabled(is_recording || has_source, egui::Button::new(record_label))
-            .on_hover_text("Record into the selected source folder");
+        let (record_rect, record_response) = ui.allocate_exact_size(record_size, record_sense);
+        
+        // Custom painting for button frame
+        let record_visuals = ui.style().interact(&record_response);
+        ui.painter().rect(
+            record_rect,
+            record_visuals.corner_radius,
+            record_visuals.bg_fill,
+            record_visuals.bg_stroke,
+            eframe::egui::StrokeKind::Inside,
+        );
+
+        // Custom painting for Circle icon
+        let circle_color = if is_recording {
+             style::destructive_text()
+        } else if has_source {
+             palette.text_muted
+        } else {
+            ui.visuals().widgets.noninteractive.fg_stroke.color.linear_multiply(0.3)
+        };
+        
+        let center = record_rect.center();
+        let radius = 6.0;
+        ui.painter().circle_filled(center, radius, circle_color);
+
+        let record_button = record_response.on_hover_text("Record into the selected source folder");
         if record_button.clicked() {
             let result = if is_recording {
                 app.controller.stop_recording_and_load()
