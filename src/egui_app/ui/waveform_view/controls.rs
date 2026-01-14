@@ -58,16 +58,8 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
         let (record_rect, record_response) = ui.allocate_exact_size(record_size, record_sense);
         
         // Custom painting for button frame
-        let record_visuals = ui.style().interact(&record_response);
-        if record_response.hovered() {
-            ui.painter().rect(
-                record_rect,
-                record_visuals.corner_radius,
-                record_visuals.bg_fill,
-                record_visuals.bg_stroke,
-                eframe::egui::StrokeKind::Inside,
-            );
-        }
+        // Background rect removed as per user request (frameless)
+
 
         // Custom painting for Circle icon
         let circle_color = if is_recording {
@@ -115,22 +107,13 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
         };
         let (play_rect, play_response) = ui.allocate_exact_size(play_size, play_sense);
 
-        let play_visuals = ui.style().interact(&play_response);
-        if play_response.hovered() {
-            ui.painter().rect(
-                play_rect,
-                play_visuals.corner_radius,
-                play_visuals.bg_fill,
-                play_visuals.bg_stroke,
-                eframe::egui::StrokeKind::Inside,
-            );
-        }
+
 
         let triangle_color = if is_recording {
              // Disabled look
              ui.visuals().widgets.noninteractive.fg_stroke.color.linear_multiply(0.3)
         } else if is_playing {
-             palette.accent_mint
+             palette.accent_copper
         } else {
              palette.text_muted
         };
@@ -164,16 +147,7 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
         };
         let (stop_rect, stop_response) = ui.allocate_exact_size(stop_size, stop_sense);
 
-        let stop_visuals = ui.style().interact(&stop_response);
-        if stop_response.hovered() {
-            ui.painter().rect(
-                stop_rect,
-                stop_visuals.corner_radius,
-                stop_visuals.bg_fill,
-                stop_visuals.bg_stroke,
-                eframe::egui::StrokeKind::Inside,
-            );
-        }
+
 
         let square_color = if is_playing {
              style::destructive_text()
