@@ -416,35 +416,7 @@ impl IssueTokenStore {
         Ok(())
     }
 
-    fn try_legacy_fallback_decrypt(
-        &self,
-        nonce: &[u8],
-        ciphertext: &[u8],
-        new_key: &[u8; 32],
-    ) -> Result<Option<Vec<u8>>, IssueTokenStoreError> {
-        let legacy_key_path = self.legacy_fallback_key_path();
-        if !legacy_key_path.exists() {
-            return Ok(None);
-        }
-        let key_bytes = std::fs::read(&legacy_key_path)?;
-        if key_bytes.len() != 32 {
-            return Ok(None);
-        }
-        let mut legacy_key = [0u8; 32];
-        legacy_key.copy_from_slice(&key_bytes);
-        match decrypt(&legacy_key, nonce, ciphertext) {
-            Ok(plaintext) => {
-                tracing::info!(
-                    "Migrating legacy fallback token payload to keyring-backed storage."
-                );
-                let new_payload = self.encrypt_fallback_payload(new_key, &plaintext)?;
-                write_private_file(&self.fallback_token_path(), &new_payload)?;
-                let _ = std::fs::remove_file(&legacy_key_path);
-                Ok(Some(plaintext))
-            }
-            Err(_) => Ok(None),
-        }
-    }
+
 
     fn encrypt_fallback_payload(
         &self,
@@ -702,10 +674,15 @@ mod tests {
         }
     }
 
+    fn reset_cache() {
+        *fallback_key_cache().lock().unwrap() = None;
+    }
+
     #[test]
     fn fallback_roundtrip_when_keyring_disabled() {
         enable_mock_keyring();
         let _env_guard = env_lock();
+        reset_cache();
         unsafe {
             std::env::set_var("SEMPAL_DISABLE_KEYRING", "1");
         }
@@ -731,6 +708,7 @@ mod tests {
     fn set_empty_token_clears_storage() {
         enable_mock_keyring();
         let _env_guard = env_lock();
+        reset_cache();
         unsafe {
             std::env::set_var("SEMPAL_DISABLE_KEYRING", "1");
         }
@@ -751,6 +729,7 @@ mod tests {
     fn fallback_is_only_used_when_explicitly_allowed() {
         enable_mock_keyring();
         let _env_guard = env_lock();
+        reset_cache();
         unsafe {
             std::env::set_var("SEMPAL_DISABLE_KEYRING", "1");
         }
@@ -777,6 +756,7 @@ mod tests {
     fn fallback_get_rejects_corrupted_payload() {
         enable_mock_keyring();
         let _env_guard = env_lock();
+        reset_cache();
         unsafe {
             std::env::set_var("SEMPAL_DISABLE_KEYRING", "1");
         }
@@ -803,6 +783,7 @@ mod tests {
     fn fallback_token_file_is_private_on_unix() {
         enable_mock_keyring();
         let _env_guard = env_lock();
+        reset_cache();
         use std::os::unix::fs::PermissionsExt;
         unsafe {
             std::env::set_var("SEMPAL_DISABLE_KEYRING", "1");
@@ -831,6 +812,7 @@ mod tests {
     fn fallback_get_rejects_oversized_payload() {
         enable_mock_keyring();
         let _env_guard = env_lock();
+        reset_cache();
         unsafe {
             std::env::set_var("SEMPAL_DISABLE_KEYRING", "1");
         }
@@ -859,6 +841,7 @@ mod tests {
     fn fallback_get_clears_unreadable_payload() {
         enable_mock_keyring();
         let _env_guard = env_lock();
+        reset_cache();
         unsafe {
             std::env::set_var("SEMPAL_DISABLE_KEYRING", "1");
         }
@@ -883,6 +866,7 @@ mod tests {
     fn fallback_get_uses_legacy_key_file() {
         enable_mock_keyring();
         let _env_guard = env_lock();
+        reset_cache();
         unsafe {
             std::env::set_var("SEMPAL_DISABLE_KEYRING", "1");
         }
@@ -915,6 +899,7 @@ mod tests {
     fn fallback_works_with_no_keyring_and_file_key() {
         enable_mock_keyring();
         let _env_guard = env_lock();
+        reset_cache();
         unsafe {
             std::env::set_var("SEMPAL_DISABLE_KEYRING", "1");
         }
@@ -944,6 +929,7 @@ mod tests {
     fn fallback_works_with_env_key() {
         enable_mock_keyring();
         let _env_guard = env_lock();
+        reset_cache();
         unsafe {
             std::env::set_var("SEMPAL_DISABLE_KEYRING", "1");
         }
