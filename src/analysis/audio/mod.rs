@@ -22,7 +22,7 @@ pub(crate) use decode::{
     decode_for_analysis, decode_for_analysis_with_rate, decode_for_analysis_with_rate_limit,
     probe_metadata,
 };
-pub(crate) use normalize::sanitize_samples_in_place;
+pub(crate) use normalize::{normalize_peak_in_place, sanitize_samples_in_place};
 pub(crate) use silence::detect_non_silent_ranges;
 
 /// Decoded mono audio ready for analysis.

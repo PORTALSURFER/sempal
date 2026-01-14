@@ -1,8 +1,8 @@
-pub(super) fn normalize_peak_in_place(samples: &mut [f32]) {
+pub(crate) fn normalize_peak_in_place(samples: &mut [f32]) {
     let mut peak = 0.0_f32;
     #[cfg(target_arch = "x86_64")]
     {
-        if std::is_x86_feature_detected!("sse2") && samples.iter().all(|s| s.is_finite()) {
+        if std::is_x86_feature_detected!("sse2") {
             // SAFETY: gated by runtime feature check.
             peak = unsafe { max_abs_sse2(samples) };
         } else {
@@ -34,11 +34,11 @@ pub(super) fn normalize_peak_in_place(samples: &mut [f32]) {
     }
 }
 
-pub(super) fn normalize_peak_limit_in_place(samples: &mut [f32]) {
+pub(crate) fn normalize_peak_limit_in_place(samples: &mut [f32]) {
     let mut peak = 0.0_f32;
     #[cfg(target_arch = "x86_64")]
     {
-        if std::is_x86_feature_detected!("sse2") && samples.iter().all(|s| s.is_finite()) {
+        if std::is_x86_feature_detected!("sse2") {
             // SAFETY: gated by runtime feature check.
             peak = unsafe { max_abs_sse2(samples) };
         } else {
@@ -70,7 +70,7 @@ pub(super) fn normalize_peak_limit_in_place(samples: &mut [f32]) {
     }
 }
 
-pub(super) fn normalize_rms_in_place(samples: &mut [f32], target_db: f32) {
+pub(crate) fn normalize_rms_in_place(samples: &mut [f32], target_db: f32) {
     if samples.is_empty() {
         return;
     }
@@ -102,18 +102,14 @@ pub(crate) fn sanitize_samples_in_place(samples: &mut [f32]) {
     }
 }
 
-pub(super) fn rms(samples: &[f32]) -> f32 {
+pub(crate) fn rms(samples: &[f32]) -> f32 {
     if samples.is_empty() {
         return 0.0;
     }
     #[cfg(target_arch = "x86_64")]
     {
-        if std::is_x86_feature_detected!("sse2")
-            && samples
-                .iter()
-                .all(|s| s.is_finite() && (s.abs() == 0.0 || s.abs() >= f32::MIN_POSITIVE))
-        {
-            // SAFETY: gated by runtime feature check; finiteness checked above.
+        if std::is_x86_feature_detected!("sse2") {
+            // SAFETY: gated by runtime feature check.
             return unsafe { rms_sse2(samples) };
         }
     }

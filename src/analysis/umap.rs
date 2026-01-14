@@ -46,11 +46,11 @@ pub fn build_umap_layout(
     seed: u64,
     min_coverage: f32,
 ) -> Result<UmapReport, String> {
-    let (sample_ids, vectors, _dim) = load_embeddings(conn, model_id)?;
+    let (sample_ids, vectors, dim) = load_embeddings(conn, model_id)?;
     if vectors.is_empty() {
         return Err(format!("No embeddings found for model_id {model_id}"));
     }
-    let layout = compute_tsne(&vectors, seed)?;
+    let layout = compute_tsne(vectors, dim, seed)?;
     if layout.len() != sample_ids.len() {
         return Err("t-SNE output length mismatch".to_string());
     }
@@ -78,7 +78,15 @@ pub fn write_report(path: &PathBuf, report: &UmapReport) -> Result<(), String> {
 fn load_embeddings(
     conn: &Connection,
     model_id: &str,
-) -> Result<(Vec<String>, Vec<Vec<f32>>, usize), String> {
+) -> Result<(Vec<String>, Vec<f64>, usize), String> {
+    let count: usize = conn
+        .query_row(
+            "SELECT COUNT(*) FROM embeddings WHERE model_id = ?1",
+            params![model_id],
+            |row| row.get(0),
+        )
+        .map_err(|err| format!("Count embeddings failed: {err}"))?;
+
     let mut stmt = conn
         .prepare(
             "SELECT sample_id, dim, vec
@@ -95,7 +103,7 @@ fn load_embeddings(
             Ok((sample_id, dim as usize, blob))
         })
         .map_err(|err| format!("Query embeddings failed: {err}"))?;
-    let mut sample_ids = Vec::new();
+    let mut sample_ids = Vec::with_capacity(count);
     let mut vectors = Vec::new();
     let mut expected_dim: Option<usize> = None;
     for row in rows {
@@ -116,9 +124,12 @@ fn load_embeddings(
             }
         } else {
             expected_dim = Some(dim);
+            vectors.reserve_exact(count * dim);
         }
         sample_ids.push(sample_id);
-        vectors.push(vec);
+        for v in vec {
+            vectors.push(v as f64);
+        }
     }
     let dim = expected_dim.unwrap_or(0);
     if dim == 0 {
@@ -127,22 +138,18 @@ fn load_embeddings(
     Ok((sample_ids, vectors, dim))
 }
 
-fn compute_tsne(vectors: &[Vec<f32>], seed: u64) -> Result<Vec<[f32; 2]>, String> {
-    let n_samples = vectors.len();
-    let dim = vectors.first().map(|v| v.len()).unwrap_or(0);
+fn compute_tsne(vectors: Vec<f64>, dim: usize, seed: u64) -> Result<Vec<[f32; 2]>, String> {
+    let n_samples = vectors.len() / dim;
     if n_samples < 2 {
         return Err("Need at least 2 embeddings to build t-SNE".to_string());
     }
     let max_perplexity = ((n_samples as f64) - 1.0).max(1.0) / 3.0;
     let perplexity = DEFAULT_PERPLEXITY.min(max_perplexity).max(1.0);
-    let mut data = Vec::with_capacity(n_samples * dim);
-    for vec in vectors {
-        for value in vec {
-            data.push(*value as f64);
-        }
-    }
-    let mut matrix = Array2::from_shape_vec((n_samples, dim), data)
+
+    // Create matrix from owned vector to avoid additional copying.
+    let mut matrix = Array2::from_shape_vec((n_samples, dim), vectors)
         .map_err(|err| format!("Build embedding matrix failed: {err}"))?;
+
     if dim > DEFAULT_PCA_COMPONENTS {
         let pca_components = DEFAULT_PCA_COMPONENTS
             .min(dim)
@@ -157,6 +164,7 @@ fn compute_tsne(vectors: &[Vec<f32>], seed: u64) -> Result<Vec<[f32; 2]>, String
         let reduced = pca.transform(dataset);
         matrix = reduced.records;
     }
+
     let rng = SmallRng::seed_from_u64(seed);
     let embedding = TSneParams::embedding_size_with_rng(DEFAULT_N_COMPONENTS, rng)
         .perplexity(perplexity)
@@ -164,6 +172,7 @@ fn compute_tsne(vectors: &[Vec<f32>], seed: u64) -> Result<Vec<[f32; 2]>, String
         .max_iter(DEFAULT_MAX_ITER)
         .transform(matrix)
         .map_err(|err| format!("t-SNE failed: {err}"))?;
+
     let mut out = Vec::with_capacity(n_samples);
     for row in embedding.rows() {
         out.push([row[0] as f32, row[1] as f32]);

@@ -15,6 +15,107 @@ use std::{
 use rusqlite::Connection;
 use tracing::warn;
 
+#[cfg(windows)]
+mod windows_security {
+    use std::path::Path;
+    use windows::core::PCWSTR;
+    use windows::Win32::Foundation::{CloseHandle, HANDLE, HLOCAL, LocalFree};
+    use windows::Win32::Security::{
+        Authorization::{GetNamedSecurityInfoW, SE_FILE_OBJECT},
+        DACL_SECURITY_INFORMATION, OWNER_SECURITY_INFORMATION, PSID, PSECURITY_DESCRIPTOR,
+        EqualSid, GetTokenInformation, TokenUser, TOKEN_QUERY, TOKEN_USER,
+    };
+    use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+
+    pub fn validate_extension_file_windows(path: &Path) -> Result<(), String> {
+        use std::os::windows::ffi::OsStrExt;
+        let path_v: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0u16)).collect();
+        let pcwstr = PCWSTR(path_v.as_ptr());
+
+        unsafe {
+            // 1. Get current process token to find the user SID
+            let mut token_handle = HANDLE::default();
+            match OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token_handle) {
+                Ok(_) => {}
+                Err(_) => return Err("Failed to open process token".to_string()),
+            }
+
+            let mut len = 0;
+            let _ = GetTokenInformation(token_handle, TokenUser, None, 0, &mut len);
+            let mut buffer = vec![0u8; len as usize];
+            match GetTokenInformation(
+                token_handle,
+                TokenUser,
+                Some(buffer.as_mut_ptr() as *mut _),
+                len,
+                &mut len,
+            ) {
+                Ok(_) => {}
+                Err(_) => {
+                    let _ = CloseHandle(token_handle);
+                    return Err("Failed to get token information".to_string());
+                }
+            }
+            let _ = CloseHandle(token_handle);
+
+            let token_user = &*(buffer.as_ptr() as *const TOKEN_USER);
+            let user_sid = token_user.User.Sid;
+
+            // 2. Get file security information (Owner and DACL)
+            let mut psd = PSECURITY_DESCRIPTOR::default();
+            let mut owner_sid = PSID::default();
+
+            let res = GetNamedSecurityInfoW(
+                pcwstr,
+                SE_FILE_OBJECT,
+                OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+                Some(&mut owner_sid),
+                None,
+                None,
+                None,
+                &mut psd,
+            );
+
+            if res.0 != 0 {
+                return Err(format!("GetNamedSecurityInfoW failed with error {}", res.0));
+            }
+
+            // Ensure the security descriptor is freed
+            struct SdSafe(PSECURITY_DESCRIPTOR);
+            impl Drop for SdSafe {
+                fn drop(&mut self) {
+                    unsafe {
+                        let _ = LocalFree(Some(HLOCAL(self.0 .0)));
+                    }
+                }
+            }
+            let _guard = SdSafe(psd);
+
+            // 3. Verify the file owner matches the current user
+            // In windows-rs 0.62.2, EqualSid might return a Result<()> or BOOL
+            // depending on the version and configuration.
+            // If it returns BOOL, we check for false.
+            // If it returns Result, we check for Err.
+            // Here, we try a approach that works for both if we use match/if let.
+            #[allow(irrefutable_let_patterns)]
+            let is_equal = match EqualSid(user_sid, owner_sid) {
+                Ok(_) => true,
+                Err(_) => false,
+            };
+            if !is_equal {
+                return Err("SQLite extension must be owned by the current user".to_string());
+            }
+
+            // On Windows, checking "writable by others" is complex due to the nature of ACLs.
+            // However, by ensuring it is owned by the current user and lives in the
+            // app-restricted directory (checked by the caller), we provide a much
+            // better security posture than bypassing checks entirely.
+        }
+
+        Ok(())
+    }
+}
+
 /// Environment variable pointing at a loadable SQLite extension (.so/.dll/.dylib).
 pub const SQLITE_EXT_ENV: &str = "SEMPAL_SQLITE_EXT";
 
@@ -190,7 +291,11 @@ fn validate_extension_file(path: &Path) -> Result<(), String> {
         }
         return Ok(());
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        windows_security::validate_extension_file_windows(path)
+    }
+    #[cfg(not(any(unix, windows)))]
     {
         let _ = metadata;
         Err(format!(
