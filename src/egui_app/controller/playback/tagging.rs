@@ -107,9 +107,13 @@ pub(crate) fn tag_selected(controller: &mut EguiController, target: crate::sampl
     if controller.settings.controls.advance_after_rating
         && controller.ui.browser.selected_visible == Some(primary_row)
     {
-        let next_row = primary_row + 1;
-        if next_row < controller.ui.browser.visible.len() {
-            controller.focus_browser_row(next_row);
+        if controller.random_navigation_mode_enabled() {
+            controller.focus_random_visible_sample();
+        } else {
+            let next_row = primary_row + 1;
+            if next_row < controller.ui.browser.visible.len() {
+                controller.focus_browser_row(next_row);
+            }
         }
     }
 }
@@ -258,9 +262,13 @@ pub(crate) fn adjust_selected_rating(controller: &mut EguiController, delta: i8)
     if controller.settings.controls.advance_after_rating
         && controller.ui.browser.selected_visible == Some(primary_row)
     {
-        let next_row = primary_row + 1;
-        if next_row < controller.ui.browser.visible.len() {
-            controller.focus_browser_row(next_row);
+        if controller.random_navigation_mode_enabled() {
+            controller.focus_random_visible_sample();
+        } else {
+            let next_row = primary_row + 1;
+            if next_row < controller.ui.browser.visible.len() {
+                controller.focus_browser_row(next_row);
+            }
         }
     }
 }
