@@ -50,9 +50,9 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
         let is_recording = app.controller.is_recording();
         let has_source = app.controller.current_source().is_some();
         let record_label = if is_recording {
-            RichText::new("Record: On").color(style::destructive_text())
+            RichText::new("●").size(18.0).color(style::destructive_text())
         } else {
-            RichText::new("Record").color(palette.text_muted)
+            RichText::new("●").size(18.0).color(palette.text_muted)
         };
         let record_button = ui
             .add_enabled(is_recording || has_source, egui::Button::new(record_label))
@@ -82,9 +82,9 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
         }
         let is_playing = app.controller.is_playing();
         let play_label = if is_playing {
-            RichText::new("Play").color(palette.accent_mint)
+            RichText::new("▶").size(18.0).color(palette.accent_mint)
         } else {
-            RichText::new("Play").color(palette.text_muted)
+            RichText::new("▶").size(18.0).color(palette.text_muted)
         };
         let play_button = ui
             .add_enabled(!is_recording, egui::Button::new(play_label))
