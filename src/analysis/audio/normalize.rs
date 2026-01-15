@@ -1,6 +1,7 @@
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
+#[cfg(target_arch = "x86_64")]
 const PARALLEL_THRESHOLD: usize = 1_000_000;
 
 pub(crate) fn normalize_peak_in_place(samples: &mut [f32]) {
