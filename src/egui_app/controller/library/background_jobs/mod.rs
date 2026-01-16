@@ -245,6 +245,10 @@ impl EguiController {
                 }
                 JobMessage::Normalized(message) => {
                     let source = self.library.sources.iter().find(|s| s.id == message.source_id).cloned();
+                    let was_playing = self.is_playing();
+                    let playhead_position = self.ui.waveform.playhead.position;
+                    let was_looping = self.ui.waveform.loop_enabled;
+
                     match message.result {
                         Ok((file_size, modified_ns, tag)) => {
                             if let Some(source) = &source {
@@ -254,8 +258,6 @@ impl EguiController {
                                     modified_ns,
                                     content_hash: None,
                                     tag,
-                                    // These might need to be resolved if not in cache, but for now we'll try to preserve.
-                                    // Actually, we can try to look up the old one if it's still in wav_entries.
                                     looped: self.wav_index_for_path(&message.relative_path)
                                         .and_then(|idx| self.wav_entries.entry(idx))
                                         .map(|e| e.looped)
@@ -265,6 +267,25 @@ impl EguiController {
                                         .and_then(|idx| self.wav_entries.entry(idx))
                                         .and_then(|e| e.last_played_at),
                                 };
+
+                                let is_currently_loaded = self.sample_view.wav.loaded_audio.as_ref().is_some_and(|audio| {
+                                    audio.source_id == source.id && audio.relative_path == message.relative_path
+                                });
+
+                                if is_currently_loaded && was_playing {
+                                    let start_override = if playhead_position.is_finite() {
+                                        Some(playhead_position.clamp(0.0, 1.0))
+                                    } else {
+                                        None
+                                    };
+                                    self.runtime.jobs.set_pending_playback(Some(PendingPlayback {
+                                        source_id: source.id.clone(),
+                                        relative_path: message.relative_path.clone(),
+                                        looped: was_looping,
+                                        start_override,
+                                    }));
+                                }
+
                                 self.update_cached_entry(source, &message.relative_path, updated);
                                 
                                 if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {

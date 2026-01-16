@@ -69,6 +69,7 @@ impl EguiController {
             bytes,
             AudioLoadIntent::Selection,
         )?;
+        self.maybe_trigger_pending_playback();
         let message = Self::loaded_status_text(relative_path, duration_seconds, sample_rate);
         self.set_status(message, StatusTone::Info);
         self.refresh_similarity_sort_for_loaded_sample();

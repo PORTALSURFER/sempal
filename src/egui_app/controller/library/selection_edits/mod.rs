@@ -338,9 +338,12 @@ impl EguiController {
             } else {
                 None
             };
-            if let Err(err) = self.play_audio(was_looping, start_override) {
-                self.set_status(err, StatusTone::Error);
-            }
+            self.runtime.jobs.set_pending_playback(Some(PendingPlayback {
+                source_id: context.source.id.clone(),
+                relative_path: context.relative_path.clone(),
+                looped: was_looping,
+                start_override,
+            }));
         }
 
         self.reexport_collections_for_sample(&context.source.id, &context.relative_path);

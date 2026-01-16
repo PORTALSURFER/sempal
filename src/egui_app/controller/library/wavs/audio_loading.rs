@@ -92,7 +92,7 @@ impl EguiController {
         }
     }
 
-    fn maybe_trigger_pending_playback(&mut self) {
+    pub(crate) fn maybe_trigger_pending_playback(&mut self) {
         let Some(pending) = self.runtime.jobs.pending_playback() else {
             return;
         };
