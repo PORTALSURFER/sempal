@@ -23,4 +23,6 @@ mod trash;
 mod waveform;
 mod waveform_nav_cursor;
 mod waveform_nav_render;
+mod audio_action_playback;
+mod edit_selection_no_snap;
 mod rating_logic;

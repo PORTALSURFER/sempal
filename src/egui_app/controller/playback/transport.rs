@@ -18,9 +18,7 @@ pub(crate) fn start_selection_drag(controller: &mut EguiController, position: f3
 }
 
 pub(crate) fn start_edit_selection_drag(controller: &mut EguiController, position: f32) {
-    let start = snap_selection_start(controller, position)
-        .or_else(|| snap_to_transient(controller, position))
-        .unwrap_or(position);
+    let start = snap_to_transient(controller, position).unwrap_or(position);
     let range = controller.selection_state.edit_range.begin_new(start);
     controller.apply_edit_selection(Some(range));
 }
@@ -78,11 +76,6 @@ pub(crate) fn update_edit_selection_drag(
 ) {
     let range = if snap_override {
         controller.selection_state.edit_range.update_drag(position)
-    } else if let Some(step) = bpm_snap_step(controller) {
-        controller
-            .selection_state
-            .edit_range
-            .update_drag_snapped(position, step)
     } else {
         let snapped = snap_to_transient(controller, position).unwrap_or(position);
         controller.selection_state.edit_range.update_drag(snapped)

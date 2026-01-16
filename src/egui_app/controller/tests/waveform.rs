@@ -454,7 +454,7 @@ fn normalize_selection_resumes_playback_when_playing() {
         &mut controller,
         &source,
         "normalize_resume.wav",
-        &[0.0, 0.2, -0.6, 0.3],
+        &vec![1.0; 44100],
         SelectionRange::new(0.25, 0.75),
     );
     if controller.play_audio(false, None).is_err() || !controller.is_playing() {

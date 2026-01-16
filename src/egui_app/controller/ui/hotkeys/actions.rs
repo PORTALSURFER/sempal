@@ -413,9 +413,16 @@ pub(crate) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
     HotkeyAction {
         id: "delete-slice-markers",
         label: "Delete slice markers (Slice mode)",
-        gesture: HotkeyGesture::new(Key::D),
+        gesture: HotkeyGesture::with_shift(Key::D),
         scope: HotkeyScope::Focus(FocusContext::Waveform),
         command: HotkeyCommand::DeleteSliceMarkers,
+    },
+    HotkeyAction {
+        id: "delete-loaded-sample",
+        label: "Delete loaded sample",
+        gesture: HotkeyGesture::new(Key::D),
+        scope: HotkeyScope::Focus(FocusContext::Waveform),
+        command: HotkeyCommand::DeleteLoadedSample,
     },
     HotkeyAction {
         id: "mute-selection",

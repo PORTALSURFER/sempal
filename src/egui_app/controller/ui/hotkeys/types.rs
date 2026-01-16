@@ -156,7 +156,7 @@ pub(crate) enum HotkeyCommand {
     RenameFocusedCollection,
     ZoomInSelection,
     ZoomOutSelection,
-
+    DeleteLoadedSample,
     SlideSelectionLeft,
     SlideSelectionRight,
     NudgeSelectionLeft,

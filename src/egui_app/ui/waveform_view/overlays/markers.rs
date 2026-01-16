@@ -43,8 +43,8 @@ fn draw_transient_markers(
         return;
     }
     let palette = style::palette();
-    let stroke = Stroke::new(1.0, style::with_alpha(palette.accent_mint, 150));
-    let triangle_fill = style::with_alpha(palette.accent_mint, 200);
+    let stroke = Stroke::new(1.0, style::with_alpha(palette.accent_mint, 40));
+    let triangle_fill = style::with_alpha(palette.accent_mint, 60);
     let triangle_height = 6.0;
     let triangle_half = 4.0;
     let top = rect.top() + super::LOOP_BAR_HEIGHT;

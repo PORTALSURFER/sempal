@@ -1,6 +1,6 @@
 mod actions;
 mod delegates;
-mod helpers;
+pub(crate) mod helpers;
 
 pub(crate) use actions::BrowserActions;
 pub(crate) use helpers::BrowserController;
