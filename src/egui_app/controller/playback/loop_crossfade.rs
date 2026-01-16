@@ -28,12 +28,33 @@ impl EguiController {
         self.ui.loop_crossfade_prompt = None;
         let source = loop_crossfade_source(self, &prompt.source_id)?;
         let absolute_path = source.root.join(&prompt.relative_path);
+        let was_playing = self.is_playing();
+        let was_looping = self.ui.waveform.loop_enabled;
+        let playhead_position = self.ui.waveform.playhead.position;
+
         let new_relative = self.apply_loop_crossfade_for_sample(
             &source,
             &prompt.relative_path,
             &absolute_path,
             &prompt.settings,
         )?;
+
+        if was_playing {
+            let start_override = if playhead_position.is_finite() {
+                Some(playhead_position.clamp(0.0, 1.0))
+            } else {
+                None
+            };
+            self.runtime.jobs.set_pending_playback(Some(PendingPlayback {
+                source_id: source.id.clone(),
+                relative_path: new_relative.clone(),
+                looped: was_looping,
+                start_override,
+            }));
+            // Suppress the default autoplay to avoid double-trigger or reset to start
+            self.selection_state.suppress_autoplay_once = true;
+        }
+
         self.select_from_browser(&new_relative);
         Ok(())
     }

@@ -131,6 +131,10 @@ impl EguiController {
         self.refresh_waveform_for_sample(&context.source, &context.relative_path);
         self.reexport_collections_for_sample(&context.source.id, &new_relative);
 
+        let was_playing = self.is_playing();
+        let was_looping = self.ui.waveform.loop_enabled;
+        let playhead_position = self.ui.waveform.playhead.position;
+
         if let Ok(backup) = undo::OverwriteBackup::capture_before(&new_absolute) {
             if backup.capture_after(&new_absolute).is_ok() {
                 self.push_undo_entry(self.crop_new_sample_undo_entry(
@@ -142,6 +146,20 @@ impl EguiController {
                     backup,
                 ));
             }
+        }
+
+        if was_playing {
+            let start_override = if playhead_position.is_finite() {
+                Some(playhead_position.clamp(0.0, 1.0))
+            } else {
+                None
+            };
+            self.runtime.jobs.set_pending_playback(Some(PendingPlayback {
+                source_id: context.source.id.clone(),
+                relative_path: new_relative.clone(),
+                looped: was_looping,
+                start_override,
+            }));
         }
 
         let _ = self.load_waveform_for_selection(&context.source, &new_relative);

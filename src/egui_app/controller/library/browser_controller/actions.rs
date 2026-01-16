@@ -225,7 +225,16 @@ impl BrowserActions for BrowserController<'_> {
             .resolve_browser_sample(primary_visible_row)
             .ok()
             .map(|ctx| ctx.entry.relative_path);
+        
+        let was_playing = self.is_playing();
+        let was_looping = self.ui.waveform.loop_enabled;
+        let playhead_position = self.ui.waveform.playhead.position;
+        let primary_is_loaded = self.sample_view.wav.loaded_audio.as_ref().is_some_and(|audio| {
+            primary_path.as_ref().is_some_and(|path| audio.relative_path == *path)
+        });
+
         let mut primary_new = None;
+        let mut primary_source = None;
         for ctx in contexts {
             match self.apply_loop_crossfade_for_sample(
                 &ctx.source,
@@ -239,12 +248,29 @@ impl BrowserActions for BrowserController<'_> {
                         .is_some_and(|path| path == &ctx.entry.relative_path)
                     {
                         primary_new = Some(new_relative);
+                        primary_source = Some(ctx.source.clone());
                     }
                 }
                 Err(err) => last_error = Some(err),
             }
         }
         if let Some(path) = primary_new {
+            if primary_is_loaded && was_playing {
+                if let Some(source) = primary_source {
+                    let start_override = if playhead_position.is_finite() {
+                        Some(playhead_position.clamp(0.0, 1.0))
+                    } else {
+                        None
+                    };
+                    self.runtime.jobs.set_pending_playback(Some(PendingPlayback {
+                        source_id: source.id,
+                        relative_path: path.clone(),
+                        looped: was_looping,
+                        start_override,
+                    }));
+                    self.selection_state.suppress_autoplay_once = true;
+                }
+            }
             self.select_from_browser(&path);
         }
         if let Some(err) = last_error {

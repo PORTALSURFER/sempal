@@ -178,6 +178,28 @@ impl BrowserController<'_> {
                 last_played_at: ctx.entry.last_played_at,
             },
         );
+
+        let was_playing = self.is_playing();
+        let was_looping = self.ui.waveform.loop_enabled;
+        let playhead_position = self.ui.waveform.playhead.position;
+        let is_currently_loaded = self.sample_view.wav.loaded_audio.as_ref().is_some_and(|audio| {
+            audio.source_id == ctx.source.id && audio.relative_path == ctx.entry.relative_path
+        });
+
+        if is_currently_loaded && was_playing {
+            let start_override = if playhead_position.is_finite() {
+                Some(playhead_position.clamp(0.0, 1.0))
+            } else {
+                None
+            };
+            self.runtime.jobs.set_pending_playback(Some(PendingPlayback {
+                source_id: ctx.source.id.clone(),
+                relative_path: updated_path.clone(),
+                looped: was_looping,
+                start_override,
+            }));
+        }
+
         self.refresh_waveform_for_sample(&ctx.source, new_relative);
         let collections_changed = self.update_collections_for_rename(
             &ctx.source.id,
