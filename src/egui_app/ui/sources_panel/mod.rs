@@ -212,7 +212,7 @@ impl EguiApp {
             helpers::show_hover_hint(
                 ui,
                 self.controller.settings.controls.hover_hints_enabled,
-                "Drop folders here to add to library | Right-click folders for actions",
+                "Drop folders: Add to library\nRight-click: Source menu",
             );
         }
     }

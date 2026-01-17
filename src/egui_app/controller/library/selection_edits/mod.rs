@@ -338,18 +338,7 @@ impl EguiController {
             last_played_at,
         };
         self.update_cached_entry(&context.source, &context.relative_path, entry);
-        self.refresh_waveform_for_sample(&context.source, &context.relative_path);
         
-        // Restore visuals and selection
-        self.ui.waveform.view = preserved_view.clamp();
-        self.ui.waveform.cursor = preserved_cursor;
-        self.selection_state.range.set_range(preserved_selection);
-        self.apply_selection(preserved_selection);
-        self.selection_state
-            .edit_range
-            .set_range(preserved_edit_selection);
-        self.apply_edit_selection(preserved_edit_selection);
-
         if was_playing {
             let start_override = if playhead_position.is_finite() {
                 Some(playhead_position.clamp(0.0, 1.0))
@@ -364,7 +353,20 @@ impl EguiController {
             }));
         }
 
+        self.refresh_waveform_for_sample(&context.source, &context.relative_path);
+        
+        // Restore visuals and selection
+        self.ui.waveform.view = preserved_view.clamp();
+        self.ui.waveform.cursor = preserved_cursor;
+        self.selection_state.range.set_range(preserved_selection);
+        self.apply_selection(preserved_selection);
+        self.selection_state
+            .edit_range
+            .set_range(preserved_edit_selection);
+        self.apply_edit_selection(preserved_edit_selection);
+
         self.reexport_collections_for_sample(&context.source.id, &context.relative_path);
+        self.maybe_trigger_pending_playback();
         self.push_undo_entry(self.selection_edit_undo_entry(
             format!("{action_label} {}", context.relative_path.display()),
             context.source.id.clone(),

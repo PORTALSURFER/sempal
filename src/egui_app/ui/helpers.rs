@@ -14,12 +14,43 @@ pub(super) fn show_hover_hint(ui: &mut Ui, enabled: bool, hint: &str) {
             return;
         }
     });
+
+    let palette = style::palette();
     let layer_id = egui::LayerId::new(egui::Order::Tooltip, ui.id().with("__hover_hint_layer"));
-    Tooltip::always_open(ui.ctx().clone(), layer_id, ui.id().with("__hover_hint"), PopupAnchor::Pointer)
-        .gap(12.0)
-        .show(|ui: &mut egui::Ui| {
-            ui.label(hint);
-        });
+    Tooltip::always_open(
+        ui.ctx().clone(),
+        layer_id,
+        ui.id().with("__hover_hint"),
+        PopupAnchor::Pointer,
+    )
+    .gap(12.0)
+    .show(|ui: &mut egui::Ui| {
+        ui.spacing_mut().item_spacing.y = 4.0;
+        egui::Grid::new("hover_hint_grid")
+            .spacing(egui::vec2(16.0, 6.0))
+            .show(ui, |ui| {
+                for line in hint.lines() {
+                    for item in line.split('|') {
+                        let item = item.trim();
+                        if item.is_empty() {
+                            continue;
+                        }
+                        if let Some((key, action)) = item.split_once(':') {
+                            ui.label(
+                                egui::RichText::new(key.trim())
+                                    .color(palette.accent_ice)
+                                    .strong(),
+                            );
+                            ui.label(action.trim());
+                            ui.end_row();
+                        } else {
+                            ui.label(item);
+                            ui.end_row();
+                        }
+                    }
+                }
+            });
+    });
 }
 
 /// Return true if an external file drag contains supported audio paths.

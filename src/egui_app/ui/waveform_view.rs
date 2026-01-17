@@ -201,6 +201,13 @@ fn render_waveform_drag_handle(
         egui::Sense::click_and_drag(),
     );
     paint_waveform_drag_handle(ui, handle_rect, palette, &response);
+    if response.hovered() {
+        helpers::show_hover_hint(
+            ui,
+            app.controller.settings.controls.hover_hints_enabled,
+            "Primary Drag: Export sample",
+        );
+    }
     handle_waveform_drag_handle_interactions(app, ui, &response);
 }
 

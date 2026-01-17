@@ -336,7 +336,7 @@ impl EguiApp {
             helpers::show_hover_hint(
                 ui,
                 self.controller.settings.controls.hover_hints_enabled,
-                "Click: Select/Play | Shift+Click: Range Select | Ctrl+Click: Toggle Select\nDrag: Export / Reorder",
+                "Click: Select/Play\nShift+Click: Range Select\nCtrl+Click: Toggle Select\nDrag: Export / Reorder",
             );
         }
 
