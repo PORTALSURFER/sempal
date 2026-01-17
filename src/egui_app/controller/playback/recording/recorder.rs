@@ -193,6 +193,7 @@ pub(crate) fn refresh_recording_waveform(controller: &mut EguiController) {
                 decoded,
                 bytes,
                 AudioLoadIntent::Selection,
+                false,
             );
             if let Some(target) = controller.audio.recording_target.as_mut() {
                 target.loaded_once = true;

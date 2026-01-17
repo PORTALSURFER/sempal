@@ -298,6 +298,7 @@ impl EguiController {
         let preserved_selection = self.ui.waveform.selection;
         let preserved_edit_selection = self.ui.waveform.edit_selection;
         let preserved_cursor = self.ui.waveform.cursor;
+        let preserved_loop_enabled = self.ui.waveform.loop_enabled;
         let was_playing = self.is_playing();
         let was_looping = self.ui.waveform.loop_enabled;
         let playhead_position = self.ui.waveform.playhead.position;
@@ -353,11 +354,16 @@ impl EguiController {
             }));
         }
 
+        // Force a full reload by clearing loaded_wav (the file was modified on disk)
+        self.sample_view.wav.loaded_wav = None;
+        self.ui.loaded_wav = None;
+
         self.refresh_waveform_for_sample(&context.source, &context.relative_path);
-        
-        // Restore visuals and selection
+
+        // Restore visuals and selection AFTER refresh
         self.ui.waveform.view = preserved_view.clamp();
         self.ui.waveform.cursor = preserved_cursor;
+        self.ui.waveform.loop_enabled = preserved_loop_enabled;
         self.selection_state.range.set_range(preserved_selection);
         self.apply_selection(preserved_selection);
         self.selection_state

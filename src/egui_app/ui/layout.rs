@@ -108,7 +108,23 @@ impl EguiApp {
         self.controller.refresh_recording_waveform();
         self.render_panels(ctx);
         self.render_overlays(ctx, input, focus_context);
-        ctx.request_repaint();
+        
+        // Only repaint when necessary to reduce idle CPU usage
+        let analysis_active = self
+            .controller
+            .ui
+            .progress
+            .analysis
+            .as_ref()
+            .is_some_and(|snapshot| snapshot.pending > 0 || snapshot.running > 0);
+
+        if self.controller.is_playing()
+            || self.controller.ui.drag.payload.is_some()
+            || self.controller.is_recording()
+            || analysis_active
+        {
+            ctx.request_repaint();
+        }
     }
 
     fn render_status(&mut self, ctx: &egui::Context) {

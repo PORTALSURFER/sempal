@@ -10,11 +10,11 @@ impl EguiController {
         source: &SampleSource,
         relative_path: &Path,
     ) -> Result<(), String> {
+        let is_refresh = self.sample_view.wav.loaded_wav.as_deref() == Some(relative_path);
         if self.sample_view.wav.selected_wav.as_deref() != Some(relative_path) {
             self.sample_view.wav.selected_wav = Some(relative_path.to_path_buf());
         }
-        if self.sample_view.wav.loaded_wav.as_deref() == Some(relative_path) {
-            self.clear_waveform_selection();
+        if is_refresh {
             let message = self
                 .loaded_audio_for(source, relative_path)
                 .map(|audio| {
@@ -68,6 +68,7 @@ impl EguiController {
             decoded,
             bytes,
             AudioLoadIntent::Selection,
+            is_refresh,
         )?;
         self.maybe_trigger_pending_playback();
         let message = Self::loaded_status_text(relative_path, duration_seconds, sample_rate);
@@ -96,15 +97,18 @@ impl EguiController {
         decoded: DecodedWaveform,
         bytes: Vec<u8>,
         intent: AudioLoadIntent,
+        preserve_selections: bool,
     ) -> Result<(), String> {
         let duration_seconds = decoded.duration_seconds;
         let sample_rate = decoded.sample_rate;
         self.apply_waveform_image(decoded);
-        self.ui.waveform.view = WaveformView::default();
-        self.ui.waveform.cursor = Some(0.0);
+        if !preserve_selections {
+            self.ui.waveform.view = WaveformView::default();
+            self.ui.waveform.cursor = Some(0.0);
+            self.clear_waveform_selection();
+        }
         self.ui.waveform.notice = None;
         self.ui.waveform.loading = None;
-        self.clear_waveform_selection();
         self.clear_waveform_slices();
         self.runtime.jobs.set_pending_audio(None);
         match intent {
@@ -371,8 +375,10 @@ impl EguiController {
             && self.sample_view.wav.selected_wav.as_deref() == Some(relative_path);
         if selected_matches || loaded_matches {
             let preserved_view = self.ui.waveform.view;
-            self.sample_view.wav.loaded_wav = None;
-            self.ui.loaded_wav = None;
+            if !loaded_matches {
+                self.sample_view.wav.loaded_wav = None;
+                self.ui.loaded_wav = None;
+            }
             if let Err(err) = self.load_waveform_for_selection(source, relative_path) {
                 self.set_status(err, StatusTone::Warning);
             } else {
