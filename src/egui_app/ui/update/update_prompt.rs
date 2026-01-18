@@ -144,6 +144,8 @@ mod tests {
             selection_slide: None,
             edit_fade_mute_drag_start_in: None,
             edit_fade_mute_drag_start_out: None,
+            edit_fade_mute_drag_start_pos_in: None,
+            edit_fade_mute_drag_start_pos_out: None,
             slice_drag: None,
             slice_paint: None,
             pending_chord: None,
