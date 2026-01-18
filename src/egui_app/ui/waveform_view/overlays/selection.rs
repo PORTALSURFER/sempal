@@ -1,5 +1,5 @@
 use super::selection_drag;
-use super::selection_geometry::loop_bar_rect;
+use super::selection_geometry::{loop_bar_rect, selection_rect_for_view};
 use super::style;
 use super::*;
 use eframe::egui::{self, Color32};
@@ -24,8 +24,28 @@ pub(super) fn render_loop_bar(
     let selection = app.controller.ui.waveform.selection;
     let bar_rect = loop_bar_rect(rect, view, view_width as f64, selection, super::LOOP_BAR_HEIGHT);
     if let Some(selection) = selection {
+        let edit_blocks_loop = app
+            .controller
+            .ui
+            .waveform
+            .edit_selection
+            .map(|edit| {
+                let overlaps = edit.start() < selection.end() && edit.end() > selection.start();
+                if !overlaps {
+                    return false;
+                }
+                let edit_rect = selection_rect_for_view(edit, rect, view, view_width as f64);
+                let expanded = edit_rect.expand(16.0);
+                let pointer_pos = ui.input(|i| i.pointer.latest_pos());
+                pointer_pos.map(|pos| expanded.contains(pos)).unwrap_or(false)
+            })
+            .unwrap_or(false);
         let response = ui.interact(
-            bar_rect,
+            if edit_blocks_loop {
+                egui::Rect::NOTHING
+            } else {
+                bar_rect
+            },
             ui.id().with("loop_bar_drag"),
             egui::Sense::click_and_drag(),
         );
