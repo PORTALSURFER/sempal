@@ -285,10 +285,11 @@ pub(super) fn handle_edit_fade_handle_drag(
                 let new_start = cursor_to_wave(pos).min(selection.end());
                 let new_width = (selection.end() - new_start).max(0.0);
                 let current_curve = selection.fade_in().map(|f| f.curve).unwrap_or(0.5);
+                let fade_out_anchor =
+                    selection.end() - selection.width() * selection.fade_out_length();
+                let fade_out_mute_anchor =
+                    selection.end() - selection.width() * selection.fade_out_mute_length();
                 let mut new_selection = SelectionRange::new(new_start, selection.end());
-                if let Some(fade_out) = selection.fade_out() {
-                    new_selection = new_selection.with_fade_out(fade_out.length, fade_out.curve);
-                }
                 let new_length = if new_width > 0.0 {
                     ((anchor - new_start) / new_width).clamp(0.0, 1.0)
                 } else {
@@ -302,6 +303,22 @@ pub(super) fn handle_edit_fade_handle_drag(
                 new_selection = new_selection
                     .with_fade_in(new_length, current_curve)
                     .with_fade_in_mute(new_mute);
+                if let Some(fade_out) = selection.fade_out() {
+                    let new_fade_out = if new_width > 0.0 {
+                        ((selection.end() - fade_out_anchor) / new_width).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    let new_fade_out_mute = if new_width > 0.0 {
+                        ((selection.end() - fade_out_mute_anchor) / new_width)
+                            .clamp(0.0, new_fade_out)
+                    } else {
+                        0.0
+                    };
+                    new_selection = new_selection
+                        .with_fade_out(new_fade_out, fade_out.curve)
+                        .with_fade_out_mute(new_fade_out_mute);
+                }
                 app.controller.set_edit_selection_range(new_selection);
             }
         }
@@ -440,10 +457,11 @@ pub(super) fn handle_edit_fade_handle_drag(
                 let new_end = cursor_to_wave(pos).max(selection.start());
                 let new_width = (new_end - selection.start()).max(0.0);
                 let current_curve = selection.fade_out().map(|f| f.curve).unwrap_or(0.5);
+                let fade_in_anchor =
+                    selection.start() + selection.width() * selection.fade_in_length();
+                let fade_in_mute_anchor =
+                    selection.start() + selection.width() * selection.fade_in_mute_length();
                 let mut new_selection = SelectionRange::new(selection.start(), new_end);
-                if let Some(fade_in) = selection.fade_in() {
-                    new_selection = new_selection.with_fade_in(fade_in.length, fade_in.curve);
-                }
                 let new_length = if new_width > 0.0 {
                     ((new_end - anchor) / new_width).clamp(0.0, 1.0)
                 } else {
@@ -457,6 +475,22 @@ pub(super) fn handle_edit_fade_handle_drag(
                 new_selection = new_selection
                     .with_fade_out(new_length, current_curve)
                     .with_fade_out_mute(new_mute);
+                if let Some(fade_in) = selection.fade_in() {
+                    let new_fade_in = if new_width > 0.0 {
+                        ((fade_in_anchor - selection.start()) / new_width).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    let new_fade_in_mute = if new_width > 0.0 {
+                        ((fade_in_mute_anchor - selection.start()) / new_width)
+                            .clamp(0.0, new_fade_in)
+                    } else {
+                        0.0
+                    };
+                    new_selection = new_selection
+                        .with_fade_in(new_fade_in, fade_in.curve)
+                        .with_fade_in_mute(new_fade_in_mute);
+                }
                 app.controller.set_edit_selection_range(new_selection);
             }
         }
