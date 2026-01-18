@@ -137,9 +137,9 @@ impl SelectionRange {
         self.fade_out.map(|f| f.mute).unwrap_or(0.0)
     }
 
-    /// True when the selection has a non-zero fade-in or fade-out configured.
+    /// True when the selection has a non-zero fade-in or fade-out length configured.
     pub fn has_fades(&self) -> bool {
-        self.fade_in.is_some() || self.fade_out.is_some()
+        self.fade_in_length() > 0.0 || self.fade_out_length() > 0.0
     }
 
     /// True when the selection has any edit effects configured.
@@ -151,11 +151,13 @@ impl SelectionRange {
     }
 
     /// Set fade-in parameters.
+    ///
+    /// Keeps a zero-length fade when a mute region is configured so mute handles persist.
     pub fn with_fade_in(mut self, length: f32, curve: f32) -> Self {
         let clamped_length = clamp_fade_length(length, self.fade_out_length());
-        if clamped_length > 0.0 {
-            let current_mute = self.fade_in.map(|f| f.mute).unwrap_or(0.0);
-            let clamped_mute = clamp_mute_length(current_mute, self.max_fade_in_mute_length());
+        let current_mute = self.fade_in.map(|f| f.mute).unwrap_or(0.0);
+        let clamped_mute = clamp_mute_length(current_mute, self.max_fade_in_mute_length());
+        if clamped_length > 0.0 || clamped_mute > 0.0 {
             self.fade_in = Some(FadeParams::with_curve_and_mute(
                 clamped_length,
                 curve,
@@ -168,11 +170,13 @@ impl SelectionRange {
     }
 
     /// Set fade-out parameters.
+    ///
+    /// Keeps a zero-length fade when a mute region is configured so mute handles persist.
     pub fn with_fade_out(mut self, length: f32, curve: f32) -> Self {
         let clamped_length = clamp_fade_length(length, self.fade_in_length());
-        if clamped_length > 0.0 {
-            let current_mute = self.fade_out.map(|f| f.mute).unwrap_or(0.0);
-            let clamped_mute = clamp_mute_length(current_mute, self.max_fade_out_mute_length());
+        let current_mute = self.fade_out.map(|f| f.mute).unwrap_or(0.0);
+        let clamped_mute = clamp_mute_length(current_mute, self.max_fade_out_mute_length());
+        if clamped_length > 0.0 || clamped_mute > 0.0 {
             self.fade_out = Some(FadeParams::with_curve_and_mute(
                 clamped_length,
                 curve,
@@ -784,6 +788,17 @@ mod tests {
             range.fade_out(),
         );
         assert!(muted_far_left.abs() < 1e-6);
+    }
+
+    #[test]
+    fn fade_mute_persists_when_fade_length_collapses() {
+        let range = SelectionRange::new(0.2, 0.8)
+            .with_fade_in(0.3, 0.5)
+            .with_fade_in_mute(0.2)
+            .with_fade_in(0.0, 0.5);
+        assert_eq!(range.fade_in_length(), 0.0);
+        assert!(range.fade_in().is_some());
+        assert!(range.fade_in_mute_length() > 0.0);
     }
 
     #[test]
