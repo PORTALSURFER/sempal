@@ -55,18 +55,18 @@ pub(super) fn render_edit_selection_overlay(
 
             if fade_in_mute_width > 1.0 {
                 let mute_rect = egui::Rect::from_min_size(
-                    selection_rect.min,
-                    egui::vec2(fade_in_mute_width.min(fade_in_width), selection_rect.height()),
+                    egui::pos2(selection_rect.left() - fade_in_mute_width, selection_rect.top()),
+                    egui::vec2(fade_in_mute_width, selection_rect.height()),
                 );
                 painter.rect_filled(mute_rect, 0.0, style::with_alpha(highlight, 150));
             }
             
             // Draw fade curve line
             if let Some(fade_params) = selection.fade_in() {
-                let curve_width = (fade_in_width - fade_in_mute_width).max(0.0);
+                let curve_width = fade_in_width.max(0.0);
                 if curve_width > 1.0 {
                     let curve_rect = egui::Rect::from_min_size(
-                        egui::pos2(selection_rect.left() + fade_in_mute_width, selection_rect.top()),
+                        egui::pos2(selection_rect.left(), selection_rect.top()),
                         egui::vec2(curve_width, selection_rect.height()),
                     );
                     draw_fade_curve(
@@ -100,18 +100,15 @@ pub(super) fn render_edit_selection_overlay(
 
             if fade_out_mute_width > 1.0 {
                 let mute_rect = egui::Rect::from_min_size(
-                    egui::pos2(
-                        selection_rect.right() - fade_out_mute_width.min(fade_out_width),
-                        selection_rect.top(),
-                    ),
-                    egui::vec2(fade_out_mute_width.min(fade_out_width), selection_rect.height()),
+                    egui::pos2(selection_rect.right(), selection_rect.top()),
+                    egui::vec2(fade_out_mute_width, selection_rect.height()),
                 );
                 painter.rect_filled(mute_rect, 0.0, style::with_alpha(highlight, 150));
             }
             
             // Draw fade curve line
             if let Some(fade_params) = selection.fade_out() {
-                let curve_width = (fade_out_width - fade_out_mute_width).max(0.0);
+                let curve_width = fade_out_width.max(0.0);
                 if curve_width > 1.0 {
                     let curve_rect = egui::Rect::from_min_size(
                         egui::pos2(selection_rect.right() - fade_out_width, selection_rect.top()),

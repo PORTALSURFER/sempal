@@ -9,6 +9,7 @@ pub struct FadeParams {
     /// Curve tension: 0.0 = linear, 0.5 = medium S-curve, 1.0 = maximum S-curve.
     pub curve: f32,
     /// Muted region length as a fraction of selection width (0.0-1.0).
+    /// This region extends outward from the selection edge.
     pub mute: f32,
 }
 
@@ -281,6 +282,24 @@ pub(crate) fn fade_gain_at_position(
     if width <= 0.0 {
         return 1.0;
     }
+    if let Some(fade_in) = fade_in {
+        let mute_len = (width * fade_in.mute).clamp(0.0, width);
+        if mute_len > 0.0 {
+            let mute_start = start - mute_len;
+            if position >= mute_start && position <= start {
+                return 0.0;
+            }
+        }
+    }
+    if let Some(fade_out) = fade_out {
+        let mute_len = (width * fade_out.mute).clamp(0.0, width);
+        if mute_len > 0.0 {
+            let mute_end = end + mute_len;
+            if position >= end && position <= mute_end {
+                return 0.0;
+            }
+        }
+    }
     if position < start || position > end {
         return 1.0;
     }
@@ -288,15 +307,9 @@ pub(crate) fn fade_gain_at_position(
     if let Some(fade_in) = fade_in {
         let fade_len = width * fade_in.length;
         if fade_len > 0.0 {
-            let mute_len = (width * fade_in.mute).clamp(0.0, fade_len);
-            let mute_end = start + mute_len;
-            if position <= mute_end {
-                return 0.0;
-            }
             let time_in = position - start;
-            let ramp_len = (fade_len - mute_len).max(0.0);
-            if ramp_len > 0.0 && time_in < fade_len {
-                let t = ((time_in - mute_len) / ramp_len).clamp(0.0, 1.0);
+            if time_in < fade_len {
+                let t = (time_in / fade_len).clamp(0.0, 1.0);
                 gain *= fade_curve_value(t, fade_in.curve);
             }
         }
@@ -304,15 +317,9 @@ pub(crate) fn fade_gain_at_position(
     if let Some(fade_out) = fade_out {
         let fade_len = width * fade_out.length;
         if fade_len > 0.0 {
-            let mute_len = (width * fade_out.mute).clamp(0.0, fade_len);
-            let mute_start = end - mute_len;
-            if position >= mute_start {
-                return 0.0;
-            }
             let time_until_end = end - position;
-            let ramp_len = (fade_len - mute_len).max(0.0);
-            if ramp_len > 0.0 && time_until_end < fade_len {
-                let t = ((time_until_end - mute_len) / ramp_len).clamp(0.0, 1.0);
+            if time_until_end < fade_len {
+                let t = (time_until_end / fade_len).clamp(0.0, 1.0);
                 gain *= fade_curve_value(t, fade_out.curve);
             }
         }
@@ -710,13 +717,13 @@ mod tests {
 
     #[test]
     fn fade_mute_sections_zero_gain() {
-        let range = SelectionRange::new(0.0, 1.0)
+        let range = SelectionRange::new(0.2, 0.8)
             .with_fade_in(0.4, 0.0)
             .with_fade_out(0.4, 0.0)
             .with_fade_in_mute(0.2)
             .with_fade_out_mute(0.1);
         let muted_start = fade_gain_at_position(
-            0.05,
+            0.1,
             range.start(),
             range.end(),
             range.gain(),
@@ -724,7 +731,7 @@ mod tests {
             range.fade_out(),
         );
         let muted_end = fade_gain_at_position(
-            0.95,
+            0.82,
             range.start(),
             range.end(),
             range.gain(),
@@ -732,7 +739,7 @@ mod tests {
             range.fade_out(),
         );
         let ramp_mid = fade_gain_at_position(
-            0.25,
+            0.5,
             range.start(),
             range.end(),
             range.gain(),

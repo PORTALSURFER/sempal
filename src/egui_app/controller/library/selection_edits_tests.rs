@@ -136,7 +136,7 @@ fn selection_fades_ramp_in_and_out() {
     let mut samples = vec![1.0_f32; 10];
     let fade_in = FadeParams::with_curve(0.3, 0.0);
     let fade_out = FadeParams::with_curve(0.3, 0.0);
-    apply_selection_fades(&mut samples, 1, 0, 10, Some(fade_in), Some(fade_out));
+        apply_selection_fades(&mut samples, 1, 0, 10, 1.0, Some(fade_in), Some(fade_out));
     assert!(samples[0].abs() < 1e-6);
     assert!((samples[2] - 1.0).abs() < 1e-6);
     assert!(samples[9].abs() < 1e-6);
