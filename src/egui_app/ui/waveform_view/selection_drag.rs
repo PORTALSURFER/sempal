@@ -245,25 +245,23 @@ pub(super) fn handle_edit_fade_handle_drag(
         || (primary_down && fade_in_mute_response.is_pointer_button_down_on())
     {
         app.controller.begin_selection_undo("Fade In");
-        app.edit_fade_mute_drag_start_in = Some(selection.fade_in_mute_length());
     }
 
     let fade_in_mute_active = fade_in_mute_response.dragged_by(egui::PointerButton::Primary)
         || (primary_down && fade_in_mute_response.is_pointer_button_down_on());
 
     if fade_in_mute_active {
-        let start_mute = app
-            .edit_fade_mute_drag_start_in
-            .unwrap_or(selection.fade_in_mute_length());
-        let delta = (-fade_in_mute_response.drag_delta().x / selection_rect.width()).max(0.0);
-        let max_mute = selection.max_fade_in_mute_length();
-        let mute_fraction = (start_mute.max(0.0) + delta).min(max_mute);
-        let new_selection = selection.with_fade_in_mute(mute_fraction);
-        app.controller.set_edit_selection_range(new_selection);
+        if let Some(pos) = fade_in_mute_response.interact_pointer_pos() {
+            let wave_pos = cursor_to_wave(pos).clamp(0.0, 1.0);
+            let width = selection.width().max(1e-9);
+            let max_mute = selection.max_fade_in_mute_length();
+            let mute_fraction = ((selection.start() - wave_pos) / width).clamp(0.0, max_mute);
+            let new_selection = selection.with_fade_in_mute(mute_fraction);
+            app.controller.set_edit_selection_range(new_selection);
+        }
     }
 
     if fade_in_mute_response.drag_stopped() && !primary_down {
-        app.edit_fade_mute_drag_start_in = None;
         app.controller.finish_selection_drag();
     }
 
@@ -402,24 +400,23 @@ pub(super) fn handle_edit_fade_handle_drag(
         || (primary_down && fade_out_mute_response.is_pointer_button_down_on())
     {
         app.controller.begin_selection_undo("Fade Out");
-        app.edit_fade_mute_drag_start_out = Some(selection.fade_out_mute_length());
     }
 
     let fade_out_mute_active = fade_out_mute_response.dragged_by(egui::PointerButton::Primary)
         || (primary_down && fade_out_mute_response.is_pointer_button_down_on());
 
     if fade_out_mute_active {
-        let start_mute =
-            app.edit_fade_mute_drag_start_out.unwrap_or(selection.fade_out_mute_length());
-        let delta = (fade_out_mute_response.drag_delta().x / selection_rect.width()).max(0.0);
-        let max_mute = selection.max_fade_out_mute_length();
-        let mute_fraction = (start_mute.max(0.0) + delta).min(max_mute);
-        let new_selection = selection.with_fade_out_mute(mute_fraction);
-        app.controller.set_edit_selection_range(new_selection);
+        if let Some(pos) = fade_out_mute_response.interact_pointer_pos() {
+            let wave_pos = cursor_to_wave(pos).clamp(0.0, 1.0);
+            let width = selection.width().max(1e-9);
+            let max_mute = selection.max_fade_out_mute_length();
+            let mute_fraction = ((wave_pos - selection.end()) / width).clamp(0.0, max_mute);
+            let new_selection = selection.with_fade_out_mute(mute_fraction);
+            app.controller.set_edit_selection_range(new_selection);
+        }
     }
 
     if fade_out_mute_response.drag_stopped() && !primary_down {
-        app.edit_fade_mute_drag_start_out = None;
         app.controller.finish_selection_drag();
     }
 
