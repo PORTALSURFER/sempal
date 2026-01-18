@@ -63,7 +63,10 @@ fn edit_fade_matches(
             (a.start() - b.start()).abs() <= eps
                 && (a.end() - b.end()).abs() <= eps
                 && (a.fade_in_length() - b.fade_in_length()).abs() <= eps
+                && (a.fade_in_mute_length() - b.fade_in_mute_length()).abs() <= eps
                 && (a.fade_out_length() - b.fade_out_length()).abs() <= eps
+                && (a.fade_out_mute_length() - b.fade_out_mute_length()).abs() <= eps
+                && (a.gain() - b.gain()).abs() <= eps
                 && a.fade_in().map(|f| f.curve).unwrap_or(0.5)
                     .to_bits()
                     == b.fade_in().map(|f| f.curve).unwrap_or(0.5).to_bits()
