@@ -128,11 +128,28 @@ pub(crate) fn finish_edit_selection_drag(controller: &mut EguiController) {
 pub(crate) fn set_selection_range(controller: &mut EguiController, range: SelectionRange) {
     controller.selection_state.range.set_range(Some(range));
     controller.apply_selection(Some(range));
+    
+    // If playing in non-looped mode, restart playback from the new selection start
+    let is_playing = controller
+        .audio
+        .player
+        .as_ref()
+        .map(|p| p.borrow().is_playing())
+        .unwrap_or(false);
+    
+    if is_playing && !controller.ui.waveform.loop_enabled {
+        if let Err(err) = controller.play_audio(false, Some(range.start())) {
+            controller.set_status(err, StatusTone::Error);
+        }
+    }
 }
 
 pub(crate) fn set_edit_selection_range(controller: &mut EguiController, range: SelectionRange) {
     controller.selection_state.edit_range.set_range(Some(range));
     controller.apply_edit_selection(Some(range));
+    if let Some(player) = controller.audio.player.as_ref() {
+        player.borrow().set_edit_fade_state(Some(range));
+    }
 }
 
 pub(crate) fn is_selection_dragging(controller: &EguiController) -> bool {
@@ -160,6 +177,9 @@ pub(crate) fn clear_edit_selection(controller: &mut EguiController) {
     let cleared = controller.selection_state.edit_range.clear();
     if cleared || controller.ui.waveform.edit_selection.is_some() {
         controller.apply_edit_selection(None);
+        if let Some(player) = controller.audio.player.as_ref() {
+            player.borrow().set_edit_fade_state(None);
+        }
     }
 }
 

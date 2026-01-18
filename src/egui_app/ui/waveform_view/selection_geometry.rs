@@ -68,6 +68,42 @@ const EDGE_ICON_HEIGHT_FRACTION: f32 = 0.8;
 const EDGE_ICON_MIN_SIZE: f32 = 12.0;
 const EDGE_BRACKET_STROKE: f32 = 1.5;
 
+const FADE_HANDLE_SIZE: f32 = 14.0;
+
+/// Get the rect for a fade handle (top-left for fade-in, top-right for fade-out).
+pub(super) fn fade_handle_rect(
+    selection_rect: egui::Rect,
+    is_fade_in: bool,
+) -> egui::Rect {
+    let size = FADE_HANDLE_SIZE;
+    let x = if is_fade_in {
+        selection_rect.left()
+    } else {
+        selection_rect.right() - size
+    };
+    egui::Rect::from_min_size(
+        egui::pos2(x, selection_rect.top()),
+        egui::vec2(size, size),
+    )
+}
+
+/// Paint a fade handle as a small triangle indicator.
+pub(super) fn paint_fade_handle(
+    painter: &egui::Painter,
+    handle_rect: egui::Rect,
+    _is_fade_in: bool,
+    color: Color32,
+) {
+    // Draw a small rectangle handle
+    painter.rect_filled(handle_rect, 2.0, color);
+    painter.rect_stroke(
+        handle_rect,
+        2.0,
+        egui::Stroke::new(1.0, Color32::from_black_alpha(60)),
+        egui::StrokeKind::Inside,
+    );
+}
+
 pub(super) fn selection_edge_handle_rect(
     selection_rect: egui::Rect,
     edge: SelectionEdge,

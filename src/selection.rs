@@ -1,10 +1,42 @@
 //! Helpers for tracking waveform selection ranges and drag interactions.
 //! This module keeps selection math pure and testable so the UI integration code can stay small.
+
+/// Parameters for a fade curve (in or out).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FadeParams {
+    /// Fade length as a fraction of selection width (0.0-1.0).
+    pub length: f32,
+    /// Curve tension: 0.0 = linear, 0.5 = medium S-curve, 1.0 = maximum S-curve.
+    pub curve: f32,
+}
+
+impl FadeParams {
+    /// Create new fade parameters with default curve.
+    pub fn new(length: f32) -> Self {
+        Self {
+            length: length.clamp(0.0, 1.0),
+            curve: 0.5,
+        }
+    }
+
+    /// Create fade parameters with custom curve.
+    pub fn with_curve(length: f32, curve: f32) -> Self {
+        Self {
+            length: length.clamp(0.0, 1.0),
+            curve: curve.clamp(0.0, 1.0),
+        }
+    }
+}
+
 /// Normalized selection bounds over a waveform (0.0 - 1.0).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SelectionRange {
     start: f32,
     end: f32,
+    /// Fade-in parameters (length and curve).
+    fade_in: Option<FadeParams>,
+    /// Fade-out parameters (length and curve).
+    fade_out: Option<FadeParams>,
 }
 
 impl SelectionRange {
@@ -13,9 +45,19 @@ impl SelectionRange {
         let a = clamp01(start);
         let b = clamp01(end);
         if a <= b {
-            Self { start: a, end: b }
+            Self {
+                start: a,
+                end: b,
+                fade_in: None,
+                fade_out: None,
+            }
         } else {
-            Self { start: b, end: a }
+            Self {
+                start: b,
+                end: a,
+                fade_in: None,
+                fade_out: None,
+            }
         }
     }
 
@@ -40,6 +82,55 @@ impl SelectionRange {
         self.width() == 0.0
     }
 
+    /// Get fade-in parameters if set.
+    pub fn fade_in(&self) -> Option<FadeParams> {
+        self.fade_in
+    }
+
+    /// Get fade-out parameters if set.
+    pub fn fade_out(&self) -> Option<FadeParams> {
+        self.fade_out
+    }
+
+    /// Get fade-in length (0.0 if no fade).
+    pub fn fade_in_length(&self) -> f32 {
+        self.fade_in.map(|f| f.length).unwrap_or(0.0)
+    }
+
+    /// Get fade-out length (0.0 if no fade).
+    pub fn fade_out_length(&self) -> f32 {
+        self.fade_out.map(|f| f.length).unwrap_or(0.0)
+    }
+
+    /// Set fade-in parameters.
+    pub fn with_fade_in(mut self, length: f32, curve: f32) -> Self {
+        let clamped_length = clamp_fade_length(length, self.fade_out_length());
+        if clamped_length > 0.0 {
+            self.fade_in = Some(FadeParams::with_curve(clamped_length, curve));
+        } else {
+            self.fade_in = None;
+        }
+        self
+    }
+
+    /// Set fade-out parameters.
+    pub fn with_fade_out(mut self, length: f32, curve: f32) -> Self {
+        let clamped_length = clamp_fade_length(length, self.fade_in_length());
+        if clamped_length > 0.0 {
+            self.fade_out = Some(FadeParams::with_curve(clamped_length, curve));
+        } else {
+            self.fade_out = None;
+        }
+        self
+    }
+
+    /// Clear all fades.
+    pub fn clear_fades(mut self) -> Self {
+        self.fade_in = None;
+        self.fade_out = None;
+        self
+    }
+
     /// Shift the selection by the given delta, clamping to the waveform bounds.
     pub fn shift(self, delta: f32) -> Self {
         if !delta.is_finite() {
@@ -47,7 +138,9 @@ impl SelectionRange {
         }
         let width = self.width().clamp(0.0, 1.0);
         if width >= 1.0 {
-            return SelectionRange::new(0.0, 1.0);
+            return SelectionRange::new(0.0, 1.0)
+                .with_fade_in(self.fade_in_length(), self.fade_in().map(|f| f.curve).unwrap_or(0.5))
+                .with_fade_out(self.fade_out_length(), self.fade_out().map(|f| f.curve).unwrap_or(0.5));
         }
         let mut start = self.start + delta;
         let mut end = self.end + delta;
@@ -60,7 +153,10 @@ impl SelectionRange {
             start -= over;
             end = 1.0;
         }
-        SelectionRange::new(start, end)
+        let mut result = SelectionRange::new(start, end);
+        result.fade_in = self.fade_in;
+        result.fade_out = self.fade_out;
+        result
     }
 }
 
@@ -227,6 +323,12 @@ fn clamp01(value: f32) -> f32 {
     value.clamp(0.0, 1.0)
 }
 
+fn clamp_fade_length(fade: f32, other_fade: f32) -> f32 {
+    let clamped = fade.clamp(0.0, 1.0);
+    let max_allowed = 1.0 - other_fade.clamp(0.0, 1.0);
+    clamped.min(max_allowed)
+}
+
 fn snap_delta(delta: f32, step: f32) -> f32 {
     if !delta.is_finite() || !step.is_finite() || step <= 0.0 {
         return delta;
@@ -387,5 +489,47 @@ mod tests {
     fn shift_noops_on_nan() {
         let range = SelectionRange::new(0.2, 0.4);
         assert_eq!(range.shift(f32::NAN), range);
+    }
+
+    #[test]
+    fn fade_values_are_clamped() {
+        let range = SelectionRange::new(0.2, 0.8).with_fade_in(0.6).with_fade_out(0.6);
+        // fade_in + fade_out should not exceed 1.0
+        assert!(range.fade_in() + range.fade_out() <= 1.0);
+    }
+
+    #[test]
+    fn fade_in_clamps_when_fade_out_exists() {
+        let range = SelectionRange::new(0.2, 0.8)
+            .with_fade_out(0.7)
+            .with_fade_in(0.5);
+        assert_eq!(range.fade_out(), 0.7);
+        assert_eq!(range.fade_in(), 0.3); // Clamped to 1.0 - 0.7
+    }
+
+    #[test]
+    fn fade_out_clamps_when_fade_in_exists() {
+        let range = SelectionRange::new(0.2, 0.8)
+            .with_fade_in(0.6)
+            .with_fade_out(0.8);
+        assert_eq!(range.fade_in(), 0.6);
+        assert_eq!(range.fade_out(), 0.4); // Clamped to 1.0 - 0.6
+    }
+
+    #[test]
+    fn fades_preserved_during_shift() {
+        let range = SelectionRange::new(0.2, 0.4)
+            .with_fade_in(0.2)
+            .with_fade_out(0.3);
+        let shifted = range.shift(0.1);
+        assert_eq!(shifted.fade_in(), 0.2);
+        assert_eq!(shifted.fade_out(), 0.3);
+    }
+
+    #[test]
+    fn new_range_has_zero_fades() {
+        let range = SelectionRange::new(0.3, 0.7);
+        assert_eq!(range.fade_in(), 0.0);
+        assert_eq!(range.fade_out(), 0.0);
     }
 }

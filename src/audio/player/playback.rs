@@ -5,7 +5,7 @@ use crate::audio::SamplesBuffer;
 
 use super::super::fade::{EdgeFade, fade_duration};
 use super::super::mixer::{decoder_from_bytes, map_seek_error};
-use super::AudioPlayer;
+use super::{AudioPlayer, EditFadeSource};
 
 impl AudioPlayer {
     /// Begin playback from the stored buffer.
@@ -193,7 +193,8 @@ impl AudioPlayer {
             Box::new(diagnostic)
         } else {
             let limited = source.take_duration(loop_duration).buffered();
-            let faded = EdgeFade::new(limited, fade);
+            let editable = EditFadeSource::new(limited, self.edit_fade_handle.clone(), bounded_start);
+            let faded = EdgeFade::new(editable, fade);
             Box::new(faded)
         };
         let (handle, format) = self.build_sink_with_fade(final_source);
@@ -269,7 +270,8 @@ impl AudioPlayer {
         let buffer = SamplesBuffer::new(channels, sample_rate, samples);
         let final_source: Box<dyn Source<Item = f32> + Send> = {
             let offset_dur = Self::aligned_offset_duration(offset_seconds, sample_rate);
-            let repeated = buffer.repeat_infinite().skip_duration(offset_dur);
+            let editable = EditFadeSource::new(buffer, self.edit_fade_handle.clone(), start_seconds);
+            let repeated = editable.repeat_infinite().skip_duration(offset_dur);
             let diagnostic = crate::audio::loop_diagnostic::LoopDiagnostic::new(
                 repeated,
                 expected_samples,

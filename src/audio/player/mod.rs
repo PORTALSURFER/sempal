@@ -8,9 +8,12 @@ mod helpers;
 mod playback;
 mod progress;
 mod state;
+mod edit_fade_impl;
+pub(crate) use edit_fade_impl::{EditFadeHandle, EditFadeSource};
 
 /// Simple audio helper that plays a loaded wav buffer and reports progress.
 pub struct AudioPlayer {
+    pub(crate) edit_fade_handle: EditFadeHandle,
     stream: CpalAudioStream,
     active_sources: usize,
     fade_out: Option<FadeOutHandle>,

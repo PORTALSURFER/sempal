@@ -56,6 +56,9 @@ pub(crate) fn play_audio(
     player
         .borrow_mut()
         .set_min_span_seconds(super::bpm_min_selection_seconds(controller));
+    player
+        .borrow()
+        .set_edit_fade_state(controller.ui.waveform.edit_selection);
     let selection = controller
         .selection_state
         .range

@@ -8,7 +8,9 @@ use crate::audio::Source;
 use super::super::DEFAULT_ANTI_CLIP_FADE;
 use super::super::output::{AudioOutputConfig, ResolvedOutput, open_output_stream};
 use super::super::routing::duration_from_secs_f32;
-use super::AudioPlayer;
+
+use super::{AudioPlayer, EditFadeHandle};
+use crate::selection::SelectionRange;
 
 impl AudioPlayer {
     /// Create a new audio player using the default output device.
@@ -21,6 +23,7 @@ impl AudioPlayer {
         let outcome = open_output_stream(config).map_err(|err| err.to_string())?;
         Ok(Self {
             stream: outcome.stream,
+            edit_fade_handle: EditFadeHandle::new(),
             active_sources: 0,
             fade_out: None,
             sink_format: None,
@@ -101,6 +104,15 @@ impl AudioPlayer {
         &self.output
     }
 
+    /// Update the realtime fade state for edit selections.
+    pub fn set_edit_fade_state(&self, range: Option<SelectionRange>) {
+        if let Some(duration) = self.track_duration {
+            self.edit_fade_handle.update(range, duration);
+        } else {
+             self.edit_fade_handle.update(None, 0.0);
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn test_with_state(
         stream: crate::audio::output::CpalAudioStream,
@@ -113,6 +125,7 @@ impl AudioPlayer {
     ) -> Self {
         Self {
             stream,
+            edit_fade_handle: EditFadeHandle::new(),
             active_sources: 0,
             fade_out: None,
             sink_format: None,

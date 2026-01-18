@@ -190,6 +190,114 @@ pub(super) fn handle_selection_edge_drag(
     }
 }
 
+pub(super) fn handle_edit_fade_handle_drag(
+    app: &mut EguiApp,
+    ui: &mut egui::Ui,
+    _rect: egui::Rect,
+    _view: WaveformView,
+    _view_width: f64,
+    selection: SelectionRange,
+    selection_rect: egui::Rect,
+    fade_in_response: &egui::Response,
+    fade_out_response: &egui::Response,
+    fade_in_region_response: &egui::Response,
+    fade_out_region_response: &egui::Response,
+) {
+    let primary_down = ui.input(|i| i.pointer.button_down(egui::PointerButton::Primary));
+    let alt_down = ui.input(|i| i.modifiers.alt);
+    
+    // Handle fade-in drag
+    if (fade_in_response.drag_started() && primary_down)
+        || (primary_down && fade_in_response.is_pointer_button_down_on())
+    {
+        app.controller.begin_selection_undo("Fade In");
+    }
+    
+    // Use either the handle or the region for dragging
+    let fade_in_active = fade_in_response.dragged_by(egui::PointerButton::Primary)
+        || (primary_down && fade_in_response.is_pointer_button_down_on())
+        || fade_in_region_response.dragged_by(egui::PointerButton::Primary)
+        || (primary_down && fade_in_region_response.is_pointer_button_down_on());
+    
+    if fade_in_active {
+        let pos = fade_in_response.interact_pointer_pos()
+            .or_else(|| fade_in_region_response.interact_pointer_pos());
+            
+        if let Some(pos) = pos {
+            if alt_down {
+                // Alt+drag: adjust curve tension (vertical movement)
+                let current_curve = selection.fade_in().map(|f| f.curve).unwrap_or(0.5);
+                let current_length = selection.fade_in_length();
+                if current_length > 0.0 {
+                    // Vertical movement adjusts curve: up = more S-curve, down = more linear
+                    let delta_y = fade_in_response.drag_delta().y + fade_in_region_response.drag_delta().y;
+                    let curve_delta = -delta_y / 100.0; // Negative because up is negative y
+                    let new_curve = (current_curve + curve_delta).clamp(0.0, 1.0);
+                    let new_selection = selection.with_fade_in(current_length, new_curve);
+                    app.controller.set_edit_selection_range(new_selection);
+                }
+            } else {
+                // Normal drag: adjust fade length (horizontal movement)
+                let delta_x = pos.x - selection_rect.left();
+                let fade_fraction = (delta_x / selection_rect.width()).clamp(0.0, 1.0);
+                let current_curve = selection.fade_in().map(|f| f.curve).unwrap_or(0.5);
+                let new_selection = selection.with_fade_in(fade_fraction, current_curve);
+                app.controller.set_edit_selection_range(new_selection);
+            }
+        }
+    }
+    
+    if (fade_in_response.drag_stopped() || fade_in_region_response.drag_stopped()) && !primary_down {
+        app.controller.finish_selection_drag();
+    }
+    
+    // Handle fade-out drag
+    if (fade_out_response.drag_started() && primary_down)
+        || (primary_down && fade_out_response.is_pointer_button_down_on())
+    {
+        app.controller.begin_selection_undo("Fade Out");
+    }
+    
+    // Use either the handle or the region for dragging
+    let fade_out_active = fade_out_response.dragged_by(egui::PointerButton::Primary)
+        || (primary_down && fade_out_response.is_pointer_button_down_on())
+        || fade_out_region_response.dragged_by(egui::PointerButton::Primary)
+        || (primary_down && fade_out_region_response.is_pointer_button_down_on());
+    
+    if fade_out_active {
+        let pos = fade_out_response.interact_pointer_pos()
+            .or_else(|| fade_out_region_response.interact_pointer_pos());
+            
+        if let Some(pos) = pos {
+            if alt_down {
+                // Alt+drag: adjust curve tension (vertical movement)
+                let current_curve = selection.fade_out().map(|f| f.curve).unwrap_or(0.5);
+                let current_length = selection.fade_out_length();
+                if current_length > 0.0 {
+                    let delta_y = fade_out_response.drag_delta().y + fade_out_region_response.drag_delta().y;
+                    let curve_delta = -delta_y / 100.0;
+                    let new_curve = (current_curve + curve_delta).clamp(0.0, 1.0);
+                    let new_selection = selection.with_fade_out(current_length, new_curve);
+                    app.controller.set_edit_selection_range(new_selection);
+                }
+            } else {
+                // Normal drag: adjust fade length (horizontal movement)
+                let delta_x = selection_rect.right() - pos.x;
+                let fade_fraction = (delta_x / selection_rect.width()).clamp(0.0, 1.0);
+                let current_curve = selection.fade_out().map(|f| f.curve).unwrap_or(0.5);
+                let new_selection = selection.with_fade_out(fade_fraction, current_curve);
+                app.controller.set_edit_selection_range(new_selection);
+            }
+        }
+    }
+    
+    if (fade_out_response.drag_stopped() || fade_out_region_response.drag_stopped()) && !primary_down {
+        app.controller.finish_selection_drag();
+    }
+}
+
+
+
 pub(super) fn sync_selection_edge_drag_release(app: &mut EguiApp, ctx: &egui::Context) {
     if !ctx.input(|i| i.pointer.primary_down()) {
         if app.controller.is_selection_dragging() {
