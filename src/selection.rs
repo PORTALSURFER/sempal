@@ -232,7 +232,7 @@ impl SelectionRange {
         ((1.0 - self.end) / width).max(0.0)
     }
 
-    /// Set the selection gain (0.0-2.0).
+    /// Set the selection gain (0.0-4.0).
     pub fn with_gain(mut self, gain: f32) -> Self {
         self.gain = clamp_gain(gain);
         self
@@ -535,7 +535,7 @@ fn clamp_mute_length(mute: f32, max_mute: f32) -> f32 {
 }
 
 fn clamp_gain(gain: f32) -> f32 {
-    gain.clamp(0.0, 2.0)
+    gain.clamp(0.0, 4.0)
 }
 
 fn snap_delta(delta: f32, step: f32) -> f32 {
