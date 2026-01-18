@@ -301,7 +301,7 @@ pub(crate) fn fade_gain_at_position(
         return 1.0;
     }
     if let Some(fade_in) = fade_in {
-        let mute_len = (width * fade_in.mute).clamp(0.0, width);
+        let mute_len = (width * fade_in.mute).max(0.0);
         if mute_len > 0.0 {
             let mute_start = start - mute_len;
             if position >= mute_start && position <= start {
@@ -310,7 +310,7 @@ pub(crate) fn fade_gain_at_position(
         }
     }
     if let Some(fade_out) = fade_out {
-        let mute_len = (width * fade_out.mute).clamp(0.0, width);
+        let mute_len = (width * fade_out.mute).max(0.0);
         if mute_len > 0.0 {
             let mute_end = end + mute_len;
             if position >= end && position <= mute_end {
@@ -767,6 +767,23 @@ mod tests {
         assert!(muted_start.abs() < 1e-6);
         assert!(muted_end.abs() < 1e-6);
         assert!(ramp_mid > 0.0 && ramp_mid < 1.0);
+    }
+
+    #[test]
+    fn fade_mute_can_extend_past_selection_width() {
+        let range = SelectionRange::new(0.4, 0.5)
+            .with_fade_in(0.2, 0.0)
+            .with_fade_out(0.2, 0.0)
+            .with_fade_in_mute(4.0);
+        let muted_far_left = fade_gain_at_position(
+            0.05,
+            range.start(),
+            range.end(),
+            range.gain(),
+            range.fade_in(),
+            range.fade_out(),
+        );
+        assert!(muted_far_left.abs() < 1e-6);
     }
 
     #[test]
