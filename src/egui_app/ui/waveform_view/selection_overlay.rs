@@ -27,10 +27,25 @@ pub(super) fn render_selection_overlay(
     };
 
     let selection_rect = selection_rect_for_view(selection, rect, view, view_width);
+    let edit_blocks_selection = app.controller.ui.waveform.edit_selection.map(|edit| {
+        let overlaps = edit.start() < selection.end() && edit.end() > selection.start();
+        if !overlaps {
+            return false;
+        }
+        pointer_pos
+            .map(|pos| {
+                selection_rect_for_view(edit, rect, view, view_width).contains(pos)
+            })
+            .unwrap_or(false)
+    }).unwrap_or(false);
 
     let handle_rect = selection_handle_rect(selection_rect);
     let handle_response = ui.interact(
-        handle_rect,
+        if edit_blocks_selection {
+            egui::Rect::NOTHING
+        } else {
+            handle_rect
+        },
         ui.id().with("selection_handle"),
         egui::Sense::drag(),
     );
@@ -45,7 +60,11 @@ pub(super) fn render_selection_overlay(
         painter.rect_filled(selection_rect, 0.0, style::with_alpha(highlight, 60));
         painter.rect_filled(handle_rect, 0.0, handle_color);
 
-        if handle_hovered || (pointer_pos.is_some_and(|p| selection_rect.contains(p)) && !app.controller.is_selection_dragging()) {
+        if handle_hovered
+            || (!edit_blocks_selection
+                && pointer_pos.is_some_and(|p| selection_rect.contains(p))
+                && !app.controller.is_selection_dragging())
+        {
             helpers::show_hover_hint(
                 ui,
                 app.controller.ui.controls.tooltip_mode,
@@ -89,12 +108,20 @@ pub(super) fn render_selection_overlay(
     let start_edge_rect = selection_edge_handle_rect(selection_rect, SelectionEdge::Start);
     let end_edge_rect = selection_edge_handle_rect(selection_rect, SelectionEdge::End);
     let start_edge_response = ui.interact(
-        start_edge_rect,
+        if edit_blocks_selection {
+            egui::Rect::NOTHING
+        } else {
+            start_edge_rect
+        },
         ui.id().with("selection_edge_start"),
         egui::Sense::click_and_drag(),
     );
     let end_edge_response = ui.interact(
-        end_edge_rect,
+        if edit_blocks_selection {
+            egui::Rect::NOTHING
+        } else {
+            end_edge_rect
+        },
         ui.id().with("selection_edge_end"),
         egui::Sense::click_and_drag(),
     );
