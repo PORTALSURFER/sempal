@@ -104,7 +104,7 @@ impl WaveformRenderer {
         let start = view_start.clamp(0.0, 1.0);
         let end = view_end.clamp(start, 1.0);
         let fraction = (end - start).max(0.000_001);
-        let fade = edit_fade.filter(|selection| selection.has_fades());
+        let fade = edit_fade.filter(|selection| selection.has_edit_effects());
 
         if decoded.samples.is_empty() {
             if let Some(peaks) = decoded.peaks.as_deref() {
@@ -295,7 +295,7 @@ fn fade_intersects_view(
     let Some(selection) = edit_fade else {
         return false;
     };
-    selection.has_fades() && selection.end() >= view_start && selection.start() <= view_end
+    selection.has_edit_effects() && selection.end() >= view_start && selection.start() <= view_end
 }
 
 fn apply_fade_to_columns(
@@ -320,6 +320,7 @@ fn apply_fade_to_columns(
             position,
             selection.start(),
             selection.end(),
+            selection.gain(),
             selection.fade_in(),
             selection.fade_out(),
         );
@@ -350,6 +351,7 @@ fn apply_fade_to_samples(
             position,
             selection.start(),
             selection.end(),
+            selection.gain(),
             selection.fade_in(),
             selection.fade_out(),
         );

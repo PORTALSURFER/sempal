@@ -332,9 +332,9 @@ pub(crate) fn apply_edit_selection(
     if let Some(player) = controller.audio.player.as_ref() {
         player.borrow().set_edit_fade_state(range);
     }
-    let had_fades = previous.map_or(false, |selection| selection.has_fades());
-    let has_fades = range.map_or(false, |selection| selection.has_fades());
-    if had_fades || has_fades {
+    let had_effects = previous.map_or(false, |selection| selection.has_edit_effects());
+    let has_effects = range.map_or(false, |selection| selection.has_edit_effects());
+    if had_effects || has_effects {
         controller.refresh_waveform_image();
     }
 }

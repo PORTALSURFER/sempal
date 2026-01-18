@@ -12,6 +12,8 @@ pub(crate) struct EditFadeSnapshot {
     pub start_seconds: f32,
     /// Absolute end time of the selection in seconds
     pub end_seconds: f32,
+    /// Gain applied across the selection.
+    pub gain: f32,
     pub fade_in: Option<FadeParams>,
     pub fade_out: Option<FadeParams>,
 }
@@ -40,10 +42,12 @@ impl EditFadeHandle {
                 state.active = true;
                 state.start_seconds = range.start() * total_duration_secs;
                 state.end_seconds = range.end() * total_duration_secs;
+                state.gain = range.gain();
                 state.fade_in = range.fade_in();
                 state.fade_out = range.fade_out();
             } else {
                 state.active = false;
+                state.gain = 1.0;
                 state.fade_in = None;
                 state.fade_out = None;
             }
@@ -176,6 +180,7 @@ where
             current_time,
             state.start_seconds,
             state.end_seconds,
+            state.gain,
             state.fade_in,
             state.fade_out,
         );

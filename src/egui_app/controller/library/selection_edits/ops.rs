@@ -164,6 +164,7 @@ pub(crate) fn apply_selection_fades(
     channels: usize,
     start_frame: usize,
     end_frame: usize,
+    selection_gain: f32,
     fade_in: Option<FadeParams>,
     fade_out: Option<FadeParams>,
 ) {
@@ -174,6 +175,16 @@ pub(crate) fn apply_selection_fades(
         return;
     }
     let selection_frames = clamped_end - clamped_start;
+    if (selection_gain - 1.0).abs() > f32::EPSILON {
+        for frame in clamped_start..clamped_end {
+            let base = frame * channels;
+            for ch in 0..channels {
+                if let Some(sample) = samples.get_mut(base + ch) {
+                    *sample *= selection_gain;
+                }
+            }
+        }
+    }
     if let Some(fade_in) = fade_in {
         let fade_frames = ((selection_frames as f32) * fade_in.length)
             .round()

@@ -83,7 +83,7 @@ impl EguiController {
         let Some(selection) = self.ui.waveform.edit_selection else {
             return Ok(false);
         };
-        if !selection.has_fades() {
+        if !selection.has_edit_effects() {
             return Ok(false);
         }
         let result = self.apply_selection_edit("Applied edit fades", true, |buffer| {
@@ -92,6 +92,7 @@ impl EguiController {
                 buffer.channels,
                 buffer.start_frame,
                 buffer.end_frame,
+                selection.gain(),
                 selection.fade_in(),
                 selection.fade_out(),
             );
@@ -99,7 +100,7 @@ impl EguiController {
         });
         match result {
             Ok(()) => {
-                let cleared = selection.clear_fades();
+                let cleared = selection.clear_fades().with_gain(1.0);
                 self.selection_state.edit_range.set_range(Some(cleared));
                 self.apply_edit_selection(Some(cleared));
                 Ok(true)
@@ -116,10 +117,10 @@ impl EguiController {
         let Some(selection) = self.ui.waveform.edit_selection else {
             return false;
         };
-        if !selection.has_fades() {
+        if !selection.has_edit_effects() {
             return false;
         }
-        let cleared = selection.clear_fades();
+        let cleared = selection.clear_fades().with_gain(1.0);
         self.selection_state.edit_range.set_range(Some(cleared));
         self.apply_edit_selection(Some(cleared));
         true

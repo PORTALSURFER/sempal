@@ -48,6 +48,8 @@ impl FadeParams {
 pub struct SelectionRange {
     start: f32,
     end: f32,
+    /// Gain applied across the selection (1.0 = unity).
+    gain: f32,
     /// Fade-in parameters (length and curve).
     fade_in: Option<FadeParams>,
     /// Fade-out parameters (length and curve).
@@ -63,6 +65,7 @@ impl SelectionRange {
             Self {
                 start: a,
                 end: b,
+                gain: 1.0,
                 fade_in: None,
                 fade_out: None,
             }
@@ -70,6 +73,7 @@ impl SelectionRange {
             Self {
                 start: b,
                 end: a,
+                gain: 1.0,
                 fade_in: None,
                 fade_out: None,
             }
@@ -89,6 +93,11 @@ impl SelectionRange {
     /// Width of the selection.
     pub fn width(&self) -> f32 {
         (self.end - self.start).abs()
+    }
+
+    /// Gain applied across the selection.
+    pub fn gain(&self) -> f32 {
+        self.gain
     }
 
     /// True when the selection has zero width.
@@ -130,6 +139,14 @@ impl SelectionRange {
     /// True when the selection has a non-zero fade-in or fade-out configured.
     pub fn has_fades(&self) -> bool {
         self.fade_in.is_some() || self.fade_out.is_some()
+    }
+
+    /// True when the selection has any edit effects configured.
+    pub fn has_edit_effects(&self) -> bool {
+        self.has_fades()
+            || self.fade_in_mute_length() > 0.0
+            || self.fade_out_mute_length() > 0.0
+            || (self.gain - 1.0).abs() > f32::EPSILON
     }
 
     /// Set fade-in parameters.
@@ -192,6 +209,12 @@ impl SelectionRange {
         self
     }
 
+    /// Set the selection gain (0.0-2.0).
+    pub fn with_gain(mut self, gain: f32) -> Self {
+        self.gain = clamp_gain(gain);
+        self
+    }
+
     /// Clear all fades.
     pub fn clear_fades(mut self) -> Self {
         self.fade_in = None;
@@ -217,6 +240,7 @@ impl SelectionRange {
                     .with_fade_out(fade_out.length, fade_out.curve)
                     .with_fade_out_mute(fade_out.mute);
             }
+            range.gain = self.gain;
             return range;
         }
         let mut start = self.start + delta;
@@ -233,6 +257,7 @@ impl SelectionRange {
         let mut result = SelectionRange::new(start, end);
         result.fade_in = self.fade_in;
         result.fade_out = self.fade_out;
+        result.gain = self.gain;
         result
     }
 }
@@ -241,10 +266,12 @@ impl SelectionRange {
 ///
 /// The position and selection bounds share the same unit (seconds or normalized 0-1).
 /// Returns 1.0 outside the selection or when the selection is empty.
+/// `selection_gain` scales the entire selection after fades/mutes are applied.
 pub(crate) fn fade_gain_at_position(
     position: f32,
     selection_start: f32,
     selection_end: f32,
+    selection_gain: f32,
     fade_in: Option<FadeParams>,
     fade_out: Option<FadeParams>,
 ) -> f32 {
@@ -290,7 +317,7 @@ pub(crate) fn fade_gain_at_position(
             }
         }
     }
-    gain
+    gain * clamp_gain(selection_gain)
 }
 
 /// Apply an S-curve easing for fade ramps.
@@ -476,6 +503,10 @@ fn clamp_fade_length(fade: f32, other_fade: f32) -> f32 {
 
 fn clamp_mute_length(mute: f32, fade_length: f32) -> f32 {
     mute.clamp(0.0, fade_length.clamp(0.0, 1.0))
+}
+
+fn clamp_gain(gain: f32) -> f32 {
+    gain.clamp(0.0, 2.0)
 }
 
 fn snap_delta(delta: f32, step: f32) -> f32 {
@@ -688,6 +719,7 @@ mod tests {
             0.05,
             range.start(),
             range.end(),
+            range.gain(),
             range.fade_in(),
             range.fade_out(),
         );
@@ -695,6 +727,7 @@ mod tests {
             0.95,
             range.start(),
             range.end(),
+            range.gain(),
             range.fade_in(),
             range.fade_out(),
         );
@@ -702,6 +735,7 @@ mod tests {
             0.25,
             range.start(),
             range.end(),
+            range.gain(),
             range.fade_in(),
             range.fade_out(),
         );
@@ -726,6 +760,7 @@ mod tests {
             0.0,
             range.start(),
             range.end(),
+            range.gain(),
             range.fade_in(),
             range.fade_out(),
         );
@@ -733,6 +768,7 @@ mod tests {
             0.5,
             range.start(),
             range.end(),
+            range.gain(),
             range.fade_in(),
             range.fade_out(),
         );
@@ -740,6 +776,7 @@ mod tests {
             1.0,
             range.start(),
             range.end(),
+            range.gain(),
             range.fade_in(),
             range.fade_out(),
         );

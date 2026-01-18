@@ -175,7 +175,7 @@ impl EguiController {
                 .ui
                 .waveform
                 .edit_selection
-                .filter(|selection| selection.has_fades()),
+                .filter(|selection| selection.has_edit_effects()),
         };
         if self
             .sample_view
