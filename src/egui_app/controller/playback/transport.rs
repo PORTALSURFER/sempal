@@ -166,6 +166,25 @@ pub(crate) fn clear_edit_selection(controller: &mut EguiController) {
 pub(crate) fn toggle_loop(controller: &mut EguiController) {
     let was_looping = controller.ui.waveform.loop_enabled;
     controller.ui.waveform.loop_enabled = !controller.ui.waveform.loop_enabled;
+    
+    // Update loop marker in database for the currently loaded sample
+    let loop_marker_update = controller.sample_view.wav.loaded_audio.as_ref().and_then(|loaded_audio| {
+        controller.library.sources.iter()
+            .find(|s| s.id == loaded_audio.source_id)
+            .map(|source| (source.clone(), loaded_audio.relative_path.clone()))
+    });
+    
+    if let Some((source, relative_path)) = loop_marker_update {
+        if let Err(err) = controller.set_sample_looped_for_source(
+            &source,
+            &relative_path,
+            controller.ui.waveform.loop_enabled,
+            false,
+        ) {
+            tracing::warn!("Failed to update loop marker: {err}");
+        }
+    }
+    
     if controller.ui.waveform.loop_enabled {
         controller.audio.pending_loop_disable_at = None;
         if !was_looping {

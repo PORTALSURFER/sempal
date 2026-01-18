@@ -132,6 +132,7 @@ impl EguiController {
         )?;
         if matches!(intent, AudioLoadIntent::Selection) {
             self.apply_loaded_sample_bpm(source, relative_path);
+            self.apply_loaded_sample_loop_marker(source, relative_path);
         }
         Ok(())
     }
@@ -304,6 +305,24 @@ impl EguiController {
         if let Some(bpm) = bpm {
             self.set_waveform_bpm_input(Some(bpm));
         }
+    }
+
+    fn apply_loaded_sample_loop_marker(&mut self, source: &SampleSource, relative_path: &Path) {
+        let looped = match self.database_for(source) {
+            Ok(db) => match db.looped_for_path(relative_path) {
+                Ok(Some(looped)) => looped,
+                Ok(None) => return,
+                Err(err) => {
+                    tracing::warn!("Failed to load loop marker for {}: {err}", relative_path.display());
+                    return;
+                }
+            },
+            Err(err) => {
+                tracing::warn!("Failed to access database for loop marker: {err}");
+                return;
+            }
+        };
+        self.ui.waveform.loop_enabled = looped;
     }
 
     fn load_sample_bpm_metadata(
