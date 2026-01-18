@@ -246,8 +246,6 @@ pub(super) fn handle_edit_fade_handle_drag(
     {
         app.controller.begin_selection_undo("Fade In");
         app.edit_fade_mute_drag_start_in = Some(selection.fade_in_mute_length());
-        app.edit_fade_mute_drag_start_pos_in =
-            fade_in_mute_response.interact_pointer_pos().map(|pos| pos.x);
     }
 
     let fade_in_mute_active = fade_in_mute_response.dragged_by(egui::PointerButton::Primary)
@@ -257,22 +255,14 @@ pub(super) fn handle_edit_fade_handle_drag(
         let start_mute = app
             .edit_fade_mute_drag_start_in
             .unwrap_or(selection.fade_in_mute_length());
-        let start_pos = app.edit_fade_mute_drag_start_pos_in.or_else(|| {
-            fade_in_mute_response.interact_pointer_pos().map(|pos| pos.x)
-        });
-        if let (Some(start_pos), Some(pos)) =
-            (start_pos, fade_in_mute_response.interact_pointer_pos())
-        {
-            let delta = (start_pos - pos.x) / selection_rect.width();
-            let mute_fraction = (start_mute + delta).clamp(0.0, selection.fade_in_length());
-            let new_selection = selection.with_fade_in_mute(mute_fraction);
-            app.controller.set_edit_selection_range(new_selection);
-        }
+        let delta = -fade_in_mute_response.drag_delta().x / selection_rect.width();
+        let mute_fraction = (start_mute + delta).clamp(0.0, selection.fade_in_length());
+        let new_selection = selection.with_fade_in_mute(mute_fraction);
+        app.controller.set_edit_selection_range(new_selection);
     }
 
     if fade_in_mute_response.drag_stopped() && !primary_down {
         app.edit_fade_mute_drag_start_in = None;
-        app.edit_fade_mute_drag_start_pos_in = None;
         app.controller.finish_selection_drag();
     }
 
@@ -412,8 +402,6 @@ pub(super) fn handle_edit_fade_handle_drag(
     {
         app.controller.begin_selection_undo("Fade Out");
         app.edit_fade_mute_drag_start_out = Some(selection.fade_out_mute_length());
-        app.edit_fade_mute_drag_start_pos_out =
-            fade_out_mute_response.interact_pointer_pos().map(|pos| pos.x);
     }
 
     let fade_out_mute_active = fade_out_mute_response.dragged_by(egui::PointerButton::Primary)
@@ -422,22 +410,14 @@ pub(super) fn handle_edit_fade_handle_drag(
     if fade_out_mute_active {
         let start_mute =
             app.edit_fade_mute_drag_start_out.unwrap_or(selection.fade_out_mute_length());
-        let start_pos = app.edit_fade_mute_drag_start_pos_out.or_else(|| {
-            fade_out_mute_response.interact_pointer_pos().map(|pos| pos.x)
-        });
-        if let (Some(start_pos), Some(pos)) =
-            (start_pos, fade_out_mute_response.interact_pointer_pos())
-        {
-            let delta = (pos.x - start_pos) / selection_rect.width();
-            let mute_fraction = (start_mute + delta).clamp(0.0, selection.fade_out_length());
-            let new_selection = selection.with_fade_out_mute(mute_fraction);
-            app.controller.set_edit_selection_range(new_selection);
-        }
+        let delta = fade_out_mute_response.drag_delta().x / selection_rect.width();
+        let mute_fraction = (start_mute + delta).clamp(0.0, selection.fade_out_length());
+        let new_selection = selection.with_fade_out_mute(mute_fraction);
+        app.controller.set_edit_selection_range(new_selection);
     }
 
     if fade_out_mute_response.drag_stopped() && !primary_down {
         app.edit_fade_mute_drag_start_out = None;
-        app.edit_fade_mute_drag_start_pos_out = None;
         app.controller.finish_selection_drag();
     }
 
