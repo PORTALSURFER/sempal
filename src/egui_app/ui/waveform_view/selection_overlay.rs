@@ -27,17 +27,24 @@ pub(super) fn render_selection_overlay(
     };
 
     let selection_rect = selection_rect_for_view(selection, rect, view, view_width);
-    let edit_blocks_selection = app.controller.ui.waveform.edit_selection.map(|edit| {
-        let overlaps = edit.start() < selection.end() && edit.end() > selection.start();
-        if !overlaps {
-            return false;
-        }
-        pointer_pos
-            .map(|pos| {
-                selection_rect_for_view(edit, rect, view, view_width).contains(pos)
-            })
-            .unwrap_or(false)
-    }).unwrap_or(false);
+    let edit_blocks_selection = app
+        .controller
+        .ui
+        .waveform
+        .edit_selection
+        .map(|edit| {
+            let overlaps = edit.start() < selection.end() && edit.end() > selection.start();
+            if !overlaps {
+                return false;
+            }
+            let edit_rect = selection_rect_for_view(edit, rect, view, view_width);
+            let expanded = edit_rect.expand(16.0);
+            pointer_pos
+                .or_else(|| ui.input(|i| i.pointer.latest_pos()))
+                .map(|pos| expanded.contains(pos))
+                .unwrap_or(false)
+        })
+        .unwrap_or(false);
 
     let handle_rect = selection_handle_rect(selection_rect);
     let handle_response = ui.interact(
