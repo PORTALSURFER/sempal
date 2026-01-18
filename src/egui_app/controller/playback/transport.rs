@@ -166,22 +166,64 @@ pub(crate) fn clear_edit_selection(controller: &mut EguiController) {
 pub(crate) fn toggle_loop(controller: &mut EguiController) {
     let was_looping = controller.ui.waveform.loop_enabled;
     controller.ui.waveform.loop_enabled = !controller.ui.waveform.loop_enabled;
+    let new_loop_state = controller.ui.waveform.loop_enabled;
     
-    // Update loop marker in database for the currently loaded sample
-    let loop_marker_update = controller.sample_view.wav.loaded_audio.as_ref().and_then(|loaded_audio| {
-        controller.library.sources.iter()
-            .find(|s| s.id == loaded_audio.source_id)
-            .map(|source| (source.clone(), loaded_audio.relative_path.clone()))
-    });
+    // Try to update loop markers for all selected samples in the browser
+    let loaded_path = controller.sample_view.wav.loaded_audio.as_ref()
+        .map(|audio| audio.relative_path.clone());
     
-    if let Some((source, relative_path)) = loop_marker_update {
-        if let Err(err) = controller.set_sample_looped_for_source(
-            &source,
-            &relative_path,
-            controller.ui.waveform.loop_enabled,
-            false,
+    // Get the primary row (currently loaded sample if visible in browser)
+    let primary_row = loaded_path.as_ref()
+        .and_then(|path| controller.visible_row_for_path(path));
+    
+    // Get all action rows (selected samples + primary if not selected)
+    let action_rows = if let Some(row) = primary_row {
+        controller.action_rows_from_primary(row)
+    } else {
+        Vec::new()
+    };
+    
+    // If we have browser rows to update, use the multi-sample approach
+    if !action_rows.is_empty() {
+        if let Err(err) = controller.set_loop_marker_browser_samples(
+            &action_rows,
+            new_loop_state,
+            primary_row.unwrap_or(0),
         ) {
-            tracing::warn!("Failed to update loop marker: {err}");
+            tracing::warn!("Failed to update loop markers for browser samples: {err}");
+        }
+        
+        // When enabling loop, also save the current BPM value to all selected samples
+        if new_loop_state && !was_looping {
+            if let Some(bpm) = controller.ui.waveform.bpm_value {
+                if bpm.is_finite() && bpm > 0.0 {
+                    if let Err(err) = controller.set_bpm_browser_samples(
+                        &action_rows,
+                        bpm,
+                        primary_row.unwrap_or(0),
+                    ) {
+                        tracing::warn!("Failed to save BPM to browser samples: {err}");
+                    }
+                }
+            }
+        }
+    } else {
+        // Fallback: Update loop marker for just the currently loaded sample
+        let loop_marker_update = controller.sample_view.wav.loaded_audio.as_ref().and_then(|loaded_audio| {
+            controller.library.sources.iter()
+                .find(|s| s.id == loaded_audio.source_id)
+                .map(|source| (source.clone(), loaded_audio.relative_path.clone()))
+        });
+        
+        if let Some((source, relative_path)) = loop_marker_update {
+            if let Err(err) = controller.set_sample_looped_for_source(
+                &source,
+                &relative_path,
+                new_loop_state,
+                false,
+            ) {
+                tracing::warn!("Failed to update loop marker: {err}");
+            }
         }
     }
     
