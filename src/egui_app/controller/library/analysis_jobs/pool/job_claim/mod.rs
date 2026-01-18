@@ -159,6 +159,7 @@ pub(crate) fn spawn_decoder_worker(
 pub(crate) fn spawn_compute_worker(
     _worker_index: usize,
     tx: Sender<JobMessage>,
+    signal: Arc<Mutex<Option<egui::Context>>>,
     decode_queue: Arc<DecodedQueue>,
     cancel: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
@@ -195,6 +196,11 @@ pub(crate) fn spawn_compute_worker(
                     &mut deferred_updates,
                     log_jobs,
                 );
+                if let Ok(lock) = signal.lock() {
+                    if let Some(ctx) = lock.as_ref() {
+                        ctx.request_repaint();
+                    }
+                }
                 continue;
             }
             if log_queue && last_queue_log.elapsed() >= Duration::from_secs(2) {
@@ -385,6 +391,11 @@ pub(crate) fn spawn_compute_worker(
                 &mut deferred_updates,
                 log_jobs,
             );
+            if let Ok(lock) = signal.lock() {
+                if let Some(ctx) = lock.as_ref() {
+                    ctx.request_repaint();
+                }
+            }
         }
     })
 }

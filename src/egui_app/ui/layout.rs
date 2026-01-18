@@ -109,21 +109,13 @@ impl EguiApp {
         self.render_panels(ctx);
         self.render_overlays(ctx, input, focus_context);
         
-        // Only repaint when necessary to reduce idle CPU usage
-        let analysis_active = self
-            .controller
-            .ui
-            .progress
-            .analysis
-            .as_ref()
-            .is_some_and(|snapshot| snapshot.pending > 0 || snapshot.running > 0);
+        self.controller.set_repaint_signal(ctx.clone());
 
+        // Only repaint when necessary to reduce idle CPU usage
         if self.controller.is_playing()
             || self.controller.ui.drag.payload.is_some()
             || self.controller.is_recording()
             || self.controller.ui.waveform.loading.is_some()
-            || self.controller.has_active_background_jobs()
-            || analysis_active
         {
             ctx.request_repaint();
         }

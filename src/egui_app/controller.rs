@@ -198,6 +198,7 @@ impl EguiController {
         self.set_status(text, tone);
     }
 
+    #[allow(dead_code)]
     pub(crate) fn has_active_background_jobs(&self) -> bool {
         self.runtime.jobs.scan_in_progress()
             || self.runtime.jobs.trash_move_in_progress()
@@ -208,6 +209,11 @@ impl EguiController {
             || self.runtime.jobs.issue_gateway_in_progress
             || self.runtime.jobs.issue_gateway_auth_in_progress
             || self.runtime.jobs.issue_gateway_poll_in_progress
+    }
+
+    pub(crate) fn set_repaint_signal(&mut self, ctx: egui::Context) {
+        self.runtime.jobs.set_repaint_signal(ctx.clone());
+        self.runtime.analysis.set_repaint_signal(ctx);
     }
 
     pub(crate) fn undo(&mut self) {

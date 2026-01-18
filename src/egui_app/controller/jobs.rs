@@ -10,7 +10,7 @@ use std::{
     collections::BTreeSet,
     path::PathBuf,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::AtomicBool,
         mpsc::{Receiver, Sender},
     },
@@ -186,6 +186,7 @@ pub(crate) struct ControllerJobs {
     pub(super) issue_gateway_auth_in_progress: bool,
     pub(super) issue_gateway_poll_in_progress: bool,
     pub(super) issue_gateway_poll_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
+    pub(super) repaint_signal: Arc<Mutex<Option<egui::Context>>>,
 }
 
 impl ControllerJobs {
@@ -224,6 +225,7 @@ impl ControllerJobs {
             issue_gateway_auth_in_progress: false,
             issue_gateway_poll_in_progress: false,
             issue_gateway_poll_cancel: None,
+            repaint_signal: Arc::new(Mutex::new(None)),
         };
         jobs.forward_wav_results(wav_job_rx);
         jobs.forward_audio_results(audio_job_rx);
@@ -239,6 +241,13 @@ impl ControllerJobs {
         self.message_tx.clone()
     }
 
+    pub(crate) fn set_repaint_signal(&self, ctx: egui::Context) {
+        if let Ok(mut signal) = self.repaint_signal.lock() {
+            *signal = Some(ctx);
+        }
+    }
+
+
     /// Update the source roots watched for on-disk changes.
     pub(crate) fn update_source_watcher(&self, sources: Vec<SourceWatchEntry>) {
         let _ = self
@@ -248,27 +257,45 @@ impl ControllerJobs {
 
     pub(super) fn forward_wav_results(&self, rx: Receiver<WavLoadResult>) {
         let tx = self.message_tx.clone();
+        let signal = self.repaint_signal.clone();
         thread::spawn(move || {
             while let Ok(message) = rx.recv() {
                 let _ = tx.send(JobMessage::WavLoaded(message));
+                if let Ok(lock) = signal.lock() {
+                    if let Some(ctx) = lock.as_ref() {
+                        ctx.request_repaint();
+                    }
+                }
             }
         });
     }
 
     pub(super) fn forward_audio_results(&self, rx: Receiver<AudioLoadResult>) {
         let tx = self.message_tx.clone();
+        let signal = self.repaint_signal.clone();
         thread::spawn(move || {
             while let Ok(message) = rx.recv() {
                 let _ = tx.send(JobMessage::AudioLoaded(message));
+                if let Ok(lock) = signal.lock() {
+                    if let Some(ctx) = lock.as_ref() {
+                        ctx.request_repaint();
+                    }
+                }
             }
         });
     }
 
     pub(super) fn forward_search_results(&self, rx: Receiver<SearchResult>) {
         let tx = self.message_tx.clone();
+        let signal = self.repaint_signal.clone();
         thread::spawn(move || {
             while let Ok(message) = rx.recv() {
                 let _ = tx.send(JobMessage::BrowserSearchFinished(message));
+                if let Ok(lock) = signal.lock() {
+                    if let Some(ctx) = lock.as_ref() {
+                        ctx.request_repaint();
+                    }
+                }
             }
         });
     }
@@ -339,10 +366,16 @@ impl ControllerJobs {
         self.scan_in_progress = true;
         self.scan_cancel = Some(cancel);
         let tx = self.message_tx.clone();
+        let signal = self.repaint_signal.clone();
         thread::spawn(move || {
             while let Ok(message) = rx.recv() {
                 let is_finished = matches!(message, ScanJobMessage::Finished(_));
                 let _ = tx.send(JobMessage::Scan(message));
+                if let Ok(lock) = signal.lock() {
+                    if let Some(ctx) = lock.as_ref() {
+                        ctx.request_repaint();
+                    }
+                }
                 if is_finished {
                     break;
                 }
@@ -372,10 +405,16 @@ impl ControllerJobs {
         self.trash_move_in_progress = true;
         self.trash_move_cancel = Some(cancel);
         let tx = self.message_tx.clone();
+        let signal = self.repaint_signal.clone();
         thread::spawn(move || {
             while let Ok(message) = rx.recv() {
                 let is_finished = matches!(message, trash_move::TrashMoveMessage::Finished(_));
                 let _ = tx.send(JobMessage::TrashMove(message));
+                if let Ok(lock) = signal.lock() {
+                    if let Some(ctx) = lock.as_ref() {
+                        ctx.request_repaint();
+                    }
+                }
                 if is_finished {
                     break;
                 }
@@ -399,9 +438,15 @@ impl ControllerJobs {
     pub(super) fn start_collection_move(&mut self, rx: Receiver<CollectionMoveResult>) {
         self.collection_move_in_progress = true;
         let tx = self.message_tx.clone();
+        let signal = self.repaint_signal.clone();
         thread::spawn(move || {
             while let Ok(message) = rx.recv() {
                 let _ = tx.send(JobMessage::CollectionMove(message));
+                if let Ok(lock) = signal.lock() {
+                    if let Some(ctx) = lock.as_ref() {
+                        ctx.request_repaint();
+                    }
+                }
                 break;
             }
         });
@@ -429,6 +474,7 @@ impl ControllerJobs {
         }
         self.umap_build_in_progress = true;
         let tx = self.message_tx.clone();
+        let signal = self.repaint_signal.clone();
         thread::spawn(move || {
             let result =
                 super::ui::map_view::run_umap_build(&job.model_id, &job.umap_version, &job.source_id);
@@ -436,6 +482,11 @@ impl ControllerJobs {
                 umap_version: job.umap_version,
                 result,
             }));
+            if let Ok(lock) = signal.lock() {
+                if let Some(ctx) = lock.as_ref() {
+                    ctx.request_repaint();
+                }
+            }
         });
     }
 
@@ -449,6 +500,7 @@ impl ControllerJobs {
         }
         self.umap_cluster_build_in_progress = true;
         let tx = self.message_tx.clone();
+        let signal = self.repaint_signal.clone();
         thread::spawn(move || {
             let result = super::ui::map_view::run_umap_cluster_build(
                 &job.model_id,
@@ -460,6 +512,11 @@ impl ControllerJobs {
                 source_id: job.source_id,
                 result,
             }));
+            if let Ok(lock) = signal.lock() {
+                if let Some(ctx) = lock.as_ref() {
+                    ctx.request_repaint();
+                }
+            }
         });
     }
 
@@ -473,9 +530,15 @@ impl ControllerJobs {
         }
         self.update_check_in_progress = true;
         let tx = self.message_tx.clone();
+        let signal = self.repaint_signal.clone();
         thread::spawn(move || {
             let result = super::updates::run_update_check(request);
             let _ = tx.send(JobMessage::UpdateChecked(UpdateCheckResult { result }));
+            if let Ok(lock) = signal.lock() {
+                if let Some(ctx) = lock.as_ref() {
+                    ctx.request_repaint();
+                }
+            }
         });
     }
 
@@ -550,6 +613,7 @@ impl ControllerJobs {
 
     pub(super) fn begin_normalization(&mut self, job: NormalizationJob) {
         let tx = self.message_tx.clone();
+        let signal = self.repaint_signal.clone();
         thread::spawn(move || {
             // We need a way to call the normalization logic without the EguiController instance
             // since that's not thread-safe. The core logic is in analysis::audio.
@@ -592,6 +656,11 @@ impl ControllerJobs {
                 relative_path,
                 result,
             }));
+            if let Ok(lock) = signal.lock() {
+                if let Some(ctx) = lock.as_ref() {
+                    ctx.request_repaint();
+                }
+            }
         });
     }
 }

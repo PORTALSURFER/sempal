@@ -3,7 +3,7 @@ use crate::egui_app::controller::library::analysis_jobs::types::{AnalysisJobMess
 use crate::egui_app::controller::jobs::JobMessage;
 use rusqlite::Connection;
 use std::sync::{
-    Arc, RwLock,
+    Arc, Mutex, RwLock,
     atomic::{AtomicBool, Ordering},
     mpsc::Sender,
 };
@@ -98,6 +98,7 @@ fn cleanup_stale_jobs(
     stale_before: i64,
     progress_cache: &Arc<RwLock<ProgressCache>>,
     tx: &Sender<JobMessage>,
+    signal: &Arc<Mutex<Option<egui::Context>>>,
 ) -> usize {
     let mut changed = 0;
     let mut touched_sources = std::collections::HashSet::new();
@@ -134,6 +135,11 @@ fn cleanup_stale_jobs(
             source_id: None,
             progress: total,
         }));
+        if let Ok(lock) = signal.lock() {
+            if let Some(ctx) = lock.as_ref() {
+                ctx.request_repaint();
+            }
+        }
     }
     changed
 }
@@ -148,6 +154,7 @@ fn now_epoch_seconds() -> i64 {
 #[cfg_attr(test, allow(dead_code))]
 pub(crate) fn spawn_progress_poller(
     tx: Sender<JobMessage>,
+    signal: Arc<Mutex<Option<egui::Context>>>,
     cancel: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
     allowed_source_ids: Arc<
@@ -178,7 +185,7 @@ pub(crate) fn spawn_progress_poller(
                 let stale_before = now_epoch_seconds().saturating_sub(
                     crate::egui_app::controller::library::analysis_jobs::stale_running_job_seconds(),
                 );
-                let _ = cleanup_stale_jobs(&mut sources, stale_before, &progress_cache, &tx);
+                let _ = cleanup_stale_jobs(&mut sources, stale_before, &progress_cache, &tx, &signal);
             }
             if cancel.load(Ordering::Relaxed) {
                 sleep(POLL_INTERVAL_IDLE);
@@ -213,6 +220,11 @@ pub(crate) fn spawn_progress_poller(
                     source_id: None,
                     progress,
                 }));
+                if let Ok(lock) = signal.lock() {
+                    if let Some(ctx) = lock.as_ref() {
+                        ctx.request_repaint();
+                    }
+                }
             }
             if progress.pending == 0 && progress.running == 0 {
                 idle_polls = idle_polls.saturating_add(1);
@@ -270,8 +282,9 @@ mod tests {
         let cache = Arc::new(RwLock::new(ProgressCache::default()));
         let (tx, _rx) = std::sync::mpsc::channel();
         let stale_before = now - 10;
+        let signal = Arc::new(Mutex::new(None));
 
-        let changed = cleanup_stale_jobs(&mut sources, stale_before, &cache, &tx);
+        let changed = cleanup_stale_jobs(&mut sources, stale_before, &cache, &tx, &signal);
 
         let status: String = sources[0]
             .conn
@@ -316,8 +329,9 @@ mod tests {
         let cache = Arc::new(RwLock::new(ProgressCache::default()));
         let (tx, rx) = std::sync::mpsc::channel();
         let stale_before = now - 10;
+        let signal = Arc::new(Mutex::new(None));
 
-        let changed = cleanup_stale_jobs(&mut sources, stale_before, &cache, &tx);
+        let changed = cleanup_stale_jobs(&mut sources, stale_before, &cache, &tx, &signal);
 
         assert_eq!(changed, 1);
         let cached = cache.read().unwrap().total_for_sources(std::iter::once(

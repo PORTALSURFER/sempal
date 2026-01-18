@@ -8,10 +8,8 @@ use crate::sample_sources::SourceId;
 use progress_cache::ProgressCache;
 #[cfg(not(test))]
 use std::collections::HashSet;
-#[cfg(not(test))]
-use std::sync::Mutex;
 use std::sync::{
-    Arc, RwLock,
+    Arc, Mutex, RwLock,
     atomic::AtomicU32,
     atomic::{AtomicBool, Ordering},
     mpsc::Sender,
@@ -33,6 +31,7 @@ pub(crate) struct AnalysisWorkerPool {
     #[cfg_attr(test, allow(dead_code))]
     decode_worker_count_override: Arc<AtomicU32>,
     _progress_cache: Arc<RwLock<ProgressCache>>,
+    repaint_signal: Arc<Mutex<Option<egui::Context>>>,
     threads: Vec<JoinHandle<()>>,
 }
 
@@ -52,7 +51,14 @@ impl AnalysisWorkerPool {
             worker_count_override: Arc::new(AtomicU32::new(0)),
             decode_worker_count_override: Arc::new(AtomicU32::new(0)),
             _progress_cache: Arc::new(RwLock::new(ProgressCache::default())),
+            repaint_signal: Arc::new(Mutex::new(None)),
             threads: Vec::new(),
+        }
+    }
+
+    pub(crate) fn set_repaint_signal(&self, ctx: egui::Context) {
+        if let Ok(mut signal) = self.repaint_signal.lock() {
+            *signal = Some(ctx);
         }
     }
     pub(crate) fn set_max_analysis_duration_seconds(&self, value: f32) {
@@ -170,6 +176,7 @@ impl AnalysisWorkerPool {
                 self.threads.push(job_claim::spawn_compute_worker(
                     worker_index,
                     message_tx.clone(),
+                    self.repaint_signal.clone(),
                     queue.clone(),
                     self.cancel.clone(),
                     self.shutdown.clone(),
@@ -183,6 +190,7 @@ impl AnalysisWorkerPool {
             }
             self.threads.push(job_progress::spawn_progress_poller(
                 message_tx,
+                self.repaint_signal.clone(),
                 self.cancel.clone(),
                 self.shutdown.clone(),
                 self.allowed_source_ids.clone(),
