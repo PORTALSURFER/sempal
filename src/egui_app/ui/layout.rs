@@ -121,6 +121,8 @@ impl EguiApp {
         if self.controller.is_playing()
             || self.controller.ui.drag.payload.is_some()
             || self.controller.is_recording()
+            || self.controller.ui.waveform.loading.is_some()
+            || self.controller.has_active_background_jobs()
             || analysis_active
         {
             ctx.request_repaint();

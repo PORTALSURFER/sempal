@@ -198,6 +198,18 @@ impl EguiController {
         self.set_status(text, tone);
     }
 
+    pub(crate) fn has_active_background_jobs(&self) -> bool {
+        self.runtime.jobs.scan_in_progress()
+            || self.runtime.jobs.trash_move_in_progress()
+            || self.runtime.jobs.collection_move_in_progress()
+            || self.runtime.jobs.umap_build_in_progress()
+            || self.runtime.jobs.umap_cluster_build_in_progress()
+            || self.runtime.jobs.update_check_in_progress()
+            || self.runtime.jobs.issue_gateway_in_progress
+            || self.runtime.jobs.issue_gateway_auth_in_progress
+            || self.runtime.jobs.issue_gateway_poll_in_progress
+    }
+
     pub(crate) fn undo(&mut self) {
         let mut stack = std::mem::replace(
             &mut self.history.undo_stack,
