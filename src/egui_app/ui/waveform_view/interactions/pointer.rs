@@ -2,6 +2,7 @@ use super::super::*;
 use super::super::selection_geometry;
 use crate::egui_app::state::WaveformView;
 use crate::egui_app::ui::style::StatusTone;
+use crate::selection::SelectionRange;
 use eframe::egui::{self, Ui};
 
 pub(in super::super) fn handle_waveform_pointer_interactions(
@@ -111,6 +112,12 @@ pub(in super::super) fn handle_waveform_pointer_interactions(
         } else if app.controller.is_selection_dragging() {
             app.controller.finish_selection_drag();
         }
+    } else if response.double_clicked_by(egui::PointerButton::Secondary) {
+        if app.controller.ui.waveform.image.is_some() {
+            app.controller.focus_waveform_context();
+        }
+        app.controller
+            .set_edit_selection_range(SelectionRange::new(0.0, 1.0));
     } else if response.clicked_by(egui::PointerButton::Secondary) {
         if let Some(selection) = app.controller.ui.waveform.edit_selection {
             let clicked_pos = pointer_pos.or_else(|| response.hover_pos());
@@ -129,6 +136,11 @@ pub(in super::super) fn handle_waveform_pointer_interactions(
                 app.controller.clear_edit_selection();
             }
         }
+    } else if response.double_clicked() {
+        if app.controller.ui.waveform.image.is_some() {
+            app.controller.focus_waveform_context();
+        }
+        app.controller.set_selection_range(SelectionRange::new(0.0, 1.0));
     } else if response.clicked() {
         if app.controller.ui.waveform.image.is_some() {
             app.controller.focus_waveform_context();
