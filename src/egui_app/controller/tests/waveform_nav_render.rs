@@ -57,6 +57,7 @@ fn waveform_render_meta_rejects_small_shifts_when_zoomed_in() {
         texture_width: 8_000,
         channel_view: crate::waveform::WaveformChannelView::Mono,
         channels: 2,
+        edit_fade: None,
     };
     let shifted = wavs::WaveformRenderMeta {
         view_start: 0.10095,
@@ -76,6 +77,7 @@ fn waveform_render_meta_allows_small_shifts_on_full_view() {
         texture_width: 2_000,
         channel_view: crate::waveform::WaveformChannelView::Mono,
         channels: 1,
+        edit_fade: None,
     };
     let minor_shift = wavs::WaveformRenderMeta {
         view_start: 0.0005,

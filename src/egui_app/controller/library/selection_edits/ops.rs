@@ -1,4 +1,5 @@
 use super::FadeDirection;
+use crate::selection::FadeParams;
 use super::buffer::SelectionEditBuffer;
 
 pub(crate) fn crop_buffer(buffer: &mut SelectionEditBuffer) -> Result<(), String> {
@@ -152,6 +153,60 @@ pub(crate) fn apply_edge_fades(
             let idx = frame * channels + ch;
             if let Some(sample) = samples.get_mut(idx) {
                 *sample *= factor;
+            }
+        }
+    }
+}
+
+/// Apply optional fade-in and fade-out ramps within the selection bounds.
+pub(crate) fn apply_selection_fades(
+    samples: &mut [f32],
+    channels: usize,
+    start_frame: usize,
+    end_frame: usize,
+    fade_in: Option<FadeParams>,
+    fade_out: Option<FadeParams>,
+) {
+    let channels = channels.max(1);
+    let total_frames = samples.len() / channels;
+    let (clamped_start, clamped_end) = clamped_selection_span(total_frames, start_frame, end_frame);
+    if clamped_end <= clamped_start {
+        return;
+    }
+    let selection_frames = clamped_end - clamped_start;
+    if let Some(fade_in) = fade_in {
+        let fade_frames = ((selection_frames as f32) * fade_in.length)
+            .round()
+            .clamp(0.0, selection_frames as f32) as usize;
+        if fade_frames > 0 {
+            let fade_end = clamped_start.saturating_add(fade_frames).min(clamped_end);
+            if fade_end > clamped_start {
+                apply_fade_ramp(
+                    samples,
+                    channels,
+                    clamped_start,
+                    fade_end,
+                    FadeDirection::RightToLeft,
+                    fade_in.curve,
+                );
+            }
+        }
+    }
+    if let Some(fade_out) = fade_out {
+        let fade_frames = ((selection_frames as f32) * fade_out.length)
+            .round()
+            .clamp(0.0, selection_frames as f32) as usize;
+        if fade_frames > 0 {
+            let fade_start = clamped_end.saturating_sub(fade_frames).max(clamped_start);
+            if fade_start < clamped_end {
+                apply_fade_ramp(
+                    samples,
+                    channels,
+                    fade_start,
+                    clamped_end,
+                    FadeDirection::LeftToRight,
+                    fade_out.curve,
+                );
             }
         }
     }

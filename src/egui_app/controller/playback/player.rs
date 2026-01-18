@@ -312,6 +312,7 @@ mod tests {
     }
 }
 
+/// Update the active playback selection and its cached duration label.
 pub(crate) fn apply_selection(
     controller: &mut EguiController,
     range: Option<SelectionRange>,
@@ -321,11 +322,21 @@ pub(crate) fn apply_selection(
     controller.ui.waveform.selection_duration = label;
 }
 
+/// Update the edit selection and synchronize edit-fade preview state.
 pub(crate) fn apply_edit_selection(
     controller: &mut EguiController,
     range: Option<SelectionRange>,
 ) {
+    let previous = controller.ui.waveform.edit_selection;
     controller.ui.waveform.edit_selection = range;
+    if let Some(player) = controller.audio.player.as_ref() {
+        player.borrow().set_edit_fade_state(range);
+    }
+    let had_fades = previous.map_or(false, |selection| selection.has_fades());
+    let has_fades = range.map_or(false, |selection| selection.has_fades());
+    if had_fades || has_fades {
+        controller.refresh_waveform_image();
+    }
 }
 
 pub(crate) fn update_waveform_hover_time(controller: &mut EguiController, position: Option<f32>) {

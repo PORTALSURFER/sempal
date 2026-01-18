@@ -190,7 +190,14 @@ impl AudioPlayer {
                 buffer.repeat_infinite(),
                 expected_samples,
             );
-            Box::new(diagnostic)
+            let editable = EditFadeSource::new_looped(
+                diagnostic,
+                self.edit_fade_handle.clone(),
+                bounded_start,
+                frames_adjusted,
+                0,
+            );
+            Box::new(editable)
         } else {
             let limited = source.take_duration(loop_duration).buffered();
             let editable = EditFadeSource::new(limited, self.edit_fade_handle.clone(), bounded_start);
@@ -270,7 +277,14 @@ impl AudioPlayer {
         let buffer = SamplesBuffer::new(channels, sample_rate, samples);
         let final_source: Box<dyn Source<Item = f32> + Send> = {
             let offset_dur = Self::aligned_offset_duration(offset_seconds, sample_rate);
-            let editable = EditFadeSource::new(buffer, self.edit_fade_handle.clone(), start_seconds);
+            let offset_frames = (offset_seconds * sample_rate as f32).floor().max(0.0) as u64;
+            let editable = EditFadeSource::new_looped(
+                buffer,
+                self.edit_fade_handle.clone(),
+                start_seconds,
+                frames,
+                offset_frames,
+            );
             let repeated = editable.repeat_infinite().skip_duration(offset_dur);
             let diagnostic = crate::audio::loop_diagnostic::LoopDiagnostic::new(
                 repeated,

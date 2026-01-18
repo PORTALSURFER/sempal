@@ -236,6 +236,11 @@ impl EguiController {
         if previous == context {
             return;
         }
+        if matches!(previous, FocusContext::Waveform)
+            && !matches!(context, FocusContext::Waveform)
+        {
+            let _ = self.commit_edit_selection_fades();
+        }
         if matches!(previous, FocusContext::SourceFolders)
             && !matches!(context, FocusContext::SourceFolders)
         {

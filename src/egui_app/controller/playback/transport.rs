@@ -18,6 +18,7 @@ pub(crate) fn start_selection_drag(controller: &mut EguiController, position: f3
 }
 
 pub(crate) fn start_edit_selection_drag(controller: &mut EguiController, position: f32) {
+    let _ = controller.commit_edit_selection_fades();
     let start = snap_to_transient(controller, position).unwrap_or(position);
     let range = controller.selection_state.edit_range.begin_new(start);
     controller.apply_edit_selection(Some(range));
@@ -147,9 +148,6 @@ pub(crate) fn set_selection_range(controller: &mut EguiController, range: Select
 pub(crate) fn set_edit_selection_range(controller: &mut EguiController, range: SelectionRange) {
     controller.selection_state.edit_range.set_range(Some(range));
     controller.apply_edit_selection(Some(range));
-    if let Some(player) = controller.audio.player.as_ref() {
-        player.borrow().set_edit_fade_state(Some(range));
-    }
 }
 
 pub(crate) fn is_selection_dragging(controller: &EguiController) -> bool {
@@ -177,9 +175,6 @@ pub(crate) fn clear_edit_selection(controller: &mut EguiController) {
     let cleared = controller.selection_state.edit_range.clear();
     if cleared || controller.ui.waveform.edit_selection.is_some() {
         controller.apply_edit_selection(None);
-        if let Some(player) = controller.audio.player.as_ref() {
-            player.borrow().set_edit_fade_state(None);
-        }
     }
 }
 
@@ -527,6 +522,9 @@ pub(crate) fn stop_playback_if_active(controller: &mut EguiController) -> bool {
 }
 
 pub(crate) fn handle_escape(controller: &mut EguiController) {
+    if controller.cancel_edit_selection_fades() {
+        return;
+    }
     let selection_active = controller.selection_state.range.range().is_some()
         || controller.ui.waveform.selection.is_some()
         || controller.selection_state.edit_range.range().is_some()

@@ -1,4 +1,5 @@
 use super::{DecodedWaveform, WaveformChannelView, WaveformRenderer};
+use crate::selection::SelectionRange;
 use crate::waveform::zoom_cache::CachedColumns;
 use egui::ColorImage;
 
@@ -31,6 +32,7 @@ impl WaveformRenderer {
         view: WaveformChannelView,
         width: u32,
         height: u32,
+        edit_fade: Option<SelectionRange>,
     ) -> Option<ColorImage> {
         let frame_count = decoded.frame_count();
         let fraction = (view_end - view_start).max(0.000_001);
@@ -47,7 +49,8 @@ impl WaveformRenderer {
         let smooth_radius = Self::smoothing_radius(frames_per_column, width);
         let image = match cached {
             CachedColumns::Mono(cols) => {
-                let cols = Self::smooth_columns(&cols[start_col..end_col], smooth_radius);
+                let mut cols = Self::smooth_columns(&cols[start_col..end_col], smooth_radius);
+                super::apply_fade_to_columns(&mut cols, view_start, view_end, width, edit_fade);
                 Self::paint_color_image_for_size_with_density(
                     &cols,
                     width,
@@ -58,8 +61,10 @@ impl WaveformRenderer {
                 )
             }
             CachedColumns::SplitStereo { left, right } => {
-                let left = Self::smooth_columns(&left[start_col..end_col], smooth_radius);
-                let right = Self::smooth_columns(&right[start_col..end_col], smooth_radius);
+                let mut left = Self::smooth_columns(&left[start_col..end_col], smooth_radius);
+                let mut right = Self::smooth_columns(&right[start_col..end_col], smooth_radius);
+                super::apply_fade_to_columns(&mut left, view_start, view_end, width, edit_fade);
+                super::apply_fade_to_columns(&mut right, view_start, view_end, width, edit_fade);
                 Self::paint_split_color_image_with_density(
                     &left,
                     &right,

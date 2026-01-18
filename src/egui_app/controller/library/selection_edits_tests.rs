@@ -1,5 +1,6 @@
 use super::repair_clicks_buffer;
 use super::*;
+use crate::selection::FadeParams;
 
 #[test]
 fn slice_frames_keeps_requested_range() {
@@ -117,8 +118,8 @@ fn directional_fade_with_single_frame_zeroes_sample() {
 
 #[test]
 fn fade_factor_uses_soft_s_curve() {
-    let left_to_right = fade_factor(10, 0.25, FadeDirection::LeftToRight);
-    let right_to_left = fade_factor(10, 0.25, FadeDirection::RightToLeft);
+    let left_to_right = fade_factor(10, 0.25, FadeDirection::LeftToRight, 0.5);
+    let right_to_left = fade_factor(10, 0.25, FadeDirection::RightToLeft, 0.5);
     // For a softer curve, early fade is gentler than linear.
     assert!(
         left_to_right > 0.8,
@@ -128,6 +129,17 @@ fn fade_factor_uses_soft_s_curve() {
         right_to_left < 0.2,
         "expected softer fade, got {right_to_left}"
     );
+}
+
+#[test]
+fn selection_fades_ramp_in_and_out() {
+    let mut samples = vec![1.0_f32; 10];
+    let fade_in = FadeParams::with_curve(0.3, 0.0);
+    let fade_out = FadeParams::with_curve(0.3, 0.0);
+    apply_selection_fades(&mut samples, 1, 0, 10, Some(fade_in), Some(fade_out));
+    assert!(samples[0].abs() < 1e-6);
+    assert!((samples[2] - 1.0).abs() < 1e-6);
+    assert!(samples[9].abs() < 1e-6);
 }
 
 #[test]

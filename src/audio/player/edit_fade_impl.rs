@@ -1,11 +1,12 @@
 use std::sync::{Arc, RwLock};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use crate::audio::Source;
-use crate::selection::{SelectionRange, FadeParams};
+use crate::selection::{FadeParams, SelectionRange, fade_gain_at_position};
 
-/// State shared between the controller and the audio thread.
-#[derive(Clone, Default, Debug)]
-pub(crate) struct EditFadeState {
+/// Snapshot of the current edit fade configuration.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct EditFadeSnapshot {
     pub active: bool,
     /// Absolute start time of the selection in seconds
     pub start_seconds: f32,
@@ -15,20 +16,26 @@ pub(crate) struct EditFadeState {
     pub fade_out: Option<FadeParams>,
 }
 
+#[derive(Debug, Default)]
+struct EditFadeShared {
+    state: RwLock<EditFadeSnapshot>,
+    version: AtomicU64,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct EditFadeHandle {
-    state: Arc<RwLock<EditFadeState>>,
+    shared: Arc<EditFadeShared>,
 }
 
 impl EditFadeHandle {
     pub(crate) fn new() -> Self {
         Self {
-            state: Arc::new(RwLock::new(EditFadeState::default())),
+            shared: Arc::new(EditFadeShared::default()),
         }
     }
 
     pub(crate) fn update(&self, range: Option<SelectionRange>, total_duration_secs: f32) {
-        if let Ok(mut state) = self.state.write() {
+        if let Ok(mut state) = self.shared.state.write() {
             if let Some(range) = range {
                 state.active = true;
                 state.start_seconds = range.start() * total_duration_secs;
@@ -37,12 +44,25 @@ impl EditFadeHandle {
                 state.fade_out = range.fade_out();
             } else {
                 state.active = false;
+                state.fade_in = None;
+                state.fade_out = None;
             }
+            self.shared.version.fetch_add(1, Ordering::Release);
         }
     }
 
-    pub(crate) fn get_state(&self) -> EditFadeState {
-        self.state.read().unwrap_or_else(|e| e.into_inner()).clone()
+    /// Return the current edit-fade snapshot version.
+    pub(crate) fn version(&self) -> u64 {
+        self.shared.version.load(Ordering::Acquire)
+    }
+
+    /// Return a copy of the latest edit-fade snapshot.
+    pub(crate) fn snapshot(&self) -> EditFadeSnapshot {
+        self.shared
+            .state
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 }
 
@@ -53,9 +73,15 @@ pub(crate) struct EditFadeSource<S> {
     handle: EditFadeHandle,
     /// The global timestamp (relative to track start) where this source segment begins.
     global_start_secs: f32,
+    /// Optional number of frames in a loop, used to repeat fades each cycle.
+    loop_frames: Option<u64>,
+    /// Initial frame offset applied before looping.
+    frame_offset: u64,
     sample_rate: u32,
     channels: u16,
     samples_emitted: u64,
+    cached_state: EditFadeSnapshot,
+    cached_version: u64,
 }
 
 impl<S> EditFadeSource<S>
@@ -63,28 +89,53 @@ where
     S: Source,
 {
     pub(crate) fn new(inner: S, handle: EditFadeHandle, global_start_secs: f32) -> Self {
+        Self::with_loop(inner, handle, global_start_secs, None, 0)
+    }
+
+    /// Create a source that repeats edit fades for each loop iteration.
+    pub(crate) fn new_looped(
+        inner: S,
+        handle: EditFadeHandle,
+        global_start_secs: f32,
+        loop_frames: u64,
+        frame_offset: u64,
+    ) -> Self {
+        let loop_frames = if loop_frames > 0 { Some(loop_frames) } else { None };
+        Self::with_loop(inner, handle, global_start_secs, loop_frames, frame_offset)
+    }
+
+    fn with_loop(
+        inner: S,
+        handle: EditFadeHandle,
+        global_start_secs: f32,
+        loop_frames: Option<u64>,
+        frame_offset: u64,
+    ) -> Self {
         let sample_rate = inner.sample_rate();
         let channels = inner.channels();
+        let cached_version = handle.version();
+        let cached_state = handle.snapshot();
         Self {
             inner,
             handle,
             global_start_secs,
+            loop_frames,
+            frame_offset,
             sample_rate,
             channels,
             samples_emitted: 0,
+            cached_state,
+            cached_version,
         }
     }
 
-    fn apply_s_curve(t: f32, curve: f32) -> f32 {
-        if curve <= 0.0 {
-            return t;
+    fn refresh_state_if_needed(&mut self) {
+        let version = self.handle.version();
+        if version == self.cached_version {
+            return;
         }
-        // smootherstep: 6t^5 - 15t^4 + 10t^3
-        let t2 = t * t;
-        let t3 = t2 * t;
-        let smootherstep = t3 * (t * (t * 6.0 - 15.0) + 10.0);
-        
-        t * (1.0 - curve) + smootherstep * curve
+        self.cached_state = self.handle.snapshot();
+        self.cached_version = version;
     }
 }
 
@@ -96,58 +147,38 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         let sample = self.inner.next()?;
-        
-        // Calculate current time in seconds relative to the whole track
-        let local_time = if self.sample_rate > 0 && self.channels > 0 {
-            (self.samples_emitted / self.channels as u64) as f32 / self.sample_rate as f32
+
+        self.refresh_state_if_needed();
+        let state = self.cached_state;
+
+        if !state.active {
+            self.samples_emitted += 1;
+            return Some(sample);
+        }
+
+        let frame_index = self.samples_emitted / self.channels.max(1) as u64;
+        let frame_index = frame_index.saturating_add(self.frame_offset);
+        let frame_index = if let Some(loop_frames) = self.loop_frames {
+            frame_index % loop_frames.max(1)
+        } else {
+            frame_index
+        };
+        let local_time = if self.sample_rate > 0 {
+            frame_index as f32 / self.sample_rate as f32
         } else {
             0.0
         };
         let current_time = self.global_start_secs + local_time;
-        
+
         self.samples_emitted += 1;
 
-        // Get fade state (locking briefly)
-        let state = self.handle.get_state();
-
-        if !state.active {
-            return Some(sample);
-        }
-
-        // Check if inside selection
-        if current_time < state.start_seconds || current_time > state.end_seconds {
-            return Some(sample);
-        }
-
-        let selection_width = state.end_seconds - state.start_seconds;
-        if selection_width <= 0.0001 {
-            return Some(sample);
-        }
-
-        let mut gain = 1.0;
-
-        // Apply Fade In
-        if let Some(fade_in) = state.fade_in {
-            let fade_len_secs = selection_width * fade_in.length;
-             // relative to start
-            let time_in_sel = current_time - state.start_seconds;
-            if time_in_sel < fade_len_secs {
-                let t = (time_in_sel / fade_len_secs).clamp(0.0, 1.0);
-                gain *= Self::apply_s_curve(t, fade_in.curve);
-            }
-        }
-
-        // Apply Fade Out
-        if let Some(fade_out) = state.fade_out {
-            let fade_len_secs = selection_width * fade_out.length;
-             // relative to end
-            let time_until_end = state.end_seconds - current_time;
-            if time_until_end < fade_len_secs {
-                let t = (time_until_end / fade_len_secs).clamp(0.0, 1.0);
-                gain *= Self::apply_s_curve(t, fade_out.curve);
-            }
-        }
-
+        let gain = fade_gain_at_position(
+            current_time,
+            state.start_seconds,
+            state.end_seconds,
+            state.fade_in,
+            state.fade_out,
+        );
         Some(sample * gain)
     }
 }

@@ -17,7 +17,14 @@ use buffer::{SelectionEditBuffer, SelectionTarget};
 pub(crate) use selection_click::repair_clicks_selection as repair_clicks_buffer;
 use selection_normalize::normalize_selection;
 
-use ops::{apply_directional_fade, apply_edge_fades, crop_buffer, reverse_buffer, trim_buffer};
+use ops::{
+    apply_directional_fade,
+    apply_edge_fades,
+    apply_selection_fades,
+    crop_buffer,
+    reverse_buffer,
+    trim_buffer,
+};
 
 #[cfg(test)]
 use buffer::selection_frame_bounds;
@@ -69,6 +76,53 @@ impl EguiController {
     /// Clear any pending destructive edit prompt without applying it.
     pub(crate) fn clear_destructive_prompt(&mut self) {
         self.ui.waveform.pending_destructive = None;
+    }
+
+    /// Apply edit-selection fades to disk and clear preview fades.
+    pub(crate) fn commit_edit_selection_fades(&mut self) -> Result<bool, String> {
+        let Some(selection) = self.ui.waveform.edit_selection else {
+            return Ok(false);
+        };
+        if !selection.has_fades() {
+            return Ok(false);
+        }
+        let result = self.apply_selection_edit("Applied edit fades", true, |buffer| {
+            apply_selection_fades(
+                &mut buffer.samples,
+                buffer.channels,
+                buffer.start_frame,
+                buffer.end_frame,
+                selection.fade_in(),
+                selection.fade_out(),
+            );
+            Ok(())
+        });
+        match result {
+            Ok(()) => {
+                let cleared = selection.clear_fades();
+                self.selection_state.edit_range.set_range(Some(cleared));
+                self.apply_edit_selection(Some(cleared));
+                Ok(true)
+            }
+            Err(err) => {
+                self.set_status(err.clone(), StatusTone::Error);
+                Err(err)
+            }
+        }
+    }
+
+    /// Cancel preview fades for the edit selection without writing audio.
+    pub(crate) fn cancel_edit_selection_fades(&mut self) -> bool {
+        let Some(selection) = self.ui.waveform.edit_selection else {
+            return false;
+        };
+        if !selection.has_fades() {
+            return false;
+        }
+        let cleared = selection.clear_fades();
+        self.selection_state.edit_range.set_range(Some(cleared));
+        self.apply_edit_selection(Some(cleared));
+        true
     }
 
     /// Crop the loaded sample to the active selection range and refresh caches/exports.

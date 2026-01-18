@@ -45,6 +45,9 @@ pub(crate) fn select_wav_by_path_with_rebuild(
     }
     let path_changed = controller.sample_view.wav.selected_wav.as_deref() != Some(path);
     if path_changed {
+        let _ = controller.commit_edit_selection_fades();
+    }
+    if path_changed {
         controller.ui.waveform.last_start_marker = None;
     }
     controller.sample_view.wav.selected_wav = Some(path.to_path_buf());

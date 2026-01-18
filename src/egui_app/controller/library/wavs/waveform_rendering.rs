@@ -27,6 +27,8 @@ pub(crate) struct WaveformRenderMeta {
     pub texture_width: u32,
     pub channel_view: crate::waveform::WaveformChannelView,
     pub channels: u16,
+    /// Optional edit-fade preview range used to invalidate cached renders.
+    pub edit_fade: Option<crate::selection::SelectionRange>,
 }
 
 impl WaveformRenderMeta {
@@ -38,6 +40,7 @@ impl WaveformRenderMeta {
             .max(1e-9);
         let pixels = self.size[0].max(1) as f64;
         let eps = (width / pixels).max(1e-9);
+        let fade_eps = (1.0 / self.size[0].max(1) as f32).max(1e-6);
         self.samples_len == other.samples_len
             && self.size == other.size
             && self.texture_width == other.texture_width
@@ -45,6 +48,30 @@ impl WaveformRenderMeta {
             && self.channels == other.channels
             && (self.view_start - other.view_start).abs() < eps
             && (self.view_end - other.view_end).abs() < eps
+            && edit_fade_matches(self.edit_fade, other.edit_fade, fade_eps)
+    }
+}
+
+fn edit_fade_matches(
+    left: Option<crate::selection::SelectionRange>,
+    right: Option<crate::selection::SelectionRange>,
+    eps: f32,
+) -> bool {
+    match (left, right) {
+        (None, None) => true,
+        (Some(a), Some(b)) => {
+            (a.start() - b.start()).abs() <= eps
+                && (a.end() - b.end()).abs() <= eps
+                && (a.fade_in_length() - b.fade_in_length()).abs() <= eps
+                && (a.fade_out_length() - b.fade_out_length()).abs() <= eps
+                && a.fade_in().map(|f| f.curve).unwrap_or(0.5)
+                    .to_bits()
+                    == b.fade_in().map(|f| f.curve).unwrap_or(0.5).to_bits()
+                && a.fade_out().map(|f| f.curve).unwrap_or(0.5)
+                    .to_bits()
+                    == b.fade_out().map(|f| f.curve).unwrap_or(0.5).to_bits()
+        }
+        _ => false,
     }
 }
 
@@ -144,6 +171,11 @@ impl EguiController {
             texture_width: effective_width,
             channel_view: self.ui.waveform.channel_view,
             channels: decoded.channels,
+            edit_fade: self
+                .ui
+                .waveform
+                .edit_selection
+                .filter(|selection| selection.has_fades()),
         };
         if self
             .sample_view
@@ -157,13 +189,14 @@ impl EguiController {
         let color_image = self
             .sample_view
             .renderer
-            .render_color_image_for_view_with_size(
+            .render_color_image_for_view_with_size_and_fade(
                 decoded,
                 view.start as f32,
                 view.end as f32,
                 self.ui.waveform.channel_view,
                 effective_width,
                 height,
+                desired_meta.edit_fade,
             );
         let (view_start, view_end) = self
             .sample_view

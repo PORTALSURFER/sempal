@@ -102,6 +102,11 @@ impl SelectionRange {
         self.fade_out.map(|f| f.length).unwrap_or(0.0)
     }
 
+    /// True when the selection has a non-zero fade-in or fade-out configured.
+    pub fn has_fades(&self) -> bool {
+        self.fade_in.is_some() || self.fade_out.is_some()
+    }
+
     /// Set fade-in parameters.
     pub fn with_fade_in(mut self, length: f32, curve: f32) -> Self {
         let clamped_length = clamp_fade_length(length, self.fade_out_length());
@@ -158,6 +163,62 @@ impl SelectionRange {
         result.fade_out = self.fade_out;
         result
     }
+}
+
+/// Compute the fade gain for a position within or outside a selection span.
+///
+/// The position and selection bounds share the same unit (seconds or normalized 0-1).
+/// Returns 1.0 outside the selection or when the selection is empty.
+pub(crate) fn fade_gain_at_position(
+    position: f32,
+    selection_start: f32,
+    selection_end: f32,
+    fade_in: Option<FadeParams>,
+    fade_out: Option<FadeParams>,
+) -> f32 {
+    let start = selection_start.min(selection_end);
+    let end = selection_start.max(selection_end);
+    let width = end - start;
+    if width <= 0.0 {
+        return 1.0;
+    }
+    if position < start || position > end {
+        return 1.0;
+    }
+    let mut gain = 1.0;
+    if let Some(fade_in) = fade_in {
+        let fade_len = width * fade_in.length;
+        if fade_len > 0.0 {
+            let time_in = position - start;
+            if time_in < fade_len {
+                let t = (time_in / fade_len).clamp(0.0, 1.0);
+                gain *= fade_curve_value(t, fade_in.curve);
+            }
+        }
+    }
+    if let Some(fade_out) = fade_out {
+        let fade_len = width * fade_out.length;
+        if fade_len > 0.0 {
+            let time_until_end = end - position;
+            if time_until_end < fade_len {
+                let t = (time_until_end / fade_len).clamp(0.0, 1.0);
+                gain *= fade_curve_value(t, fade_out.curve);
+            }
+        }
+    }
+    gain
+}
+
+/// Apply an S-curve easing for fade ramps.
+pub(crate) fn fade_curve_value(t: f32, curve: f32) -> f32 {
+    if curve <= 0.0 {
+        return t;
+    }
+    let t = t.clamp(0.0, 1.0);
+    let t2 = t * t;
+    let t3 = t2 * t;
+    let smootherstep = t3 * (t * (t * 6.0 - 15.0) + 10.0);
+    t * (1.0 - curve) + smootherstep * curve
 }
 
 /// The selection edge being dragged.
@@ -493,43 +554,76 @@ mod tests {
 
     #[test]
     fn fade_values_are_clamped() {
-        let range = SelectionRange::new(0.2, 0.8).with_fade_in(0.6).with_fade_out(0.6);
+        let range = SelectionRange::new(0.2, 0.8)
+            .with_fade_in(0.6, 0.5)
+            .with_fade_out(0.6, 0.5);
         // fade_in + fade_out should not exceed 1.0
-        assert!(range.fade_in() + range.fade_out() <= 1.0);
+        assert!(range.fade_in_length() + range.fade_out_length() <= 1.0);
     }
 
     #[test]
     fn fade_in_clamps_when_fade_out_exists() {
         let range = SelectionRange::new(0.2, 0.8)
-            .with_fade_out(0.7)
-            .with_fade_in(0.5);
-        assert_eq!(range.fade_out(), 0.7);
-        assert_eq!(range.fade_in(), 0.3); // Clamped to 1.0 - 0.7
+            .with_fade_out(0.7, 0.5)
+            .with_fade_in(0.5, 0.5);
+        assert_eq!(range.fade_out_length(), 0.7);
+        assert_eq!(range.fade_in_length(), 0.3); // Clamped to 1.0 - 0.7
     }
 
     #[test]
     fn fade_out_clamps_when_fade_in_exists() {
         let range = SelectionRange::new(0.2, 0.8)
-            .with_fade_in(0.6)
-            .with_fade_out(0.8);
-        assert_eq!(range.fade_in(), 0.6);
-        assert_eq!(range.fade_out(), 0.4); // Clamped to 1.0 - 0.6
+            .with_fade_in(0.6, 0.5)
+            .with_fade_out(0.8, 0.5);
+        assert_eq!(range.fade_in_length(), 0.6);
+        assert_eq!(range.fade_out_length(), 0.4); // Clamped to 1.0 - 0.6
     }
 
     #[test]
     fn fades_preserved_during_shift() {
         let range = SelectionRange::new(0.2, 0.4)
-            .with_fade_in(0.2)
-            .with_fade_out(0.3);
+            .with_fade_in(0.2, 0.5)
+            .with_fade_out(0.3, 0.5);
         let shifted = range.shift(0.1);
-        assert_eq!(shifted.fade_in(), 0.2);
-        assert_eq!(shifted.fade_out(), 0.3);
+        assert_eq!(shifted.fade_in_length(), 0.2);
+        assert_eq!(shifted.fade_out_length(), 0.3);
     }
 
     #[test]
     fn new_range_has_zero_fades() {
         let range = SelectionRange::new(0.3, 0.7);
-        assert_eq!(range.fade_in(), 0.0);
-        assert_eq!(range.fade_out(), 0.0);
+        assert_eq!(range.fade_in_length(), 0.0);
+        assert_eq!(range.fade_out_length(), 0.0);
+    }
+
+    #[test]
+    fn fade_gain_ramps_selection_edges() {
+        let range = SelectionRange::new(0.0, 1.0)
+            .with_fade_in(0.2, 0.0)
+            .with_fade_out(0.2, 0.0);
+        let gain_start = fade_gain_at_position(
+            0.0,
+            range.start(),
+            range.end(),
+            range.fade_in(),
+            range.fade_out(),
+        );
+        let gain_mid = fade_gain_at_position(
+            0.5,
+            range.start(),
+            range.end(),
+            range.fade_in(),
+            range.fade_out(),
+        );
+        let gain_end = fade_gain_at_position(
+            1.0,
+            range.start(),
+            range.end(),
+            range.fade_in(),
+            range.fade_out(),
+        );
+        assert!(gain_start.abs() < 1e-6);
+        assert!((gain_mid - 1.0).abs() < 1e-6);
+        assert!(gain_end.abs() < 1e-6);
     }
 }
