@@ -324,7 +324,7 @@ fn apply_fade_to_columns(
             selection.fade_in(),
             selection.fade_out(),
         );
-        if gain < 1.0 {
+        if (gain - 1.0).abs() > f32::EPSILON {
             column.0 *= gain;
             column.1 *= gain;
         }
@@ -355,7 +355,7 @@ fn apply_fade_to_samples(
             selection.fade_in(),
             selection.fade_out(),
         );
-        if gain < 1.0 {
+        if (gain - 1.0).abs() > f32::EPSILON {
             let base = frame * channels;
             for ch in 0..channels {
                 if let Some(sample) = faded.get_mut(base + ch) {
