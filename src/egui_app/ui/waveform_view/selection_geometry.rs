@@ -87,6 +87,23 @@ pub(super) fn fade_handle_rect(
     )
 }
 
+/// Get the rect for a lower fade handle (bottom-left for fade-in, bottom-right for fade-out).
+pub(super) fn fade_lower_handle_rect(
+    selection_rect: egui::Rect,
+    is_fade_in: bool,
+) -> egui::Rect {
+    let size = FADE_HANDLE_SIZE;
+    let x = if is_fade_in {
+        selection_rect.left()
+    } else {
+        selection_rect.right() - size
+    };
+    egui::Rect::from_min_size(
+        egui::pos2(x, selection_rect.bottom() - size),
+        egui::vec2(size, size),
+    )
+}
+
 /// Paint a fade handle as a small triangle indicator.
 pub(super) fn paint_fade_handle(
     painter: &egui::Painter,

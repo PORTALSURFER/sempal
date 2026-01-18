@@ -1,6 +1,6 @@
 use super::selection_drag;
 use super::selection_geometry::{
-    fade_handle_rect, paint_fade_handle, selection_rect_for_view,
+    fade_handle_rect, fade_lower_handle_rect, paint_fade_handle, selection_rect_for_view,
 };
 use super::style;
 use super::*;
@@ -162,6 +162,15 @@ pub(super) fn render_edit_selection_overlay(
     } else {
         fade_handle_rect(selection_rect, false)
     };
+
+    let fade_in_lower_handle_rect = selection
+        .fade_in()
+        .map(|_| fade_lower_handle_rect(selection_rect, true))
+        .unwrap_or(egui::Rect::NOTHING);
+    let fade_out_lower_handle_rect = selection
+        .fade_out()
+        .map(|_| fade_lower_handle_rect(selection_rect, false))
+        .unwrap_or(egui::Rect::NOTHING);
     
     let fade_in_response = ui.interact(
         fade_in_handle_rect,
@@ -171,6 +180,16 @@ pub(super) fn render_edit_selection_overlay(
     let fade_out_response = ui.interact(
         fade_out_handle_rect,
         ui.id().with("edit_fade_out_handle"),
+        egui::Sense::click_and_drag(),
+    );
+    let fade_in_lower_response = ui.interact(
+        fade_in_lower_handle_rect,
+        ui.id().with("edit_fade_in_lower_handle"),
+        egui::Sense::click_and_drag(),
+    );
+    let fade_out_lower_response = ui.interact(
+        fade_out_lower_handle_rect,
+        ui.id().with("edit_fade_out_lower_handle"),
         egui::Sense::click_and_drag(),
     );
     
@@ -188,6 +207,8 @@ pub(super) fn render_edit_selection_overlay(
     
     let fade_in_hovered = fade_in_response.hovered() || fade_in_response.dragged();
     let fade_out_hovered = fade_out_response.hovered() || fade_out_response.dragged();
+    let fade_in_lower_hovered = fade_in_lower_response.hovered() || fade_in_lower_response.dragged();
+    let fade_out_lower_hovered = fade_out_lower_response.hovered() || fade_out_lower_response.dragged();
     
     // Always show fade handles when edit selection exists
     let fade_in_color = if fade_in_hovered {
@@ -201,6 +222,22 @@ pub(super) fn render_edit_selection_overlay(
     if fade_in_hovered {
         ui.output_mut(|o| o.cursor_icon = CursorIcon::ResizeHorizontal);
     }
+    if selection.fade_in().is_some() && fade_in_lower_handle_rect != egui::Rect::NOTHING {
+        let fade_in_lower_color = if fade_in_lower_hovered {
+            style::with_alpha(highlight, 255)
+        } else {
+            style::with_alpha(highlight, 200)
+        };
+        paint_fade_handle(
+            ui.painter(),
+            fade_in_lower_handle_rect,
+            true,
+            fade_in_lower_color,
+        );
+        if fade_in_lower_hovered {
+            ui.output_mut(|o| o.cursor_icon = CursorIcon::ResizeHorizontal);
+        }
+    }
     
     let fade_out_color = if fade_out_hovered {
         style::with_alpha(highlight, 255)
@@ -212,6 +249,22 @@ pub(super) fn render_edit_selection_overlay(
     paint_fade_handle(ui.painter(), fade_out_handle_rect, false, fade_out_color);
     if fade_out_hovered {
         ui.output_mut(|o| o.cursor_icon = CursorIcon::ResizeHorizontal);
+    }
+    if selection.fade_out().is_some() && fade_out_lower_handle_rect != egui::Rect::NOTHING {
+        let fade_out_lower_color = if fade_out_lower_hovered {
+            style::with_alpha(highlight, 255)
+        } else {
+            style::with_alpha(highlight, 200)
+        };
+        paint_fade_handle(
+            ui.painter(),
+            fade_out_lower_handle_rect,
+            false,
+            fade_out_lower_color,
+        );
+        if fade_out_lower_hovered {
+            ui.output_mut(|o| o.cursor_icon = CursorIcon::ResizeHorizontal);
+        }
     }
     
     // Handle fade handle dragging
@@ -225,6 +278,8 @@ pub(super) fn render_edit_selection_overlay(
         selection_rect,
         &fade_in_response,
         &fade_out_response,
+        &fade_in_lower_response,
+        &fade_out_lower_response,
         &fade_in_region_response,
         &fade_out_region_response,
     );
