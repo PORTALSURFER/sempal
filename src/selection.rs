@@ -8,6 +8,8 @@ pub struct FadeParams {
     pub length: f32,
     /// Curve tension: 0.0 = linear, 0.5 = medium S-curve, 1.0 = maximum S-curve.
     pub curve: f32,
+    /// Muted region length as a fraction of selection width (0.0-1.0).
+    pub mute: f32,
 }
 
 impl FadeParams {
@@ -16,6 +18,7 @@ impl FadeParams {
         Self {
             length: length.clamp(0.0, 1.0),
             curve: 0.5,
+            mute: 0.0,
         }
     }
 
@@ -24,6 +27,18 @@ impl FadeParams {
         Self {
             length: length.clamp(0.0, 1.0),
             curve: curve.clamp(0.0, 1.0),
+            mute: 0.0,
+        }
+    }
+
+    /// Create fade parameters with custom curve and muted length.
+    pub fn with_curve_and_mute(length: f32, curve: f32, mute: f32) -> Self {
+        let clamped_length = length.clamp(0.0, 1.0);
+        let clamped_mute = mute.clamp(0.0, clamped_length);
+        Self {
+            length: clamped_length,
+            curve: curve.clamp(0.0, 1.0),
+            mute: clamped_mute,
         }
     }
 }
@@ -97,9 +112,19 @@ impl SelectionRange {
         self.fade_in.map(|f| f.length).unwrap_or(0.0)
     }
 
+    /// Get fade-in muted length (0.0 if no fade).
+    pub fn fade_in_mute_length(&self) -> f32 {
+        self.fade_in.map(|f| f.mute).unwrap_or(0.0)
+    }
+
     /// Get fade-out length (0.0 if no fade).
     pub fn fade_out_length(&self) -> f32 {
         self.fade_out.map(|f| f.length).unwrap_or(0.0)
+    }
+
+    /// Get fade-out muted length (0.0 if no fade).
+    pub fn fade_out_mute_length(&self) -> f32 {
+        self.fade_out.map(|f| f.mute).unwrap_or(0.0)
     }
 
     /// True when the selection has a non-zero fade-in or fade-out configured.
@@ -111,7 +136,13 @@ impl SelectionRange {
     pub fn with_fade_in(mut self, length: f32, curve: f32) -> Self {
         let clamped_length = clamp_fade_length(length, self.fade_out_length());
         if clamped_length > 0.0 {
-            self.fade_in = Some(FadeParams::with_curve(clamped_length, curve));
+            let current_mute = self.fade_in.map(|f| f.mute).unwrap_or(0.0);
+            let clamped_mute = clamp_mute_length(current_mute, clamped_length);
+            self.fade_in = Some(FadeParams::with_curve_and_mute(
+                clamped_length,
+                curve,
+                clamped_mute,
+            ));
         } else {
             self.fade_in = None;
         }
@@ -122,9 +153,41 @@ impl SelectionRange {
     pub fn with_fade_out(mut self, length: f32, curve: f32) -> Self {
         let clamped_length = clamp_fade_length(length, self.fade_in_length());
         if clamped_length > 0.0 {
-            self.fade_out = Some(FadeParams::with_curve(clamped_length, curve));
+            let current_mute = self.fade_out.map(|f| f.mute).unwrap_or(0.0);
+            let clamped_mute = clamp_mute_length(current_mute, clamped_length);
+            self.fade_out = Some(FadeParams::with_curve_and_mute(
+                clamped_length,
+                curve,
+                clamped_mute,
+            ));
         } else {
             self.fade_out = None;
+        }
+        self
+    }
+
+    /// Set fade-in muted length while preserving the curve.
+    pub fn with_fade_in_mute(mut self, mute: f32) -> Self {
+        if let Some(fade) = self.fade_in {
+            let clamped_mute = clamp_mute_length(mute, fade.length);
+            self.fade_in = Some(FadeParams::with_curve_and_mute(
+                fade.length,
+                fade.curve,
+                clamped_mute,
+            ));
+        }
+        self
+    }
+
+    /// Set fade-out muted length while preserving the curve.
+    pub fn with_fade_out_mute(mut self, mute: f32) -> Self {
+        if let Some(fade) = self.fade_out {
+            let clamped_mute = clamp_mute_length(mute, fade.length);
+            self.fade_out = Some(FadeParams::with_curve_and_mute(
+                fade.length,
+                fade.curve,
+                clamped_mute,
+            ));
         }
         self
     }
@@ -143,9 +206,18 @@ impl SelectionRange {
         }
         let width = self.width().clamp(0.0, 1.0);
         if width >= 1.0 {
-            return SelectionRange::new(0.0, 1.0)
-                .with_fade_in(self.fade_in_length(), self.fade_in().map(|f| f.curve).unwrap_or(0.5))
-                .with_fade_out(self.fade_out_length(), self.fade_out().map(|f| f.curve).unwrap_or(0.5));
+            let mut range = SelectionRange::new(0.0, 1.0);
+            if let Some(fade_in) = self.fade_in {
+                range = range
+                    .with_fade_in(fade_in.length, fade_in.curve)
+                    .with_fade_in_mute(fade_in.mute);
+            }
+            if let Some(fade_out) = self.fade_out {
+                range = range
+                    .with_fade_out(fade_out.length, fade_out.curve)
+                    .with_fade_out_mute(fade_out.mute);
+            }
+            return range;
         }
         let mut start = self.start + delta;
         let mut end = self.end + delta;
@@ -189,9 +261,15 @@ pub(crate) fn fade_gain_at_position(
     if let Some(fade_in) = fade_in {
         let fade_len = width * fade_in.length;
         if fade_len > 0.0 {
+            let mute_len = (width * fade_in.mute).clamp(0.0, fade_len);
+            let mute_end = start + mute_len;
+            if position <= mute_end {
+                return 0.0;
+            }
             let time_in = position - start;
-            if time_in < fade_len {
-                let t = (time_in / fade_len).clamp(0.0, 1.0);
+            let ramp_len = (fade_len - mute_len).max(0.0);
+            if ramp_len > 0.0 && time_in < fade_len {
+                let t = ((time_in - mute_len) / ramp_len).clamp(0.0, 1.0);
                 gain *= fade_curve_value(t, fade_in.curve);
             }
         }
@@ -199,9 +277,15 @@ pub(crate) fn fade_gain_at_position(
     if let Some(fade_out) = fade_out {
         let fade_len = width * fade_out.length;
         if fade_len > 0.0 {
+            let mute_len = (width * fade_out.mute).clamp(0.0, fade_len);
+            let mute_start = end - mute_len;
+            if position >= mute_start {
+                return 0.0;
+            }
             let time_until_end = end - position;
-            if time_until_end < fade_len {
-                let t = (time_until_end / fade_len).clamp(0.0, 1.0);
+            let ramp_len = (fade_len - mute_len).max(0.0);
+            if ramp_len > 0.0 && time_until_end < fade_len {
+                let t = ((time_until_end - mute_len) / ramp_len).clamp(0.0, 1.0);
                 gain *= fade_curve_value(t, fade_out.curve);
             }
         }
@@ -388,6 +472,10 @@ fn clamp_fade_length(fade: f32, other_fade: f32) -> f32 {
     let clamped = fade.clamp(0.0, 1.0);
     let max_allowed = 1.0 - other_fade.clamp(0.0, 1.0);
     clamped.min(max_allowed)
+}
+
+fn clamp_mute_length(mute: f32, fade_length: f32) -> f32 {
+    mute.clamp(0.0, fade_length.clamp(0.0, 1.0))
 }
 
 fn snap_delta(delta: f32, step: f32) -> f32 {
@@ -587,6 +675,39 @@ mod tests {
         let shifted = range.shift(0.1);
         assert_eq!(shifted.fade_in_length(), 0.2);
         assert_eq!(shifted.fade_out_length(), 0.3);
+    }
+
+    #[test]
+    fn fade_mute_sections_zero_gain() {
+        let range = SelectionRange::new(0.0, 1.0)
+            .with_fade_in(0.4, 0.0)
+            .with_fade_out(0.4, 0.0)
+            .with_fade_in_mute(0.2)
+            .with_fade_out_mute(0.1);
+        let muted_start = fade_gain_at_position(
+            0.05,
+            range.start(),
+            range.end(),
+            range.fade_in(),
+            range.fade_out(),
+        );
+        let muted_end = fade_gain_at_position(
+            0.95,
+            range.start(),
+            range.end(),
+            range.fade_in(),
+            range.fade_out(),
+        );
+        let ramp_mid = fade_gain_at_position(
+            0.25,
+            range.start(),
+            range.end(),
+            range.fade_in(),
+            range.fade_out(),
+        );
+        assert!(muted_start.abs() < 1e-6);
+        assert!(muted_end.abs() < 1e-6);
+        assert!(ramp_mid > 0.0 && ramp_mid < 1.0);
     }
 
     #[test]

@@ -179,12 +179,20 @@ pub(crate) fn apply_selection_fades(
             .round()
             .clamp(0.0, selection_frames as f32) as usize;
         if fade_frames > 0 {
+            let mute_frames = ((selection_frames as f32) * fade_in.mute)
+                .round()
+                .clamp(0.0, fade_frames as f32) as usize;
+            let mute_end = clamped_start.saturating_add(mute_frames).min(clamped_end);
+            if mute_end > clamped_start {
+                apply_muted_selection(samples, channels, clamped_start, mute_end);
+            }
             let fade_end = clamped_start.saturating_add(fade_frames).min(clamped_end);
-            if fade_end > clamped_start {
+            let fade_start = clamped_start.saturating_add(mute_frames).min(fade_end);
+            if fade_end > fade_start {
                 apply_fade_ramp(
                     samples,
                     channels,
-                    clamped_start,
+                    fade_start,
                     fade_end,
                     FadeDirection::RightToLeft,
                     fade_in.curve,
@@ -197,13 +205,21 @@ pub(crate) fn apply_selection_fades(
             .round()
             .clamp(0.0, selection_frames as f32) as usize;
         if fade_frames > 0 {
+            let mute_frames = ((selection_frames as f32) * fade_out.mute)
+                .round()
+                .clamp(0.0, fade_frames as f32) as usize;
+            let mute_start = clamped_end.saturating_sub(mute_frames).max(clamped_start);
+            if mute_start < clamped_end {
+                apply_muted_selection(samples, channels, mute_start, clamped_end);
+            }
             let fade_start = clamped_end.saturating_sub(fade_frames).max(clamped_start);
-            if fade_start < clamped_end {
+            let fade_end = clamped_end.saturating_sub(mute_frames).max(fade_start);
+            if fade_start < fade_end {
                 apply_fade_ramp(
                     samples,
                     channels,
                     fade_start,
-                    clamped_end,
+                    fade_end,
                     FadeDirection::LeftToRight,
                     fade_out.curve,
                 );

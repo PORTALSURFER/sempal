@@ -202,6 +202,8 @@ pub(super) fn handle_edit_fade_handle_drag(
     fade_out_response: &egui::Response,
     fade_in_lower_response: &egui::Response,
     fade_out_lower_response: &egui::Response,
+    fade_in_mute_response: &egui::Response,
+    fade_out_mute_response: &egui::Response,
     fade_in_region_response: &egui::Response,
     fade_out_region_response: &egui::Response,
 ) {
@@ -212,45 +214,110 @@ pub(super) fn handle_edit_fade_handle_drag(
         (view.start + view_width.max(1e-9) * normalized).clamp(0.0, 1.0) as f32
     };
     
-    // Handle fade-in edge drag (move selection start while keeping fade end anchored)
-    if (fade_in_lower_response.drag_started() && primary_down)
-        || (primary_down && fade_in_lower_response.is_pointer_button_down_on())
-    {
-        app.controller.begin_selection_undo("Fade In");
-    }
-
-    let fade_in_lower_active = fade_in_lower_response.dragged_by(egui::PointerButton::Primary)
-        || (primary_down && fade_in_lower_response.is_pointer_button_down_on());
-
-    if fade_in_lower_active {
-        if let Some(pos) = fade_in_lower_response.interact_pointer_pos() {
-            let anchor = selection.start() + selection.width() * selection.fade_in_length();
-            let new_start = cursor_to_wave(pos).min(selection.end());
-            let new_width = (selection.end() - new_start).max(0.0);
-            let current_curve = selection.fade_in().map(|f| f.curve).unwrap_or(0.5);
-            let mut new_selection = SelectionRange::new(new_start, selection.end());
+    // Handle fade-in mute drag (extend mute region inward)
+    if fade_in_mute_response.double_clicked() {
+        if let Some(fade_in) = selection.fade_in() {
+            app.controller.begin_selection_undo("Fade In");
+            let fade_end = selection.start() + selection.width() * fade_in.length;
+            let mute_end = selection.start() + selection.width() * fade_in.mute;
+            let new_start = 0.0;
+            let new_end = selection.end().max(new_start);
+            let new_width = (new_end - new_start).max(0.0);
+            let mut new_selection = SelectionRange::new(new_start, new_end);
             if let Some(fade_out) = selection.fade_out() {
-                new_selection = new_selection.with_fade_out(fade_out.length, fade_out.curve);
+                new_selection = new_selection
+                    .with_fade_out(fade_out.length, fade_out.curve)
+                    .with_fade_out_mute(fade_out.mute);
             }
-            let new_length = if new_width > 0.0 {
-                ((anchor - new_start) / new_width).clamp(0.0, 1.0)
-            } else {
-                0.0
-            };
-            new_selection = new_selection.with_fade_in(new_length, current_curve);
+            if new_width > 0.0 {
+                let new_fade_len = ((fade_end - new_start) / new_width).clamp(0.0, 1.0);
+                let new_mute_len = ((mute_end - new_start) / new_width)
+                    .clamp(0.0, new_fade_len);
+                new_selection = new_selection
+                    .with_fade_in(new_fade_len, fade_in.curve)
+                    .with_fade_in_mute(new_mute_len);
+            }
             app.controller.set_edit_selection_range(new_selection);
         }
     }
 
-    if fade_in_lower_response.drag_stopped() && !primary_down {
+    if (fade_in_mute_response.drag_started() && primary_down)
+        || (primary_down && fade_in_mute_response.is_pointer_button_down_on())
+    {
+        app.controller.begin_selection_undo("Fade In");
+    }
+
+    let fade_in_mute_active = fade_in_mute_response.dragged_by(egui::PointerButton::Primary)
+        || (primary_down && fade_in_mute_response.is_pointer_button_down_on());
+
+    if fade_in_mute_active {
+        if let Some(pos) = fade_in_mute_response.interact_pointer_pos() {
+            let origin_x = fade_in_mute_response.rect.center().x;
+            let delta = origin_x - pos.x;
+            let mute_fraction = (delta / selection_rect.width())
+                .clamp(0.0, selection.fade_in_length());
+            let new_selection = selection.with_fade_in_mute(mute_fraction);
+            app.controller.set_edit_selection_range(new_selection);
+        }
+    }
+
+    if fade_in_mute_response.drag_stopped() && !primary_down {
         app.controller.finish_selection_drag();
     }
+
+    let fade_in_lower_active = if fade_in_mute_active {
+        false
+    } else {
+        if (fade_in_lower_response.drag_started() && primary_down)
+            || (primary_down && fade_in_lower_response.is_pointer_button_down_on())
+        {
+            app.controller.begin_selection_undo("Fade In");
+        }
+
+        let active = fade_in_lower_response.dragged_by(egui::PointerButton::Primary)
+            || (primary_down && fade_in_lower_response.is_pointer_button_down_on());
+
+        if active {
+            if let Some(pos) = fade_in_lower_response.interact_pointer_pos() {
+                let anchor = selection.start() + selection.width() * selection.fade_in_length();
+                let mute_anchor =
+                    selection.start() + selection.width() * selection.fade_in_mute_length();
+                let new_start = cursor_to_wave(pos).min(selection.end());
+                let new_width = (selection.end() - new_start).max(0.0);
+                let current_curve = selection.fade_in().map(|f| f.curve).unwrap_or(0.5);
+                let mut new_selection = SelectionRange::new(new_start, selection.end());
+                if let Some(fade_out) = selection.fade_out() {
+                    new_selection = new_selection.with_fade_out(fade_out.length, fade_out.curve);
+                }
+                let new_length = if new_width > 0.0 {
+                    ((anchor - new_start) / new_width).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                let new_mute = if new_width > 0.0 {
+                    ((mute_anchor - new_start) / new_width).clamp(0.0, new_length)
+                } else {
+                    0.0
+                };
+                new_selection = new_selection
+                    .with_fade_in(new_length, current_curve)
+                    .with_fade_in_mute(new_mute);
+                app.controller.set_edit_selection_range(new_selection);
+            }
+        }
+
+        if fade_in_lower_response.drag_stopped() && !primary_down {
+            app.controller.finish_selection_drag();
+        }
+
+        active
+    };
 
     let fade_in_region_active = alt_down
         && (fade_in_region_response.dragged_by(egui::PointerButton::Primary)
             || (primary_down && fade_in_region_response.is_pointer_button_down_on()));
 
-    if !fade_in_lower_active && fade_in_region_active {
+    if !fade_in_mute_active && !fade_in_lower_active && fade_in_region_active {
         if (fade_in_region_response.drag_started() && primary_down)
             || (primary_down && fade_in_region_response.is_pointer_button_down_on())
         {
@@ -272,7 +339,7 @@ pub(super) fn handle_edit_fade_handle_drag(
         }
     }
 
-    if !fade_in_lower_active && !fade_in_region_active {
+    if !fade_in_mute_active && !fade_in_lower_active && !fade_in_region_active {
         // Handle fade-in drag
         if (fade_in_response.drag_started() && primary_down)
             || (primary_down && fade_in_response.is_pointer_button_down_on())
@@ -302,45 +369,110 @@ pub(super) fn handle_edit_fade_handle_drag(
         }
     }
 
-    // Handle fade-out edge drag (move selection end while keeping fade start anchored)
-    if (fade_out_lower_response.drag_started() && primary_down)
-        || (primary_down && fade_out_lower_response.is_pointer_button_down_on())
-    {
-        app.controller.begin_selection_undo("Fade Out");
-    }
-
-    let fade_out_lower_active = fade_out_lower_response.dragged_by(egui::PointerButton::Primary)
-        || (primary_down && fade_out_lower_response.is_pointer_button_down_on());
-
-    if fade_out_lower_active {
-        if let Some(pos) = fade_out_lower_response.interact_pointer_pos() {
-            let anchor = selection.end() - selection.width() * selection.fade_out_length();
-            let new_end = cursor_to_wave(pos).max(selection.start());
-            let new_width = (new_end - selection.start()).max(0.0);
-            let current_curve = selection.fade_out().map(|f| f.curve).unwrap_or(0.5);
-            let mut new_selection = SelectionRange::new(selection.start(), new_end);
+    // Handle fade-out mute drag (extend mute region inward)
+    if fade_out_mute_response.double_clicked() {
+        if let Some(fade_out) = selection.fade_out() {
+            app.controller.begin_selection_undo("Fade Out");
+            let fade_start = selection.end() - selection.width() * fade_out.length;
+            let mute_start = selection.end() - selection.width() * fade_out.mute;
+            let new_end = 1.0;
+            let new_start = selection.start().min(new_end);
+            let new_width = (new_end - new_start).max(0.0);
+            let mut new_selection = SelectionRange::new(new_start, new_end);
             if let Some(fade_in) = selection.fade_in() {
-                new_selection = new_selection.with_fade_in(fade_in.length, fade_in.curve);
+                new_selection = new_selection
+                    .with_fade_in(fade_in.length, fade_in.curve)
+                    .with_fade_in_mute(fade_in.mute);
             }
-            let new_length = if new_width > 0.0 {
-                ((new_end - anchor) / new_width).clamp(0.0, 1.0)
-            } else {
-                0.0
-            };
-            new_selection = new_selection.with_fade_out(new_length, current_curve);
+            if new_width > 0.0 {
+                let new_fade_len = ((new_end - fade_start) / new_width).clamp(0.0, 1.0);
+                let new_mute_len = ((new_end - mute_start) / new_width)
+                    .clamp(0.0, new_fade_len);
+                new_selection = new_selection
+                    .with_fade_out(new_fade_len, fade_out.curve)
+                    .with_fade_out_mute(new_mute_len);
+            }
             app.controller.set_edit_selection_range(new_selection);
         }
     }
 
-    if fade_out_lower_response.drag_stopped() && !primary_down {
+    if (fade_out_mute_response.drag_started() && primary_down)
+        || (primary_down && fade_out_mute_response.is_pointer_button_down_on())
+    {
+        app.controller.begin_selection_undo("Fade Out");
+    }
+
+    let fade_out_mute_active = fade_out_mute_response.dragged_by(egui::PointerButton::Primary)
+        || (primary_down && fade_out_mute_response.is_pointer_button_down_on());
+
+    if fade_out_mute_active {
+        if let Some(pos) = fade_out_mute_response.interact_pointer_pos() {
+            let origin_x = fade_out_mute_response.rect.center().x;
+            let delta = pos.x - origin_x;
+            let mute_fraction = (delta / selection_rect.width())
+                .clamp(0.0, selection.fade_out_length());
+            let new_selection = selection.with_fade_out_mute(mute_fraction);
+            app.controller.set_edit_selection_range(new_selection);
+        }
+    }
+
+    if fade_out_mute_response.drag_stopped() && !primary_down {
         app.controller.finish_selection_drag();
     }
+
+    let fade_out_lower_active = if fade_out_mute_active {
+        false
+    } else {
+        if (fade_out_lower_response.drag_started() && primary_down)
+            || (primary_down && fade_out_lower_response.is_pointer_button_down_on())
+        {
+            app.controller.begin_selection_undo("Fade Out");
+        }
+
+        let active = fade_out_lower_response.dragged_by(egui::PointerButton::Primary)
+            || (primary_down && fade_out_lower_response.is_pointer_button_down_on());
+
+        if active {
+            if let Some(pos) = fade_out_lower_response.interact_pointer_pos() {
+                let anchor = selection.end() - selection.width() * selection.fade_out_length();
+                let mute_anchor =
+                    selection.end() - selection.width() * selection.fade_out_mute_length();
+                let new_end = cursor_to_wave(pos).max(selection.start());
+                let new_width = (new_end - selection.start()).max(0.0);
+                let current_curve = selection.fade_out().map(|f| f.curve).unwrap_or(0.5);
+                let mut new_selection = SelectionRange::new(selection.start(), new_end);
+                if let Some(fade_in) = selection.fade_in() {
+                    new_selection = new_selection.with_fade_in(fade_in.length, fade_in.curve);
+                }
+                let new_length = if new_width > 0.0 {
+                    ((new_end - anchor) / new_width).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                let new_mute = if new_width > 0.0 {
+                    ((new_end - mute_anchor) / new_width).clamp(0.0, new_length)
+                } else {
+                    0.0
+                };
+                new_selection = new_selection
+                    .with_fade_out(new_length, current_curve)
+                    .with_fade_out_mute(new_mute);
+                app.controller.set_edit_selection_range(new_selection);
+            }
+        }
+
+        if fade_out_lower_response.drag_stopped() && !primary_down {
+            app.controller.finish_selection_drag();
+        }
+
+        active
+    };
 
     let fade_out_region_active = alt_down
         && (fade_out_region_response.dragged_by(egui::PointerButton::Primary)
             || (primary_down && fade_out_region_response.is_pointer_button_down_on()));
 
-    if !fade_out_lower_active && fade_out_region_active {
+    if !fade_out_mute_active && !fade_out_lower_active && fade_out_region_active {
         if (fade_out_region_response.drag_started() && primary_down)
             || (primary_down && fade_out_region_response.is_pointer_button_down_on())
         {
@@ -362,7 +494,7 @@ pub(super) fn handle_edit_fade_handle_drag(
         }
     }
 
-    if !fade_out_lower_active && !fade_out_region_active {
+    if !fade_out_mute_active && !fade_out_lower_active && !fade_out_region_active {
         // Handle fade-out drag
         if (fade_out_response.drag_started() && primary_down)
             || (primary_down && fade_out_response.is_pointer_button_down_on())

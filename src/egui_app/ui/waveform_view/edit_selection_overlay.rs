@@ -1,6 +1,7 @@
 use super::selection_drag;
 use super::selection_geometry::{
-    fade_handle_rect, fade_lower_handle_rect, paint_fade_handle, selection_rect_for_view,
+    fade_handle_rect, fade_lower_handle_rect, fade_mute_handle_rect, paint_fade_handle,
+    paint_fade_mute_handle, selection_rect_for_view,
 };
 use super::style;
 use super::*;
@@ -31,6 +32,8 @@ pub(super) fn render_edit_selection_overlay(
     if selection.fade_in().is_some() || selection.fade_out().is_some() {
         let fade_in_width = selection_rect.width() * selection.fade_in_length();
         let fade_out_width = selection_rect.width() * selection.fade_out_length();
+        let fade_in_mute_width = selection_rect.width() * selection.fade_in_mute_length();
+        let fade_out_mute_width = selection_rect.width() * selection.fade_out_mute_length();
         
         // Fade-in gradient (left side)
         if fade_in_width > 1.0 {
@@ -49,16 +52,31 @@ pub(super) fn render_edit_selection_overlay(
             mesh.add_triangle(base, base + 1, base + 2);
             mesh.add_triangle(base + 2, base + 1, base + 3);
             painter.add(egui::Shape::mesh(mesh));
+
+            if fade_in_mute_width > 1.0 {
+                let mute_rect = egui::Rect::from_min_size(
+                    selection_rect.min,
+                    egui::vec2(fade_in_mute_width.min(fade_in_width), selection_rect.height()),
+                );
+                painter.rect_filled(mute_rect, 0.0, style::with_alpha(highlight, 150));
+            }
             
             // Draw fade curve line
             if let Some(fade_params) = selection.fade_in() {
-                draw_fade_curve(
-                    &painter,
-                    fade_in_rect,
-                    fade_params.curve,
-                    true, // fade in
-                    highlight,
-                );
+                let curve_width = (fade_in_width - fade_in_mute_width).max(0.0);
+                if curve_width > 1.0 {
+                    let curve_rect = egui::Rect::from_min_size(
+                        egui::pos2(selection_rect.left() + fade_in_mute_width, selection_rect.top()),
+                        egui::vec2(curve_width, selection_rect.height()),
+                    );
+                    draw_fade_curve(
+                        &painter,
+                        curve_rect,
+                        fade_params.curve,
+                        true, // fade in
+                        highlight,
+                    );
+                }
             }
         }
         
@@ -79,16 +97,34 @@ pub(super) fn render_edit_selection_overlay(
             mesh.add_triangle(base, base + 1, base + 2);
             mesh.add_triangle(base + 2, base + 1, base + 3);
             painter.add(egui::Shape::mesh(mesh));
+
+            if fade_out_mute_width > 1.0 {
+                let mute_rect = egui::Rect::from_min_size(
+                    egui::pos2(
+                        selection_rect.right() - fade_out_mute_width.min(fade_out_width),
+                        selection_rect.top(),
+                    ),
+                    egui::vec2(fade_out_mute_width.min(fade_out_width), selection_rect.height()),
+                );
+                painter.rect_filled(mute_rect, 0.0, style::with_alpha(highlight, 150));
+            }
             
             // Draw fade curve line
             if let Some(fade_params) = selection.fade_out() {
-                draw_fade_curve(
-                    &painter,
-                    fade_out_rect,
-                    fade_params.curve,
-                    false, // fade out
-                    highlight,
-                );
+                let curve_width = (fade_out_width - fade_out_mute_width).max(0.0);
+                if curve_width > 1.0 {
+                    let curve_rect = egui::Rect::from_min_size(
+                        egui::pos2(selection_rect.right() - fade_out_width, selection_rect.top()),
+                        egui::vec2(curve_width, selection_rect.height()),
+                    );
+                    draw_fade_curve(
+                        &painter,
+                        curve_rect,
+                        fade_params.curve,
+                        false, // fade out
+                        highlight,
+                    );
+                }
             }
         }
     }
@@ -171,6 +207,14 @@ pub(super) fn render_edit_selection_overlay(
         .fade_out()
         .map(|_| fade_lower_handle_rect(selection_rect, false))
         .unwrap_or(egui::Rect::NOTHING);
+    let fade_in_mute_handle_rect = selection
+        .fade_in()
+        .map(|_| fade_mute_handle_rect(selection_rect, true))
+        .unwrap_or(egui::Rect::NOTHING);
+    let fade_out_mute_handle_rect = selection
+        .fade_out()
+        .map(|_| fade_mute_handle_rect(selection_rect, false))
+        .unwrap_or(egui::Rect::NOTHING);
     
     // Also create responses for the entire fade regions (for Alt+drag)
     let fade_in_region_response = ui.interact(
@@ -204,6 +248,16 @@ pub(super) fn render_edit_selection_overlay(
         ui.id().with("edit_fade_out_lower_handle"),
         egui::Sense::click_and_drag(),
     );
+    let fade_in_mute_response = ui.interact(
+        fade_in_mute_handle_rect,
+        ui.id().with("edit_fade_in_mute_handle"),
+        egui::Sense::click_and_drag(),
+    );
+    let fade_out_mute_response = ui.interact(
+        fade_out_mute_handle_rect,
+        ui.id().with("edit_fade_out_mute_handle"),
+        egui::Sense::click_and_drag(),
+    );
     
     let fade_in_active = fade_in_response.hovered() || fade_in_response.dragged();
     let fade_out_active = fade_out_response.hovered() || fade_out_response.dragged();
@@ -211,6 +265,9 @@ pub(super) fn render_edit_selection_overlay(
         fade_in_lower_response.hovered() || fade_in_lower_response.dragged();
     let fade_out_lower_active =
         fade_out_lower_response.hovered() || fade_out_lower_response.dragged();
+    let fade_in_mute_active = fade_in_mute_response.hovered() || fade_in_mute_response.dragged();
+    let fade_out_mute_active =
+        fade_out_mute_response.hovered() || fade_out_mute_response.dragged();
     let paint_handle_effects =
         |painter: &egui::Painter, handle_rect: egui::Rect, color: egui::Color32, active: bool| {
             paint_fade_handle(painter, handle_rect, true, color);
@@ -220,6 +277,18 @@ pub(super) fn render_edit_selection_overlay(
                 painter.rect_stroke(glow_rect, 3.0, stroke, StrokeKind::Inside);
             }
         };
+    let paint_mute_effects = |painter: &egui::Painter,
+                             handle_rect: egui::Rect,
+                             color: egui::Color32,
+                             active: bool,
+                             is_fade_in: bool| {
+        paint_fade_mute_handle(painter, handle_rect, is_fade_in, color);
+        if active {
+            let glow_rect = handle_rect.expand(2.0);
+            let stroke = egui::Stroke::new(1.5, style::with_alpha(color, 180));
+            painter.rect_stroke(glow_rect, 3.0, stroke, StrokeKind::Inside);
+        }
+    };
     
     // Always show fade handles when edit selection exists
     let fade_in_color = if fade_in_active {
@@ -246,6 +315,23 @@ pub(super) fn render_edit_selection_overlay(
             fade_in_lower_active,
         );
         if fade_in_lower_active {
+            ui.output_mut(|o| o.cursor_icon = CursorIcon::ResizeHorizontal);
+        }
+    }
+    if selection.fade_in().is_some() && fade_in_mute_handle_rect != egui::Rect::NOTHING {
+        let fade_in_mute_color = if fade_in_mute_active {
+            style::with_alpha(highlight, 255)
+        } else {
+            style::with_alpha(highlight, 200)
+        };
+        paint_mute_effects(
+            ui.painter(),
+            fade_in_mute_handle_rect,
+            fade_in_mute_color,
+            fade_in_mute_active,
+            true,
+        );
+        if fade_in_mute_active {
             ui.output_mut(|o| o.cursor_icon = CursorIcon::ResizeHorizontal);
         }
     }
@@ -277,6 +363,23 @@ pub(super) fn render_edit_selection_overlay(
             ui.output_mut(|o| o.cursor_icon = CursorIcon::ResizeHorizontal);
         }
     }
+    if selection.fade_out().is_some() && fade_out_mute_handle_rect != egui::Rect::NOTHING {
+        let fade_out_mute_color = if fade_out_mute_active {
+            style::with_alpha(highlight, 255)
+        } else {
+            style::with_alpha(highlight, 200)
+        };
+        paint_mute_effects(
+            ui.painter(),
+            fade_out_mute_handle_rect,
+            fade_out_mute_color,
+            fade_out_mute_active,
+            false,
+        );
+        if fade_out_mute_active {
+            ui.output_mut(|o| o.cursor_icon = CursorIcon::ResizeHorizontal);
+        }
+    }
     
     // Handle fade handle dragging
     selection_drag::handle_edit_fade_handle_drag(
@@ -291,6 +394,8 @@ pub(super) fn render_edit_selection_overlay(
         &fade_out_response,
         &fade_in_lower_response,
         &fade_out_lower_response,
+        &fade_in_mute_response,
+        &fade_out_mute_response,
         &fade_in_region_response,
         &fade_out_region_response,
     );

@@ -69,6 +69,8 @@ const EDGE_ICON_MIN_SIZE: f32 = 12.0;
 const EDGE_BRACKET_STROKE: f32 = 1.5;
 
 const FADE_HANDLE_SIZE: f32 = 14.0;
+const FADE_MUTE_HANDLE_SIZE: f32 = 12.0;
+const FADE_MUTE_HANDLE_GAP: f32 = 6.0;
 
 /// Get the rect for a fade handle (top-left for fade-in, top-right for fade-out).
 pub(super) fn fade_handle_rect(
@@ -104,6 +106,21 @@ pub(super) fn fade_lower_handle_rect(
     )
 }
 
+/// Get the rect for a mute extension handle next to the lower fade handle.
+pub(super) fn fade_mute_handle_rect(
+    selection_rect: egui::Rect,
+    is_fade_in: bool,
+) -> egui::Rect {
+    let size = FADE_MUTE_HANDLE_SIZE;
+    let y = selection_rect.bottom() - size;
+    let x = if is_fade_in {
+        selection_rect.left() - FADE_MUTE_HANDLE_GAP - size
+    } else {
+        selection_rect.right() + FADE_MUTE_HANDLE_GAP
+    };
+    egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(size, size))
+}
+
 /// Paint a fade handle as a small triangle indicator.
 pub(super) fn paint_fade_handle(
     painter: &egui::Painter,
@@ -119,6 +136,35 @@ pub(super) fn paint_fade_handle(
         egui::Stroke::new(1.0, Color32::from_black_alpha(60)),
         egui::StrokeKind::Inside,
     );
+}
+
+/// Paint a mute handle as a small outward-pointing triangle.
+pub(super) fn paint_fade_mute_handle(
+    painter: &egui::Painter,
+    handle_rect: egui::Rect,
+    is_fade_in: bool,
+    color: Color32,
+) {
+    let center = handle_rect.center();
+    let half = handle_rect.width().min(handle_rect.height()) * 0.5;
+    let (tip, base_top, base_bottom) = if is_fade_in {
+        (
+            egui::pos2(center.x - half, center.y),
+            egui::pos2(center.x + half, center.y - half),
+            egui::pos2(center.x + half, center.y + half),
+        )
+    } else {
+        (
+            egui::pos2(center.x + half, center.y),
+            egui::pos2(center.x - half, center.y - half),
+            egui::pos2(center.x - half, center.y + half),
+        )
+    };
+    painter.add(egui::Shape::convex_polygon(
+        vec![tip, base_top, base_bottom],
+        color,
+        Stroke::new(1.0, Color32::from_black_alpha(60)),
+    ));
 }
 
 pub(super) fn selection_edge_handle_rect(
