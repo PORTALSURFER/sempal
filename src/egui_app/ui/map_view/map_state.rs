@@ -2,6 +2,7 @@ use super::EguiApp;
 use super::map_clusters;
 use super::map_math;
 use super::style;
+use crate::egui_app::ui::helpers;
 use crate::egui_app::state::{MapBounds, MapFilterKey, MapQueryBounds};
 use crate::sample_sources::SourceId;
 use eframe::egui;
@@ -14,6 +15,7 @@ pub(super) fn render_map_controls(app: &mut EguiApp, ui: &mut egui::Ui) -> bool 
     app.controller.ui.map.similarity_blend_threshold = 0.2;
     app.controller.ui.map.cluster_filter_input.clear();
     app.controller.ui.map.cluster_filter = None;
+    let tooltip_mode = app.controller.ui.controls.tooltip_mode;
     ui.horizontal(|ui| {
         let mode = match app.controller.ui.map.last_render_mode {
             crate::egui_app::state::MapRenderMode::Heatmap => "heatmap",
@@ -44,12 +46,16 @@ pub(super) fn render_map_controls(app: &mut EguiApp, ui: &mut egui::Ui) -> bool 
                 ));
                 if app.controller.ui.map.outdated {
                     ui.separator();
-                    ui.label(
-                        egui::RichText::new("⚠ Outdated")
-                            .color(style::palette().warning)
-                            .strong(),
-                    )
-                    .on_hover_text("The source has been updated since the last similarity map build.");
+                    let outdated_label = egui::RichText::new("⚠ Outdated")
+                        .color(style::palette().warning)
+                        .strong();
+                    let outdated_resp = ui.label(outdated_label);
+                    helpers::tooltip(
+                        outdated_resp,
+                        "Map Outdated",
+                        "The underlying audio files have changed on disk. The similarity map positions and search results may be inaccurate until you re-analyze the source.",
+                        tooltip_mode,
+                    );
                     if ui.button("Update Map").clicked() {
                         app.controller.prepare_similarity_for_selected_source();
                     }

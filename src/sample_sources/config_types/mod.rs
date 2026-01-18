@@ -10,5 +10,5 @@ pub use app::{
     AppConfig, AppSettingsCore, DropTargetColor, DropTargetConfig, FeatureFlags,
 };
 pub use errors::ConfigError;
-pub use interaction::InteractionOptions;
+pub use interaction::{InteractionOptions, TooltipMode};
 pub use updates::{UpdateChannel, UpdateSettings};

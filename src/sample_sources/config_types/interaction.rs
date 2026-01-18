@@ -1,11 +1,39 @@
 use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 
 use crate::waveform::WaveformChannelView;
 
 use super::super::config_defaults::{
     default_anti_clip_fade_ms, default_bpm_value, default_false, default_keyboard_zoom_factor,
-    default_scroll_speed, default_true, default_wheel_zoom_factor,
+    default_scroll_speed, default_tooltip_mode, default_true, default_wheel_zoom_factor,
 };
+
+/// Tooltip detail level.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TooltipMode {
+    /// No tooltips.
+    Off,
+    /// Short, concise helper hints.
+    Regular,
+    /// Detailed descriptions of features and interactions.
+    Extended,
+}
+
+impl Default for TooltipMode {
+    fn default() -> Self {
+        Self::Regular
+    }
+}
+
+impl Display for TooltipMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Off => write!(f, "Off"),
+            Self::Regular => write!(f, "Regular"),
+            Self::Extended => write!(f, "Extended"),
+        }
+    }
+}
 
 /// Interaction tuning for waveform navigation.
 ///
@@ -68,9 +96,9 @@ pub struct InteractionOptions {
     /// Advance selection after rating a sample.
     #[serde(default = "default_true")]
     pub advance_after_rating: bool,
-    /// Show hover hints in the UI.
-    #[serde(default = "default_true")]
-    pub hover_hints_enabled: bool,
+    /// Tooltip detail level.
+    #[serde(default = "default_tooltip_mode")]
+    pub tooltip_mode: TooltipMode,
 }
 
 impl Default for InteractionOptions {
@@ -93,7 +121,7 @@ impl Default for InteractionOptions {
             input_monitoring_enabled: default_true(),
             normalized_audition_enabled: default_false(),
             advance_after_rating: true,
-            hover_hints_enabled: true,
+            tooltip_mode: default_tooltip_mode(),
         }
     }
 }

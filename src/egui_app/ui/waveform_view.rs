@@ -27,7 +27,7 @@ impl EguiApp {
         let is_loading = self.controller.ui.waveform.loading.is_some();
         controls::render_waveform_controls(self, ui, &palette);
         let frame = style::section_frame();
-        let hints_enabled = self.controller.settings.controls.hover_hints_enabled;
+        let tooltip_mode = self.controller.ui.controls.tooltip_mode;
         let frame_response = frame.show(ui, |ui| {
             let view = self.controller.ui.waveform.view;
             // Always use the actual f64 view for precision
@@ -162,7 +162,7 @@ impl EguiApp {
         if frame_response.response.hovered() && !edge_dragging && !slice_dragging {
             helpers::show_hover_hint(
                 ui,
-                hints_enabled,
+                tooltip_mode,
                 "Left-click: Seek | Primary Drag: Select | Secondary Drag: Edit Selection\nMiddle Drag: Pan | Ctrl+Shift+Alt+Primary Drag: Circular Slide",
             );
         }
@@ -204,7 +204,7 @@ fn render_waveform_drag_handle(
     if response.hovered() {
         helpers::show_hover_hint(
             ui,
-            app.controller.settings.controls.hover_hints_enabled,
+            app.controller.ui.controls.tooltip_mode,
             "Primary Drag: Export sample",
         );
     }

@@ -2,11 +2,12 @@ use super::style;
 use crate::sample_sources::is_supported_audio;
 use eframe::egui::{self, Align2, Color32, PopupAnchor, TextStyle, Tooltip, Ui};
 use crate::sample_sources::Rating;
+use crate::sample_sources::config::TooltipMode;
 use std::path::PathBuf;
 
 /// Display a contextual hint tooltip if hints are enabled and the last response was hovered.
-pub(super) fn show_hover_hint(ui: &mut Ui, enabled: bool, hint: &str) {
-    if !enabled {
+pub(super) fn show_hover_hint(ui: &mut Ui, mode: TooltipMode, hint: &str) {
+    if !matches!(mode, TooltipMode::Extended) {
         return;
     }
     ui.ctx().input(|i| {
@@ -51,6 +52,28 @@ pub(super) fn show_hover_hint(ui: &mut Ui, enabled: bool, hint: &str) {
                 }
             });
     });
+}
+
+/// Apply a tiered tooltip to a response based on the current mode.
+pub(super) fn tooltip(
+    response: egui::Response,
+    short: &str,
+    extended: &str,
+    mode: TooltipMode,
+) -> egui::Response {
+    match mode {
+        TooltipMode::Off => response,
+        TooltipMode::Regular => response.on_hover_text(short),
+        TooltipMode::Extended => response.on_hover_ui(|ui| {
+            ui.set_max_width(280.0);
+            ui.add(egui::Label::new(
+                egui::RichText::new(short).strong().size(13.0),
+            ));
+            if !extended.is_empty() {
+                ui.add(egui::Label::new(extended));
+            }
+        }),
+    }
 }
 
 /// Return true if an external file drag contains supported audio paths.

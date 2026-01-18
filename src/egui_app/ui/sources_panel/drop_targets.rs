@@ -3,6 +3,7 @@ use super::helpers::{
     RowBackground, RowMarker, clamp_label_for_width, external_dropped_paths,
     external_hover_has_audio, list_row_height, render_list_row,
 };
+use crate::egui_app::ui::helpers;
 use super::style;
 use crate::egui_app::state::{DragPayload, DragSource, DragTarget};
 use crate::egui_app::ui::drag_targets::{handle_drop_zone, handle_sample_row_drag, pointer_pos_for_drag};
@@ -12,12 +13,15 @@ use eframe::egui::{self, Align2, RichText, StrokeKind, TextStyle, Ui};
 impl EguiApp {
     pub(super) fn render_drop_targets(&mut self, ui: &mut Ui, height: f32) {
         let palette = style::palette();
+        let tooltip_mode = self.controller.ui.controls.tooltip_mode;
         ui.horizontal(|ui| {
             ui.label(RichText::new("Drop targets").color(palette.text_primary));
-            if ui
-                .button(RichText::new("+").color(palette.text_primary))
-                .clicked()
-            {
+            if helpers::tooltip(
+                ui.button(RichText::new("+").color(palette.text_primary)),
+                "Add Drop Target",
+                "Create a shortcut to a subfolder within your sources. Dragging samples onto these targets will move or copy the files to those folders.",
+                tooltip_mode,
+            ).clicked() {
                 self.controller.add_drop_target_via_dialog();
             }
         });
@@ -117,8 +121,13 @@ impl EguiApp {
                                 looped: false,
                                 bpm_label: None,
                             },
-                        )
-                        .on_hover_text(row.path.display().to_string());
+                        );
+                        let response = helpers::tooltip(
+                            response,
+                            &row.path.display().to_string(),
+                            "Dragging samples onto this target will move or copy them to this specific folder location. Right-click to change the marker color or remove the target.",
+                            tooltip_mode,
+                        );
                         if is_selected {
                             ui.painter().rect_stroke(
                                 response.rect,

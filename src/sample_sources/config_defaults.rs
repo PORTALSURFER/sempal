@@ -61,3 +61,7 @@ pub(super) fn default_anti_clip_fade_ms() -> f32 {
 pub(super) fn default_bpm_value() -> f32 {
     142.0
 }
+
+pub(super) fn default_tooltip_mode() -> crate::sample_sources::config::TooltipMode {
+    crate::sample_sources::config::TooltipMode::Regular
+}

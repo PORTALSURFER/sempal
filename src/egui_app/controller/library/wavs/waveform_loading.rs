@@ -69,6 +69,7 @@ impl EguiController {
             bytes,
             AudioLoadIntent::Selection,
             is_refresh,
+            None,
         )?;
         self.maybe_trigger_pending_playback();
         let message = Self::loaded_status_text(relative_path, duration_seconds, sample_rate);
@@ -98,10 +99,11 @@ impl EguiController {
         bytes: Vec<u8>,
         intent: AudioLoadIntent,
         preserve_selections: bool,
+        transients: Option<Vec<f32>>,
     ) -> Result<(), String> {
         let duration_seconds = decoded.duration_seconds;
         let sample_rate = decoded.sample_rate;
-        self.apply_waveform_image(decoded);
+        self.apply_waveform_image(decoded, transients);
         if !preserve_selections {
             self.ui.waveform.view = WaveformView::default();
             self.ui.waveform.cursor = Some(0.0);
@@ -375,10 +377,8 @@ impl EguiController {
             && self.sample_view.wav.selected_wav.as_deref() == Some(relative_path);
         if selected_matches || loaded_matches {
             let preserved_view = self.ui.waveform.view;
-            if !loaded_matches {
-                self.sample_view.wav.loaded_wav = None;
-                self.ui.loaded_wav = None;
-            }
+            self.sample_view.wav.loaded_wav = None;
+            self.ui.loaded_wav = None;
             if let Err(err) = self.load_waveform_for_selection(source, relative_path) {
                 self.set_status(err, StatusTone::Warning);
             } else {

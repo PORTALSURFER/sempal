@@ -335,8 +335,8 @@ impl EguiApp {
         if list_response.frame_rect.contains(ui.input(|i| i.pointer.hover_pos()).unwrap_or(egui::Pos2::ZERO)) {
             helpers::show_hover_hint(
                 ui,
-                self.controller.settings.controls.hover_hints_enabled,
-                "Click: Select/Play\nShift+Click: Range Select\nCtrl+Click: Toggle Select\nDrag: Export / Reorder",
+                self.controller.ui.controls.tooltip_mode,
+                "Click: Select/Play | Shift+Click: Range Select | Ctrl+Click: Toggle Select | Drag: Export",
             );
         }
 

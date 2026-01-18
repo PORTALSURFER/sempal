@@ -73,7 +73,7 @@ impl EguiController {
 
     /// Crop the loaded sample to the active selection range and refresh caches/exports.
     pub(crate) fn crop_waveform_selection(&mut self) -> Result<(), String> {
-        let result = self.apply_selection_edit("Cropped selection", crop_buffer);
+        let result = self.apply_selection_edit("Cropped selection", false, crop_buffer);
         if let Err(err) = &result {
             self.set_status(err.clone(), StatusTone::Error);
         }
@@ -173,7 +173,7 @@ impl EguiController {
 
     /// Remove the selected span from the loaded sample.
     pub(crate) fn trim_waveform_selection(&mut self) -> Result<(), String> {
-        let result = self.apply_selection_edit("Trimmed selection", trim_buffer);
+        let result = self.apply_selection_edit("Trimmed selection", false, trim_buffer);
         if let Err(err) = &result {
             self.set_status(err.clone(), StatusTone::Error);
         }
@@ -185,7 +185,7 @@ impl EguiController {
         &mut self,
         direction: FadeDirection,
     ) -> Result<(), String> {
-        let result = self.apply_selection_edit("Applied fade", |buffer| {
+        let result = self.apply_selection_edit("Applied fade", true, |buffer| {
             apply_directional_fade(
                 &mut buffer.samples,
                 buffer.channels,
@@ -203,7 +203,7 @@ impl EguiController {
 
     /// Normalize the active selection and apply short fades at the edges.
     pub(crate) fn normalize_waveform_selection(&mut self) -> Result<(), String> {
-        let result = self.apply_selection_edit("Normalized selection", |buffer| {
+        let result = self.apply_selection_edit("Normalized selection", true, |buffer| {
             normalize_selection(buffer, Duration::from_millis(5))
         });
         if let Err(err) = &result {
@@ -216,7 +216,7 @@ impl EguiController {
     pub(crate) fn soften_waveform_selection_edges(&mut self) -> Result<(), String> {
         let fade_ms = self.ui.controls.anti_clip_fade_ms.max(0.0);
         let fade_duration = Duration::from_secs_f32(fade_ms / 1000.0);
-        let result = self.apply_selection_edit("Applied short fades", |buffer| {
+        let result = self.apply_selection_edit("Applied short fades", true, |buffer| {
             let selection_frames = buffer.end_frame.saturating_sub(buffer.start_frame);
             let fade_frames = edge_fade_frame_count(
                 buffer.sample_rate.max(1),
@@ -244,7 +244,7 @@ impl EguiController {
     /// Repair clicks inside the selection by interpolating the span.
     pub(crate) fn repair_clicks_selection(&mut self) -> Result<(), String> {
         let result =
-            self.apply_selection_edit("Removed clicks", |buffer| repair_clicks_buffer(buffer));
+            self.apply_selection_edit("Removed clicks", true, |buffer| repair_clicks_buffer(buffer));
         if let Err(err) = &result {
             self.set_status(err.clone(), StatusTone::Error);
         }
@@ -253,7 +253,7 @@ impl EguiController {
 
     /// Silence the selected span without applying fades.
     pub(crate) fn mute_waveform_selection(&mut self) -> Result<(), String> {
-        let result = self.apply_selection_edit("Muted selection", ops::mute_buffer);
+        let result = self.apply_selection_edit("Muted selection", true, ops::mute_buffer);
         if let Err(err) = &result {
             self.set_status(err.clone(), StatusTone::Error);
         }
@@ -262,7 +262,7 @@ impl EguiController {
 
     /// Reverse the selected span in time.
     pub(crate) fn reverse_waveform_selection(&mut self) -> Result<(), String> {
-        let result = self.apply_selection_edit("Reversed selection", reverse_buffer);
+        let result = self.apply_selection_edit("Reversed selection", true, reverse_buffer);
         if let Err(err) = &result {
             self.set_status(err.clone(), StatusTone::Error);
         }
@@ -287,7 +287,12 @@ impl EguiController {
         }
     }
 
-    fn apply_selection_edit<F>(&mut self, action_label: &str, mut edit: F) -> Result<(), String>
+    fn apply_selection_edit<F>(
+        &mut self,
+        action_label: &str,
+        preserve_selection: bool,
+        mut edit: F,
+    ) -> Result<(), String>
     where
         F: FnMut(&mut SelectionEditBuffer) -> Result<(), String>,
     {
@@ -360,16 +365,21 @@ impl EguiController {
 
         self.refresh_waveform_for_sample(&context.source, &context.relative_path);
 
-        // Restore visuals and selection AFTER refresh
-        self.ui.waveform.view = preserved_view.clamp();
-        self.ui.waveform.cursor = preserved_cursor;
-        self.ui.waveform.loop_enabled = preserved_loop_enabled;
-        self.selection_state.range.set_range(preserved_selection);
-        self.apply_selection(preserved_selection);
-        self.selection_state
-            .edit_range
-            .set_range(preserved_edit_selection);
-        self.apply_edit_selection(preserved_edit_selection);
+        if preserve_selection {
+            // Restore visuals and selection AFTER refresh
+            self.ui.waveform.view = preserved_view.clamp();
+            self.ui.waveform.cursor = preserved_cursor;
+            self.ui.waveform.loop_enabled = preserved_loop_enabled;
+            self.selection_state.range.set_range(preserved_selection);
+            self.apply_selection(preserved_selection);
+            self.selection_state
+                .edit_range
+                .set_range(preserved_edit_selection);
+            self.apply_edit_selection(preserved_edit_selection);
+        } else {
+            self.clear_waveform_selection();
+            self.clear_edit_selection();
+        }
 
         self.reexport_collections_for_sample(&context.source.id, &context.relative_path);
         self.maybe_trigger_pending_playback();

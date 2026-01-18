@@ -7,7 +7,7 @@ use std::path::Path;
 
 const MIN_VIEW_WIDTH_BASE: f64 = 1e-9;
 const MIN_SAMPLES_PER_PIXEL: f32 = 1.0;
-const DEFAULT_TRANSIENT_SENSITIVITY: f32 = 0.6;
+pub(crate) const DEFAULT_TRANSIENT_SENSITIVITY: f32 = 0.6;
 
 fn min_view_width_for_frames(frame_count: usize, width_px: u32) -> f64 {
     if frame_count == 0 {
@@ -70,6 +70,7 @@ impl EguiController {
     pub(crate) fn apply_waveform_image(
         &mut self,
         decoded: DecodedWaveform,
+        transients: Option<Vec<f32>>,
     ) {
         if self.sample_view.waveform.decoded.as_ref().is_some_and(|d| d.cache_token == decoded.cache_token) {
             // Content matches, no need to invalidate the current render or transients.
@@ -77,6 +78,7 @@ impl EguiController {
             return;
         }
 
+        let token = decoded.cache_token;
         // Force a rerender whenever decoded samples change, even if the view metadata is
         // identical to the previous render.
         self.sample_view.waveform.render_meta = None;
@@ -88,7 +90,12 @@ impl EguiController {
             end: 1.0,
         };
         
-        self.refresh_waveform_transients();
+        if let Some(transients) = transients {
+            self.ui.waveform.transients = transients;
+            self.ui.waveform.transient_cache_token = Some(token);
+        } else {
+            self.refresh_waveform_transients();
+        }
         self.refresh_waveform_image();
     }
 

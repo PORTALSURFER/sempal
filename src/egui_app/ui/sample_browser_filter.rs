@@ -7,6 +7,7 @@ use eframe::egui::{self, RichText, Ui};
 impl EguiApp {
     pub(super) fn render_sample_browser_filter(&mut self, ui: &mut Ui) {
         let palette = style::palette();
+        let tooltip_mode = self.controller.ui.controls.tooltip_mode;
         let visible_count = self.controller.visible_browser_len();
         ui.horizontal(|ui| {
             ui.label(RichText::new("Filter").color(palette.text_primary));
@@ -54,6 +55,12 @@ impl EguiApp {
             let find_similar_btn = egui::Button::new("Find similar")
                 .selected(self.controller.ui.browser.similar_query.is_some());
             let find_similar_resp = ui.add_enabled(selected_row.is_some(), find_similar_btn);
+            let find_similar_resp = helpers::tooltip(
+                find_similar_resp,
+                "Find similar",
+                "Search the entire library for samples that sound similar to the currently selected item. This uses advanced neural embeddings to find matches based on timbre, rhythm, and character.",
+                tooltip_mode,
+            );
             if find_similar_resp.clicked()
                 && let Some(row) = selected_row
             {
@@ -131,8 +138,11 @@ impl EguiApp {
                 palette.text_muted
             });
             let dice_button = egui::Button::new(dice_label).selected(random_mode_enabled);
-            let dice_response = ui.add(dice_button).on_hover_text(
-                "Play a random visible sample (click)\nToggle sticky random navigation (Shift+click)",
+            let dice_response = helpers::tooltip(
+                ui.add(dice_button),
+                "Random Navigation",
+                "Click to immediately play a random sample from the visible list.\n\nShift+Click to toggle Sticky Random mode, where 'Next' and 'Previous' hotkeys (Arrow Up/Down) will jump to random samples instead of moving sequentially.",
+                tooltip_mode,
             );
             if dice_response.clicked() {
                 let modifiers = ui.input(|i| i.modifiers);

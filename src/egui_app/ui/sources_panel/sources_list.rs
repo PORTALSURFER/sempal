@@ -1,5 +1,6 @@
 use super::EguiApp;
 use super::helpers::{RowBackground, clamp_label_for_width, list_row_height, render_list_row};
+use crate::egui_app::ui::helpers;
 use super::style;
 use crate::egui_app::state::{DragPayload, DragSource, DragTarget, FocusContext};
 use crate::egui_app::ui::drag_targets::{handle_drop_zone, pointer_pos_for_drag};
@@ -20,6 +21,7 @@ impl EguiApp {
                 let rows = self.controller.ui.sources.rows.clone();
                 let selected = self.controller.ui.sources.selected;
                 let row_height = list_row_height(ui);
+                let tooltip_mode = self.controller.ui.controls.tooltip_mode;
                 for (index, row) in rows.iter().enumerate() {
                     let is_selected = Some(index) == selected;
                     ui.push_id(&row.id, |ui| {
@@ -55,8 +57,13 @@ impl EguiApp {
                                 looped: false,
                                 bpm_label: None,
                             },
-                        )
-                        .on_hover_text(&row.path);
+                        );
+                        let response = helpers::tooltip(
+                            response,
+                            &row.path,
+                            "This folder is indexed in your library. Right-click to manage sync settings, re-analyze similarity, or open in File Explorer.",
+                            tooltip_mode,
+                        );
                         if response.clicked() {
                             self.controller.select_source_by_index(index);
                             self.controller
@@ -98,35 +105,44 @@ impl EguiApp {
     ) {
         response.context_menu(|ui| {
             let palette = style::palette();
+            let tooltip_mode = self.controller.ui.controls.tooltip_mode;
             ui.label(RichText::new(row.name.clone()).color(palette.text_primary));
             let mut close_menu = false;
-            if ui.button("Quick sync").clicked() {
+            if helpers::tooltip(
+                ui.button("Quick sync"),
+                "Quick sync",
+                "Scan the folder for new or deleted files. This is fast as it only checks file timestamps.",
+                tooltip_mode,
+            ).clicked() {
                 self.controller.select_source_by_index(index);
                 self.controller.request_quick_sync();
                 close_menu = true;
             }
-            if ui
-                .button("Hard sync (full rescan)")
-                .on_hover_text("Prune missing rows and rebuild from disk")
-                .clicked()
-            {
+            if helpers::tooltip(
+                ui.button("Hard sync (full rescan)"),
+                "Hard sync",
+                "Completely rebuild the database for this folder. Prunes missing entries and re-reads all metadata from disk. Useful if the database becomes desynced.",
+                tooltip_mode,
+            ).clicked() {
                 self.controller.select_source_by_index(index);
                 self.controller.request_hard_sync();
                 close_menu = true;
             }
-            if ui
-                .button("Remove dead links")
-                .on_hover_text("Remove missing rows from the library")
-                .clicked()
-            {
+            if helpers::tooltip(
+                ui.button("Remove dead links"),
+                "Remove dead links",
+                "Clean up the library by removing entries for files that no longer exist on disk.",
+                tooltip_mode,
+            ).clicked() {
                 self.controller.remove_dead_links_for_source(index);
                 close_menu = true;
             }
-            if ui
-                .button("Prepare similarity search")
-                .on_hover_text("Scan, embed, build ANN, t-SNE, and cluster for this source")
-                .clicked()
-            {
+            if helpers::tooltip(
+                ui.button("Prepare similarity search"),
+                "Prepare similarity",
+                "Analyze all audio files in this folder to build a neural similarity map. This enables 'Find similar' and the Map View for this source.",
+                tooltip_mode,
+            ).clicked() {
                 self.controller.select_source_by_index(index);
                 self.controller.prepare_similarity_for_selected_source();
                 close_menu = true;

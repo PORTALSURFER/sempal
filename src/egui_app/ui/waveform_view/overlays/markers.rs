@@ -43,19 +43,35 @@ fn draw_transient_markers(
         return;
     }
     let palette = style::palette();
-    let stroke = Stroke::new(1.0, style::with_alpha(palette.accent_mint, 40));
     let triangle_fill = style::with_alpha(palette.accent_mint, 60);
     let triangle_height = 6.0;
     let triangle_half = 4.0;
     let top = rect.top() + super::LOOP_BAR_HEIGHT;
+    let bottom = rect.bottom();
+    let height = bottom - top;
+    
     for &marker in transients {
         let m = marker as f64;
         if m < view.start || m > view.end {
             continue;
         }
         let x = to_screen_x(marker, rect);
-        ui.painter()
-            .line_segment([egui::pos2(x, top), egui::pos2(x, rect.bottom())], stroke);
+        
+        // Draw fading line
+        let steps = 10;
+        for i in 0..steps {
+            let t_start = i as f32 / steps as f32;
+            let t_end = (i + 1) as f32 / steps as f32;
+            let alpha = (160.0 * (1.0 - t_start)).max(0.0) as u8;
+            let segment_top = top + t_start * height;
+            let segment_bottom = top + t_end * height;
+            
+            ui.painter().line_segment(
+                [egui::pos2(x, segment_top), egui::pos2(x, segment_bottom)],
+                Stroke::new(1.0, style::with_alpha(palette.accent_mint, alpha)),
+            );
+        }
+
         let base_y = rect.top() + 1.0;
         let tip_y = base_y + triangle_height;
         let points = vec![

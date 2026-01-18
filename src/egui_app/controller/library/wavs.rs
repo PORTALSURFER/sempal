@@ -15,7 +15,7 @@ mod feature_cache;
 mod selection_ops;
 mod similar;
 mod waveform_loading;
-mod waveform_rendering;
+pub mod waveform_rendering;
 
 mod waveform_view;
 

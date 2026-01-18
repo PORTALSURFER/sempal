@@ -1,0 +1,21 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.39s
+     Running unittests src\lib.rs (target\debug\deps\sempal-f2f74499bb3d670c.exe)
+
+running 1 test
+test egui_app::controller::tests::waveform::cropping_selection_overwrites_file ... FAILED
+
+failures:
+
+---- egui_app::controller::tests::waveform::cropping_selection_overwrites_file stdout ----
+
+thread 'egui_app::controller::tests::waveform::cropping_selection_overwrites_file' (21220) panicked at src\egui_app\controller\tests\waveform.rs:114:5:
+assertion failed: controller.ui.waveform.selection.is_none()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    egui_app::controller::tests::waveform::cropping_selection_overwrites_file
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 629 filtered out; finished in 0.23s
+
+error: test failed, to rerun pass `-p sempal --lib`

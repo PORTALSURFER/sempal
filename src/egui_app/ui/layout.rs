@@ -3,7 +3,7 @@ use super::input::InputSnapshot;
 use super::progress_overlay;
 use crate::egui_app::controller::hotkeys;
 use crate::egui_app::state::FocusContext;
-use crate::egui_app::ui::EguiApp;
+use crate::egui_app::ui::{EguiApp, helpers};
 use crate::egui_app::ui::style;
 use eframe::egui;
 use eframe::egui::{TopBottomPanel, Ui, UiBuilder};
@@ -155,22 +155,29 @@ impl EguiApp {
                                 {
                                     self.controller.open_feedback_issue_prompt();
                                 }
-                                let hints_enabled = self.controller.settings.controls.hover_hints_enabled;
-                                let hints_btn = egui::Button::new(
-                                    egui::RichText::new("?").color(if hints_enabled {
-                                        palette.accent_mint
-                                    } else {
-                                        palette.text_muted
-                                    }),
-                                )
-                                .frame(false);
-                                if ui
-                                    .add(hints_btn)
-                                    .on_hover_text("Toggle hover hints")
-                                    .clicked()
-                                {
-                                    self.controller.settings.controls.hover_hints_enabled = !hints_enabled;
-                                    let _ = self.controller.save_full_config();
+                                let mode = self.controller.ui.controls.tooltip_mode;
+                                let color = match mode {
+                                    crate::sample_sources::config::TooltipMode::Off => palette.text_muted,
+                                    crate::sample_sources::config::TooltipMode::Regular => palette.accent_mint,
+                                    crate::sample_sources::config::TooltipMode::Extended => palette.accent_copper,
+                                };
+                                let hints_btn = egui::Button::new(egui::RichText::new("?").color(color)).frame(false);
+                                let hints_resp = ui.add(hints_btn);
+                                
+                                helpers::tooltip(
+                                    hints_resp.clone(),
+                                    "Tooltip Mode",
+                                    "Cycle between Off (dark), Regular (mint), and Extended (copper) detail levels for all UI hints.",
+                                    mode,
+                                );
+
+                                if hints_resp.clicked() {
+                                    let next_mode = match mode {
+                                        crate::sample_sources::config::TooltipMode::Off => crate::sample_sources::config::TooltipMode::Regular,
+                                        crate::sample_sources::config::TooltipMode::Regular => crate::sample_sources::config::TooltipMode::Extended,
+                                        crate::sample_sources::config::TooltipMode::Extended => crate::sample_sources::config::TooltipMode::Off,
+                                    };
+                                    self.controller.set_tooltip_mode(next_mode);
                                 }
                                 if ui
                                     .add(crate::egui_app::ui::chrome::buttons::action_button(

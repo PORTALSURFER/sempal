@@ -48,8 +48,8 @@ pub(super) fn render_selection_overlay(
         if handle_hovered || (pointer_pos.is_some_and(|p| selection_rect.contains(p)) && !app.controller.is_selection_dragging()) {
             helpers::show_hover_hint(
                 ui,
-                app.controller.settings.controls.hover_hints_enabled,
-                "Drag: Move\nShift+Drag: Fine Move\nCtrl+Drag: BPM Snap\nEnter: Create Sample | Right-click: Menu",
+                app.controller.ui.controls.tooltip_mode,
+                "Drag: Move | Shift+Drag: Fine | Ctrl+Drag: BPM Snap | Enter: Create Sample | Right-click: Menu",
             );
         }
     }

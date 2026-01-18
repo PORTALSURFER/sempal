@@ -23,6 +23,8 @@ pub struct InteractionOptionsState {
     pub input_monitoring_enabled: bool,
     /// Advance selection after rating a sample.
     pub advance_after_rating: bool,
+    /// Tooltip detail level.
+    pub tooltip_mode: crate::sample_sources::config::TooltipMode,
 }
 
 impl Default for InteractionOptionsState {
@@ -38,6 +40,7 @@ impl Default for InteractionOptionsState {
             waveform_channel_view: WaveformChannelView::Mono,
             input_monitoring_enabled: true,
             advance_after_rating: true,
+            tooltip_mode: crate::sample_sources::config::TooltipMode::Regular,
         }
     }
 }

@@ -1,6 +1,6 @@
 use super::super::super::config_types::{
     AnalysisSettings, AppSettingsCore, DropTargetColor, DropTargetConfig, FeatureFlags,
-    InteractionOptions, UpdateChannel, UpdateSettings,
+    InteractionOptions, TooltipMode, UpdateChannel, UpdateSettings,
     WgpuPowerPreference,
 };
 use super::super::load::load_settings_from;
@@ -207,7 +207,7 @@ fn settings_round_trip_preserves_fields() {
                 input_monitoring_enabled: false,
                 normalized_audition_enabled: true,
                 advance_after_rating: true,
-                hover_hints_enabled: true,
+                tooltip_mode: TooltipMode::Regular,
             },
         },
     };
@@ -346,7 +346,7 @@ fn settings_round_trip_preserves_fields() {
         cfg.core.controls.advance_after_rating
     );
     assert_eq!(
-        round_trip.core.controls.hover_hints_enabled,
-        cfg.core.controls.hover_hints_enabled
+        round_trip.core.controls.tooltip_mode,
+        cfg.core.controls.tooltip_mode
     );
 }

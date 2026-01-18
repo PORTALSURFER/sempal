@@ -185,7 +185,7 @@ pub(crate) fn refresh_recording_waveform(controller: &mut EguiController) {
         .cloned()
     {
         if loaded_once {
-            controller.apply_waveform_image(decoded);
+            controller.apply_waveform_image(decoded, None);
         } else {
             let _ = controller.finish_waveform_load(
                 &source,
@@ -194,6 +194,7 @@ pub(crate) fn refresh_recording_waveform(controller: &mut EguiController) {
                 bytes,
                 AudioLoadIntent::Selection,
                 false,
+                None,
             );
             if let Some(target) = controller.audio.recording_target.as_mut() {
                 target.loaded_once = true;

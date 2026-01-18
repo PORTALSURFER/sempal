@@ -13,12 +13,15 @@ pub(crate) struct AudioLoadJob {
     pub source_id: SourceId,
     pub root: PathBuf,
     pub relative_path: PathBuf,
+    pub stretch_ratio: Option<f64>,
 }
 
 pub(crate) struct AudioLoadOutcome {
     pub decoded: DecodedWaveform,
     pub bytes: Vec<u8>,
     pub metadata: FileMetadata,
+    pub transients: Vec<f32>,
+    pub stretched: bool,
 }
 
 #[derive(Debug)]
@@ -94,16 +97,49 @@ fn load_audio(
             ))
         })?
         .as_nanos() as i64;
-    let decoded = renderer
+    let mut decoded = renderer
         .decode_from_bytes(&bytes)
         .map_err(|err| AudioLoadError::Failed(err.to_string()))?;
+
+    let mut stretched = false;
+    let mut final_bytes = bytes;
+
+    if let Some(ratio) = job.stretch_ratio {
+        let wsola = crate::audio::Wsola::new(decoded.sample_rate);
+        let stretched_samples = wsola.stretch(&decoded.samples, decoded.channel_count(), ratio);
+        match crate::egui_app::controller::playback::audio_samples::wav_bytes_from_samples(
+            &stretched_samples,
+            decoded.sample_rate,
+            decoded.channels,
+        ) {
+            Ok(b) => {
+                final_bytes = b;
+                stretched = true;
+                // Decode the stretched bytes to get the correct duration and cache token
+                if let Ok(d) = renderer.decode_from_bytes(&final_bytes) {
+                    decoded = d;
+                }
+            }
+            Err(err) => {
+                tracing::warn!("Failed to stretch audio in background: {err}");
+            }
+        }
+    }
+
+    let transients = crate::waveform::transients::detect_transients(
+        &decoded,
+        crate::egui_app::controller::library::wavs::waveform_rendering::DEFAULT_TRANSIENT_SENSITIVITY,
+    );
+
     Ok(AudioLoadOutcome {
         decoded,
-        bytes,
+        bytes: final_bytes,
         metadata: FileMetadata {
             file_size: metadata.len(),
             modified_ns,
         },
+        transients,
+        stretched,
     })
 }
 

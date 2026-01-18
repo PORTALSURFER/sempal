@@ -323,6 +323,16 @@ impl EguiController {
         self.persist_controls();
     }
 
+    /// Set and persist the tooltip detail level.
+    pub fn set_tooltip_mode(&mut self, mode: crate::sample_sources::config::TooltipMode) {
+        if self.settings.controls.tooltip_mode == mode {
+            return;
+        }
+        self.settings.controls.tooltip_mode = mode;
+        self.ui.controls.tooltip_mode = mode;
+        self.persist_controls();
+    }
+
     /// Toggle and persist auto-advance after rating/tagging.
     pub fn set_advance_after_rating(&mut self, enabled: bool) {
         if self.settings.controls.advance_after_rating == enabled {

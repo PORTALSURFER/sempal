@@ -81,7 +81,7 @@ pub(super) fn render_waveform_base(
             Align2::CENTER_CENTER,
             "LOADING",
             font,
-            style::with_alpha(style::high_contrast_text(), 180),
+            style::with_alpha(style::high_contrast_text(), 140),
         );
     }
 
@@ -94,10 +94,13 @@ fn waveform_loading_fill(
     accent: egui::Color32,
 ) -> egui::Color32 {
     let time = ui.input(|i| i.time) as f32;
-    let pulse = ((time * 6.0).sin() * 0.5 + 0.5).clamp(0.0, 1.0);
+    // Premium elastic-like pulse: faster in, slower out
+    let pulse = (time * 4.5).cos() * 0.5 + 0.5;
+    let pulse = pulse.powf(2.0); // Sharpen the peak
     let base_rgba: Rgba = base.into();
     let accent_rgba: Rgba = accent.into();
-    let mixed = base_rgba * (1.0 - pulse * 0.12) + accent_rgba * (pulse * 0.08);
+    // Subtle mix: 6% base shift, 12% accent shift at peak
+    let mixed = base_rgba * (1.0 - pulse * 0.06) + accent_rgba * (pulse * 0.12);
     egui::Color32::from_rgba_unmultiplied(
         (mixed.r() * 255.0) as u8,
         (mixed.g() * 255.0) as u8,

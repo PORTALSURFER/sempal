@@ -12,23 +12,22 @@ impl EguiController {
             id: pending.source_id.clone(),
             root: pending.root.clone(),
         };
-        let AudioLoadOutcome {
-            decoded,
-            bytes,
-            metadata,
-        } = outcome;
-        let (decoded, bytes, stretched) = match self.prepare_loaded_audio(
-            &source,
-            &pending.relative_path,
-            Some(decoded),
-            bytes,
-            pending.intent,
-        ) {
-            Ok(result) => result,
-            Err(err) => {
-                self.runtime.jobs.set_pending_playback(None);
-                self.set_status(err, StatusTone::Error);
-                return;
+        let (decoded, bytes, stretched) = if outcome.stretched {
+            (outcome.decoded, outcome.bytes, true)
+        } else {
+            match self.prepare_loaded_audio(
+                &source,
+                &pending.relative_path,
+                Some(outcome.decoded),
+                outcome.bytes,
+                pending.intent,
+            ) {
+                Ok(result) => result,
+                Err(err) => {
+                    self.runtime.jobs.set_pending_playback(None);
+                    self.set_status(err, StatusTone::Error);
+                    return;
+                }
             }
         };
         let duration_seconds = decoded.duration_seconds;
@@ -37,7 +36,7 @@ impl EguiController {
         if !stretched {
             self.audio
                 .cache
-                .insert(cache_key, metadata, decoded.clone(), bytes.clone());
+                .insert(cache_key, outcome.metadata, decoded.clone(), bytes.clone());
         }
         let preserve_selections = self.sample_view.wav.loaded_wav.as_deref() == Some(&pending.relative_path);
         if let Err(err) = self.finish_waveform_load(
@@ -47,6 +46,7 @@ impl EguiController {
             bytes,
             pending.intent,
             preserve_selections,
+            Some(outcome.transients),
         ) {
             self.runtime.jobs.set_pending_playback(None);
             self.set_status(err, StatusTone::Error);
@@ -118,6 +118,7 @@ impl EguiController {
         pending_playback: Option<PendingPlayback>,
     ) -> Result<(), String> {
         let request_id = self.runtime.jobs.next_audio_request_id();
+        let stretch_ratio = self.stretch_ratio_for_sample(source, relative_path);
         let pending = PendingAudio {
             request_id,
             source_id: source.id.clone(),
@@ -130,6 +131,7 @@ impl EguiController {
             source_id: source.id.clone(),
             root: source.root.clone(),
             relative_path: relative_path.to_path_buf(),
+            stretch_ratio,
         };
         self.runtime.jobs.set_pending_audio(None);
         self.runtime.jobs.set_pending_playback(pending_playback);
@@ -181,7 +183,7 @@ impl EguiController {
         let duration_seconds = hit.decoded.duration_seconds;
         let sample_rate = hit.decoded.sample_rate;
         let preserve_selections = self.sample_view.wav.loaded_wav.as_deref() == Some(relative_path);
-        self.finish_waveform_load(source, relative_path, hit.decoded, hit.bytes, intent, preserve_selections)?;
+        self.finish_waveform_load(source, relative_path, hit.decoded, hit.bytes, intent, preserve_selections, None)?;
         let message = Self::loaded_status_text(relative_path, duration_seconds, sample_rate);
         self.set_status(message, StatusTone::Info);
         if matches!(intent, AudioLoadIntent::Selection) {

@@ -1,0 +1,74 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.33s
+     Running unittests src\lib.rs (target\debug\deps\sempal-f2f74499bb3d670c.exe)
+
+running 40 tests
+test egui_app::controller::tests::waveform::c_hotkey_prompts_crop_selection_in_waveform_focus ... ok
+test egui_app::controller::tests::waveform::n_hotkey_normalizes_whole_loaded_sample_when_no_selection ... ok
+test egui_app::controller::tests::waveform::align_waveform_start_uses_hover_cursor ... ok
+test egui_app::controller::tests::waveform::m_hotkey_prompts_mute_selection_in_waveform_focus ... ok
+test egui_app::controller::tests::waveform::click_removal_interpolates_selected_span ... ok
+test egui_app::controller::tests::waveform::confirming_pending_destructive_edit_clears_prompt ... ok
+test egui_app::controller::tests::waveform::cropping_selection_overwrites_file ... FAILED
+test egui_app::controller::tests::waveform::destructive_edit_request_prompts_without_yolo_mode ... ok
+test egui_app::controller::tests::waveform::pruning_missing_selection_clears_waveform_view ... ok
+test egui_app::controller::tests::waveform::removing_selected_source_clears_waveform_view ... ok
+test egui_app::controller::tests::waveform::slash_hotkeys_prompt_fade_selection_in_waveform_focus ... ok
+test egui_app::controller::tests::waveform::shift_c_hotkey_crops_selection_to_new_sample ... ok
+test egui_app::controller::tests::waveform::n_hotkey_prompts_normalize_selection_when_selection_present ... ok
+test egui_app::controller::tests::waveform::t_hotkey_prompts_trim_selection_in_waveform_focus ... ok
+test egui_app::controller::tests::waveform_nav_cursor::cursor_alpha_fades_before_reset ... ok
+test egui_app::controller::tests::waveform_nav_cursor::cursor_alpha_resets_after_idle_timeout ... ok
+test egui_app::controller::tests::waveform::normalize_selection_resumes_playback_when_playing ... ok
+test egui_app::controller::tests::waveform::switching_sources_resets_waveform_state ... ok
+test egui_app::controller::tests::waveform_nav_cursor::hiding_playhead_clears_span_target ... ok
+test egui_app::controller::tests::waveform::waveform_image_resizes_to_view ... ok
+test egui_app::controller::tests::waveform::trimming_selection_removes_span ... FAILED
+test egui_app::controller::tests::waveform_nav_cursor::mouse_zoom_prefers_pointer_over_playhead ... ok
+test egui_app::controller::tests::waveform_nav_cursor::cursor_does_not_fade_when_waveform_focused ... ok
+test egui_app::controller::tests::waveform_nav_cursor::batched_zoom_matches_sequential_steps ... ok
+test egui_app::controller::tests::waveform::yolo_mode_applies_destructive_edit_immediately ... ok
+test egui_app::controller::tests::waveform_nav_cursor::playhead_completion_detects_full_span_end ... ok
+test egui_app::controller::tests::waveform_nav_cursor::playhead_completion_tracks_selection_end ... ok
+test egui_app::controller::tests::waveform_nav_cursor::last_start_marker_clamps_and_resets ... ok
+test egui_app::controller::tests::waveform_nav_cursor::play_from_cursor_ignores_hover_cursor_when_replaying ... ok
+test egui_app::controller::tests::waveform_nav_cursor::play_from_cursor_prefers_cursor_position ... ok
+test egui_app::controller::tests::waveform_nav_cursor::selecting_new_sample_clears_last_start_marker ... ok
+test egui_app::controller::tests::waveform_nav_render::waveform_render_meta_allows_small_shifts_on_full_view ... ok
+test egui_app::controller::tests::waveform_nav_render::waveform_render_meta_rejects_small_shifts_when_zoomed_in ... ok
+test egui_app::controller::tests::waveform_nav_cursor::replay_from_last_start_requeues_pending_playback ... ok
+test egui_app::controller::tests::waveform_nav_render::waveform_refresh_respects_view_slice_and_caps_width ... ok
+test egui_app::controller::tests::waveform_nav_render::loading_flag_clears_after_audio_load ... ok
+test egui_app::controller::tests::waveform_nav_render::play_request_is_deferred_until_audio_ready ... ok
+test egui_app::controller::tests::waveform_nav_cursor::replay_from_last_start_falls_back_to_cursor ... ok
+test egui_app::controller::tests::waveform_nav_render::stale_audio_results_are_ignored ... ok
+test egui_app::controller::tests::waveform_nav_render::waveform_rerenders_after_same_length_edit ... FAILED
+
+failures:
+
+---- egui_app::controller::tests::waveform::cropping_selection_overwrites_file stdout ----
+
+thread 'egui_app::controller::tests::waveform::cropping_selection_overwrites_file' (32132) panicked at src\egui_app\controller\tests\waveform.rs:114:5:
+assertion failed: controller.ui.waveform.selection.is_none()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- egui_app::controller::tests::waveform::trimming_selection_removes_span stdout ----
+
+thread 'egui_app::controller::tests::waveform::trimming_selection_removes_span' (15440) panicked at src\egui_app\controller\tests\waveform.rs:160:5:
+assertion failed: controller.ui.waveform.selection.is_none()
+
+---- egui_app::controller::tests::waveform_nav_render::waveform_rerenders_after_same_length_edit stdout ----
+
+thread 'egui_app::controller::tests::waveform_nav_render::waveform_rerenders_after_same_length_edit' (5540) panicked at src\egui_app\controller\tests\waveform_nav_render.rs:120:5:
+assertion `left != right` failed
+  left: [#00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00]
+ right: [#00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #8C_8A_87_8F, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #CF_CC_C7_D3, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00, #00_00_00_00]
+
+
+failures:
+    egui_app::controller::tests::waveform::cropping_selection_overwrites_file
+    egui_app::controller::tests::waveform::trimming_selection_removes_span
+    egui_app::controller::tests::waveform_nav_render::waveform_rerenders_after_same_length_edit
+
+test result: FAILED. 37 passed; 3 failed; 0 ignored; 0 measured; 590 filtered out; finished in 1.06s
+
+error: test failed, to rerun pass `-p sempal --lib`

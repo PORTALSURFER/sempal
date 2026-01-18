@@ -211,8 +211,8 @@ impl EguiApp {
         if panel_rect.contains(ui.input(|i| i.pointer.hover_pos()).unwrap_or(egui::Pos2::ZERO)) {
             helpers::show_hover_hint(
                 ui,
-                self.controller.settings.controls.hover_hints_enabled,
-                "Drop folders: Add to library\nRight-click: Source menu",
+                self.controller.ui.controls.tooltip_mode,
+                "Drop folders: Add to library | Right-click: Source menu",
             );
         }
     }
