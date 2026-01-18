@@ -128,7 +128,7 @@ pub(super) fn render_edit_selection_overlay(
     
     painter.rect_stroke(selection_rect, 0.0, stroke, StrokeKind::Inside);
 
-    let slide_handle_rect = egui::Rect::from_center_size(
+    let gain_handle_rect = egui::Rect::from_center_size(
         egui::pos2(selection_rect.center().x, selection_rect.top() + 4.0),
         egui::vec2(18.0, 6.0),
     );
@@ -219,55 +219,101 @@ pub(super) fn render_edit_selection_overlay(
         .unwrap_or(egui::Rect::NOTHING);
     
     // Also create responses for the entire fade regions (for Alt+drag)
-    let slide_handle_response = ui.interact(
-        slide_handle_rect,
-        ui.id().with("edit_selection_slide_handle"),
+    let slide_bar_left = fade_in_handle_rect.center().x.min(fade_out_handle_rect.center().x);
+    let slide_bar_right = fade_in_handle_rect.center().x.max(fade_out_handle_rect.center().x);
+    let slide_bar_width = (slide_bar_right - slide_bar_left).max(16.0);
+    let slide_bar_rect = egui::Rect::from_center_size(
+        egui::pos2(
+            (slide_bar_left + slide_bar_right) * 0.5,
+            selection_rect.bottom() - 4.0,
+        ),
+        egui::vec2(slide_bar_width, 6.0),
+    );
+    let gain_handle_response = ui.interact(
+        gain_handle_rect,
+        ui.id().with("edit_selection_gain_handle"),
         egui::Sense::click_and_drag(),
     );
+    let slide_bar_response = ui.interact(
+        slide_bar_rect,
+        ui.id().with("edit_selection_slide_bar"),
+        egui::Sense::click_and_drag(),
+    );
+    let slide_blocks_fades = slide_bar_response.hovered() || slide_bar_response.dragged();
     let fade_in_region_response = ui.interact(
-        fade_in_region_rect,
+        if slide_blocks_fades {
+            egui::Rect::NOTHING
+        } else {
+            fade_in_region_rect
+        },
         ui.id().with("edit_fade_in_region"),
         egui::Sense::click_and_drag(),
     );
     let fade_out_region_response = ui.interact(
-        fade_out_region_rect,
+        if slide_blocks_fades {
+            egui::Rect::NOTHING
+        } else {
+            fade_out_region_rect
+        },
         ui.id().with("edit_fade_out_region"),
         egui::Sense::click_and_drag(),
     );
     
     let fade_in_response = ui.interact(
-        fade_in_handle_rect,
+        if slide_blocks_fades {
+            egui::Rect::NOTHING
+        } else {
+            fade_in_handle_rect
+        },
         ui.id().with("edit_fade_in_handle"),
         egui::Sense::click_and_drag(),
     );
     let fade_out_response = ui.interact(
-        fade_out_handle_rect,
+        if slide_blocks_fades {
+            egui::Rect::NOTHING
+        } else {
+            fade_out_handle_rect
+        },
         ui.id().with("edit_fade_out_handle"),
         egui::Sense::click_and_drag(),
     );
     let fade_in_lower_response = ui.interact(
-        fade_in_lower_handle_rect,
+        if slide_blocks_fades {
+            egui::Rect::NOTHING
+        } else {
+            fade_in_lower_handle_rect
+        },
         ui.id().with("edit_fade_in_lower_handle"),
         egui::Sense::click_and_drag(),
     );
     let fade_out_lower_response = ui.interact(
-        fade_out_lower_handle_rect,
+        if slide_blocks_fades {
+            egui::Rect::NOTHING
+        } else {
+            fade_out_lower_handle_rect
+        },
         ui.id().with("edit_fade_out_lower_handle"),
         egui::Sense::click_and_drag(),
     );
     let fade_in_mute_response = ui.interact(
-        fade_in_mute_handle_rect,
+        if slide_blocks_fades {
+            egui::Rect::NOTHING
+        } else {
+            fade_in_mute_handle_rect
+        },
         ui.id().with("edit_fade_in_mute_handle"),
         egui::Sense::click_and_drag(),
     );
     let fade_out_mute_response = ui.interact(
-        fade_out_mute_handle_rect,
+        if slide_blocks_fades {
+            egui::Rect::NOTHING
+        } else {
+            fade_out_mute_handle_rect
+        },
         ui.id().with("edit_fade_out_mute_handle"),
         egui::Sense::click_and_drag(),
     );
     
-    let slide_handle_active =
-        slide_handle_response.hovered() || slide_handle_response.dragged();
     let fade_in_active = fade_in_response.hovered() || fade_in_response.dragged();
     let fade_out_active = fade_out_response.hovered() || fade_out_response.dragged();
     let fade_in_lower_active =
@@ -299,17 +345,35 @@ pub(super) fn render_edit_selection_overlay(
         }
     };
 
-    let slide_fill = if slide_handle_active {
+    let gain_handle_active =
+        gain_handle_response.hovered() || gain_handle_response.dragged();
+    let slide_bar_active = slide_bar_response.hovered() || slide_bar_response.dragged();
+    let gain_fill = if gain_handle_active {
+        style::with_alpha(highlight, 240)
+    } else {
+        style::with_alpha(highlight, 180)
+    };
+    let slide_fill = if slide_bar_active {
         style::with_alpha(highlight, 240)
     } else {
         style::with_alpha(highlight, 180)
     };
     ui.painter()
-        .rect_filled(slide_handle_rect, 2.0, slide_fill);
+        .rect_filled(gain_handle_rect, 2.0, gain_fill);
     ui.painter()
-        .rect_stroke(slide_handle_rect, 2.0, stroke, StrokeKind::Inside);
-    if slide_handle_active {
-        let glow_rect = slide_handle_rect.expand(2.0);
+        .rect_stroke(gain_handle_rect, 2.0, stroke, StrokeKind::Inside);
+    ui.painter()
+        .rect_filled(slide_bar_rect, 2.0, slide_fill);
+    ui.painter()
+        .rect_stroke(slide_bar_rect, 2.0, stroke, StrokeKind::Inside);
+    if gain_handle_active {
+        let glow_rect = gain_handle_rect.expand(2.0);
+        let glow_stroke = egui::Stroke::new(1.5, style::with_alpha(highlight, 180));
+        ui.painter()
+            .rect_stroke(glow_rect, 3.0, glow_stroke, StrokeKind::Inside);
+    }
+    if slide_bar_active {
+        let glow_rect = slide_bar_rect.expand(2.0);
         let glow_stroke = egui::Stroke::new(1.5, style::with_alpha(highlight, 180));
         ui.painter()
             .rect_stroke(glow_rect, 3.0, glow_stroke, StrokeKind::Inside);
@@ -406,6 +470,12 @@ pub(super) fn render_edit_selection_overlay(
         }
     }
     
+    selection_drag::handle_edit_selection_gain_drag(
+        app,
+        ui,
+        selection,
+        &gain_handle_response,
+    );
     selection_drag::handle_edit_selection_slide_drag(
         app,
         ui,
@@ -413,7 +483,7 @@ pub(super) fn render_edit_selection_overlay(
         view,
         view_width,
         selection,
-        &slide_handle_response,
+        &slide_bar_response,
     );
 
     // Handle fade handle dragging

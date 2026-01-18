@@ -178,6 +178,47 @@ pub(super) fn handle_edit_selection_slide_drag(
     }
 }
 
+pub(super) fn handle_edit_selection_gain_drag(
+    app: &mut EguiApp,
+    ui: &mut egui::Ui,
+    selection: SelectionRange,
+    response: &egui::Response,
+) {
+    let primary_down = ui.input(|i| i.pointer.button_down(egui::PointerButton::Primary));
+    if response.drag_started() && primary_down {
+        if let Some(pos) = response.interact_pointer_pos() {
+            app.edit_selection_gain_drag = Some(super::EditSelectionGainDrag {
+                anchor_y: pos.y,
+                gain: selection.gain(),
+            });
+            app.controller.begin_selection_undo("Edit Selection Gain");
+            app.controller.cancel_active_drag();
+        }
+    } else if response.dragged_by(egui::PointerButton::Primary) {
+        if let Some(pos) = response.interact_pointer_pos() {
+            let drag = app.edit_selection_gain_drag.get_or_insert(super::EditSelectionGainDrag {
+                anchor_y: pos.y,
+                gain: selection.gain(),
+            });
+            let delta_y = pos.y - drag.anchor_y;
+            let gain_delta = -delta_y / 100.0;
+            let new_gain = drag.gain + gain_delta;
+            app.controller
+                .set_edit_selection_range(selection.with_gain(new_gain));
+        }
+    } else if response.drag_stopped() && !primary_down {
+        if app.edit_selection_gain_drag.take().is_some() {
+            app.controller.finish_selection_drag();
+        }
+    }
+
+    if response.dragged_by(egui::PointerButton::Primary) {
+        ui.output_mut(|o| o.cursor_icon = CursorIcon::ResizeVertical);
+    } else if response.hovered() {
+        ui.output_mut(|o| o.cursor_icon = CursorIcon::ResizeVertical);
+    }
+}
+
 fn bpm_snap_step(app: &EguiApp) -> Option<f32> {
     let bpm = app.controller.ui.waveform.bpm_value?;
     if !bpm.is_finite() || bpm <= 0.0 {
@@ -368,7 +409,7 @@ pub(super) fn handle_edit_fade_handle_drag(
                 } else {
                     0.0
                 };
-                let new_mute = if new_width > 0.0 {
+                let new_mute = if selection.fade_in_mute_length() > 0.0 && new_width > 0.0 {
                     ((new_start - mute_edge) / new_width).max(0.0)
                 } else {
                     0.0
@@ -382,7 +423,9 @@ pub(super) fn handle_edit_fade_handle_drag(
                     } else {
                         0.0
                     };
-                    let new_fade_out_mute = if new_width > 0.0 {
+                    let new_fade_out_mute = if selection.fade_out_mute_length() > 0.0
+                        && new_width > 0.0
+                    {
                         ((fade_out_mute_edge - selection.end()) / new_width).max(0.0)
                     } else {
                         0.0
@@ -539,7 +582,7 @@ pub(super) fn handle_edit_fade_handle_drag(
                 } else {
                     0.0
                 };
-                let new_mute = if new_width > 0.0 {
+                let new_mute = if selection.fade_out_mute_length() > 0.0 && new_width > 0.0 {
                     ((mute_edge - new_end) / new_width).max(0.0)
                 } else {
                     0.0
@@ -553,7 +596,9 @@ pub(super) fn handle_edit_fade_handle_drag(
                     } else {
                         0.0
                     };
-                    let new_fade_in_mute = if new_width > 0.0 {
+                    let new_fade_in_mute = if selection.fade_in_mute_length() > 0.0
+                        && new_width > 0.0
+                    {
                         ((selection.start() - fade_in_mute_edge) / new_width).max(0.0)
                     } else {
                         0.0

@@ -52,6 +52,7 @@ pub struct EguiApp {
     selection_edge_alt_scale: bool,
     selection_slide: Option<SelectionSlide>,
     edit_selection_slide: Option<SelectionSlide>,
+    edit_selection_gain_drag: Option<EditSelectionGainDrag>,
     slice_drag: Option<SliceDragState>,
     slice_paint: Option<SlicePaintState>,
     pending_chord: Option<hotkey_runtime::PendingChord>,
@@ -65,6 +66,12 @@ pub struct EguiApp {
 struct SelectionSlide {
     anchor: f32,
     range: crate::selection::SelectionRange,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct EditSelectionGainDrag {
+    anchor_y: f32,
+    gain: f32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -114,6 +121,7 @@ impl EguiApp {
             selection_edge_alt_scale: false,
             selection_slide: None,
             edit_selection_slide: None,
+            edit_selection_gain_drag: None,
             slice_drag: None,
             slice_paint: None,
             pending_chord: None,

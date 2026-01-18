@@ -143,6 +143,7 @@ mod tests {
             selection_edge_alt_scale: false,
             selection_slide: None,
             edit_selection_slide: None,
+            edit_selection_gain_drag: None,
             slice_drag: None,
             slice_paint: None,
             pending_chord: None,
