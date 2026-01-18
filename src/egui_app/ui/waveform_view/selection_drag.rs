@@ -105,6 +105,79 @@ pub(super) fn handle_selection_slide_drag(
     }
 }
 
+pub(super) fn handle_edit_selection_slide_drag(
+    app: &mut EguiApp,
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    view: WaveformView,
+    view_width: f64,
+    selection: SelectionRange,
+    response: &egui::Response,
+) {
+    let primary_down = ui.input(|i| i.pointer.button_down(egui::PointerButton::Primary));
+    let to_wave_pos = |pos: egui::Pos2| {
+        let normalized = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0) as f64;
+        normalized.mul_add(view_width, view.start).clamp(0.0, 1.0) as f32
+    };
+    if response.drag_started() && primary_down {
+        if let Some(pos) = response.interact_pointer_pos() {
+            let anchor = to_wave_pos(pos);
+            app.edit_selection_slide = Some(super::SelectionSlide {
+                anchor,
+                range: selection,
+            });
+            app.controller.begin_selection_undo("Edit Selection");
+            app.controller.cancel_active_drag();
+        }
+    } else if response.dragged_by(egui::PointerButton::Primary) {
+        if let Some(pos) = response.interact_pointer_pos() {
+            if app.edit_selection_slide.is_none() {
+                let anchor = to_wave_pos(pos);
+                app.edit_selection_slide = Some(super::SelectionSlide {
+                    anchor,
+                    range: selection,
+                });
+                app.controller.begin_selection_undo("Edit Selection");
+                app.controller.cancel_active_drag();
+            }
+            if let Some(slide) = app.edit_selection_slide {
+                let cursor = to_wave_pos(pos);
+                let delta = cursor - slide.anchor;
+                let snap_step = if app.controller.ui.waveform.bpm_snap_enabled
+                    && !ui.input(|i| i.modifiers.shift)
+                {
+                    bpm_snap_step(app)
+                } else {
+                    None
+                };
+                let mut adjusted_delta = snap_step
+                    .filter(|step| step.is_finite() && *step > 0.0)
+                    .map(|step| snap_delta(delta, step))
+                    .unwrap_or(delta);
+                if snap_step.is_none() {
+                    if let Some(snapped_start) =
+                        snap_selection_start_to_transient(app, slide.range.start() + adjusted_delta)
+                    {
+                        adjusted_delta = snapped_start - slide.range.start();
+                    }
+                }
+                app.controller
+                    .set_edit_selection_range(slide.range.shift(adjusted_delta));
+            }
+        }
+    } else if response.drag_stopped() && !primary_down {
+        if app.edit_selection_slide.take().is_some() {
+            app.controller.finish_selection_drag();
+        }
+    }
+
+    if response.dragged_by(egui::PointerButton::Primary) {
+        ui.output_mut(|o| o.cursor_icon = CursorIcon::Grabbing);
+    } else if response.hovered() {
+        ui.output_mut(|o| o.cursor_icon = CursorIcon::Grab);
+    }
+}
+
 fn bpm_snap_step(app: &EguiApp) -> Option<f32> {
     let bpm = app.controller.ui.waveform.bpm_value?;
     if !bpm.is_finite() || bpm <= 0.0 {

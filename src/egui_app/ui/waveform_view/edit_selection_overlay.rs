@@ -127,6 +127,11 @@ pub(super) fn render_edit_selection_overlay(
     }
     
     painter.rect_stroke(selection_rect, 0.0, stroke, StrokeKind::Inside);
+
+    let slide_handle_rect = egui::Rect::from_center_size(
+        egui::pos2(selection_rect.center().x, selection_rect.top() + 4.0),
+        egui::vec2(18.0, 6.0),
+    );
     
     // Create interactive regions for the entire fade areas (for Alt+drag curve adjustment)
     let fade_in_region_rect = if selection.fade_in().is_some() {
@@ -214,6 +219,11 @@ pub(super) fn render_edit_selection_overlay(
         .unwrap_or(egui::Rect::NOTHING);
     
     // Also create responses for the entire fade regions (for Alt+drag)
+    let slide_handle_response = ui.interact(
+        slide_handle_rect,
+        ui.id().with("edit_selection_slide_handle"),
+        egui::Sense::click_and_drag(),
+    );
     let fade_in_region_response = ui.interact(
         fade_in_region_rect,
         ui.id().with("edit_fade_in_region"),
@@ -256,6 +266,8 @@ pub(super) fn render_edit_selection_overlay(
         egui::Sense::click_and_drag(),
     );
     
+    let slide_handle_active =
+        slide_handle_response.hovered() || slide_handle_response.dragged();
     let fade_in_active = fade_in_response.hovered() || fade_in_response.dragged();
     let fade_out_active = fade_out_response.hovered() || fade_out_response.dragged();
     let fade_in_lower_active =
@@ -286,6 +298,22 @@ pub(super) fn render_edit_selection_overlay(
             painter.rect_stroke(glow_rect, 3.0, stroke, StrokeKind::Inside);
         }
     };
+
+    let slide_fill = if slide_handle_active {
+        style::with_alpha(highlight, 240)
+    } else {
+        style::with_alpha(highlight, 180)
+    };
+    ui.painter()
+        .rect_filled(slide_handle_rect, 2.0, slide_fill);
+    ui.painter()
+        .rect_stroke(slide_handle_rect, 2.0, stroke, StrokeKind::Inside);
+    if slide_handle_active {
+        let glow_rect = slide_handle_rect.expand(2.0);
+        let glow_stroke = egui::Stroke::new(1.5, style::with_alpha(highlight, 180));
+        ui.painter()
+            .rect_stroke(glow_rect, 3.0, glow_stroke, StrokeKind::Inside);
+    }
     
     // Always show fade handles when edit selection exists
     let fade_in_color = if fade_in_active {
@@ -378,6 +406,16 @@ pub(super) fn render_edit_selection_overlay(
         }
     }
     
+    selection_drag::handle_edit_selection_slide_drag(
+        app,
+        ui,
+        rect,
+        view,
+        view_width,
+        selection,
+        &slide_handle_response,
+    );
+
     // Handle fade handle dragging
     selection_drag::handle_edit_fade_handle_drag(
         app,
