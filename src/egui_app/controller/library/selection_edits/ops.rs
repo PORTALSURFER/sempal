@@ -190,9 +190,7 @@ pub(crate) fn apply_selection_fades(
             .round()
             .clamp(0.0, selection_frames as f32) as usize;
         if fade_frames > 0 {
-            let mute_frames = ((selection_frames as f32) * fade_in.mute)
-                .round()
-                .clamp(0.0, selection_frames as f32) as usize;
+            let mute_frames = ((selection_frames as f32) * fade_in.mute).round().max(0.0) as usize;
             if mute_frames > 0 {
                 let mute_start = clamped_start.saturating_sub(mute_frames);
                 if mute_start < clamped_start {
@@ -217,9 +215,7 @@ pub(crate) fn apply_selection_fades(
             .round()
             .clamp(0.0, selection_frames as f32) as usize;
         if fade_frames > 0 {
-            let mute_frames = ((selection_frames as f32) * fade_out.mute)
-                .round()
-                .clamp(0.0, selection_frames as f32) as usize;
+            let mute_frames = ((selection_frames as f32) * fade_out.mute).round().max(0.0) as usize;
             if mute_frames > 0 {
                 let mute_end = clamped_end.saturating_add(mute_frames).min(total_frames);
                 if clamped_end < mute_end {

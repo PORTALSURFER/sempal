@@ -8,7 +8,7 @@ pub struct FadeParams {
     pub length: f32,
     /// Curve tension: 0.0 = linear, 0.5 = medium S-curve, 1.0 = maximum S-curve.
     pub curve: f32,
-    /// Muted region length as a fraction of selection width (0.0-1.0).
+    /// Muted region length as a fraction of selection width.
     /// This region extends outward from the selection edge.
     pub mute: f32,
 }
@@ -35,7 +35,7 @@ impl FadeParams {
     /// Create fade parameters with custom curve and muted length.
     pub fn with_curve_and_mute(length: f32, curve: f32, mute: f32) -> Self {
         let clamped_length = length.clamp(0.0, 1.0);
-        let clamped_mute = mute.clamp(0.0, clamped_length);
+        let clamped_mute = mute.max(0.0);
         Self {
             length: clamped_length,
             curve: curve.clamp(0.0, 1.0),
@@ -155,7 +155,7 @@ impl SelectionRange {
         let clamped_length = clamp_fade_length(length, self.fade_out_length());
         if clamped_length > 0.0 {
             let current_mute = self.fade_in.map(|f| f.mute).unwrap_or(0.0);
-            let clamped_mute = clamp_mute_length(current_mute, clamped_length);
+            let clamped_mute = clamp_mute_length(current_mute, self.max_fade_in_mute_length());
             self.fade_in = Some(FadeParams::with_curve_and_mute(
                 clamped_length,
                 curve,
@@ -172,7 +172,7 @@ impl SelectionRange {
         let clamped_length = clamp_fade_length(length, self.fade_in_length());
         if clamped_length > 0.0 {
             let current_mute = self.fade_out.map(|f| f.mute).unwrap_or(0.0);
-            let clamped_mute = clamp_mute_length(current_mute, clamped_length);
+            let clamped_mute = clamp_mute_length(current_mute, self.max_fade_out_mute_length());
             self.fade_out = Some(FadeParams::with_curve_and_mute(
                 clamped_length,
                 curve,
@@ -187,7 +187,7 @@ impl SelectionRange {
     /// Set fade-in muted length while preserving the curve.
     pub fn with_fade_in_mute(mut self, mute: f32) -> Self {
         if let Some(fade) = self.fade_in {
-            let clamped_mute = clamp_mute_length(mute, fade.length);
+            let clamped_mute = clamp_mute_length(mute, self.max_fade_in_mute_length());
             self.fade_in = Some(FadeParams::with_curve_and_mute(
                 fade.length,
                 fade.curve,
@@ -200,7 +200,7 @@ impl SelectionRange {
     /// Set fade-out muted length while preserving the curve.
     pub fn with_fade_out_mute(mut self, mute: f32) -> Self {
         if let Some(fade) = self.fade_out {
-            let clamped_mute = clamp_mute_length(mute, fade.length);
+            let clamped_mute = clamp_mute_length(mute, self.max_fade_out_mute_length());
             self.fade_out = Some(FadeParams::with_curve_and_mute(
                 fade.length,
                 fade.curve,
@@ -208,6 +208,24 @@ impl SelectionRange {
             ));
         }
         self
+    }
+
+    /// Maximum fade-in mute length based on distance to the sample start.
+    pub fn max_fade_in_mute_length(&self) -> f32 {
+        let width = self.width();
+        if width <= 0.0 {
+            return 0.0;
+        }
+        (self.start / width).max(0.0)
+    }
+
+    /// Maximum fade-out mute length based on distance to the sample end.
+    pub fn max_fade_out_mute_length(&self) -> f32 {
+        let width = self.width();
+        if width <= 0.0 {
+            return 0.0;
+        }
+        ((1.0 - self.end) / width).max(0.0)
     }
 
     /// Set the selection gain (0.0-2.0).
@@ -508,8 +526,8 @@ fn clamp_fade_length(fade: f32, other_fade: f32) -> f32 {
     clamped.min(max_allowed)
 }
 
-fn clamp_mute_length(mute: f32, fade_length: f32) -> f32 {
-    mute.clamp(0.0, fade_length.clamp(0.0, 1.0))
+fn clamp_mute_length(mute: f32, max_mute: f32) -> f32 {
+    mute.clamp(0.0, max_mute.max(0.0))
 }
 
 fn clamp_gain(gain: f32) -> f32 {
