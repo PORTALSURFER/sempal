@@ -251,14 +251,11 @@ pub(super) fn handle_edit_fade_handle_drag(
         || (primary_down && fade_in_mute_response.is_pointer_button_down_on());
 
     if fade_in_mute_active {
-        if let Some(pos) = fade_in_mute_response.interact_pointer_pos() {
-            let origin_x = fade_in_mute_response.rect.center().x;
-            let delta = origin_x - pos.x;
-            let mute_fraction = (delta / selection_rect.width())
-                .clamp(0.0, selection.fade_in_length());
-            let new_selection = selection.with_fade_in_mute(mute_fraction);
-            app.controller.set_edit_selection_range(new_selection);
-        }
+        let current_mute = selection.fade_in_mute_length();
+        let delta = -fade_in_mute_response.drag_delta().x / selection_rect.width();
+        let mute_fraction = (current_mute + delta).clamp(0.0, selection.fade_in_length());
+        let new_selection = selection.with_fade_in_mute(mute_fraction);
+        app.controller.set_edit_selection_range(new_selection);
     }
 
     if fade_in_mute_response.drag_stopped() && !primary_down {
@@ -406,14 +403,11 @@ pub(super) fn handle_edit_fade_handle_drag(
         || (primary_down && fade_out_mute_response.is_pointer_button_down_on());
 
     if fade_out_mute_active {
-        if let Some(pos) = fade_out_mute_response.interact_pointer_pos() {
-            let origin_x = fade_out_mute_response.rect.center().x;
-            let delta = pos.x - origin_x;
-            let mute_fraction = (delta / selection_rect.width())
-                .clamp(0.0, selection.fade_out_length());
-            let new_selection = selection.with_fade_out_mute(mute_fraction);
-            app.controller.set_edit_selection_range(new_selection);
-        }
+        let current_mute = selection.fade_out_mute_length();
+        let delta = fade_out_mute_response.drag_delta().x / selection_rect.width();
+        let mute_fraction = (current_mute + delta).clamp(0.0, selection.fade_out_length());
+        let new_selection = selection.with_fade_out_mute(mute_fraction);
+        app.controller.set_edit_selection_range(new_selection);
     }
 
     if fade_out_mute_response.drag_stopped() && !primary_down {
