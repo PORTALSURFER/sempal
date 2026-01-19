@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::audio::Source;
+use tracing::warn;
 
 #[cfg(test)]
 use super::super::DEFAULT_ANTI_CLIP_FADE;
@@ -41,10 +42,14 @@ impl AudioPlayer {
         let format = (source.sample_rate(), source.channels());
         let handle = FadeOutHandle::new();
         
+        if self
+            .stream
+            .append_source(FadeOutOnRequest::new(source, handle.clone()), 1.0)
+            .is_ok()
         {
-            let mut state = self.stream.state.lock().unwrap();
-            state.sources.push((Box::new(FadeOutOnRequest::new(source, handle.clone())), 1.0));
-            self.active_sources = state.sources.len();
+            self.active_sources = self.active_sources.saturating_add(1);
+        } else {
+            warn!("Failed to append audio source: output stream unavailable");
         }
         
         (handle, format)
@@ -52,10 +57,7 @@ impl AudioPlayer {
 
     /// Create a monitor sink that taps the current output stream state.
     pub fn create_monitor_sink(&self, volume: f32) -> crate::audio::output::MonitorSink {
-        crate::audio::output::MonitorSink {
-            state: self.stream.state.clone(),
-            volume,
-        }
+        self.stream.monitor_sink(volume)
     }
 
     pub(super) fn elapsed_since(&self, started_at: Instant) -> Duration {
@@ -117,18 +119,21 @@ impl AudioPlayer {
         self.active_sources = 0;
 
         let Some(handle) = handle else {
-            let mut state = self.stream.state.lock().unwrap();
-            state.sources.clear();
+            if self.stream.clear_sources().is_err() {
+                warn!("Failed to clear audio sources: output stream unavailable");
+            }
             return;
         };
         let Some((sample_rate, _channels)) = format else {
-            let mut state = self.stream.state.lock().unwrap();
-            state.sources.clear();
+            if self.stream.clear_sources().is_err() {
+                warn!("Failed to clear audio sources: output stream unavailable");
+            }
             return;
         };
         if fade.is_zero() {
-            let mut state = self.stream.state.lock().unwrap();
-            state.sources.clear();
+            if self.stream.clear_sources().is_err() {
+                warn!("Failed to clear audio sources: output stream unavailable");
+            }
             return;
         }
         let fade_frames = fade_frames_for_duration(sample_rate, fade);

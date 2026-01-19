@@ -66,8 +66,7 @@ impl AudioPlayer {
     pub fn set_volume(&mut self, volume: f32) {
         self.volume = volume.clamp(0.0, 1.0);
         let effective = self.effective_volume();
-        let mut state = self.stream.state.lock().unwrap();
-        state.volume = effective;
+        self.stream.set_volume(effective);
     }
  
     /// Adjust normalized audition gain for current and future playback.
@@ -78,8 +77,7 @@ impl AudioPlayer {
             1.0
         };
         let effective = self.effective_volume();
-        let mut state = self.stream.state.lock().unwrap();
-        state.volume = effective;
+        self.stream.set_volume(effective);
     }
 
     /// Set the minimum span length (in seconds) enforced for playback ranges.

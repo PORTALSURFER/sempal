@@ -36,8 +36,7 @@ impl AudioPlayer {
 
     /// True while the sink is still playing the queued audio.
     pub fn is_playing(&self) -> bool {
-        let is_empty = self.stream.state.lock().unwrap().sources.is_empty();
-        !is_empty && self.started_at.is_some()
+        self.stream.active_source_count() > 0 && self.started_at.is_some()
     }
 
     /// True when the current sink is configured to loop.
@@ -75,6 +74,6 @@ impl AudioPlayer {
 
     /// Returns and clears the last error from the audio stream.
     pub fn take_error(&mut self) -> Option<String> {
-        self.stream.state.lock().unwrap().error.take()
+        self.stream.take_error()
     }
 }

@@ -2,7 +2,7 @@ use cpal;
 use cpal::traits::{DeviceTrait, HostTrait};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tracing::info;
+use tracing::{info, warn};
 
 use super::device::{device_label, host_label};
 /// Errors that can occur while enumerating or opening audio outputs.
@@ -122,37 +122,137 @@ impl Default for ResolvedOutput {
     }
 }
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use cpal::traits::StreamTrait;
 
-/// Shared state between the player and the audio thread.
-pub struct StreamState {
-    /// Active sources plus their per-source gain.
-    pub sources: Vec<(Box<dyn crate::audio::Source + Send>, f32)>,
-    /// Master volume applied across sources.
-    pub volume: f32, // master volume
-    /// Last error reported by the audio thread.
-    pub error: Option<String>,
+/// Commands sent to the audio callback for non-blocking control.
+enum StreamCommand {
+    Append {
+        source: Box<dyn crate::audio::Source + Send>,
+        volume: f32,
+    },
+    Clear,
+}
+
+/// Callback-owned mixing state that avoids blocking the audio thread.
+struct CallbackState {
+    sources: Vec<(Box<dyn crate::audio::Source + Send>, f32)>,
+    command_receiver: Receiver<StreamCommand>,
+    error_sender: Sender<String>,
+    volume_bits: Arc<AtomicU32>,
+    active_sources: Arc<AtomicUsize>,
+}
+
+impl CallbackState {
+    fn new(
+        command_receiver: Receiver<StreamCommand>,
+        error_sender: Sender<String>,
+        volume_bits: Arc<AtomicU32>,
+        active_sources: Arc<AtomicUsize>,
+    ) -> Self {
+        Self {
+            sources: Vec::new(),
+            command_receiver,
+            error_sender,
+            volume_bits,
+            active_sources,
+        }
+    }
+
+    fn apply_commands(&mut self) {
+        const MAX_COMMANDS_PER_CALLBACK: usize = 64;
+        for _ in 0..MAX_COMMANDS_PER_CALLBACK {
+            match self.command_receiver.try_recv() {
+                Ok(StreamCommand::Append { source, volume }) => {
+                    self.sources.push((source, sanitize_gain(volume)));
+                }
+                Ok(StreamCommand::Clear) => {
+                    self.sources.clear();
+                }
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => break,
+            }
+        }
+    }
 }
 
 /// Custom container for cpal output stream.
 pub struct CpalAudioStream {
     _stream: cpal::Stream,
-    /// Shared stream state for source mixing and volume control.
-    pub state: Arc<Mutex<StreamState>>,
+    command_sender: Sender<StreamCommand>,
+    active_sources: Arc<AtomicUsize>,
+    volume_bits: Arc<AtomicU32>,
+    error_receiver: Receiver<String>,
 }
 
 impl CpalAudioStream {
     /// Wrap a cpal stream with shared playback state.
-    pub fn new(stream: cpal::Stream, state: Arc<Mutex<StreamState>>) -> Self {
-        Self { _stream: stream, state }
+    fn new(
+        stream: cpal::Stream,
+        command_sender: Sender<StreamCommand>,
+        active_sources: Arc<AtomicUsize>,
+        volume_bits: Arc<AtomicU32>,
+        error_receiver: Receiver<String>,
+    ) -> Self {
+        Self {
+            _stream: stream,
+            command_sender,
+            active_sources,
+            volume_bits,
+            error_receiver,
+        }
+    }
+
+    /// Append a new source into the playback queue.
+    pub fn append_source<S: crate::audio::Source + Send + 'static>(
+        &self,
+        source: S,
+        volume: f32,
+    ) -> Result<(), String> {
+        self.command_sender
+            .send(StreamCommand::Append {
+                source: Box::new(source),
+                volume,
+            })
+            .map_err(|_| "Audio output stream is unavailable".to_string())
+    }
+
+    /// Clear all queued sources on the audio thread.
+    pub fn clear_sources(&self) -> Result<(), String> {
+        self.command_sender
+            .send(StreamCommand::Clear)
+            .map_err(|_| "Audio output stream is unavailable".to_string())
+    }
+
+    /// Update the master output volume used by the audio callback.
+    pub fn set_volume(&self, volume: f32) {
+        store_volume(&self.volume_bits, sanitize_gain(volume));
+    }
+
+    /// Return the last known count of active sources.
+    pub fn active_source_count(&self) -> usize {
+        self.active_sources.load(Ordering::Relaxed)
+    }
+
+    /// Return and clear the most recent audio error, if any.
+    pub fn take_error(&self) -> Option<String> {
+        self.error_receiver.try_iter().last()
+    }
+
+    /// Create a monitor sink that sends sources into this stream.
+    pub fn monitor_sink(&self, volume: f32) -> MonitorSink {
+        MonitorSink {
+            command_sender: self.command_sender.clone(),
+            volume,
+        }
     }
 }
 
 /// A bridge for input monitoring that mimics a Sink-like interface.
 pub struct MonitorSink {
-    /// Shared stream state that receives appended sources.
-    pub state: Arc<Mutex<StreamState>>,
+    command_sender: Sender<StreamCommand>,
     /// Gain applied to appended sources.
     pub volume: f32,
 }
@@ -160,16 +260,25 @@ pub struct MonitorSink {
 impl MonitorSink {
     /// Append a new source into the monitored stream.
     pub fn append<S: crate::audio::Source + Send + 'static>(&self, source: S) {
-        let mut state = self.state.lock().unwrap();
-        state.sources.push((Box::new(source), self.volume));
+        if self
+            .command_sender
+            .send(StreamCommand::Append {
+            source: Box::new(source),
+            volume: self.volume,
+        })
+            .is_err()
+        {
+            warn!("Failed to append monitor source: output stream unavailable");
+        }
     }
 
     /// Begin playback (no-op for the monitor sink).
     pub fn play(&self) {}
     /// Stop playback by clearing queued sources.
     pub fn stop(&self) {
-        let mut state = self.state.lock().unwrap();
-        state.sources.clear(); // Simple implementation: stop all
+        if self.command_sender.send(StreamCommand::Clear).is_err() {
+            warn!("Failed to stop monitor sink: output stream unavailable");
+        }
     }
 }
 
@@ -274,25 +383,16 @@ pub fn open_output_stream(
     let mut resolved_host_id = host_id;
     let mut resolved_device_name = device_name;
 
-    let state = Arc::new(Mutex::new(StreamState {
-        sources: Vec::new(),
-        volume: 1.0,
-        error: None,
-    }));
+    let active_sources = Arc::new(AtomicUsize::new(0));
+    let volume_bits = Arc::new(AtomicU32::new(1.0_f32.to_bits()));
 
-    let state_for_callback = state.clone();
-    let callback = move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-        let mut state = state_for_callback.lock().unwrap();
-        process_audio_callback(&mut state, data);
-    };
-
-    let stream = match device.build_output_stream(
+    let (stream, command_sender, error_receiver) = match build_stream_with_state(
+        &device,
         &stream_config,
-        callback,
-        |err| tracing::error!("Stream error: {}", err),
-        None,
+        volume_bits.clone(),
+        active_sources.clone(),
     ) {
-        Ok(s) => s,
+        Ok(stream) => stream,
         Err(err) => {
             used_fallback = true;
             let default_host = cpal::default_host();
@@ -302,22 +402,19 @@ pub fn open_output_stream(
             resolved_host_id = default_host.id().name().to_string();
             resolved_device_name =
                 device_label(&fallback_device).unwrap_or_else(|| "Default device".to_string());
-            
+
             let fallback_config = fallback_device.default_output_config()
                 .map_err(|source| AudioOutputError::DefaultConfig { host_id: resolved_host_id.clone(), source })?;
-            
+
             let fallback_stream_config: cpal::StreamConfig = fallback_config.into();
 
-            let state_for_fallback = state.clone();
-            fallback_device.build_output_stream(
+            build_stream_with_state(
+                &fallback_device,
                 &fallback_stream_config,
-                move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                    let mut state = state_for_fallback.lock().unwrap();
-                    process_audio_callback(&mut state, data);
-                },
-                |err| tracing::error!("Fallback stream error: {}", err),
-                None,
-            ).map_err(|source| AudioOutputError::BuildDefaultStream { source })?
+                volume_bits.clone(),
+                active_sources.clone(),
+            )
+            .map_err(|source| AudioOutputError::BuildDefaultStream { source })?
         }
     };
 
@@ -346,7 +443,16 @@ pub fn open_output_stream(
         resolved.buffer_size_frames,
         resolved.used_fallback
     );
-    Ok(OpenStreamOutcome { stream: CpalAudioStream::new(stream, state), resolved })
+    Ok(OpenStreamOutcome {
+        stream: CpalAudioStream::new(
+            stream,
+            command_sender,
+            active_sources,
+            volume_bits,
+            error_receiver,
+        ),
+        resolved,
+    })
 }
 
 fn resolve_host(id: Option<&str>) -> Result<(cpal::Host, String, bool), AudioOutputError> {
@@ -394,8 +500,9 @@ fn resolve_device(
     Ok((resolved, resolved_name, used_fallback))
 }
 
-fn process_audio_callback(state: &mut StreamState, data: &mut [f32]) {
-    let volume = state.volume;
+fn process_audio_callback(state: &mut CallbackState, data: &mut [f32]) {
+    state.apply_commands();
+    let volume = load_volume(&state.volume_bits);
 
     // Fill with silence first
     for sample in data.iter_mut() {
@@ -423,8 +530,14 @@ fn process_audio_callback(state: &mut StreamState, data: &mut [f32]) {
         !finished
     });
 
+    state
+        .active_sources
+        .store(state.sources.len(), Ordering::Relaxed);
+
     if let Some(err) = last_error {
-        state.error = Some(err);
+        if state.error_sender.send(err).is_err() {
+            // Receiver dropped; nothing left to report.
+        }
     }
 }
 
@@ -436,6 +549,44 @@ fn sample_rates_in_range(min: u32, max: u32) -> Vec<u32> {
         .copied()
         .filter(|rate| *rate >= min && *rate <= max)
         .collect()
+}
+
+fn build_stream_with_state(
+    device: &cpal::Device,
+    stream_config: &cpal::StreamConfig,
+    volume_bits: Arc<AtomicU32>,
+    active_sources: Arc<AtomicUsize>,
+) -> Result<(cpal::Stream, Sender<StreamCommand>, Receiver<String>), cpal::BuildStreamError> {
+    let (command_sender, command_receiver) = mpsc::channel();
+    let (error_sender, error_receiver) = mpsc::channel();
+    let mut callback_state =
+        CallbackState::new(command_receiver, error_sender, volume_bits, active_sources);
+    let callback = move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+        process_audio_callback(&mut callback_state, data);
+    };
+    let stream = device.build_output_stream(
+        stream_config,
+        callback,
+        |err| tracing::error!("Stream error: {}", err),
+        None,
+    )?;
+    Ok((stream, command_sender, error_receiver))
+}
+
+fn sanitize_gain(value: f32) -> f32 {
+    if value.is_finite() {
+        value.max(0.0)
+    } else {
+        0.0
+    }
+}
+
+fn load_volume(bits: &AtomicU32) -> f32 {
+    f32::from_bits(bits.load(Ordering::Relaxed))
+}
+
+fn store_volume(bits: &AtomicU32, volume: f32) {
+    bits.store(volume.to_bits(), Ordering::Relaxed);
 }
 
 #[cfg(test)]
@@ -459,7 +610,10 @@ mod tests {
 
     #[test]
     fn callback_propagates_error() {
+        use std::sync::Arc;
         use std::time::Duration;
+        use std::sync::atomic::{AtomicU32, AtomicUsize};
+        use std::sync::mpsc;
         use crate::audio::Source;
 
         struct MockSource {
@@ -481,15 +635,68 @@ mod tests {
             fn last_error(&self) -> Option<String> { self.error.clone() }
         }
 
-        let mut state = StreamState {
-            sources: vec![(Box::new(MockSource { error: Some("failure".into()) }), 1.0)],
-            volume: 1.0,
-            error: None,
-        };
+        let (command_sender, command_receiver) = mpsc::channel();
+        let (error_sender, error_receiver) = mpsc::channel();
+        let volume_bits = Arc::new(AtomicU32::new(1.0_f32.to_bits()));
+        let active_sources = Arc::new(AtomicUsize::new(0));
+        let mut state =
+            CallbackState::new(command_receiver, error_sender, volume_bits, active_sources);
+        command_sender
+            .send(StreamCommand::Append {
+                source: Box::new(MockSource { error: Some("failure".into()) }),
+                volume: 1.0,
+            })
+            .unwrap();
 
         let mut data = vec![0.0; 10];
         process_audio_callback(&mut state, &mut data);
 
-        assert_eq!(state.error, Some("failure".into()));
+        let err = error_receiver.try_recv().ok();
+        assert_eq!(err, Some("failure".into()));
+    }
+
+    #[test]
+    fn callback_clears_sources_with_command() {
+        use std::sync::Arc;
+        use std::time::Duration;
+        use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+        use std::sync::mpsc;
+        use crate::audio::Source;
+
+        struct ConstantSource;
+
+        impl Iterator for ConstantSource {
+            type Item = f32;
+            fn next(&mut self) -> Option<Self::Item> {
+                Some(1.0)
+            }
+        }
+
+        impl Source for ConstantSource {
+            fn current_frame_len(&self) -> Option<usize> { None }
+            fn channels(&self) -> u16 { 1 }
+            fn sample_rate(&self) -> u32 { 44100 }
+            fn total_duration(&self) -> Option<Duration> { None }
+        }
+
+        let (command_sender, command_receiver) = mpsc::channel();
+        let (error_sender, _error_receiver) = mpsc::channel();
+        let volume_bits = Arc::new(AtomicU32::new(1.0_f32.to_bits()));
+        let active_sources = Arc::new(AtomicUsize::new(0));
+        let mut state =
+            CallbackState::new(command_receiver, error_sender, volume_bits, active_sources.clone());
+        command_sender
+            .send(StreamCommand::Append {
+                source: Box::new(ConstantSource),
+                volume: 1.0,
+            })
+            .unwrap();
+        command_sender.send(StreamCommand::Clear).unwrap();
+
+        let mut data = vec![1.0; 4];
+        process_audio_callback(&mut state, &mut data);
+
+        assert!(data.iter().all(|sample| *sample == 0.0));
+        assert_eq!(active_sources.load(Ordering::Relaxed), 0);
     }
 }
