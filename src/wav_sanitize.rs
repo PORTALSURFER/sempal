@@ -194,11 +194,24 @@ fn sanitize_wav_header(bytes: &mut Vec<u8>, total_file_len: u64) -> bool {
         
         let chunk_size =
             u32::from_le_bytes(bytes[offset + 4..offset + 8].try_into().unwrap()) as usize;
-        let chunk_data = offset + 8;
+        let chunk_data = match offset.checked_add(8) {
+            Some(value) => value,
+            None => return false,
+        };
+        let chunk_end = match chunk_data.checked_add(chunk_size) {
+            Some(value) => value,
+            None => return false,
+        };
+        if (chunk_data as u64)
+            .checked_add(chunk_size as u64)
+            .map_or(true, |end| end > total_file_len)
+        {
+            return false;
+        }
         
         // If chunk data extends beyond our buffer, we can't safely inspect/fix it 
         // if it relies on content access.
-        if chunk_data + chunk_size > bytes.len() {
+        if chunk_end > bytes.len() {
             // Special case: if it IS the fmt chunk and we have enough bytes to see the crucial parts
             // maybe we can still fix it? 
             // `shrink_pcm_fmt_chunk_with_padding` requires `chunk_size` bytes to be available to check padding.
@@ -214,9 +227,12 @@ fn sanitize_wav_header(bytes: &mut Vec<u8>, total_file_len: u64) -> bool {
             break;
         }
 
-        offset = chunk_data + chunk_size;
+        offset = chunk_end;
         if chunk_size % 2 == 1 {
-            offset = offset.saturating_add(1);
+            offset = match offset.checked_add(1) {
+                Some(value) => value,
+                None => return false,
+            };
         }
     }
 
@@ -410,5 +426,16 @@ mod tests {
 
         // Cleanup
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn sanitize_wav_header_handles_large_chunk_sizes_safely() {
+        let mut bytes = vec![0u8; 20];
+        bytes[0..4].copy_from_slice(b"RIFF");
+        bytes[8..12].copy_from_slice(b"WAVE");
+        bytes[12..16].copy_from_slice(b"JUNK");
+        bytes[16..20].copy_from_slice(&u32::MAX.to_le_bytes());
+        let len = bytes.len() as u64;
+        assert!(!sanitize_wav_header(&mut bytes, len));
     }
 }

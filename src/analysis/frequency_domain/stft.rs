@@ -407,8 +407,10 @@ mod tests {
             frame_size,
             STFT_HOP_SIZE,
             &mel,
-        )
-        .expect_err("non power-of-two frame sizes should be rejected");
-        assert!(err.contains("power-of-two"));
+        );
+        assert!(err.is_err());
+        if let Err(message) = err {
+            assert!(message.contains("power-of-two"));
+        }
     }
 }
