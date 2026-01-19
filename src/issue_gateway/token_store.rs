@@ -207,6 +207,7 @@ impl IssueTokenStore {
 
         // 1. Check environment variable
         if let Some(key) = self.get_key_from_env()? {
+            let _ = std::fs::remove_file(self.legacy_fallback_key_path());
             self.cache_fallback_key(key);
             return Ok(key);
         }
@@ -663,7 +664,7 @@ mod tests {
         ENV_LOCK
             .get_or_init(|| Mutex::new(()))
             .lock()
-            .expect("env lock poisoned")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     fn allow_fallback() {

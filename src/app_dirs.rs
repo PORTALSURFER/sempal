@@ -136,6 +136,7 @@ fn config_base_dir() -> Option<PathBuf> {
 #[cfg(test)]
 pub struct ConfigBaseGuard {
     previous: Option<PathBuf>,
+    previous_root: Option<PathBuf>,
 }
 
 #[cfg(test)]
@@ -148,7 +149,15 @@ impl ConfigBaseGuard {
             *slot = Some(path);
             prev
         });
-        Self { previous }
+        let mut root_guard = APP_ROOT_OVERRIDE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let previous_root = root_guard.clone();
+        *root_guard = None;
+        Self {
+            previous,
+            previous_root,
+        }
     }
 }
 
@@ -159,6 +168,10 @@ impl Drop for ConfigBaseGuard {
         TEST_CONFIG_OVERRIDE.with(|override_path| {
             *override_path.borrow_mut() = previous;
         });
+        let mut root_guard = APP_ROOT_OVERRIDE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *root_guard = self.previous_root.take();
     }
 }
 

@@ -327,7 +327,7 @@ pub(crate) fn fade_gain_at_position(
     }
     let mut gain = 1.0;
     if let Some(fade_in) = fade_in {
-        let fade_len = width * fade_in.length;
+        let fade_len = width * (fade_in.length + fade_in.mute);
         if fade_len > 0.0 {
             let time_in = position - start;
             if time_in < fade_len {
@@ -337,7 +337,7 @@ pub(crate) fn fade_gain_at_position(
         }
     }
     if let Some(fade_out) = fade_out {
-        let fade_len = width * fade_out.length;
+        let fade_len = width * (fade_out.length + fade_out.mute);
         if fade_len > 0.0 {
             let time_until_end = end - position;
             if time_until_end < fade_len {
@@ -526,12 +526,18 @@ fn clamp01(value: f32) -> f32 {
 
 fn clamp_fade_length(fade: f32, other_fade: f32) -> f32 {
     let clamped = fade.clamp(0.0, 1.0);
-    let max_allowed = 1.0 - other_fade.clamp(0.0, 1.0);
-    clamped.min(max_allowed)
+    let other = (other_fade as f64).clamp(0.0, 1.0);
+    let max_allowed = (1.0_f64 - other).max(0.0) as f32;
+    round_fade_length(clamped.min(max_allowed))
 }
 
 fn clamp_mute_length(mute: f32, max_mute: f32) -> f32 {
     mute.clamp(0.0, max_mute.max(0.0))
+}
+
+fn round_fade_length(value: f32) -> f32 {
+    let scale = 1_000_000.0;
+    (value * scale).round() / scale
 }
 
 fn clamp_gain(gain: f32) -> f32 {

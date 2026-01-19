@@ -400,20 +400,6 @@ impl EguiController {
         };
         self.update_cached_entry(&context.source, &context.relative_path, entry);
         
-        if was_playing {
-            let start_override = if playhead_position.is_finite() {
-                Some(playhead_position.clamp(0.0, 1.0))
-            } else {
-                None
-            };
-            self.runtime.jobs.set_pending_playback(Some(PendingPlayback {
-                source_id: context.source.id.clone(),
-                relative_path: context.relative_path.clone(),
-                looped: was_looping,
-                start_override,
-            }));
-        }
-
         // Force a full reload by clearing loaded_wav (the file was modified on disk)
         self.sample_view.wav.loaded_wav = None;
         self.ui.loaded_wav = None;
@@ -434,6 +420,20 @@ impl EguiController {
         } else {
             self.clear_waveform_selection();
             self.clear_edit_selection();
+        }
+
+        if was_playing {
+            let start_override = if playhead_position.is_finite() {
+                Some(playhead_position.clamp(0.0, 1.0))
+            } else {
+                None
+            };
+            self.runtime.jobs.set_pending_playback(Some(PendingPlayback {
+                source_id: context.source.id.clone(),
+                relative_path: context.relative_path.clone(),
+                looped: was_looping,
+                start_override,
+            }));
         }
 
         self.reexport_collections_for_sample(&context.source.id, &context.relative_path);

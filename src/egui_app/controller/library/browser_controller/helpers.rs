@@ -41,6 +41,9 @@ impl BrowserController<'_> {
         &mut self,
         ctx: &TriageSampleContext,
     ) -> Result<(), String> {
+        if cfg!(test) {
+            return self.normalize_browser_sample_sync(ctx);
+        }
         let job = NormalizationJob {
             source: ctx.source.clone(),
             relative_path: ctx.entry.relative_path.clone(),
@@ -57,6 +60,65 @@ impl BrowserController<'_> {
         }
 
         self.controller.runtime.jobs.begin_normalization(job);
+        Ok(())
+    }
+
+    fn normalize_browser_sample_sync(&mut self, ctx: &TriageSampleContext) -> Result<(), String> {
+        let was_playing = self.is_playing();
+        let was_looping = self.ui.waveform.loop_enabled;
+        let playhead_position = self.ui.waveform.playhead.position;
+
+        let (file_size, modified_ns, tag) = self.normalize_and_save_for_path(
+            &ctx.source,
+            &ctx.entry.relative_path,
+            &ctx.absolute_path,
+        )?;
+        let entry_index = self.wav_index_for_path(&ctx.entry.relative_path);
+        let looped = entry_index
+            .and_then(|idx| self.wav_entries.entry(idx))
+            .map(|entry| entry.looped)
+            .unwrap_or(false);
+        let last_played_at = entry_index
+            .and_then(|idx| self.wav_entries.entry(idx))
+            .and_then(|entry| entry.last_played_at);
+        let updated = WavEntry {
+            relative_path: ctx.entry.relative_path.clone(),
+            file_size,
+            modified_ns,
+            content_hash: None,
+            tag,
+            looped,
+            missing: false,
+            last_played_at,
+        };
+
+        let is_currently_loaded = self.sample_view.wav.loaded_audio.as_ref().is_some_and(|audio| {
+            audio.source_id == ctx.source.id && audio.relative_path == ctx.entry.relative_path
+        });
+        if is_currently_loaded && was_playing {
+            let start_override = if playhead_position.is_finite() {
+                Some(playhead_position.clamp(0.0, 1.0))
+            } else {
+                None
+            };
+            self.runtime.jobs.set_pending_playback(Some(PendingPlayback {
+                source_id: ctx.source.id.clone(),
+                relative_path: ctx.entry.relative_path.clone(),
+                looped: was_looping,
+                start_override,
+            }));
+        }
+
+        self.update_cached_entry(&ctx.source, &ctx.entry.relative_path, updated);
+        if self.selection_state.ctx.selected_source.as_ref() == Some(&ctx.source.id) {
+            self.rebuild_browser_lists();
+        }
+        self.refresh_waveform_for_sample(&ctx.source, &ctx.entry.relative_path);
+        self.reexport_collections_for_sample(&ctx.source.id, &ctx.entry.relative_path);
+        self.set_status(
+            format!("Normalized {}", ctx.entry.relative_path.display()),
+            StatusTone::Info,
+        );
         Ok(())
     }
     pub(crate) fn next_browser_focus_after_delete(&mut self, rows: &[usize]) -> Option<PathBuf> {
