@@ -23,14 +23,18 @@ pub fn config_path() -> Result<PathBuf, ConfigError> {
 pub fn load_or_default() -> Result<AppConfig, ConfigError> {
     let settings_path = config_path()?;
     let legacy_path = legacy_config_path()?;
-    let mut settings = if settings_path.exists() {
-        load_settings_from(&settings_path)?
+    let (mut settings, legacy_library) = if settings_path.exists() {
+        (load_settings_from(&settings_path)?, None)
     } else {
-        migrate_legacy_config(&legacy_path, &settings_path)?
+        let migration = migrate_legacy_config(&legacy_path, &settings_path)?;
+        (migration.settings, Some(migration.library))
     };
+    let app_data_dir = settings.core.app_data_dir.clone();
     apply_app_data_dir(&settings_path, &mut settings)?;
-
-    let library = crate::sample_sources::library::load()?;
+    let library = match legacy_library {
+        Some(library) if app_data_dir.is_none() => library,
+        _ => crate::sample_sources::library::load()?,
+    };
     Ok(AppConfig::from((settings, library)))
 }
 

@@ -699,4 +699,72 @@ mod tests {
         assert!(data.iter().all(|sample| *sample == 0.0));
         assert_eq!(active_sources.load(Ordering::Relaxed), 0);
     }
+
+    #[test]
+    fn callback_stays_non_blocking_under_command_contention() {
+        use std::sync::{Arc, Barrier, Mutex};
+        use std::sync::atomic::{AtomicU32, AtomicUsize};
+        use std::sync::mpsc;
+        use std::thread;
+        use std::time::Duration;
+        use crate::audio::Source;
+
+        struct ConstantSource;
+
+        impl Iterator for ConstantSource {
+            type Item = f32;
+            fn next(&mut self) -> Option<Self::Item> {
+                Some(0.25)
+            }
+        }
+
+        impl Source for ConstantSource {
+            fn current_frame_len(&self) -> Option<usize> { None }
+            fn channels(&self) -> u16 { 1 }
+            fn sample_rate(&self) -> u32 { 44100 }
+            fn total_duration(&self) -> Option<Duration> { None }
+        }
+
+        let (command_sender, command_receiver) = mpsc::channel();
+        let (error_sender, _error_receiver) = mpsc::channel();
+        let volume_bits = Arc::new(AtomicU32::new(1.0_f32.to_bits()));
+        let active_sources = Arc::new(AtomicUsize::new(0));
+        let ui_lock = Arc::new(Mutex::new(()));
+        let barrier = Arc::new(Barrier::new(2));
+        let (done_sender, done_receiver) = mpsc::channel();
+
+        let sender_lock = ui_lock.clone();
+        let sender_barrier = barrier.clone();
+        let sender_thread = thread::spawn(move || {
+            sender_barrier.wait();
+            let _guard = sender_lock.lock().unwrap();
+            for _ in 0..256 {
+                let _ = command_sender.send(StreamCommand::Append {
+                    source: Box::new(ConstantSource),
+                    volume: 1.0,
+                });
+            }
+        });
+
+        let callback_thread = thread::spawn(move || {
+            let mut state =
+                CallbackState::new(command_receiver, error_sender, volume_bits, active_sources);
+            let mut data = vec![0.0; 64];
+            for _ in 0..256 {
+                process_audio_callback(&mut state, &mut data);
+            }
+            let _ = done_sender.send(());
+        });
+
+        let guard = ui_lock.lock().unwrap();
+        barrier.wait();
+
+        done_receiver
+            .recv_timeout(Duration::from_millis(200))
+            .expect("callback should stay non-blocking under contention");
+
+        drop(guard);
+        let _ = sender_thread.join();
+        let _ = callback_thread.join();
+    }
 }
