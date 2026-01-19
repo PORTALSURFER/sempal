@@ -149,15 +149,25 @@ impl EguiApp {
                                 {
                                     self.controller.open_feedback_issue_prompt();
                                 }
+                                if ui
+                                    .add(crate::egui_app::ui::chrome::buttons::action_button(
+                                        "Donate",
+                                    ))
+                                    .clicked()
+                                {
+                                    let _ = open::that("https://www.buymeacoffee.com/portalsurfer");
+                                }
                                 let mode = self.controller.ui.controls.tooltip_mode;
                                 let color = match mode {
                                     crate::sample_sources::config::TooltipMode::Off => palette.text_muted,
                                     crate::sample_sources::config::TooltipMode::Regular => palette.accent_mint,
                                     crate::sample_sources::config::TooltipMode::Extended => palette.accent_copper,
                                 };
-                                let hints_btn = egui::Button::new(egui::RichText::new("?").color(color)).frame(false);
+                                let hints_btn =
+                                    egui::Button::new(egui::RichText::new("?").color(color))
+                                        .frame(false);
                                 let hints_resp = ui.add(hints_btn);
-                                
+
                                 helpers::tooltip(
                                     hints_resp.clone(),
                                     "Tooltip Mode",
@@ -172,14 +182,6 @@ impl EguiApp {
                                         crate::sample_sources::config::TooltipMode::Extended => crate::sample_sources::config::TooltipMode::Off,
                                     };
                                     self.controller.set_tooltip_mode(next_mode);
-                                }
-                                if ui
-                                    .add(crate::egui_app::ui::chrome::buttons::action_button(
-                                        "Donate",
-                                    ))
-                                    .clicked()
-                                {
-                                    let _ = open::that("https://www.buymeacoffee.com/portalsurfer");
                                 }
                             }
                         },
