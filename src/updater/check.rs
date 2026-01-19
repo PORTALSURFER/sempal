@@ -1,4 +1,7 @@
 use semver::Version;
+use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
+use tracing::warn;
 
 use super::github;
 use super::{RuntimeIdentity, UpdateChannel, UpdateError};
@@ -102,7 +105,23 @@ fn nightly_outcome(
         });
     };
 
-    if published > last_seen {
+    let Some(published_timestamp) = parse_rfc3339("published_at", published) else {
+        return Ok(UpdateCheckOutcome::UpdateAvailable {
+            tag: release.tag_name,
+            html_url: release.html_url,
+            published_at,
+        });
+    };
+
+    let Some(last_seen_timestamp) = parse_rfc3339("last_seen", last_seen) else {
+        return Ok(UpdateCheckOutcome::UpdateAvailable {
+            tag: release.tag_name,
+            html_url: release.html_url,
+            published_at,
+        });
+    };
+
+    if published_timestamp > last_seen_timestamp {
         Ok(UpdateCheckOutcome::UpdateAvailable {
             tag: release.tag_name,
             html_url: release.html_url,
@@ -110,5 +129,54 @@ fn nightly_outcome(
         })
     } else {
         Ok(UpdateCheckOutcome::UpToDate)
+    }
+}
+
+fn parse_rfc3339(label: &str, value: &str) -> Option<OffsetDateTime> {
+    match OffsetDateTime::parse(value, &Rfc3339) {
+        Ok(timestamp) => Some(timestamp),
+        Err(err) => {
+            warn!("Failed to parse {label} timestamp '{value}': {err}");
+            None
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn nightly_release(published_at: Option<&str>) -> github::Release {
+        github::Release {
+            tag_name: "nightly".to_string(),
+            prerelease: true,
+            html_url: "https://example.test/release".to_string(),
+            published_at: published_at.map(|value| value.to_string()),
+            assets: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn nightly_comparison_uses_timestamps() {
+        let release = nightly_release(Some("2024-01-02T01:00:00+02:00"));
+        let last_seen = Some("2024-01-02T00:30:00+00:00".to_string());
+        let outcome = nightly_outcome(&last_seen, release).expect("nightly outcome");
+        assert!(matches!(outcome, UpdateCheckOutcome::UpToDate));
+    }
+
+    #[test]
+    fn nightly_parse_failure_defaults_to_update() {
+        let release = nightly_release(Some("not-a-date"));
+        let last_seen = Some("2024-01-01T00:00:00Z".to_string());
+        let outcome = nightly_outcome(&last_seen, release).expect("nightly outcome");
+        assert!(matches!(outcome, UpdateCheckOutcome::UpdateAvailable { .. }));
+    }
+
+    #[test]
+    fn nightly_last_seen_parse_failure_defaults_to_update() {
+        let release = nightly_release(Some("2024-01-01T00:00:00Z"));
+        let last_seen = Some("not-a-date".to_string());
+        let outcome = nightly_outcome(&last_seen, release).expect("nightly outcome");
+        assert!(matches!(outcome, UpdateCheckOutcome::UpdateAvailable { .. }));
     }
 }
