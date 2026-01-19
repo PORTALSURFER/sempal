@@ -176,6 +176,19 @@ impl UpdateUiApp {
                         plan.release_tag,
                         plan.install_dir.display()
                     ));
+                    if !plan.stale_removal_failures.is_empty() {
+                        self.push_log(format!(
+                            "Warning: failed to remove {} stale paths",
+                            plan.stale_removal_failures.len()
+                        ));
+                        for failure in &plan.stale_removal_failures {
+                            self.push_log(format!(
+                                "Stale remove failed: {} ({})",
+                                failure.path.display(),
+                                failure.error
+                            ));
+                        }
+                    }
                     self.status = UiStatus::Success(format!("Updated to {}", plan.release_tag));
                 }
                 Err(err) => {

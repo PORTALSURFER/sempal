@@ -17,7 +17,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-pub use apply::{ApplyPlan, UpdateManifest};
+pub use apply::{ApplyPlan, StaleRemovalFailure, UpdateManifest};
 pub use check::{UpdateCheckOutcome, UpdateCheckRequest};
 pub use github::ReleaseSummary;
 

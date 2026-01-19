@@ -84,6 +84,17 @@ pub struct ApplyPlan {
     pub copied_files: Vec<String>,
     /// Directories replaced during the update.
     pub replaced_dirs: Vec<String>,
+    /// Stale paths that could not be removed after applying the update.
+    pub stale_removal_failures: Vec<StaleRemovalFailure>,
+}
+
+/// Details about a stale path removal failure during update cleanup.
+#[derive(Debug, Clone)]
+pub struct StaleRemovalFailure {
+    /// Path that failed to be removed.
+    pub path: PathBuf,
+    /// Human-readable error describing the failure.
+    pub error: String,
 }
 
 pub(super) fn apply_update_with_progress<F>(
@@ -160,8 +171,17 @@ where
     }
 
     report(&mut progress, "Applying update transaction...");
-    let (copied_files, replaced_dirs) =
+    let (copied_files, replaced_dirs, stale_removal_failures) =
         apply_files_and_dirs(&args.install_dir, &root_dir, &manifest)?;
+    if !stale_removal_failures.is_empty() {
+        report(
+            &mut progress,
+            format!(
+                "Warning: failed to remove {} stale paths",
+                stale_removal_failures.len()
+            ),
+        );
+    }
 
     if args.relaunch {
         report(&mut progress, "Relaunching app...");
@@ -177,6 +197,7 @@ where
         relaunch: args.relaunch,
         copied_files,
         replaced_dirs,
+        stale_removal_failures,
     })
 }
 
@@ -220,7 +241,7 @@ fn apply_files_and_dirs(
     install_dir: &Path,
     root_dir: &Path,
     manifest: &UpdateManifest,
-) -> Result<(Vec<String>, Vec<String>), UpdateError> {
+) -> Result<(Vec<String>, Vec<String>, Vec<StaleRemovalFailure>), UpdateError> {
     let installed_manifest = load_installed_manifest(install_dir)?;
     let mut stale_files = match installed_manifest.as_ref() {
         Some(installed) => collect_stale_files(install_dir, installed, manifest)?,
@@ -248,9 +269,9 @@ fn apply_files_and_dirs(
 
     transaction.commit()?;
 
-    remove_stale_paths(&stale_files, install_dir)?;
+    let stale_removal_failures = remove_stale_paths(&stale_files, install_dir)?;
 
-    Ok((copied, replaced_dirs))
+    Ok((copied, replaced_dirs, stale_removal_failures))
 }
 fn load_installed_manifest(install_dir: &Path) -> Result<Option<UpdateManifest>, UpdateError> {
     let manifest_path = install_dir.join("update-manifest.json");
@@ -318,34 +339,60 @@ fn validate_installed_manifest(
     Ok(())
 }
 
-fn remove_stale_paths(paths: &[PathBuf], install_dir: &Path) -> Result<(), UpdateError> {
+fn remove_stale_paths(
+    paths: &[PathBuf],
+    install_dir: &Path,
+) -> Result<Vec<StaleRemovalFailure>, UpdateError> {
+    let mut failures = Vec::new();
     for path in paths {
         if !path.exists() {
             continue;
         }
-        let is_dir = match fs::metadata(path) {
-            Ok(m) => m.file_type().is_dir(),
-            Err(_) => {
-                if fs::remove_dir_all(path).is_ok() {
+        match fs::metadata(path).map(|m| m.file_type().is_dir()) {
+            Ok(true) => {
+                if let Err(err) = fs::remove_dir_all(path) {
+                    failures.push(StaleRemovalFailure {
+                        path: path.clone(),
+                        error: err.to_string(),
+                    });
+                }
+            }
+            Ok(false) => {
+                if let Err(err) = fs::remove_file(path) {
+                    failures.push(StaleRemovalFailure {
+                        path: path.clone(),
+                        error: err.to_string(),
+                    });
+                }
+            }
+            Err(err) => {
+                let mut removed = false;
+                match fs::remove_dir_all(path) {
+                    Ok(_) => {
+                        removed = true;
+                    }
+                    Err(dir_err) => {
+                        if fs::remove_file(path).is_ok() {
+                            removed = true;
+                        } else {
+                            failures.push(StaleRemovalFailure {
+                                path: path.clone(),
+                                error: format!(
+                                    "metadata error: {err}; remove dir error: {dir_err}"
+                                ),
+                            });
+                        }
+                    }
+                }
+                if removed {
                     let _ = prune_empty_parents(install_dir, path);
-                    continue;
                 }
-                if let Err(_) = fs::remove_file(path) {
-                     // Log error?
-                }
-                let _ = prune_empty_parents(install_dir, path);
                 continue;
             }
-        };
-
-        if is_dir {
-            let _ = fs::remove_dir_all(path);
-        } else {
-            let _ = fs::remove_file(path);
         }
         let _ = prune_empty_parents(install_dir, path);
     }
-    Ok(())
+    Ok(failures)
 }
 
 fn prune_empty_parents(install_dir: &Path, path: &Path) -> Result<(), UpdateError> {
@@ -402,6 +449,8 @@ fn channel_label(channel: UpdateChannel) -> &'static str {
 mod tests {
     use super::*;
     use std::fs;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
     use tempfile::tempdir;
 
     #[test]
@@ -545,6 +594,70 @@ mod tests {
 
         if install_dir.join("resources").exists() {
             println!("WARN: resources dir not removed (likely os error 1 environmental issue)");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn apply_files_and_dirs_reports_stale_removal_failures() {
+        let tmp = tempdir().unwrap();
+        let install_dir = tmp.path().join("install");
+        let root_dir = tmp.path().join("root");
+        fs::create_dir_all(&install_dir).unwrap();
+        fs::create_dir_all(&root_dir).unwrap();
+
+        let stale_dir = install_dir.join("stale");
+        fs::create_dir_all(&stale_dir).unwrap();
+        let stale_file = stale_dir.join("stale.txt");
+        fs::write(&stale_file, "old-stale").unwrap();
+
+        let mut perms = fs::metadata(&stale_dir).unwrap().permissions();
+        perms.set_mode(0o555);
+        fs::set_permissions(&stale_dir, perms).unwrap();
+
+        let installed_manifest_json = r#"{
+  "app": "sempal",
+  "channel": "stable",
+  "target": "target",
+  "platform": "linux",
+  "arch": "x86_64",
+  "files": ["update-manifest.json", "current.txt", "stale/stale.txt"]
+}
+"#;
+        fs::write(
+            install_dir.join("update-manifest.json"),
+            installed_manifest_json,
+        )
+        .unwrap();
+        fs::write(install_dir.join("current.txt"), "old-current").unwrap();
+
+        let next_manifest = UpdateManifest {
+            app: "sempal".to_string(),
+            channel: "stable".to_string(),
+            target: "target".to_string(),
+            platform: "linux".to_string(),
+            arch: "x86_64".to_string(),
+            files: vec![
+                "update-manifest.json".to_string(),
+                "current.txt".to_string(),
+            ],
+        };
+        fs::write(root_dir.join("update-manifest.json"), "new-manifest").unwrap();
+        fs::write(root_dir.join("current.txt"), "new-current").unwrap();
+
+        let (_copied, _replaced, failures) =
+            apply_files_and_dirs(&install_dir, &root_dir, &next_manifest).unwrap();
+
+        if stale_file.exists() {
+            assert!(failures.iter().any(|failure| failure.path == stale_file));
+        } else {
+            assert!(!failures.iter().any(|failure| failure.path == stale_file));
+        }
+
+        if stale_dir.exists() {
+            let mut perms = fs::metadata(&stale_dir).unwrap().permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(&stale_dir, perms).unwrap();
         }
     }
 }
