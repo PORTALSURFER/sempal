@@ -15,6 +15,7 @@ use std::{
         mpsc::{Receiver, Sender},
     },
     thread,
+    time::{Duration, Instant},
 };
 
 type TryRecvError = std::sync::mpsc::TryRecvError;
@@ -84,6 +85,71 @@ pub(crate) struct IssueGatewayCreateResult {
 #[derive(Debug)]
 pub(crate) struct IssueGatewayAuthResult {
     pub(crate) result: Result<String, crate::issue_gateway::api::IssueAuthError>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct IssueGatewayPollConfig {
+    max_attempts: u32,
+    max_duration: Duration,
+    initial_delay: Duration,
+    max_delay: Duration,
+}
+
+fn issue_gateway_poll_config() -> IssueGatewayPollConfig {
+    IssueGatewayPollConfig {
+        max_attempts: 40,
+        max_duration: Duration::from_secs(120),
+        initial_delay: Duration::from_secs(1),
+        max_delay: Duration::from_secs(10),
+    }
+}
+
+fn backoff_delay(current: Duration, max_delay: Duration) -> Duration {
+    let doubled = current.checked_mul(2).unwrap_or(max_delay);
+    if doubled > max_delay {
+        max_delay
+    } else {
+        doubled
+    }
+}
+
+fn poll_issue_gateway_with_backoff(
+    request_id: &str,
+    cancel: &AtomicBool,
+    mut poller: impl FnMut(&str) -> Result<Option<String>, crate::issue_gateway::api::IssueAuthError>,
+    config: IssueGatewayPollConfig,
+    mut sleep: impl FnMut(Duration),
+) -> Option<IssueGatewayAuthResult> {
+    let start = Instant::now();
+    let mut attempts = 0u32;
+    let mut delay = config.initial_delay;
+    loop {
+        if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            return None;
+        }
+        attempts += 1;
+        match poller(request_id) {
+            Ok(Some(token)) => {
+                return Some(IssueGatewayAuthResult {
+                    result: Ok(token),
+                });
+            }
+            Ok(None) => {}
+            Err(err) => {
+                return Some(IssueGatewayAuthResult { result: Err(err) });
+            }
+        }
+        if attempts >= config.max_attempts || start.elapsed() >= config.max_duration {
+            return Some(IssueGatewayAuthResult {
+                result: Err(crate::issue_gateway::api::IssueAuthError::TimedOut {
+                    attempts,
+                    elapsed_seconds: start.elapsed().as_secs(),
+                }),
+            });
+        }
+        sleep(delay);
+        delay = backoff_delay(delay, config.max_delay);
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -578,28 +644,16 @@ impl ControllerJobs {
         self.issue_gateway_poll_cancel = Some(cancel.clone());
         let tx = self.message_tx.clone();
         thread::spawn(move || {
-            loop {
-                if cancel.load(std::sync::atomic::Ordering::Relaxed) {
-                    break;
-                }
-                match crate::issue_gateway::api::poll_issue_token(&job.request_id) {
-                    Ok(Some(token)) => {
-                        let _ = tx.send(JobMessage::IssueGatewayAuthed(IssueGatewayAuthResult {
-                            result: Ok(token),
-                        }));
-                        break;
-                    }
-                    Ok(None) => {
-                        // Keep polling
-                    }
-                    Err(err) => {
-                        let _ = tx.send(JobMessage::IssueGatewayAuthed(IssueGatewayAuthResult {
-                            result: Err(err),
-                        }));
-                        break;
-                    }
-                }
-                thread::sleep(std::time::Duration::from_secs(3));
+            let config = issue_gateway_poll_config();
+            let result = poll_issue_gateway_with_backoff(
+                &job.request_id,
+                &cancel,
+                crate::issue_gateway::api::poll_issue_token,
+                config,
+                thread::sleep,
+            );
+            if let Some(message) = result {
+                let _ = tx.send(JobMessage::IssueGatewayAuthed(message));
             }
         });
     }
@@ -662,5 +716,43 @@ impl ControllerJobs {
                 }
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn issue_gateway_poll_times_out_after_max_attempts() {
+        let cancel = AtomicBool::new(false);
+        let mut attempts = 0u32;
+        let config = IssueGatewayPollConfig {
+            max_attempts: 3,
+            max_duration: Duration::from_secs(3600),
+            initial_delay: Duration::from_secs(0),
+            max_delay: Duration::from_secs(0),
+        };
+
+        let result = poll_issue_gateway_with_backoff(
+            "request",
+            &cancel,
+            |_| {
+                attempts += 1;
+                Ok(None)
+            },
+            config,
+            |_| {},
+        );
+
+        match result {
+            Some(IssueGatewayAuthResult {
+                result:
+                    Err(crate::issue_gateway::api::IssueAuthError::TimedOut { attempts, .. }),
+            }) => {
+                assert_eq!(attempts, 3);
+            }
+            other => panic!("expected timed out auth result, got {other:?}"),
+        }
     }
 }

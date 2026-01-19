@@ -27,6 +27,7 @@ impl EguiController {
         self.ui.feedback_issue.connecting = false;
         self.ui.feedback_issue.last_error = None;
         self.ui.feedback_issue.last_success_url = None;
+        self.runtime.jobs.clear_issue_gateway_poll();
     }
 
     pub(crate) fn connect_github_issue_reporting(&mut self) {

@@ -89,6 +89,14 @@ pub enum IssueAuthError {
     /// Auth response was malformed or missing data.
     #[error("Invalid auth response: {0}")]
     InvalidResponse(String),
+    /// Auth polling exceeded the configured time or attempt limit.
+    #[error("Auth polling timed out after {attempts} attempts ({elapsed_seconds}s)")]
+    TimedOut {
+        /// Number of poll attempts made before timing out.
+        attempts: u32,
+        /// Seconds elapsed before timing out.
+        elapsed_seconds: u64,
+    },
     /// Gateway returned a server error.
     #[error("Server error: {0}")]
     ServerError(String),

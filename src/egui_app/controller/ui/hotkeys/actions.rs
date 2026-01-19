@@ -364,7 +364,7 @@ pub(crate) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
     HotkeyAction {
         id: "trim-selection",
         label: "Trim selection",
-        gesture: HotkeyGesture::with_shift(Key::T),
+        gesture: HotkeyGesture::new(Key::T),
         scope: HotkeyScope::Focus(FocusContext::Waveform),
         command: HotkeyCommand::TrimSelection,
     },
@@ -378,7 +378,7 @@ pub(crate) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
     HotkeyAction {
         id: "toggle-transients",
         label: "Show/hide transients",
-        gesture: HotkeyGesture::new(Key::T),
+        gesture: HotkeyGesture::new(Key::I),
         scope: HotkeyScope::Focus(FocusContext::Waveform),
         command: HotkeyCommand::ToggleTransientMarkers,
     },
