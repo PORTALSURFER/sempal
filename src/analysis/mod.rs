@@ -33,7 +33,7 @@ pub fn compute_feature_vector_v1_for_path(path: &Path) -> Result<Vec<f32>, Strin
     let frequency_domain = frequency_domain::extract_frequency_domain_features(
         &decoded.mono,
         decoded.sample_rate_used,
-    );
+    )?;
     let features = features::AnalysisFeaturesV1::new(time_domain, frequency_domain);
     Ok(vector::to_f32_vector_v1(&features))
 }
@@ -63,7 +63,7 @@ pub fn compute_feature_vector_v1_for_mono_samples(
     let frequency_domain = frequency_domain::extract_frequency_domain_features(
         &prepared.mono,
         prepared.sample_rate_used,
-    );
+    )?;
     let features = features::AnalysisFeaturesV1::new(time_domain, frequency_domain);
     Ok(vector::to_f32_vector_v1(&features))
 }

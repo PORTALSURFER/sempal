@@ -57,10 +57,11 @@ pub(super) fn render_selection_overlay(
         egui::Sense::drag(),
     );
     let handle_hovered = handle_response.hovered() || handle_response.dragged();
+    let handle_base = darken(highlight, 0.85);
     let handle_color = if handle_hovered {
-        style::with_alpha(highlight, 235)
+        style::with_alpha(handle_base, 195)
     } else {
-        style::with_alpha(highlight, 205)
+        style::with_alpha(handle_base, 155)
     };
     {
         let painter = ui.painter();
@@ -173,7 +174,7 @@ pub(super) fn render_selection_overlay(
             let color = if scale_active {
                 style::palette().accent_mint
             } else {
-                highlight
+                style::with_alpha(darken(highlight, 0.85), 190)
             };
             paint_selection_edge_bracket(ui.painter(), edge_rect, edge, color);
             ui.output_mut(|o| o.cursor_icon = CursorIcon::ResizeHorizontal);
@@ -182,6 +183,15 @@ pub(super) fn render_selection_overlay(
     selection_drag::sync_selection_edge_drag_release(app, ui.ctx());
 
     edge_dragging
+}
+
+fn darken(color: Color32, factor: f32) -> Color32 {
+    let factor = factor.clamp(0.0, 1.0);
+    Color32::from_rgb(
+        (color.r() as f32 * factor) as u8,
+        (color.g() as f32 * factor) as u8,
+        (color.b() as f32 * factor) as u8,
+    )
 }
 
 fn draw_bpm_guides(

@@ -349,14 +349,14 @@ pub(super) fn render_edit_selection_overlay(
         gain_handle_response.hovered() || gain_handle_response.dragged();
     let slide_bar_active = slide_bar_response.hovered() || slide_bar_response.dragged();
     let gain_fill = if gain_handle_active {
-        style::with_alpha(highlight, 240)
+        style::with_alpha(highlight, 255)
     } else {
-        style::with_alpha(highlight, 180)
+        style::with_alpha(highlight, 210)
     };
     let slide_fill = if slide_bar_active {
-        style::with_alpha(highlight, 240)
+        style::with_alpha(highlight, 255)
     } else {
-        style::with_alpha(highlight, 180)
+        style::with_alpha(highlight, 210)
     };
     ui.painter()
         .rect_filled(gain_handle_rect, 2.0, gain_fill);
@@ -383,9 +383,9 @@ pub(super) fn render_edit_selection_overlay(
     let fade_in_color = if fade_in_active {
         style::with_alpha(highlight, 255)
     } else if selection.fade_in().is_some() {
-        style::with_alpha(highlight, 230)
+        style::with_alpha(highlight, 245)
     } else {
-        style::with_alpha(highlight, 200)
+        style::with_alpha(highlight, 220)
     };
     paint_handle_effects(ui.painter(), fade_in_handle_rect, fade_in_color, fade_in_active);
     if fade_in_active {
@@ -395,7 +395,7 @@ pub(super) fn render_edit_selection_overlay(
         let fade_in_lower_color = if fade_in_lower_active {
             style::with_alpha(highlight, 255)
         } else {
-            style::with_alpha(highlight, 230)
+            style::with_alpha(highlight, 245)
         };
         paint_handle_effects(
             ui.painter(),
@@ -411,7 +411,7 @@ pub(super) fn render_edit_selection_overlay(
         let fade_in_mute_color = if fade_in_mute_active {
             style::with_alpha(highlight, 255)
         } else {
-            style::with_alpha(highlight, 230)
+            style::with_alpha(highlight, 245)
         };
         paint_mute_effects(
             ui.painter(),
@@ -428,9 +428,9 @@ pub(super) fn render_edit_selection_overlay(
     let fade_out_color = if fade_out_active {
         style::with_alpha(highlight, 255)
     } else if selection.fade_out().is_some() {
-        style::with_alpha(highlight, 230)
+        style::with_alpha(highlight, 245)
     } else {
-        style::with_alpha(highlight, 200)
+        style::with_alpha(highlight, 220)
     };
     paint_handle_effects(ui.painter(), fade_out_handle_rect, fade_out_color, fade_out_active);
     if fade_out_active {
@@ -440,7 +440,7 @@ pub(super) fn render_edit_selection_overlay(
         let fade_out_lower_color = if fade_out_lower_active {
             style::with_alpha(highlight, 255)
         } else {
-            style::with_alpha(highlight, 230)
+            style::with_alpha(highlight, 245)
         };
         paint_handle_effects(
             ui.painter(),
@@ -456,7 +456,7 @@ pub(super) fn render_edit_selection_overlay(
         let fade_out_mute_color = if fade_out_mute_active {
             style::with_alpha(highlight, 255)
         } else {
-            style::with_alpha(highlight, 230)
+            style::with_alpha(highlight, 245)
         };
         paint_mute_effects(
             ui.painter(),

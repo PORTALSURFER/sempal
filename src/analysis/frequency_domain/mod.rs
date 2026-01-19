@@ -77,18 +77,19 @@ pub(crate) struct FrequencyDomainFeatures {
 pub(crate) fn extract_frequency_domain_features(
     samples: &[f32],
     sample_rate: u32,
-) -> FrequencyDomainFeatures {
+) -> Result<FrequencyDomainFeatures, String> {
     let mel = MelBank::new(sample_rate, STFT_FRAME_SIZE, 40, 20, 20.0, 16_000.0);
-    let frames = stft::compute_frames(samples, sample_rate, STFT_FRAME_SIZE, STFT_HOP_SIZE, &mel);
+    let frames =
+        stft::compute_frames(samples, sample_rate, STFT_FRAME_SIZE, STFT_HOP_SIZE, &mel)?;
     let (early, late) = stats::early_late_ranges(frames.spectral.len());
-    FrequencyDomainFeatures {
+    Ok(FrequencyDomainFeatures {
         sample_rate,
         frame_size: STFT_FRAME_SIZE,
         hop_size: STFT_HOP_SIZE,
         spectral: stats::spectral_aggregates(&frames.spectral, early.clone(), late.clone()),
         band_energy_ratios: stats::band_aggregates(&frames.bands, early.clone(), late.clone()),
         mfcc20: stats::mfcc_aggregates(&frames.mfcc, early, late),
-    }
+    })
 }
 
 #[cfg(test)]
@@ -104,7 +105,7 @@ mod tests {
         let samples: Vec<f32> = (0..len)
             .map(|i| (2.0 * std::f32::consts::PI * freq * i as f32 / sr as f32).sin())
             .collect();
-        let feats = extract_frequency_domain_features(&samples, sr);
+        let feats = extract_frequency_domain_features(&samples, sr).unwrap();
         let centroid = feats.spectral.centroid_hz.mean;
         assert!(centroid > 200.0 && centroid < 800.0);
         assert!(feats.spectral.flatness.mean < 0.5);
@@ -114,8 +115,8 @@ mod tests {
     fn mfcc_is_deterministic_for_same_input() {
         let sr = ANALYSIS_SAMPLE_RATE;
         let samples = vec![0.1_f32; sr as usize / 5];
-        let a = extract_frequency_domain_features(&samples, sr);
-        let b = extract_frequency_domain_features(&samples, sr);
+        let a = extract_frequency_domain_features(&samples, sr).unwrap();
+        let b = extract_frequency_domain_features(&samples, sr).unwrap();
         assert_eq!(a.mfcc20.mean, b.mfcc20.mean);
         assert_eq!(a.mfcc20.std, b.mfcc20.std);
     }

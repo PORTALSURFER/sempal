@@ -94,7 +94,7 @@ pub(crate) fn finalize_analysis_job(
     let frequency_domain = crate::analysis::frequency_domain::extract_frequency_domain_features(
         &decoded.mono,
         decoded.sample_rate_used,
-    );
+    )?;
     let features =
         crate::analysis::features::AnalysisFeaturesV1::new(time_domain, frequency_domain);
     let vector = crate::analysis::vector::to_f32_vector_v1(&features);

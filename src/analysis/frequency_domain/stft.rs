@@ -1,6 +1,7 @@
 use super::mel::{MelBank, MelScratch};
 use crate::analysis::fft::{Complex32, FftPlan, fft_radix2_inplace_with_plan, hann_window};
 
+/// Per-frame STFT outputs used to aggregate frequency-domain features.
 pub(super) struct FrameSet {
     pub(super) spectral: Vec<SpectralFrame>,
     pub(super) bands: Vec<BandFrame>,
@@ -8,6 +9,7 @@ pub(super) struct FrameSet {
 }
 
 #[derive(Clone, Copy)]
+/// Per-frame spectral statistics from the power spectrum.
 pub(super) struct SpectralFrame {
     pub(super) centroid_hz: f32,
     pub(super) rolloff_hz: f32,
@@ -16,6 +18,7 @@ pub(super) struct SpectralFrame {
 }
 
 #[derive(Clone, Copy)]
+/// Per-frame energy ratios across coarse frequency bands.
 pub(super) struct BandFrame {
     pub(super) sub: f32,
     pub(super) low: f32,
@@ -26,17 +29,17 @@ pub(super) struct BandFrame {
 
 const ROLLOFF_FRACTION: f32 = 0.85;
 
+/// Compute STFT-derived frames for spectral, band, and MFCC statistics.
 pub(super) fn compute_frames(
     samples: &[f32],
     sample_rate: u32,
     frame_size: usize,
     hop_size: usize,
     mel: &MelBank,
-) -> FrameSet {
-    let frame_size = frame_size.max(1);
-    let hop_size = hop_size.max(1);
+) -> Result<FrameSet, String> {
+    let (frame_size, hop_size) = validate_stft_sizes(frame_size, hop_size)?;
     let window = hann_window(frame_size);
-    let plan = FftPlan::new(frame_size).expect("FFT plan must be valid");
+    let plan = FftPlan::new(frame_size)?;
     let mut mel_scratch = MelScratch::new(mel.mel_bands());
     let mut complex = vec![Complex32::default(); frame_size];
     let mut power = Vec::with_capacity(frame_size / 2 + 1);
@@ -74,11 +77,26 @@ pub(super) fn compute_frames(
     }
 
     ensure_minimum_frame(&mut spectral, &mut bands, &mut mfcc);
-    FrameSet {
+    Ok(FrameSet {
         spectral,
         bands,
         mfcc,
+    })
+}
+
+fn validate_stft_sizes(frame_size: usize, hop_size: usize) -> Result<(usize, usize), String> {
+    if frame_size == 0 {
+        return Err("STFT frame_size must be at least 1".to_string());
     }
+    if hop_size == 0 {
+        return Err("STFT hop_size must be at least 1".to_string());
+    }
+    if !frame_size.is_power_of_two() {
+        return Err(format!(
+            "STFT frame_size must be power-of-two, got {frame_size}"
+        ));
+    }
+    Ok((frame_size, hop_size))
 }
 
 fn process_frame(
@@ -371,10 +389,26 @@ mod tests {
             STFT_FRAME_SIZE,
             STFT_HOP_SIZE,
             &mel,
-        );
+        )
+        .expect("STFT frames should succeed for power-of-two frame size");
         assert_eq!(frames.spectral.len(), 1);
         assert_eq!(frames.bands.len(), 1);
         assert_eq!(frames.mfcc.len(), 1);
         assert_eq!(frames.mfcc[0].len(), 20);
+    }
+
+    #[test]
+    fn compute_frames_rejects_non_power_of_two_frame_size() {
+        let frame_size = 1_000;
+        let mel = MelBank::new(ANALYSIS_SAMPLE_RATE, frame_size, 40, 20, 20.0, 16_000.0);
+        let err = compute_frames(
+            &[],
+            ANALYSIS_SAMPLE_RATE,
+            frame_size,
+            STFT_HOP_SIZE,
+            &mel,
+        )
+        .expect_err("non power-of-two frame sizes should be rejected");
+        assert!(err.contains("power-of-two"));
     }
 }
