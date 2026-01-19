@@ -2,6 +2,8 @@ use std::fs::File;
 use std::io::{self, Cursor, Read, Seek, SeekFrom};
 use std::path::Path;
 
+const MAX_SANITIZED_WAV_BYTES: u64 = 64 * 1024 * 1024;
+
 /// A reader that transparently sanitizes WAV headers on the fly.
 ///
 /// It reads the first few KB of the file into memory to check for and fix
@@ -239,14 +241,22 @@ fn sanitize_wav_header(bytes: &mut Vec<u8>, total_file_len: u64) -> bool {
     false
 }
 
-// Deprecate or keep for compatibility? The user asked to "Change `sanitize_wav_bytes` to accept a `Read` or `Seek` trait".
-// But `open_sanitized_wav` handles the file I/O safely.
-// We can keep `read_sanitized_wav_bytes` for existing tests but make it use the new logic or just reimplement
-// it using `sanitize_wav_header` (which is what I did basically, just extracted the logic).
-// I'll keep `read_sanitized_wav_bytes` for now to avoid breaking other potential usages not found by grep,
-// or just as a utility.
-/// Read a WAV file, sanitizing the header in-memory if required.
+/// Read a WAV file into memory and sanitize the header if required.
+///
+/// This is intended for small files and tests; prefer `open_sanitized_wav` for streaming.
+/// Returns an error when the file exceeds `MAX_SANITIZED_WAV_BYTES`.
 pub fn read_sanitized_wav_bytes(path: &Path) -> Result<Vec<u8>, String> {
+    let file_len = std::fs::metadata(path)
+        .map(|meta| meta.len())
+        .map_err(|err| format!("Failed to stat {}: {err}", path.display()))?;
+    if file_len > MAX_SANITIZED_WAV_BYTES {
+        return Err(format!(
+            "Refusing to read {} ({} bytes) into memory; cap is {} bytes",
+            path.display(),
+            file_len,
+            MAX_SANITIZED_WAV_BYTES
+        ));
+    }
     let mut bytes =
         std::fs::read(path).map_err(|err| format!("Failed to read {}: {err}", path.display()))?;
     let len = bytes.len() as u64;
@@ -437,5 +447,18 @@ mod tests {
         bytes[16..20].copy_from_slice(&u32::MAX.to_le_bytes());
         let len = bytes.len() as u64;
         assert!(!sanitize_wav_header(&mut bytes, len));
+    }
+
+    #[test]
+    fn read_sanitized_wav_bytes_rejects_large_files() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_read_sanitized_wav_bytes_large.wav");
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(MAX_SANITIZED_WAV_BYTES + 1).unwrap();
+
+        let result = read_sanitized_wav_bytes(&path);
+        assert!(result.is_err());
+
+        let _ = std::fs::remove_file(path);
     }
 }
