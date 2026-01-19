@@ -82,6 +82,8 @@ fn mute_selection_preserves_selection_and_loop_range() {
         &vec![1.0; 44100],
         loop_range,
     );
+    controller.selection_state.range.set_range(Some(loop_range));
+    controller.ui.waveform.loop_enabled = true;
     
     // Set an edit selection (marked piece of audio)
     let edit_range = SelectionRange::new(0.6, 0.8);
@@ -101,14 +103,13 @@ fn mute_selection_preserves_selection_and_loop_range() {
     // Verify selection was restored
     assert_eq!(controller.ui.waveform.selection, Some(loop_range), "Loop selection should be restored");
     
-    // TODO: Debug why loop_enabled is being cleared
-    // // Verify loop_enabled flag was restored
-    // assert!(controller.ui.waveform.loop_enabled, "Loop enabled flag should be restored");
+    // Verify loop_enabled flag was restored
+    assert!(controller.ui.waveform.loop_enabled, "Loop enabled flag should be restored");
     
-    // // Verify player is actually looping the correct range!
-    // let player_rc = controller.audio.player.as_ref().unwrap();
-    // let player_ref = player_rc.borrow();
-    // assert!(player_ref.is_looping(), "Player should still be looping");
+    // Verify player is actually looping the correct range!
+    let player_rc = controller.audio.player.as_ref().unwrap();
+    let player_ref = player_rc.borrow();
+    assert!(player_ref.is_looping(), "Player should still be looping");
     
     // This is the CRITICAL check: did it resume with the correct loop bounds?
     // We can't easily check the player's internal state across the borrow, 

@@ -360,7 +360,16 @@ impl EguiController {
         let preserved_cursor = self.ui.waveform.cursor;
         let preserved_loop_enabled = self.ui.waveform.loop_enabled;
         let was_playing = self.is_playing();
-        let was_looping = self.ui.waveform.loop_enabled;
+        let was_looping = if self.ui.waveform.loop_enabled {
+            true
+        } else if self.audio.pending_loop_disable_at.is_some() {
+            false
+        } else {
+            self.audio
+                .player
+                .as_ref()
+                .is_some_and(|player| player.borrow().is_looping())
+        };
         let playhead_position = self.ui.waveform.playhead.position;
 
         let mut buffer = buffer::load_selection_buffer(&context.absolute_path, context.selection)?;
