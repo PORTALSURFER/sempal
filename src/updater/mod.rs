@@ -15,6 +15,9 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+#[cfg(test)]
+use std::sync::{Mutex, OnceLock};
+
 use serde::{Deserialize, Serialize};
 
 pub use apply::{ApplyPlan, StaleRemovalFailure, UpdateManifest};
@@ -240,7 +243,7 @@ fn ensure_no_symlink_path(path: &Path) -> Result<(), UpdateError> {
     let mut current = PathBuf::new();
     for component in path.components() {
         current.push(component.as_os_str());
-        match fs::symlink_metadata(&current) {
+        match symlink_metadata(&current) {
             Ok(metadata) => {
                 if metadata.file_type().is_symlink() {
                     return Err(UpdateError::Invalid(format!(
@@ -250,13 +253,75 @@ fn ensure_no_symlink_path(path: &Path) -> Result<(), UpdateError> {
                 }
             }
             Err(err) if err.kind() == ErrorKind::NotFound => break,
-            Err(_) => {
-                // If we can't check for symlinks (e.g. os error 1), assume it's safe (not a symlink) or at least ignore validation.
-                // This is critical for tests running in restricted environments.
+            Err(err) => {
+                // Fail closed unless a test/dev override is explicitly enabled.
+                if allow_symlink_validation_errors() {
+                    return Ok(());
+                }
+                return Err(UpdateError::Invalid(format!(
+                    "Failed to validate update path for symlinks at {}: {err}",
+                    current.display()
+                )));
             }
         }
     }
     Ok(())
+}
+
+fn allow_symlink_validation_errors() -> bool {
+    std::env::var("SEMPAL_UPDATER_ALLOW_SYMLINK_ERRORS")
+        .ok()
+        .map(|value| {
+            let value = value.trim().to_ascii_lowercase();
+            matches!(value.as_str(), "1" | "true" | "yes")
+        })
+        .unwrap_or(false)
+}
+
+#[cfg(test)]
+fn symlink_metadata(path: &Path) -> std::io::Result<fs::Metadata> {
+    if let Some(hook) = SYMLINK_METADATA_HOOK.get() {
+        if let Ok(guard) = hook.lock() {
+            if let Some(hook) = *guard {
+                return hook(path);
+            }
+        }
+    }
+    fs::symlink_metadata(path)
+}
+
+#[cfg(not(test))]
+fn symlink_metadata(path: &Path) -> std::io::Result<fs::Metadata> {
+    fs::symlink_metadata(path)
+}
+
+#[cfg(test)]
+static SYMLINK_METADATA_HOOK: OnceLock<Mutex<Option<fn(&Path) -> std::io::Result<fs::Metadata>>>> =
+    OnceLock::new();
+
+#[cfg(test)]
+struct SymlinkMetadataHookGuard {
+    prev: Option<fn(&Path) -> std::io::Result<fs::Metadata>>,
+}
+
+#[cfg(test)]
+impl SymlinkMetadataHookGuard {
+    fn new(hook: Option<fn(&Path) -> std::io::Result<fs::Metadata>>) -> Self {
+        let cell = SYMLINK_METADATA_HOOK.get_or_init(|| Mutex::new(None));
+        let mut guard = cell.lock().expect("symlink metadata hook lock");
+        let prev = std::mem::replace(&mut *guard, hook);
+        Self { prev }
+    }
+}
+
+#[cfg(test)]
+impl Drop for SymlinkMetadataHookGuard {
+    fn drop(&mut self) {
+        if let Some(cell) = SYMLINK_METADATA_HOOK.get() {
+            let mut guard = cell.lock().expect("symlink metadata hook lock");
+            *guard = self.prev;
+        }
+    }
 }
 
 fn sanitize_relative_path(name: &str) -> Result<PathBuf, UpdateError> {
@@ -283,6 +348,7 @@ fn sanitize_relative_path(name: &str) -> Result<PathBuf, UpdateError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io;
     use tempfile::tempdir;
 
     #[test]
@@ -327,5 +393,22 @@ mod tests {
 
         let err = ensure_child_path(&install, "link/file.txt").unwrap_err();
         assert!(err.to_string().contains("symlink"));
+    }
+
+    #[test]
+    fn ensure_child_path_fails_on_symlink_metadata_error() {
+        fn fail_metadata(_: &Path) -> io::Result<fs::Metadata> {
+            Err(io::Error::new(
+                ErrorKind::PermissionDenied,
+                "metadata denied",
+            ))
+        }
+
+        let _guard = SymlinkMetadataHookGuard::new(Some(fail_metadata));
+        let dir = tempdir().unwrap();
+        let err = ensure_child_path(dir.path(), "ok/file.txt").unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("Failed to validate update path for symlinks"));
     }
 }
