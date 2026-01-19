@@ -26,7 +26,9 @@ impl EguiApp {
             }
         });
         let header_gap = ui.spacing().item_spacing.y;
-        let content_height = (height - header_response.response.rect.height() - header_gap).max(0.0);
+        ui.add_space(header_gap);
+        let content_height =
+            (height - header_response.response.rect.height() - header_gap).max(0.0);
 
         let drag_payload = self.controller.ui.drag.payload.clone();
         let drag_active = drag_payload.is_some();
