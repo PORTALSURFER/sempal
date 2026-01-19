@@ -250,17 +250,11 @@ impl IssueTokenStore {
     }
 
     fn cached_fallback_key(&self) -> Option<[u8; 32]> {
-        fallback_key_cache()
-            .lock()
-            .expect("fallback key cache lock poisoned")
-            .as_ref()
-            .copied()
+        lock_fallback_key_cache().as_ref().copied()
     }
 
     fn cache_fallback_key(&self, key: [u8; 32]) {
-        *fallback_key_cache()
-            .lock()
-            .expect("fallback key cache lock poisoned") = Some(key);
+        *lock_fallback_key_cache() = Some(key);
     }
 
     fn get_key_from_env(&self) -> Result<Option<[u8; 32]>, IssueTokenStoreError> {
@@ -410,9 +404,7 @@ impl IssueTokenStore {
         // This file is now used for the file-based fallback key as well
         let _ = std::fs::remove_file(self.legacy_fallback_key_path());
         let _ = self.try_keyring_fallback_key_delete();
-        *fallback_key_cache()
-            .lock()
-            .expect("fallback key cache lock poisoned") = None;
+        *lock_fallback_key_cache() = None;
         Ok(())
     }
 
@@ -459,6 +451,18 @@ fn warn_fallback_active() {
 
 fn fallback_key_cache() -> &'static Mutex<Option<[u8; 32]>> {
     FALLBACK_KEY_CACHE.get_or_init(|| Mutex::new(None))
+}
+
+fn lock_fallback_key_cache() -> std::sync::MutexGuard<'static, Option<[u8; 32]>> {
+    match fallback_key_cache().lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            tracing::warn!("Fallback key cache mutex poisoned; clearing cached key.");
+            let mut inner = poisoned.into_inner();
+            *inner = None;
+            inner
+        }
+    }
 }
 
 fn random_bytes(len: usize) -> Result<Vec<u8>, IssueTokenStoreError> {
@@ -675,7 +679,39 @@ mod tests {
     }
 
     fn reset_cache() {
-        *fallback_key_cache().lock().unwrap() = None;
+        *lock_fallback_key_cache() = None;
+    }
+
+    #[test]
+    fn fallback_key_cache_recovers_after_poison() {
+        enable_mock_keyring();
+        let _env_guard = env_lock();
+        reset_cache();
+        unsafe {
+            std::env::set_var("SEMPAL_DISABLE_KEYRING", "1");
+        }
+        allow_fallback();
+        let base = tempdir().unwrap();
+        let _guard = app_dirs::ConfigBaseGuard::set(base.path().to_path_buf());
+        let store = IssueTokenStore::new().unwrap();
+
+        let _ = std::panic::catch_unwind(|| {
+            let _guard = fallback_key_cache()
+                .lock()
+                .expect("poison fallback key cache");
+            panic!("poison fallback key cache");
+        });
+
+        store.set("tok_abcdefghijklmnopqrstuvwxyz").unwrap();
+        assert_eq!(
+            store.get().unwrap().as_deref(),
+            Some("tok_abcdefghijklmnopqrstuvwxyz")
+        );
+        store.delete().unwrap();
+        unsafe {
+            std::env::remove_var("SEMPAL_DISABLE_KEYRING");
+        }
+        disallow_fallback();
     }
 
     #[test]
