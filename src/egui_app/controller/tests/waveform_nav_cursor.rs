@@ -39,6 +39,9 @@ fn mouse_zoom_prefers_pointer_over_playhead() {
     controller.sample_view.waveform.decoded = Some(DecodedWaveform {
         cache_token: 1,
         samples: std::sync::Arc::from(vec![0.0; 10_000]),
+        analysis_samples: std::sync::Arc::from(Vec::new()),
+        analysis_sample_rate: 0,
+        analysis_stride: 1,
         peaks: None,
         duration_seconds: 1.0,
         sample_rate: 48_000,
@@ -173,6 +176,9 @@ fn play_from_cursor_prefers_cursor_position() {
     controller.sample_view.waveform.decoded = Some(DecodedWaveform {
         cache_token: 1,
         samples: std::sync::Arc::from(vec![0.0; 10_000]),
+        analysis_samples: std::sync::Arc::from(Vec::new()),
+        analysis_sample_rate: 0,
+        analysis_stride: 1,
         peaks: None,
         duration_seconds: 1.0,
         sample_rate: 48_000,
@@ -204,6 +210,9 @@ fn play_from_cursor_ignores_hover_cursor_when_replaying() {
     controller.sample_view.waveform.decoded = Some(DecodedWaveform {
         cache_token: 1,
         samples: std::sync::Arc::from(vec![0.0; 10_000]),
+        analysis_samples: std::sync::Arc::from(Vec::new()),
+        analysis_sample_rate: 0,
+        analysis_stride: 1,
         peaks: None,
         duration_seconds: 1.0,
         sample_rate: 48_000,
@@ -235,6 +244,9 @@ fn cursor_alpha_fades_before_reset() {
     controller.sample_view.waveform.decoded = Some(DecodedWaveform {
         cache_token: 1,
         samples: std::sync::Arc::from(vec![0.0; 10_000]),
+        analysis_samples: std::sync::Arc::from(Vec::new()),
+        analysis_sample_rate: 0,
+        analysis_stride: 1,
         peaks: None,
         duration_seconds: 1.0,
         sample_rate: 48_000,
@@ -257,6 +269,9 @@ fn cursor_alpha_resets_after_idle_timeout() {
     controller.sample_view.waveform.decoded = Some(DecodedWaveform {
         cache_token: 1,
         samples: std::sync::Arc::from(vec![0.0; 10_000]),
+        analysis_samples: std::sync::Arc::from(Vec::new()),
+        analysis_sample_rate: 0,
+        analysis_stride: 1,
         peaks: None,
         duration_seconds: 1.0,
         sample_rate: 48_000,
@@ -279,6 +294,9 @@ fn cursor_does_not_fade_when_waveform_focused() {
     controller.sample_view.waveform.decoded = Some(DecodedWaveform {
         cache_token: 1,
         samples: std::sync::Arc::from(vec![0.0; 10_000]),
+        analysis_samples: std::sync::Arc::from(Vec::new()),
+        analysis_sample_rate: 0,
+        analysis_stride: 1,
         peaks: None,
         duration_seconds: 1.0,
         sample_rate: 48_000,

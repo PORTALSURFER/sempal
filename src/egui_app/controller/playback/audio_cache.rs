@@ -125,6 +125,9 @@ mod tests {
         DecodedWaveform {
             cache_token: 1,
             samples: std::sync::Arc::from(vec![0.1, 0.2]),
+            analysis_samples: std::sync::Arc::from(Vec::new()),
+            analysis_sample_rate: 0,
+            analysis_stride: 1,
             peaks: None,
             duration_seconds: 1.0,
             sample_rate: 44_100,

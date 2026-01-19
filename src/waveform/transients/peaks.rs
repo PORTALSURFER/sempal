@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::ops::Bound::{Excluded, Unbounded};
 
 #[derive(Clone, Copy, Debug)]
+/// Parameters derived from the UI sensitivity slider.
 pub(crate) struct SensitivityParams {
     pub(crate) k_high: f32,
     pub(crate) k_low: f32,
@@ -12,6 +13,7 @@ pub(crate) struct SensitivityParams {
 }
 
 impl SensitivityParams {
+    /// Map a 0-1 sensitivity value into threshold and gap parameters.
     pub(crate) fn from_sensitivity(sensitivity: f32) -> Self {
         let sensitivity = sensitivity.clamp(0.0, 1.0);
         let k_high = 6.0 - 3.0 * sensitivity;
@@ -26,6 +28,7 @@ impl SensitivityParams {
         }
     }
 
+    /// Return a relaxed pass configuration that keeps the same min-gap.
     pub(crate) fn relaxed(self) -> Self {
         Self {
             k_high: (self.k_high * 0.75).max(1.0),
@@ -37,6 +40,7 @@ impl SensitivityParams {
 }
 
 #[derive(Clone, Copy, Debug)]
+/// Rolling baseline statistics for the novelty curve.
 pub(crate) struct Baseline {
     pub(crate) median: f32,
     pub(crate) mad: f32,
@@ -194,6 +198,7 @@ pub(crate) fn compute_baselines(values: &[f32], window: usize) -> Vec<Baseline> 
     baselines
 }
 
+/// Pick peaks using a rolling median/MAD baseline and a two-threshold hysteresis gate.
 pub(crate) fn pick_peaks_hysteresis(
     novelty: &[f32],
     baselines: &[Baseline],
@@ -254,6 +259,7 @@ pub(crate) fn pick_peaks_hysteresis(
     peaks
 }
 
+/// Smooth a curve with a simple moving average window.
 pub(crate) fn smooth_values(values: &[f32], radius: usize) -> Vec<f32> {
     if values.is_empty() || radius == 0 {
         return values.to_vec();
@@ -275,6 +281,7 @@ pub(crate) fn smooth_values(values: &[f32], radius: usize) -> Vec<f32> {
     out
 }
 
+/// Compute a quantile from a slice, ignoring non-finite values.
 pub(crate) fn percentile(values: &[f32], quantile: f32) -> f32 {
     if values.is_empty() {
         return 0.0;

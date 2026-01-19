@@ -31,15 +31,27 @@ impl WaveformRenderer {
 
         if frames > max_frames {
             let peaks = match spec.sample_format {
-                SampleFormat::Float => peaks::build_peaks_from_float(&mut reader, channels)?,
-                SampleFormat::Int => {
-                    peaks::build_peaks_from_int(&mut reader, channels, spec.bits_per_sample)?
+                SampleFormat::Float => {
+                    peaks::build_peaks_with_analysis_from_float(
+                        &mut reader,
+                        channels,
+                        spec_sample_rate,
+                    )?
                 }
+                SampleFormat::Int => peaks::build_peaks_with_analysis_from_int(
+                    &mut reader,
+                    channels,
+                    spec.bits_per_sample,
+                    spec_sample_rate,
+                )?,
             };
             return Ok(Some(DecodedWaveform {
                 cache_token,
                 samples: Arc::from(Vec::new()),
-                peaks: Some(Arc::new(peaks)),
+                analysis_samples: Arc::from(peaks.analysis_samples),
+                analysis_sample_rate: peaks.analysis_sample_rate,
+                analysis_stride: peaks.analysis_stride,
+                peaks: Some(Arc::new(peaks.peaks)),
                 duration_seconds,
                 sample_rate: spec_sample_rate,
                 channels: spec_channels,
@@ -54,6 +66,9 @@ impl WaveformRenderer {
         Ok(Some(DecodedWaveform {
             cache_token,
             samples: Arc::from(samples),
+            analysis_samples: Arc::from(Vec::new()),
+            analysis_sample_rate: 0,
+            analysis_stride: 1,
             peaks: None,
             duration_seconds,
             sample_rate: spec_sample_rate,

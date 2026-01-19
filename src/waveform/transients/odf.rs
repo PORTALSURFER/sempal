@@ -10,12 +10,17 @@ const SUPERFLUX_WINDOW: usize = 3;
 const SUPERFLUX_HISTORY: usize = SUPERFLUX_LAG + SUPERFLUX_WINDOW;
 const WHITEN_SECONDS: f32 = 0.25;
 
+/// STFT parameter choices for transient analysis.
 pub(crate) struct AnalysisParams {
+    /// FFT length for the STFT.
     pub(crate) fft_len: usize,
+    /// Hop length in samples.
     pub(crate) hop: usize,
+    /// Sample rate for the analysis signal.
     pub(crate) sample_rate: u32,
 }
 
+/// Choose analysis parameters, scaling hop length for very long signals.
 pub(crate) fn analysis_params(sample_rate: u32, frame_count: usize) -> AnalysisParams {
     let (fft_len, hop) = stft_params(sample_rate);
     let mut analysis_hop = hop.max(1);
@@ -32,6 +37,7 @@ pub(crate) fn analysis_params(sample_rate: u32, frame_count: usize) -> AnalysisP
     }
 }
 
+/// Downmix a decoded waveform to mono samples.
 pub(crate) fn mono_samples(decoded: &DecodedWaveform) -> Vec<f32> {
     let channels = decoded.channel_count().max(1);
     let frames = decoded.frame_count();
@@ -49,6 +55,7 @@ pub(crate) fn mono_samples(decoded: &DecodedWaveform) -> Vec<f32> {
     mono
 }
 
+/// Compute a SuperFlux-style spectral flux novelty curve.
 pub(crate) fn spectral_flux_superflux(
     mono: &[f32],
     fft_len: usize,
@@ -125,7 +132,11 @@ pub(crate) fn spectral_flux_superflux(
 }
 
 fn stft_params(sample_rate: u32) -> (usize, usize) {
-    if sample_rate < 32_000 {
+    if sample_rate < 3_000 {
+        (128, 32)
+    } else if sample_rate < 6_000 {
+        (256, 64)
+    } else if sample_rate < 32_000 {
         (512, 128)
     } else {
         (1024, 256)

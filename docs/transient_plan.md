@@ -12,16 +12,12 @@ No external web sources were accessed directly in this environment.
 
 ### Current codebase audit (high-level)
 - `src/waveform/transients.rs` implements:
-  - Multi-band spectral flux with log compression + EMA mean whitening.
+  - Multi-band spectral flux with log compression + rolling median whitening.
   - Adaptive thresholds (median/MAD) and local maxima with min-gap.
-  - Long-file fallback via peaks-envelope novelty (no spectral detail).
-  - Multiple loose fallback passes (raw flux, energy) that inflate false
-    positives and make sensitivity unpredictable.
-- Long files frequently use peaks-envelope path; this loses spectral detail and
-  produces misses/false positives depending on content.
-- Peak picking lacks hysteresis/arming behavior (only min-gap + local maxima).
-- Sensitivity controls are distributed across many thresholds and caps, so the
-  slider is hard to interpret and tune.
+  - Long files use a decimated mono analysis buffer with the same ODF pipeline.
+  - A strict → relaxed pass handles empty detections without switching modes.
+- Peak picking uses hysteresis/arming behavior with min-gap.
+- Sensitivity controls focus on k, floor quantile, and min-gap.
 
 ### Implementation plan (Ableton-style, fast + accurate)
 1. **Unify ODF generation**  

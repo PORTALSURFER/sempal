@@ -86,6 +86,9 @@ mod tests {
             .expect("decode peaks only");
 
         assert!(peaks_only.samples.is_empty());
+        assert!(!peaks_only.analysis_samples.is_empty());
+        assert!(peaks_only.analysis_sample_rate > 0);
+        assert!(peaks_only.analysis_stride >= 1);
         assert!(peaks_only.peaks.is_some());
         assert_eq!(full.frame_count(), peaks_only.frame_count());
         assert!((full.duration_seconds - peaks_only.duration_seconds).abs() < 1e-6);

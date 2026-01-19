@@ -393,6 +393,9 @@ mod tests {
         let decoded = DecodedWaveform {
             cache_token: 1,
             samples: std::sync::Arc::from(vec![0.0, 0.5, -0.25, 0.25]),
+            analysis_samples: std::sync::Arc::from(Vec::new()),
+            analysis_sample_rate: 0,
+            analysis_stride: 1,
             peaks: None,
             duration_seconds: 1.0,
             sample_rate: 48_000,

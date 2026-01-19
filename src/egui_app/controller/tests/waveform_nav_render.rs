@@ -18,6 +18,9 @@ fn waveform_refresh_respects_view_slice_and_caps_width() {
     controller.sample_view.waveform.decoded = Some(DecodedWaveform {
         cache_token: 1,
         samples: std::sync::Arc::from((0..1000).map(|i| i as f32).collect::<Vec<_>>()),
+        analysis_samples: std::sync::Arc::from(Vec::new()),
+        analysis_sample_rate: 0,
+        analysis_stride: 1,
         peaks: None,
         duration_seconds: 1.0,
         sample_rate: 48_000,

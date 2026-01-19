@@ -1,3 +1,4 @@
+/// Fixed-size rolling median tracker for small windows.
 #[derive(Clone, Debug)]
 pub(crate) struct RollingMedian {
     values: Vec<f32>,
@@ -6,6 +7,7 @@ pub(crate) struct RollingMedian {
 }
 
 impl RollingMedian {
+    /// Create a rolling median tracker with the specified window size.
     pub(crate) fn new(size: usize) -> Self {
         let size = size.max(1);
         Self {
@@ -15,6 +17,7 @@ impl RollingMedian {
         }
     }
 
+    /// Push a new value and return the current median.
     pub(crate) fn push(&mut self, value: f32) -> f32 {
         if self.values.is_empty() {
             return value;
@@ -28,6 +31,7 @@ impl RollingMedian {
     }
 }
 
+/// Compute the mean and standard deviation, ignoring non-finite values.
 pub(crate) fn mean_std_dev(values: &[f32]) -> (f32, f32) {
     if values.is_empty() {
         return (0.0, 0.0);

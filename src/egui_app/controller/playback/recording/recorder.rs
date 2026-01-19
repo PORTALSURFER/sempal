@@ -268,6 +268,9 @@ fn decode_recording_waveform(
         return Some(DecodedWaveform {
             cache_token: next_recording_cache_token(),
             samples: Arc::from(samples),
+            analysis_samples: Arc::from(Vec::new()),
+            analysis_sample_rate: 0,
+            analysis_stride: 1,
             peaks: None,
             duration_seconds,
             sample_rate,
@@ -277,6 +280,8 @@ fn decode_recording_waveform(
 
     let bucket_size_frames = peak_bucket_size(frames);
     let bucket_count = frames.div_ceil(bucket_size_frames).max(1);
+    let analysis_stride = analysis_stride(sample_rate, frames);
+    let mut analysis_samples = Vec::with_capacity(frames.div_ceil(analysis_stride).max(1));
     let mut mono = vec![(1.0_f32, -1.0_f32); bucket_count];
     let mut left = if channels >= 2 {
         Some(vec![(1.0_f32, -1.0_f32); bucket_count])
@@ -290,6 +295,8 @@ fn decode_recording_waveform(
     };
 
     let mut sample_index = 0usize;
+    let mut analysis_sum = 0.0f32;
+    let mut analysis_count = 0usize;
     for frame in 0..frames {
         let bucket = frame / bucket_size_frames;
         let mut frame_sum = 0.0_f32;
@@ -321,11 +328,26 @@ fn decode_recording_waveform(
         let (min, max) = &mut mono[bucket];
         *min = (*min).min(frame_avg);
         *max = (*max).max(frame_avg);
+        analysis_sum += frame_avg;
+        analysis_count += 1;
+        if analysis_count >= analysis_stride {
+            analysis_samples.push(analysis_sum / analysis_count as f32);
+            analysis_sum = 0.0;
+            analysis_count = 0;
+        }
     }
+    if analysis_count > 0 {
+        analysis_samples.push(analysis_sum / analysis_count as f32);
+    }
+    let analysis_sample_rate =
+        ((sample_rate as f32) / analysis_stride as f32).round().max(1.0) as u32;
 
     Some(DecodedWaveform {
         cache_token: next_recording_cache_token(),
         samples: Arc::from(Vec::new()),
+        analysis_samples: Arc::from(analysis_samples),
+        analysis_sample_rate,
+        analysis_stride,
         peaks: Some(Arc::new(WaveformPeaks {
             total_frames: frames,
             channels: channels as u16,
@@ -369,6 +391,16 @@ fn find_wav_data_chunk(bytes: &[u8]) -> Option<usize> {
 
 fn peak_bucket_size(frames: usize) -> usize {
     frames.div_ceil(RECORDING_MAX_PEAK_BUCKETS).max(1)
+}
+
+fn analysis_stride(sample_rate: u32, total_frames: usize) -> usize {
+    const MIN_ANALYSIS_SAMPLE_RATE: u32 = 8_000;
+    const MAX_ANALYSIS_SAMPLES: usize = 5_000_000;
+
+    let sample_rate = sample_rate.max(1);
+    let min_stride = (sample_rate / MIN_ANALYSIS_SAMPLE_RATE).max(1) as usize;
+    let max_samples_stride = total_frames.div_ceil(MAX_ANALYSIS_SAMPLES).max(1);
+    min_stride.max(max_samples_stride).max(1)
 }
 
 fn clamp_sample(sample: f32) -> f32 {

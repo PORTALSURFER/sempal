@@ -192,6 +192,9 @@ impl EguiController {
         self.sample_view.waveform.decoded = Some(DecodedWaveform {
             cache_token,
             samples: Arc::from(samples),
+            analysis_samples: Arc::from(Vec::new()),
+            analysis_sample_rate: 0,
+            analysis_stride: 1,
             peaks: None,
             duration_seconds,
             sample_rate: sample_rate.max(1),

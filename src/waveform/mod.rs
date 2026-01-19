@@ -38,6 +38,20 @@ pub struct DecodedWaveform {
     ///
     /// For very long files this may be empty and `peaks` will be populated instead.
     pub samples: Arc<[f32]>,
+    /// Downmixed mono samples for analysis on long files.
+    ///
+    /// When the full `samples` buffer is too large to retain, a decimated mono
+    /// stream is stored here so analysis can still run on the real audio signal.
+    pub analysis_samples: Arc<[f32]>,
+    /// Effective sample rate (Hz) for `analysis_samples`.
+    ///
+    /// This is the original sample rate divided by the decimation stride.
+    /// When `analysis_samples` is empty this is set to 0.
+    pub analysis_sample_rate: u32,
+    /// Number of original frames represented by each `analysis_samples` entry.
+    ///
+    /// When `analysis_samples` is empty this is set to 1.
+    pub analysis_stride: usize,
     /// Decimated min/max envelope for very long files to avoid holding every sample in memory.
     pub peaks: Option<Arc<WaveformPeaks>>,
     /// Total duration in seconds.
@@ -171,6 +185,9 @@ mod tests {
         let decoded = DecodedWaveform {
             cache_token: 1,
             samples,
+            analysis_samples: Arc::from(Vec::new()),
+            analysis_sample_rate: 0,
+            analysis_stride: 1,
             peaks: None,
             duration_seconds: 1.0,
             sample_rate: 4,
@@ -195,6 +212,9 @@ mod tests {
         let decoded = DecodedWaveform {
             cache_token: 2,
             samples: Arc::from(Vec::new()),
+            analysis_samples: Arc::from(Vec::new()),
+            analysis_sample_rate: 0,
+            analysis_stride: 1,
             peaks: Some(Arc::new(peaks)),
             duration_seconds: 1.0,
             sample_rate: 4,

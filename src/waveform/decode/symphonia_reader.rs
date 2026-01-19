@@ -50,6 +50,9 @@ impl WaveformRenderer {
         Ok(DecodedWaveform {
             cache_token,
             samples: Arc::from(samples),
+            analysis_samples: Arc::from(Vec::new()),
+            analysis_sample_rate: 0,
+            analysis_stride: 1,
             peaks: None,
             duration_seconds,
             sample_rate,
@@ -71,6 +74,9 @@ impl WaveformRenderer {
         let channels_usize = channels as usize;
         let bucket_size_frames = peaks::peak_bucket_size(frames_estimate).max(1);
         let bucket_count_est = frames_estimate.div_ceil(bucket_size_frames).max(1);
+        let analysis_stride = peaks::analysis_stride(sample_rate, frames_estimate);
+        let mut analysis_samples =
+            Vec::with_capacity(frames_estimate.div_ceil(analysis_stride).max(1));
 
         let mut mono = vec![(1.0_f32, -1.0_f32); bucket_count_est];
         let mut left = if channels_usize >= 2 {
@@ -85,6 +91,8 @@ impl WaveformRenderer {
         };
 
         let mut total_frames = 0usize;
+        let mut analysis_sum = 0.0f32;
+        let mut analysis_count = 0usize;
         loop {
             let bucket = total_frames / bucket_size_frames;
             if bucket >= mono.len() {
@@ -99,6 +107,7 @@ impl WaveformRenderer {
             let mut frame_min = 1.0_f32;
             let mut frame_max = -1.0_f32;
             let mut frame_count = 0usize;
+            let mut frame_sum = 0.0f32;
             for ch in 0..channels_usize {
                 let Some(sample) = samples.next() else {
                     let duration_seconds = total_frames as f32 / sample_rate as f32;
@@ -110,9 +119,17 @@ impl WaveformRenderer {
                     if let Some(right_peaks) = right.as_mut() {
                         right_peaks.truncate(bucket_count);
                     }
+                    if analysis_count > 0 {
+                        analysis_samples.push(analysis_sum / analysis_count as f32);
+                    }
+                    let analysis_sample_rate =
+                        ((sample_rate as f32) / analysis_stride as f32).round().max(1.0) as u32;
                     return Ok(DecodedWaveform {
                         cache_token,
                         samples: Arc::from(Vec::new()),
+                        analysis_samples: Arc::from(analysis_samples),
+                        analysis_sample_rate,
+                        analysis_stride,
                         peaks: Some(Arc::new(WaveformPeaks {
                             total_frames,
                             channels,
@@ -130,6 +147,7 @@ impl WaveformRenderer {
                 frame_min = frame_min.min(sample);
                 frame_max = frame_max.max(sample);
                 frame_count = frame_count.saturating_add(1);
+                frame_sum += sample;
                 if ch == 0 {
                     if let Some(left_peaks) = left.as_mut() {
                         let (min, max) = &mut left_peaks[bucket];
@@ -151,6 +169,15 @@ impl WaveformRenderer {
             } else {
                 *min = (*min).min(frame_min);
                 *max = (*max).max(frame_max);
+            }
+            if frame_count > 0 {
+                analysis_sum += frame_sum / frame_count as f32;
+                analysis_count += 1;
+                if analysis_count >= analysis_stride {
+                    analysis_samples.push(analysis_sum / analysis_count as f32);
+                    analysis_sum = 0.0;
+                    analysis_count = 0;
+                }
             }
             total_frames = total_frames.saturating_add(1);
         }
