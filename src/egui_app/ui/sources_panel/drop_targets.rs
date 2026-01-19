@@ -14,7 +14,7 @@ impl EguiApp {
     pub(super) fn render_drop_targets(&mut self, ui: &mut Ui, height: f32) {
         let palette = style::palette();
         let tooltip_mode = self.controller.ui.controls.tooltip_mode;
-        ui.horizontal(|ui| {
+        let header_response = ui.horizontal(|ui| {
             ui.label(RichText::new("Drop targets").color(palette.text_primary));
             if helpers::tooltip(
                 ui.button(RichText::new("+").color(palette.text_primary)),
@@ -25,7 +25,8 @@ impl EguiApp {
                 self.controller.add_drop_target_via_dialog();
             }
         });
-        ui.add_space(6.0);
+        let header_gap = ui.spacing().item_spacing.y;
+        let content_height = (height - header_response.response.rect.height() - header_gap).max(0.0);
 
         let drag_payload = self.controller.ui.drag.payload.clone();
         let drag_active = drag_payload.is_some();
@@ -54,12 +55,12 @@ impl EguiApp {
         let selected = self.controller.ui.sources.drop_targets.selected;
         let frame = style::section_frame();
         let frame_response = frame.show(ui, |ui| {
-            ui.set_min_height(height);
-            ui.set_max_height(height);
+            ui.set_min_height(content_height);
+            ui.set_max_height(content_height);
             let row_height = list_row_height(ui);
             egui::ScrollArea::vertical()
                 .id_salt("drop_targets_scroll")
-                .max_height(height)
+                .max_height(content_height)
                 .show(ui, |ui| {
                     if rows.is_empty() {
                         let (rect, _) = ui.allocate_exact_size(
