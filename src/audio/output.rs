@@ -386,6 +386,7 @@ pub fn open_output_stream(
     let active_sources = Arc::new(AtomicUsize::new(0));
     let volume_bits = Arc::new(AtomicU32::new(1.0_f32.to_bits()));
 
+    let mut resolved_stream_config = stream_config.clone();
     let (stream, command_sender, error_receiver) = match build_stream_with_state(
         &device,
         &stream_config,
@@ -407,6 +408,7 @@ pub fn open_output_stream(
                 .map_err(|source| AudioOutputError::DefaultConfig { host_id: resolved_host_id.clone(), source })?;
 
             let fallback_stream_config: cpal::StreamConfig = fallback_config.into();
+            resolved_stream_config = fallback_stream_config.clone();
 
             build_stream_with_state(
                 &fallback_device,
@@ -420,20 +422,12 @@ pub fn open_output_stream(
 
     stream.play().map_err(|source| AudioOutputError::PlayStream { source })?;
 
-    let resolved_sample_rate = stream_config.sample_rate;
-    let applied_buffer = match stream_config.buffer_size {
-        cpal::BufferSize::Default => None,
-        cpal::BufferSize::Fixed(size) => Some(size),
-    };
-
-    let resolved = ResolvedOutput {
-        host_id: resolved_host_id,
-        device_name: resolved_device_name,
-        sample_rate: resolved_sample_rate,
-        buffer_size_frames: applied_buffer,
-        channel_count: stream_config.channels,
+    let resolved = resolved_output_from_stream_config(
+        resolved_host_id,
+        resolved_device_name,
+        &resolved_stream_config,
         used_fallback,
-    };
+    );
     info!(
         "Audio output ready: host={} device=\"{}\" rate={}Hz channels={} buffer={:?} fallback={}",
         resolved.host_id,
@@ -453,6 +447,26 @@ pub fn open_output_stream(
         ),
         resolved,
     })
+}
+
+fn resolved_output_from_stream_config(
+    host_id: String,
+    device_name: String,
+    stream_config: &cpal::StreamConfig,
+    used_fallback: bool,
+) -> ResolvedOutput {
+    let applied_buffer = match stream_config.buffer_size {
+        cpal::BufferSize::Default => None,
+        cpal::BufferSize::Fixed(size) => Some(size),
+    };
+    ResolvedOutput {
+        host_id,
+        device_name,
+        sample_rate: stream_config.sample_rate,
+        buffer_size_frames: applied_buffer,
+        channel_count: stream_config.channels,
+        used_fallback,
+    }
 }
 
 fn resolve_host(id: Option<&str>) -> Result<(cpal::Host, String, bool), AudioOutputError> {
@@ -766,5 +780,26 @@ mod tests {
         drop(guard);
         let _ = sender_thread.join();
         let _ = callback_thread.join();
+    }
+
+    #[test]
+    fn resolved_output_uses_fallback_stream_config() {
+        let fallback_config = cpal::StreamConfig {
+            channels: 1,
+            sample_rate: 48_000,
+            buffer_size: cpal::BufferSize::Fixed(512),
+        };
+
+        let resolved = resolved_output_from_stream_config(
+            "fallback_host".to_string(),
+            "fallback_device".to_string(),
+            &fallback_config,
+            true,
+        );
+
+        assert_eq!(resolved.sample_rate, 48_000);
+        assert_eq!(resolved.channel_count, 1);
+        assert_eq!(resolved.buffer_size_frames, Some(512));
+        assert!(resolved.used_fallback);
     }
 }
