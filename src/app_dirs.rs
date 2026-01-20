@@ -33,6 +33,10 @@ static TEST_CONFIG_BASE: LazyLock<PathBuf> = LazyLock::new(|| {
 thread_local! {
     static TEST_CONFIG_OVERRIDE: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
 }
+#[cfg(test)]
+thread_local! {
+    static TEST_APP_ROOT_OVERRIDE: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+}
 
 /// Ensure tests do not touch real user config directories.
 #[cfg(test)]
@@ -66,6 +70,15 @@ pub enum AppDirError {
 pub fn app_root_dir() -> Result<PathBuf, AppDirError> {
     #[cfg(test)]
     ensure_test_config_base();
+    #[cfg(test)]
+    if let Some(path) = TEST_APP_ROOT_OVERRIDE.with(|override_path| override_path.borrow().clone()) {
+        std::fs::create_dir_all(&path).map_err(|source| AppDirError::CreateDir {
+            path: path.clone(),
+            source,
+        })?;
+        return Ok(path);
+    }
+    #[cfg(not(test))]
     if let Some(path) = APP_ROOT_OVERRIDE
         .lock()
         .expect("app root override mutex poisoned")
@@ -87,6 +100,21 @@ pub fn app_root_dir() -> Result<PathBuf, AppDirError> {
 }
 
 /// Override the resolved application root directory (the `.sempal` folder).
+/// Override the resolved application root directory in tests.
+#[cfg(test)]
+pub fn set_app_root_override(path: PathBuf) -> Result<(), AppDirError> {
+    std::fs::create_dir_all(&path).map_err(|source| AppDirError::CreateDir {
+        path: path.clone(),
+        source,
+    })?;
+    TEST_APP_ROOT_OVERRIDE.with(|override_path| {
+        *override_path.borrow_mut() = Some(path);
+    });
+    Ok(())
+}
+
+/// Override the resolved application root directory (the `.sempal` folder).
+#[cfg(not(test))]
 pub fn set_app_root_override(path: PathBuf) -> Result<(), AppDirError> {
     std::fs::create_dir_all(&path).map_err(|source| AppDirError::CreateDir {
         path: path.clone(),
@@ -136,6 +164,7 @@ fn config_base_dir() -> Option<PathBuf> {
 #[cfg(test)]
 pub struct ConfigBaseGuard {
     previous: Option<PathBuf>,
+    previous_test_root: Option<PathBuf>,
     previous_root: Option<PathBuf>,
 }
 
@@ -149,6 +178,12 @@ impl ConfigBaseGuard {
             *slot = Some(path);
             prev
         });
+        let previous_test_root = TEST_APP_ROOT_OVERRIDE.with(|override_path| {
+            let mut slot = override_path.borrow_mut();
+            let prev = slot.clone();
+            *slot = None;
+            prev
+        });
         let mut root_guard = APP_ROOT_OVERRIDE
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -157,6 +192,7 @@ impl ConfigBaseGuard {
         Self {
             previous,
             previous_root,
+            previous_test_root,
         }
     }
 }
@@ -167,6 +203,10 @@ impl Drop for ConfigBaseGuard {
         let previous = self.previous.take();
         TEST_CONFIG_OVERRIDE.with(|override_path| {
             *override_path.borrow_mut() = previous;
+        });
+        let previous_test_root = self.previous_test_root.take();
+        TEST_APP_ROOT_OVERRIDE.with(|override_path| {
+            *override_path.borrow_mut() = previous_test_root;
         });
         let mut root_guard = APP_ROOT_OVERRIDE
             .lock()

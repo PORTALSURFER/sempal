@@ -243,6 +243,10 @@ fn ensure_no_symlink_path(path: &Path) -> Result<(), UpdateError> {
     let mut current = PathBuf::new();
     for component in path.components() {
         current.push(component.as_os_str());
+        #[cfg(windows)]
+        if matches!(component, Component::Prefix(_) | Component::RootDir) {
+            continue;
+        }
         match symlink_metadata(&current) {
             Ok(metadata) => {
                 if metadata.file_type().is_symlink() {
