@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use rusqlite::{Connection, Transaction};
+use rusqlite::{Connection, OpenFlags, Transaction};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -181,6 +181,23 @@ impl SourceDatabase {
         Ok(db)
     }
 
+    /// Open an existing database in read-only mode without applying schema migrations.
+    pub fn open_read_only(root: impl AsRef<Path>) -> Result<Self, SourceDbError> {
+        let root = root.as_ref();
+        if !root.is_dir() {
+            return Err(SourceDbError::InvalidRoot(root.to_path_buf()));
+        }
+
+        let db_path = root.join(DB_FILE_NAME);
+        let connection = Connection::open_with_flags(&db_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        let db = Self {
+            connection,
+            root: root.to_path_buf(),
+        };
+        db.apply_read_only_pragmas()?;
+        Ok(db)
+    }
+
     /// Open a database connection for the given root without wrapping in SourceDatabase.
     pub fn open_connection(root: impl AsRef<Path>) -> Result<Connection, SourceDbError> {
         let db = Self::open(root)?;
@@ -198,6 +215,22 @@ impl SourceDatabase {
                 "PRAGMA journal_mode=WAL;
              PRAGMA synchronous = NORMAL;
              PRAGMA foreign_keys=ON;
+             PRAGMA busy_timeout=5000;
+             PRAGMA temp_store=MEMORY;
+             PRAGMA cache_size=-32000;
+             PRAGMA mmap_size=134217728;",
+            )
+            .map_err(util::map_sql_error)?;
+        if let Err(err) = crate::sqlite_ext::try_load_optional_extension(&self.connection) {
+            tracing::debug!("SQLite extension not loaded: {err}");
+        }
+        Ok(())
+    }
+
+    fn apply_read_only_pragmas(&self) -> Result<(), SourceDbError> {
+        self.connection
+            .execute_batch(
+                "PRAGMA foreign_keys=ON;
              PRAGMA busy_timeout=5000;
              PRAGMA temp_store=MEMORY;
              PRAGMA cache_size=-32000;
@@ -252,6 +285,18 @@ mod tests {
         assert_eq!(fourth[0].tag, Rating::KEEP_1);
         assert!(!fourth[0].looped);
         assert!(!fourth[0].missing);
+    }
+
+    #[test]
+    fn read_only_open_reads_existing_entries() {
+        let dir = tempdir().unwrap();
+        let db = SourceDatabase::open(dir.path()).unwrap();
+        db.upsert_file(Path::new("one.wav"), 10, 5).unwrap();
+
+        let read_only = SourceDatabase::open_read_only(dir.path()).unwrap();
+        let rows = read_only.list_files().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].relative_path, PathBuf::from("one.wav"));
     }
 
     #[test]

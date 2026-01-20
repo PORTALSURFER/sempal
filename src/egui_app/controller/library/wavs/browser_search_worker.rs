@@ -4,9 +4,11 @@ use crate::sample_sources::Rating;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use std::cmp::Ordering;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
+use std::time::SystemTime;
 
 struct CompactSearchEntry {
     display_label: Box<str>,
@@ -15,18 +17,41 @@ struct CompactSearchEntry {
     last_played_at: Option<i64>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct DbFileStamp {
+    modified: Option<SystemTime>,
+    len: u64,
+}
+
+impl DbFileStamp {
+    fn from_path(path: &Path) -> Option<Self> {
+        let metadata = std::fs::metadata(path).ok()?;
+        let modified = metadata.modified().ok();
+        Some(Self {
+            modified,
+            len: metadata.len(),
+        })
+    }
+}
+
 struct SearchWorkerCache {
+    db: Option<crate::sample_sources::SourceDatabase>,
     entries: Option<Vec<CompactSearchEntry>>,
     source_id: Option<String>,
+    source_root: Option<PathBuf>,
     revision: u64,
+    db_stamp: Option<DbFileStamp>,
 }
 
 impl Default for SearchWorkerCache {
     fn default() -> Self {
         Self {
+            db: None,
             entries: None,
             source_id: None,
+            source_root: None,
             revision: 0,
+            db_stamp: None,
         }
     }
 }
@@ -110,65 +135,72 @@ fn process_search_job(
     matcher: &SkimMatcherV2,
     cache: &mut SearchWorkerCache,
 ) -> SearchResult {
-    let db_result = crate::sample_sources::SourceDatabase::open(&job.source_root);
+    let job_source_id_str = job.source_id.as_str().to_string();
+    let db_path = crate::sample_sources::database_path_for(&job.source_root);
+    let db_stamp = DbFileStamp::from_path(&db_path);
 
-    match db_result {
-        Ok(db) => {
-            let revision = db.get_revision().unwrap_or(0);
-            let job_source_id_str = job.source_id.as_str().to_string();
+    let must_reopen = cache.db.is_none()
+        || cache.source_id.as_ref() != Some(&job_source_id_str)
+        || cache.source_root.as_ref() != Some(&job.source_root)
+        || cache.db_stamp.as_ref() != db_stamp.as_ref();
 
-            let must_reload = cache.entries.is_none()
-                || cache.source_id.as_ref() != Some(&job_source_id_str)
-                || cache.revision != revision;
-
-            if must_reload {
-                match db.list_files() {
-                    Ok(loaded_entries) => {
-                        let compact_entries: Vec<CompactSearchEntry> = loaded_entries
-                            .into_iter()
-                            .map(|e| {
-                                let relative_path = e.relative_path.to_string_lossy().to_string();
-                                let display_label =
-                                    crate::egui_app::view_model::sample_display_label(&e.relative_path);
-
-                                CompactSearchEntry {
-                                    display_label: display_label.into_boxed_str(),
-                                    relative_path: relative_path.into_boxed_str(),
-                                    tag: e.tag,
-                                    last_played_at: e.last_played_at,
-                                }
-                            })
-                            .collect();
-                        cache.entries = Some(compact_entries);
-                        cache.source_id = Some(job_source_id_str);
-                        cache.revision = revision;
-                    }
-                    Err(_) => {
-                        return SearchResult {
-                            source_id: job.source_id,
-                            query: job.query,
-                            visible: VisibleRows::List(Vec::new()),
-                            trash: Vec::new(),
-                            neutral: Vec::new(),
-                            keep: Vec::new(),
-                            scores: Vec::new(),
-                        };
-                    }
-                }
+    if must_reopen {
+        match crate::sample_sources::SourceDatabase::open_read_only(&job.source_root) {
+            Ok(db) => {
+                cache.db = Some(db);
+                cache.entries = None;
+                cache.revision = 0;
+                cache.source_id = Some(job_source_id_str.clone());
+                cache.source_root = Some(job.source_root.clone());
+                cache.db_stamp = db_stamp;
+            }
+            Err(_) => {
+                cache.db = None;
+                cache.entries = None;
+                cache.revision = 0;
+                cache.source_id = Some(job_source_id_str);
+                cache.source_root = Some(job.source_root.clone());
+                cache.db_stamp = db_stamp;
+                return empty_search_result(job);
             }
         }
-        Err(_) => {
-            return SearchResult {
-                source_id: job.source_id,
-                query: job.query,
-                visible: VisibleRows::List(Vec::new()),
-                trash: Vec::new(),
-                neutral: Vec::new(),
-                keep: Vec::new(),
-                scores: Vec::new(),
-            };
-        }
+    }
+
+    let db = match cache.db.as_ref() {
+        Some(db) => db,
+        None => return empty_search_result(job),
     };
+
+    let revision = db.get_revision().unwrap_or(0);
+    let must_reload = cache.entries.is_none() || cache.revision != revision;
+
+    if must_reload {
+        match db.list_files() {
+            Ok(loaded_entries) => {
+                let compact_entries: Vec<CompactSearchEntry> = loaded_entries
+                    .into_iter()
+                    .map(|e| {
+                        let relative_path = e.relative_path.to_string_lossy().to_string();
+                        let display_label =
+                            crate::egui_app::view_model::sample_display_label(&e.relative_path);
+
+                        CompactSearchEntry {
+                            display_label: display_label.into_boxed_str(),
+                            relative_path: relative_path.into_boxed_str(),
+                            tag: e.tag,
+                            last_played_at: e.last_played_at,
+                        }
+                    })
+                    .collect();
+                cache.entries = Some(compact_entries);
+                cache.revision = revision;
+            }
+            Err(_) => {
+                cache.entries = None;
+                return empty_search_result(job);
+            }
+        }
+    }
 
     let entries = cache.entries.as_ref().unwrap();
 
@@ -325,6 +357,18 @@ fn process_search_job(
         neutral,
         keep,
         scores,
+    }
+}
+
+fn empty_search_result(job: SearchJob) -> SearchResult {
+    SearchResult {
+        source_id: job.source_id,
+        query: job.query,
+        visible: VisibleRows::List(Vec::new()),
+        trash: Vec::new(),
+        neutral: Vec::new(),
+        keep: Vec::new(),
+        scores: Vec::new(),
     }
 }
 
