@@ -116,6 +116,49 @@ impl EguiController {
     }
 }
 
+#[cfg(test)]
+impl EguiController {
+    /// Import external audio files synchronously for tests without spawning background jobs.
+    pub(crate) fn import_external_files_to_source_folder_for_tests(
+        &mut self,
+        target_folder: PathBuf,
+        paths: Vec<PathBuf>,
+    ) -> Result<ClipboardPasteResult, String> {
+        if paths.is_empty() {
+            return Err("No files to import".into());
+        }
+        let Some(source) = self.current_source() else {
+            return Err("Select a source first".into());
+        };
+        validate_relative_folder_path(&target_folder)?;
+        if self.runtime.jobs.file_ops_in_progress() {
+            return Err("Another file operation is already running".into());
+        }
+        let target_label = if target_folder.as_os_str().is_empty() {
+            "source root".to_string()
+        } else {
+            format!("folder {}", target_folder.display())
+        };
+        let job = ClipboardPasteJob {
+            kind: ClipboardPasteJobKind::Source {
+                source_id: source.id,
+                source_root: source.root,
+                target_folder,
+            },
+            paths,
+            action_label: "import",
+            action_progress: "Importing",
+            action_past_tense: "Imported",
+            target_label,
+        };
+        Ok(run_clipboard_paste_job(
+            job,
+            Arc::new(AtomicBool::new(false)),
+            None,
+        ))
+    }
+}
+
 struct ClipboardPasteJob {
     kind: ClipboardPasteJobKind,
     paths: Vec<PathBuf>,

@@ -12,10 +12,12 @@ fn import_external_files_to_source_folder_copies_into_subfolder_and_db() {
     let input_path = temp.path().join("kick.wav");
     write_test_wav(&input_path, &[0.0, 0.25, -0.25]);
 
-    controller.import_external_files_to_source_folder(
+    controller
+        .import_external_files_to_source_folder_for_tests(
         PathBuf::from("Drums"),
         vec![input_path.clone()],
-    );
+    )
+    .unwrap();
 
     let expected_relative = PathBuf::from("Drums").join("kick.wav");
     let expected_absolute = source.root.join(&expected_relative);
