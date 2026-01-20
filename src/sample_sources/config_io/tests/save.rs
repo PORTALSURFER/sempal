@@ -1,14 +1,17 @@
-use super::super::super::config_types::{
+use super::super::config_types::{
     AnalysisSettings, AppSettingsCore, DropTargetColor, DropTargetConfig, FeatureFlags,
     InteractionOptions, TooltipMode, UpdateChannel, UpdateSettings,
     WgpuPowerPreference,
 };
 use super::super::load::load_settings_from;
-use super::super::save::{save_settings_to_path, save_to_path};
+use super::super::save::save_to_path;
 use super::TestConfigEnv;
+#[cfg(unix)]
+use super::super::save::save_settings_to_path;
 use crate::audio::{AudioInputConfig, AudioOutputConfig};
 use crate::sample_sources::config::AppConfig;
-use crate::sample_sources::config_types::AppSettings;
+#[cfg(unix)]
+use super::super::config_types::AppSettings;
 use crate::sample_sources::library::LibraryState;
 use crate::sample_sources::{Collection, SampleSource, SourceId};
 use crate::waveform::WaveformChannelView;

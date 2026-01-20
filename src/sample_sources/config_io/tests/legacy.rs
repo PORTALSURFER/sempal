@@ -1,4 +1,4 @@
-use super::super::super::config_types::{
+use super::super::config_types::{
     AnalysisSettings, AppSettingsCore, DropTargetConfig, FeatureFlags,
     InteractionOptions, UpdateSettings,
 };

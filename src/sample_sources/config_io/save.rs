@@ -39,7 +39,7 @@ pub(super) fn save_settings_to_path(settings: &AppSettings, path: &Path) -> Resu
 }
 
 fn atomic_write(path: &Path, data: &[u8]) -> Result<(), ConfigError> {
-    use rand::RngCore;
+    use rand::TryRngCore;
     let dir = path.parent().ok_or_else(|| ConfigError::Write {
         path: path.to_path_buf(),
         source: std::io::Error::new(
@@ -58,7 +58,13 @@ fn atomic_write(path: &Path, data: &[u8]) -> Result<(), ConfigError> {
     let mut last_err = None;
     for _ in 0..5 {
         let mut bytes = [0u8; 6];
-        rand::rngs::OsRng.fill_bytes(&mut bytes);
+        rand::rngs::OsRng.try_fill_bytes(&mut bytes).map_err(|source| ConfigError::Write {
+            path: path.to_path_buf(),
+            source: std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("failed to generate temporary file suffix: {source}"),
+            ),
+        })?;
         let suffix: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
         let tmp_path = dir.join(format!("{}.tmp-{}", file_name.to_string_lossy(), suffix));
 
