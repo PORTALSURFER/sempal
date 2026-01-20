@@ -1,6 +1,6 @@
 use super::super::DragDropController;
 use crate::egui_app::controller::library::collection_items_helpers::file_metadata;
-use crate::egui_app::controller::jobs::{FileOpMessage, SourceMoveRequest, SourceMoveResult, SourceMoveSuccess};
+use crate::egui_app::controller::jobs::{FileOpMessage, FileOpResult, SourceMoveRequest, SourceMoveResult, SourceMoveSuccess};
 use crate::egui_app::state::DragSample;
 use crate::egui_app::ui::style::StatusTone;
 use crate::sample_sources::{Rating, SourceDatabase, SourceId, WavEntry};
@@ -102,7 +102,10 @@ impl DragDropController<'_> {
                 cancel,
                 None,
             );
-            self.apply_source_move_result(result);
+            let message = FileOpMessage::Finished(FileOpResult::SourceMove(result));
+            if let FileOpMessage::Finished(FileOpResult::SourceMove(result)) = message {
+                self.apply_source_move_result(result);
+            }
             if self.ui.progress.task == Some(crate::egui_app::state::ProgressTaskKind::FileOps) {
                 self.clear_progress();
             }
@@ -248,18 +251,6 @@ impl DragDropController<'_> {
     }
 
     pub(super) fn remove_source_db_entry(
-        &mut self,
-        source: &crate::sample_sources::SampleSource,
-        relative_path: &Path,
-    ) -> Result<(), String> {
-        let db = self
-            .database_for(source)
-            .map_err(|err| format!("Database unavailable: {err}"))?;
-        db.remove_file(relative_path)
-            .map_err(|err| format!("Failed to drop database row: {err}"))
-    }
-
-    fn remove_target_db_entry(
         &mut self,
         source: &crate::sample_sources::SampleSource,
         relative_path: &Path,
@@ -633,7 +624,6 @@ fn run_source_move_task(
         remove_move_journal_entry(&mut errors, &target_db, &op_id);
         moved.push(SourceMoveSuccess {
             source_id: request.source_id,
-            target_source_id: target_source_id.clone(),
             relative_path: request.relative_path,
             target_relative,
             file_size,

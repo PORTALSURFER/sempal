@@ -362,8 +362,6 @@ pub(crate) struct SourceMoveResult {
 pub(crate) struct SourceMoveSuccess {
     /// Original source identifier.
     pub(crate) source_id: crate::sample_sources::SourceId,
-    /// Target source identifier.
-    pub(crate) target_source_id: crate::sample_sources::SourceId,
     /// Original relative path.
     pub(crate) relative_path: PathBuf,
     /// New relative path at the destination.
