@@ -254,8 +254,4 @@ fn normalize_relative_key(relative_path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::egui_app::controller::test_support;
-    use crate::sample_sources::Rating;
-    use std::path::Path;
-
 }
