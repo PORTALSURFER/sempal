@@ -86,32 +86,23 @@ pub(crate) fn update_analysis_metadata(
 }
 
 /// Update duration/sample rate metadata without changing analysis version.
+/// Returns true when the duration was updated.
 pub(crate) fn update_sample_duration(
     conn: &Connection,
     sample_id: &str,
-    content_hash: Option<&str>,
     duration_seconds: f32,
     sr_used: u32,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let updated = conn
         .execute(
             "UPDATE samples
-             SET duration_seconds = ?3, sr_used = ?4
+             SET duration_seconds = ?2, sr_used = ?3
              WHERE sample_id = ?1
-               AND (?2 IS NULL OR content_hash = ?2)
                AND (duration_seconds IS NULL OR duration_seconds <= 0)",
-            params![
-                sample_id,
-                content_hash,
-                duration_seconds as f64,
-                sr_used as i64
-            ],
+            params![sample_id, duration_seconds as f64, sr_used as i64],
         )
         .map_err(|err| format!("Failed to update sample duration: {err}"))?;
-    if updated == 0 {
-        return Ok(());
-    }
-    Ok(())
+    Ok(updated > 0)
 }
 
 pub(crate) fn upsert_analysis_features(

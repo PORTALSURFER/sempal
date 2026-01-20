@@ -22,9 +22,10 @@ pub(crate) fn enqueue_jobs_for_source(
 }
 
 /// Probe and store missing duration metadata for samples in a source.
+/// Returns the number of samples updated.
 pub(crate) fn update_missing_durations_for_source(
     source: &crate::sample_sources::SampleSource,
-) -> Result<(), String> {
+) -> Result<usize, String> {
     let mut conn = db::open_source_db(&source.root)?;
     let staged_samples = scan::stage_samples_for_source(source, true)?;
     update_missing_sample_durations(&mut conn, source, &staged_samples)
@@ -247,9 +248,9 @@ fn update_missing_sample_durations(
     conn: &mut rusqlite::Connection,
     source: &crate::sample_sources::SampleSource,
     samples: &[db::SampleMetadata],
-) -> Result<(), String> {
+) -> Result<usize, String> {
     if samples.is_empty() {
-        return Ok(());
+        return Ok(0);
     }
     let sample_ids: Vec<String> = samples
         .iter()
@@ -257,8 +258,9 @@ fn update_missing_sample_durations(
         .collect();
     let missing_ids = db::sample_ids_missing_duration(conn, &sample_ids)?;
     if missing_ids.is_empty() {
-        return Ok(());
+        return Ok(0);
     }
+    let mut updated = 0usize;
     for sample in samples {
         if !missing_ids.contains(&sample.sample_id) {
             continue;
@@ -291,18 +293,16 @@ fn update_missing_sample_durations(
             .sample_rate
             .unwrap_or(crate::analysis::audio::ANALYSIS_SAMPLE_RATE)
             .max(1);
-        if let Err(err) = db::update_sample_duration(
-            conn,
-            &sample.sample_id,
-            Some(sample.content_hash.as_str()),
-            duration_seconds,
-            sample_rate,
-        ) {
-            warn!(
-                "Failed to store duration for {}: {err}",
-                sample.sample_id
-            );
+        match db::update_sample_duration(conn, &sample.sample_id, duration_seconds, sample_rate) {
+            Ok(true) => updated += 1,
+            Ok(false) => {}
+            Err(err) => {
+                warn!(
+                    "Failed to store duration for {}: {err}",
+                    sample.sample_id
+                );
+            }
         }
     }
-    Ok(())
+    Ok(updated)
 }

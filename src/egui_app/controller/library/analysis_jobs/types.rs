@@ -71,4 +71,9 @@ pub(crate) enum AnalysisJobMessage {
     },
     /// Embedding backfill enqueue failed.
     EmbeddingBackfillEnqueueFailed(String),
+    /// Duration metadata was updated for a source.
+    DurationsUpdated {
+        source_id: crate::sample_sources::SourceId,
+        updated: usize,
+    },
 }

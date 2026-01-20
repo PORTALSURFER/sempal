@@ -183,5 +183,11 @@ pub(crate) fn handle_analysis_message(
                 StatusTone::Error,
             );
         }
+        AnalysisJobMessage::DurationsUpdated { source_id, updated } => {
+            if updated > 0 {
+                controller.ui_cache.browser.features.remove(&source_id);
+                controller.ui_cache.browser.durations.remove(&source_id);
+            }
+        }
     }
 }

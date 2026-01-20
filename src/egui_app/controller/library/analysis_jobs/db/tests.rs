@@ -447,7 +447,6 @@ fn update_sample_duration_preserves_analysis_version() {
     update_sample_duration(
         &conn,
         "s::a.wav",
-        Some("h1"),
         2.5,
         crate::analysis::audio::ANALYSIS_SAMPLE_RATE,
     )
@@ -461,6 +460,34 @@ fn update_sample_duration_preserves_analysis_version() {
         .unwrap();
     assert_eq!(duration, Some(2.5));
     assert_eq!(version.as_deref(), Some("analysis_v1_test"));
+}
+
+#[test]
+fn update_sample_duration_updates_when_hash_differs() {
+    let conn = conn_with_schema();
+    conn.execute(
+        "INSERT INTO samples (sample_id, content_hash, size, mtime_ns)
+         VALUES ('s::a.wav', 'old-hash', 10, 5)",
+        [],
+    )
+    .unwrap();
+    let updated = update_sample_duration(
+        &conn,
+        "s::a.wav",
+        3.0,
+        crate::analysis::audio::ANALYSIS_SAMPLE_RATE,
+    )
+    .unwrap();
+    assert!(updated);
+    let (duration, hash): (Option<f64>, Option<String>) = conn
+        .query_row(
+            "SELECT duration_seconds, content_hash FROM samples WHERE sample_id = 's::a.wav'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(duration, Some(3.0));
+    assert_eq!(hash.as_deref(), Some("old-hash"));
 }
 
 #[test]

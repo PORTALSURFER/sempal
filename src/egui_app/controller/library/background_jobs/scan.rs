@@ -137,14 +137,25 @@ pub(crate) fn handle_scan_finished(controller: &mut EguiController, result: Scan
                 });
             }
             if let Some(source) = source_for_duration {
+                let tx = controller.runtime.jobs.message_sender();
                 std::thread::spawn(move || {
-                    if let Err(err) =
-                        analysis_jobs::update_missing_durations_for_source(&source)
-                    {
-                        tracing::warn!(
-                            "Duration probe after scan failed for {}: {err}",
-                            source.id.as_str()
-                        );
+                    match analysis_jobs::update_missing_durations_for_source(&source) {
+                        Ok(updated) => {
+                            if updated > 0 {
+                                let _ = tx.send(JobMessage::Analysis(
+                                    super::AnalysisJobMessage::DurationsUpdated {
+                                        source_id: source.id.clone(),
+                                        updated,
+                                    },
+                                ));
+                            }
+                        }
+                        Err(err) => {
+                            tracing::warn!(
+                                "Duration probe after scan failed for {}: {err}",
+                                source.id.as_str()
+                            );
+                        }
                     }
                 });
             }

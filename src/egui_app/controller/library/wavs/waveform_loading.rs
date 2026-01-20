@@ -308,12 +308,6 @@ impl EguiController {
         if !duration_seconds.is_finite() || duration_seconds <= 0.0 {
             return;
         }
-        let mut content_hash = None;
-        if let Some(index) = self.wav_index_for_path(relative_path) {
-            if let Some(entry) = self.wav_entry(index) {
-                content_hash = entry.content_hash.clone();
-            }
-        }
         let sample_id = analysis_jobs::build_sample_id(source.id.as_str(), relative_path);
         let conn = match analysis_jobs::open_source_db(&source.root) {
             Ok(conn) => conn,
@@ -325,13 +319,9 @@ impl EguiController {
                 return;
             }
         };
-        if let Err(err) = analysis_jobs::update_sample_duration(
-            &conn,
-            &sample_id,
-            content_hash.as_deref(),
-            duration_seconds,
-            sample_rate,
-        ) {
+        if let Err(err) =
+            analysis_jobs::update_sample_duration(&conn, &sample_id, duration_seconds, sample_rate)
+        {
             tracing::warn!(
                 "Failed to store duration metadata for {}: {err}",
                 relative_path.display()
