@@ -353,7 +353,12 @@ fn sanitize_relative_path(name: &str) -> Result<PathBuf, UpdateError> {
 mod tests {
     use super::*;
     use std::io;
+    #[cfg(windows)]
+    use std::sync::Mutex;
     use tempfile::tempdir;
+
+    #[cfg(windows)]
+    static ENV_VAR_LOCK: Mutex<()> = Mutex::new(());
 
     #[cfg(windows)]
     struct EnvVarGuard {
@@ -411,6 +416,8 @@ mod tests {
     #[test]
     fn ensure_child_path_allows_relative_path() {
         #[cfg(windows)]
+        let _lock = ENV_VAR_LOCK.lock().expect("env var lock");
+        #[cfg(windows)]
         let _guard = EnvVarGuard::set("SEMPAL_UPDATER_ALLOW_SYMLINK_ERRORS", "1");
         let dir = tempdir().unwrap();
         let path = ensure_child_path(dir.path(), "./ok/file.txt").unwrap();
@@ -445,6 +452,10 @@ mod tests {
             ))
         }
 
+        #[cfg(windows)]
+        let _lock = ENV_VAR_LOCK.lock().expect("env var lock");
+        #[cfg(windows)]
+        let _guard = EnvVarGuard::set("SEMPAL_UPDATER_ALLOW_SYMLINK_ERRORS", "0");
         let _guard = SymlinkMetadataHookGuard::new(Some(fail_metadata));
         let dir = tempdir().unwrap();
         let err = ensure_child_path(dir.path(), "ok/file.txt").unwrap_err();
