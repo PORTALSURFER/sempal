@@ -2,8 +2,11 @@ use super::ScanJobMessage;
 use super::library::analysis_jobs::AnalysisJobMessage;
 use super::library::trash_move;
 use super::playback::audio_loader::{AudioLoadJob, AudioLoadResult};
+use super::playback::recording::waveform_loader::{
+    RecordingWaveformJob, RecordingWaveformJobSender, RecordingWaveformLoadResult,
+};
 use super::source_watcher::{SourceWatchCommand, SourceWatchEntry, SourceWatchEvent};
-use super::state::audio::{PendingAudio, PendingPlayback};
+use super::state::audio::{PendingAudio, PendingPlayback, PendingRecordingWaveform};
 use super::state::runtime::{UpdateCheckResult, WavLoadJob, WavLoadResult};
 use crate::sample_sources::SourceId;
 use std::{
@@ -24,6 +27,7 @@ type TryRecvError = std::sync::mpsc::TryRecvError;
 pub(crate) enum JobMessage {
     WavLoaded(WavLoadResult),
     AudioLoaded(AudioLoadResult),
+    RecordingWaveformLoaded(RecordingWaveformLoadResult),
     Scan(ScanJobMessage),
     SourceWatch(SourceWatchEvent),
     TrashMove(trash_move::TrashMoveMessage),
@@ -557,6 +561,7 @@ pub(crate) enum UndoFileOutcome {
 pub(crate) struct ControllerJobs {
     pub(crate) wav_job_tx: Sender<WavLoadJob>,
     pub(crate) audio_job_tx: Sender<AudioLoadJob>,
+    recording_waveform_job_tx: RecordingWaveformJobSender,
     pub(crate) search_job_tx: crate::egui_app::controller::library::wavs::browser_search_worker::SearchJobSender,
     source_watch_tx: Sender<SourceWatchCommand>,
     message_tx: Sender<JobMessage>,
@@ -565,7 +570,9 @@ pub(crate) struct ControllerJobs {
     pub(super) pending_select_path: Option<PathBuf>,
     pub(super) pending_audio: Option<PendingAudio>,
     pub(super) pending_playback: Option<PendingPlayback>,
+    pub(super) pending_recording_waveform: Option<PendingRecordingWaveform>,
     pub(super) next_audio_request_id: u64,
+    pub(super) next_recording_waveform_request_id: u64,
     pub(super) scan_in_progress: bool,
     pub(super) scan_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
     pub(super) trash_move_in_progress: bool,
@@ -592,6 +599,8 @@ impl ControllerJobs {
         wav_job_rx: Receiver<WavLoadResult>,
         audio_job_tx: Sender<AudioLoadJob>,
         audio_job_rx: Receiver<AudioLoadResult>,
+        recording_waveform_job_tx: RecordingWaveformJobSender,
+        recording_waveform_job_rx: Receiver<RecordingWaveformLoadResult>,
         search_job_tx: crate::egui_app::controller::library::wavs::browser_search_worker::SearchJobSender,
         search_job_rx: Receiver<SearchResult>,
     ) -> Self {
@@ -601,6 +610,7 @@ impl ControllerJobs {
         let jobs = Self {
             wav_job_tx,
             audio_job_tx,
+            recording_waveform_job_tx,
             search_job_tx,
             source_watch_tx,
             message_tx,
@@ -609,7 +619,9 @@ impl ControllerJobs {
             pending_select_path: None,
             pending_audio: None,
             pending_playback: None,
+            pending_recording_waveform: None,
             next_audio_request_id: 1,
+            next_recording_waveform_request_id: 1,
             scan_in_progress: false,
             scan_cancel: None,
             trash_move_in_progress: false,
@@ -631,6 +643,7 @@ impl ControllerJobs {
         };
         jobs.forward_wav_results(wav_job_rx);
         jobs.forward_audio_results(audio_job_rx);
+        jobs.forward_recording_waveform_results(recording_waveform_job_rx);
         jobs.forward_search_results(search_job_rx);
         jobs
     }
@@ -678,6 +691,24 @@ impl ControllerJobs {
         thread::spawn(move || {
             while let Ok(message) = rx.recv() {
                 let _ = tx.send(JobMessage::AudioLoaded(message));
+                if let Ok(lock) = signal.lock() {
+                    if let Some(ctx) = lock.as_ref() {
+                        ctx.request_repaint();
+                    }
+                }
+            }
+        });
+    }
+
+    pub(super) fn forward_recording_waveform_results(
+        &self,
+        rx: Receiver<RecordingWaveformLoadResult>,
+    ) {
+        let tx = self.message_tx.clone();
+        let signal = self.repaint_signal.clone();
+        thread::spawn(move || {
+            while let Ok(message) = rx.recv() {
+                let _ = tx.send(JobMessage::RecordingWaveformLoaded(message));
                 if let Ok(lock) = signal.lock() {
                     if let Some(ctx) = lock.as_ref() {
                         ctx.request_repaint();
@@ -746,14 +777,38 @@ impl ControllerJobs {
         self.pending_playback = pending;
     }
 
+    /// Return the in-flight recording waveform refresh request, if any.
+    pub(super) fn pending_recording_waveform(&self) -> Option<PendingRecordingWaveform> {
+        self.pending_recording_waveform.clone()
+    }
+
+    /// Replace the active recording waveform refresh request.
+    pub(super) fn set_pending_recording_waveform(&mut self, pending: Option<PendingRecordingWaveform>) {
+        self.pending_recording_waveform = pending;
+    }
+
     pub(super) fn next_audio_request_id(&mut self) -> u64 {
         let request_id = self.next_audio_request_id;
         self.next_audio_request_id = self.next_audio_request_id.wrapping_add(1).max(1);
         request_id
     }
 
+    /// Generate a request id for recording waveform refresh jobs.
+    pub(super) fn next_recording_waveform_request_id(&mut self) -> u64 {
+        let request_id = self.next_recording_waveform_request_id;
+        self.next_recording_waveform_request_id = self.next_recording_waveform_request_id
+            .wrapping_add(1)
+            .max(1);
+        request_id
+    }
+
     pub(super) fn send_audio_job(&self, job: AudioLoadJob) -> Result<(), ()> {
         self.audio_job_tx.send(job).map_err(|_| ())
+    }
+
+    /// Send a background recording waveform refresh job.
+    pub(super) fn send_recording_waveform_job(&self, job: RecordingWaveformJob) {
+        self.recording_waveform_job_tx.send(job);
     }
 
     pub(super) fn send_search_job(&self, job: SearchJob) {

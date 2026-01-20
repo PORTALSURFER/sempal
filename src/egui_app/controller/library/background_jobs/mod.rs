@@ -7,8 +7,11 @@ mod updates;
 use super::jobs::JobMessage;
 use trash_move::TrashMoveMessage;
 use super::*;
+use crate::egui_app::controller::state::audio::AudioLoadIntent;
 use crate::egui_app::state::ProgressTaskKind;
+use crate::egui_app::controller::playback::recording::waveform_loader::RecordingWaveformUpdate;
 use std::sync::atomic::Ordering;
+use std::time::Instant;
 
 impl EguiController {
     pub(crate) fn poll_background_jobs(&mut self) {
@@ -100,6 +103,66 @@ impl EguiController {
                         Ok(outcome) => self.handle_audio_loaded(pending, outcome),
                         Err(err) => self.handle_audio_load_error(pending, err),
                     }
+                }
+                JobMessage::RecordingWaveformLoaded(message) => {
+                    let Some(pending) = self.runtime.jobs.pending_recording_waveform() else {
+                        continue;
+                    };
+                    if message.request_id != pending.request_id
+                        || message.source_id != pending.source_id
+                        || message.relative_path != pending.relative_path
+                    {
+                        continue;
+                    }
+                    self.runtime.jobs.set_pending_recording_waveform(None);
+                    let Some(target) = self.audio.recording_target.as_mut() else {
+                        continue;
+                    };
+                    if target.source_id != pending.source_id
+                        || target.relative_path != pending.relative_path
+                        || target.absolute_path != pending.absolute_path
+                    {
+                        continue;
+                    }
+                    let now = Instant::now();
+                    match message.result {
+                        Ok(update) => match update {
+                            RecordingWaveformUpdate::NoChange { file_len } => {
+                                target.last_file_len = file_len;
+                            }
+                            RecordingWaveformUpdate::Updated {
+                                decoded,
+                                bytes,
+                                file_len,
+                            } => {
+                                if let Some(source) = self
+                                    .library
+                                    .sources
+                                    .iter()
+                                    .find(|source| source.id == pending.source_id)
+                                    .cloned()
+                                {
+                                    if let Some(bytes) = bytes {
+                                        let _ = self.finish_waveform_load(
+                                            &source,
+                                            &pending.relative_path,
+                                            decoded,
+                                            bytes,
+                                            AudioLoadIntent::Selection,
+                                            false,
+                                            None,
+                                        );
+                                        target.loaded_once = true;
+                                    } else {
+                                        self.apply_waveform_image(decoded, None);
+                                    }
+                                }
+                                target.last_file_len = file_len;
+                            }
+                        },
+                        Err(_) => {}
+                    }
+                    target.last_refresh_at = Some(now);
                 }
                 JobMessage::Scan(message) => match message {
                     ScanJobMessage::Progress { completed, detail } => {

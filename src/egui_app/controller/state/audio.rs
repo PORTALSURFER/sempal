@@ -55,6 +55,15 @@ pub(crate) struct RecordingTarget {
     pub(crate) loaded_once: bool,
 }
 
+/// Tracks the latest in-flight recording waveform refresh.
+#[derive(Clone)]
+pub(crate) struct PendingRecordingWaveform {
+    pub(crate) request_id: u64,
+    pub(crate) source_id: SourceId,
+    pub(crate) relative_path: PathBuf,
+    pub(crate) absolute_path: PathBuf,
+}
+
 #[derive(Clone)]
 pub(crate) struct PendingAudio {
     pub(crate) request_id: u64,

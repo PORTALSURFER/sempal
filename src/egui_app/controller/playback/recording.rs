@@ -4,6 +4,7 @@ use std::time::Duration;
 
 mod path;
 mod recorder;
+mod waveform_loader;
 
 const RECORDING_FILE_PREFIX: &str = "recording_";
 const RECORDING_FILE_EXT: &str = "wav";
