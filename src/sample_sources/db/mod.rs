@@ -137,6 +137,9 @@ pub enum SourceDbError {
     /// Provided path was not relative to the source root.
     #[error("Path must be relative to the source root: {0}")]
     PathMustBeRelative(PathBuf),
+    /// Provided path contained disallowed components or was empty.
+    #[error("Path contains invalid relative components: {0}")]
+    InvalidRelativePath(PathBuf),
     /// Database is locked or busy.
     #[error("Database is busy, please retry")]
     Busy,
@@ -217,7 +220,7 @@ impl SourceDatabase {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rusqlite::OptionalExtension;
+    use rusqlite::{params, OptionalExtension};
     use tempfile::tempdir;
 
     #[test]
@@ -294,6 +297,29 @@ mod tests {
         let absolute = std::env::current_dir().unwrap().join("absolute.wav");
         let err = db.upsert_file(&absolute, 1, 1).unwrap_err();
         assert!(matches!(err, SourceDbError::PathMustBeRelative(_)));
+    }
+
+    #[test]
+    fn parent_dir_paths_are_rejected() {
+        let dir = tempdir().unwrap();
+        let db = SourceDatabase::open(dir.path()).unwrap();
+        let err = db.upsert_file(Path::new("../escape.wav"), 1, 1).unwrap_err();
+        assert!(matches!(err, SourceDbError::InvalidRelativePath(_)));
+    }
+
+    #[test]
+    fn list_files_skips_invalid_relative_paths() {
+        let dir = tempdir().unwrap();
+        let db = SourceDatabase::open(dir.path()).unwrap();
+        db.connection
+            .execute(
+                "INSERT INTO wav_files (path, file_size, modified_ns, tag, looped, missing, extension)
+                 VALUES (?1, ?2, ?3, 0, 0, 0, 'wav')",
+                params!["../escape.wav", 1i64, 1i64],
+            )
+            .unwrap();
+        let rows = db.list_files().unwrap();
+        assert!(rows.is_empty());
     }
 
     #[test]

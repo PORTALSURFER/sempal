@@ -3,7 +3,7 @@ use crate::egui_app::controller::playback::audio_cache::FileMetadata;
 use crate::waveform::{DecodedWaveform, WaveformRenderer};
 use std::{
     fs,
-    path::PathBuf,
+    path::{Component, Path, PathBuf},
     sync::mpsc::{Receiver, Sender},
     thread,
 };
@@ -60,6 +60,7 @@ fn load_audio(
     renderer: &WaveformRenderer,
     job: &AudioLoadJob,
 ) -> Result<AudioLoadOutcome, AudioLoadError> {
+    ensure_safe_relative_path(&job.relative_path)?;
     let full_path = job.root.join(&job.relative_path);
     let metadata = fs::metadata(&full_path).map_err(|err| {
         let missing = err.kind() == std::io::ErrorKind::NotFound;
@@ -143,3 +144,44 @@ fn load_audio(
     })
 }
 
+fn ensure_safe_relative_path(path: &Path) -> Result<(), AudioLoadError> {
+    let mut saw_component = false;
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::Normal(_) => {
+                saw_component = true;
+            }
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err(AudioLoadError::Failed(format!(
+                    "Invalid relative path: {}",
+                    path.display()
+                )));
+            }
+        }
+    }
+    if !saw_component {
+        return Err(AudioLoadError::Failed(format!(
+            "Invalid relative path: {}",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ensure_safe_relative_path;
+    use std::path::Path;
+
+    #[test]
+    fn ensure_safe_relative_path_rejects_parent_dir() {
+        let err = ensure_safe_relative_path(Path::new("../escape.wav")).unwrap_err();
+        assert!(matches!(err, super::AudioLoadError::Failed(_)));
+    }
+
+    #[test]
+    fn ensure_safe_relative_path_accepts_normal_relative_paths() {
+        ensure_safe_relative_path(Path::new("folder/./file.wav")).unwrap();
+    }
+}

@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use super::util::map_sql_error;
+use super::util::{map_sql_error, parse_relative_path_from_db};
 use super::{SourceDatabase, SourceDbError, WavEntry};
 use rusqlite::OptionalExtension;
 
@@ -18,8 +18,17 @@ impl SourceDatabase {
         let rows = stmt
             .query_map([], |row| {
                 let path: String = row.get(0)?;
-                Ok(WavEntry {
-                    relative_path: PathBuf::from(path),
+                let relative_path = match parse_relative_path_from_db(&path) {
+                    Ok(relative_path) => relative_path,
+                    Err(err) => {
+                        tracing::warn!(
+                            "Skipping wav row with invalid relative path: {path} ({err})"
+                        );
+                        return Ok(None);
+                    }
+                };
+                Ok(Some(WavEntry {
+                    relative_path,
                     file_size: row.get::<_, i64>(1)? as u64,
                     modified_ns: row.get(2)?,
                     content_hash: row.get::<_, Option<String>>(3)?,
@@ -27,12 +36,12 @@ impl SourceDatabase {
                     looped: row.get::<_, i64>(5)? != 0,
                     missing: row.get::<_, i64>(6)? != 0,
                     last_played_at: row.get(7)?,
-                })
+                }))
             })
             .map_err(map_sql_error)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(map_sql_error)?;
-        Ok(rows)
+        Ok(rows.into_iter().flatten().collect())
     }
 
     /// Fetch tracked wav files filtered by tag.
@@ -48,8 +57,17 @@ impl SourceDatabase {
         let rows = stmt
             .query_map([tag.as_i64()], |row| {
                 let path: String = row.get(0)?;
-                Ok(WavEntry {
-                    relative_path: PathBuf::from(path),
+                let relative_path = match parse_relative_path_from_db(&path) {
+                    Ok(relative_path) => relative_path,
+                    Err(err) => {
+                        tracing::warn!(
+                            "Skipping tagged wav row with invalid relative path: {path} ({err})"
+                        );
+                        return Ok(None);
+                    }
+                };
+                Ok(Some(WavEntry {
+                    relative_path,
                     file_size: row.get::<_, i64>(1)? as u64,
                     modified_ns: row.get(2)?,
                     content_hash: row.get::<_, Option<String>>(3)?,
@@ -57,12 +75,12 @@ impl SourceDatabase {
                     looped: row.get::<_, i64>(5)? != 0,
                     missing: row.get::<_, i64>(6)? != 0,
                     last_played_at: row.get(7)?,
-                })
+                }))
             })
             .map_err(map_sql_error)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(map_sql_error)?;
-        Ok(rows)
+        Ok(rows.into_iter().flatten().collect())
     }
 
     /// Fetch relative paths that are currently marked missing.
@@ -72,11 +90,22 @@ impl SourceDatabase {
             .prepare("SELECT path FROM wav_files WHERE missing != 0")
             .map_err(map_sql_error)?;
         let rows = stmt
-            .query_map([], |row| row.get::<_, String>(0))
+            .query_map([], |row| {
+                let path: String = row.get(0)?;
+                match parse_relative_path_from_db(&path) {
+                    Ok(relative_path) => Ok(Some(relative_path)),
+                    Err(err) => {
+                        tracing::warn!(
+                            "Skipping missing wav row with invalid relative path: {path} ({err})"
+                        );
+                        Ok(None)
+                    }
+                }
+            })
             .map_err(map_sql_error)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(map_sql_error)?;
-        Ok(rows.into_iter().map(PathBuf::from).collect())
+        Ok(rows.into_iter().flatten().collect())
     }
 
     /// Count all tracked wav files for this source.
@@ -119,8 +148,17 @@ impl SourceDatabase {
         let rows = stmt
             .query_map(rusqlite::params![limit as i64, offset as i64], |row| {
                 let path: String = row.get(0)?;
-                Ok(WavEntry {
-                    relative_path: PathBuf::from(path),
+                let relative_path = match parse_relative_path_from_db(&path) {
+                    Ok(relative_path) => relative_path,
+                    Err(err) => {
+                        tracing::warn!(
+                            "Skipping wav row page with invalid relative path: {path} ({err})"
+                        );
+                        return Ok(None);
+                    }
+                };
+                Ok(Some(WavEntry {
+                    relative_path,
                     file_size: row.get::<_, i64>(1)? as u64,
                     modified_ns: row.get(2)?,
                     content_hash: row.get::<_, Option<String>>(3)?,
@@ -128,12 +166,12 @@ impl SourceDatabase {
                     looped: row.get::<_, i64>(5)? != 0,
                     missing: row.get::<_, i64>(6)? != 0,
                     last_played_at: row.get(7)?,
-                })
+                }))
             })
             .map_err(map_sql_error)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(map_sql_error)?;
-        Ok(rows)
+        Ok(rows.into_iter().flatten().collect())
     }
 
     /// Fetch the BPM value stored for a specific sample id, when available.
