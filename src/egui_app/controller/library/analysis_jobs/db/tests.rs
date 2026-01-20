@@ -103,6 +103,27 @@ fn update_sample_bpms_updates_multiple_rows() {
 }
 
 #[test]
+fn upsert_samples_preserves_bpm_on_hash_change() {
+    let mut conn = conn_with_schema();
+    conn.execute(
+        "INSERT INTO samples (sample_id, content_hash, size, mtime_ns)
+         VALUES (?1, ?2, 1, 1)",
+        params!["s::a.wav", "hash-a"],
+    )
+    .unwrap();
+    update_sample_bpm(&conn, "s::a.wav", Some(124.0)).unwrap();
+    let samples = vec![SampleMetadata {
+        sample_id: "s::a.wav".to_string(),
+        content_hash: "hash-b".to_string(),
+        size: 2,
+        mtime_ns: 2,
+    }];
+    upsert_samples(&mut conn, &samples).unwrap();
+    let bpm = sample_bpm(&conn, "s::a.wav").unwrap();
+    assert_eq!(bpm, Some(124.0));
+}
+
+#[test]
 fn enqueue_jobs_dedupes_by_sample_and_type() {
     let mut conn = conn_with_schema();
     conn.execute(

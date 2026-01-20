@@ -146,11 +146,7 @@ fn upsert_samples_tx(
                     THEN NULL
                     ELSE samples.analysis_version
                 END,
-                bpm = CASE
-                    WHEN samples.content_hash != excluded.content_hash
-                    THEN NULL
-                    ELSE samples.bpm
-                END",
+                bpm = samples.bpm",
         );
         let batch_changed = tx
             .execute(&sql, params_from_iter(params))
