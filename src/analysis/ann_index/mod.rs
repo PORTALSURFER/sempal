@@ -131,7 +131,10 @@ pub fn find_similar(
         
         // If the ID is already known, we can search with just the read lock
         if state.id_lookup.contains_key(sample_id) {
-             return perform_search(&state, &embedding, k, Some(sample_id));
+            let results = perform_search(&state, &embedding, k, Some(sample_id))?;
+            if results.len() >= k {
+                return Ok(results);
+            }
         }
         // If not found, drop read lock and fall through to write path
     }
@@ -141,7 +144,11 @@ pub fn find_similar(
         if !state.id_lookup.contains_key(sample_id) {
              update::upsert_embedding(conn, state, sample_id, embedding.as_slice())?;
         }
-        perform_search(state, &embedding, k, Some(sample_id))
+        let results = perform_search(state, &embedding, k, Some(sample_id))?;
+        if results.len() >= k {
+            return Ok(results);
+        }
+        fallback_neighbors(conn, &embedding, k, Some(sample_id))
     })
 }
 
@@ -165,7 +172,11 @@ pub fn find_similar_for_embedding(
          if state.id_map.is_empty() {
             return Err("ANN index has no embeddings".to_string());
         }
-        perform_search(state, embedding, k, None)
+        let results = perform_search(state, embedding, k, None)?;
+        if results.len() >= k {
+            return Ok(results);
+        }
+        fallback_neighbors(conn, embedding, k, None)
     })
 }
 
@@ -176,7 +187,12 @@ fn perform_search(
     skip_id: Option<&str>,
 ) -> Result<Vec<SimilarNeighbor>, String> {
     let ef = state.params.ef_search.max(k + 1);
-    let neighbours = state.hnsw.search(embedding, k + 1, ef);
+    let total = state.id_map.len();
+    let mut requested = k + if skip_id.is_some() { 1 } else { 0 };
+    if requested > total {
+        requested = total;
+    }
+    let neighbours = state.hnsw.search(embedding, requested, ef);
     let mut results = Vec::with_capacity(neighbours.len());
     for neighbour in neighbours {
         if let Some(candidate) = state.id_map.get(neighbour.d_id) {
@@ -198,6 +214,54 @@ fn perform_search(
     });
     results.truncate(k);
     Ok(results)
+}
+
+fn fallback_neighbors(
+    conn: &Connection,
+    embedding: &[f32],
+    k: usize,
+    skip_id: Option<&str>,
+) -> Result<Vec<SimilarNeighbor>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT sample_id, vec
+             FROM embeddings
+             WHERE model_id = ?1",
+        )
+        .map_err(|err| format!("Failed to query embeddings: {err}"))?;
+    let mut rows = stmt
+        .query(rusqlite::params![similarity::SIMILARITY_MODEL_ID])
+        .map_err(|err| format!("Failed to iterate embeddings: {err}"))?;
+    let mut scored: Vec<SimilarNeighbor> = Vec::new();
+    while let Some(row) = rows.next().map_err(|err| err.to_string())? {
+        let sample_id: String = row.get(0).map_err(|err| err.to_string())?;
+        if skip_id == Some(sample_id.as_str()) {
+            continue;
+        }
+        let blob: Vec<u8> = row.get(1).map_err(|err| err.to_string())?;
+        let candidate = decode_f32_le_blob(&blob)?;
+        if candidate.len() != embedding.len() {
+            continue;
+        }
+        let distance = cosine_distance(embedding, &candidate);
+        scored.push(SimilarNeighbor { sample_id, distance });
+    }
+    scored.sort_by(|a, b| {
+        a.distance
+            .partial_cmp(&b.distance)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    scored.truncate(k);
+    Ok(scored)
+}
+
+fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
+    let len = a.len().min(b.len());
+    let mut dot = 0.0;
+    for i in 0..len {
+        dot += a[i] * b[i];
+    }
+    1.0 - dot
 }
 
 /// Rebuild the ANN index from the embeddings stored in the database.
