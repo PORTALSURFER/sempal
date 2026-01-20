@@ -323,6 +323,7 @@ fn apply_fade_to_columns(
             selection.gain(),
             selection.fade_in(),
             selection.fade_out(),
+            0.0,
         );
         if (gain - 1.0).abs() > f32::EPSILON {
             column.0 *= gain;
@@ -354,6 +355,7 @@ fn apply_fade_to_samples(
             selection.gain(),
             selection.fade_in(),
             selection.fade_out(),
+            0.0,
         );
         if (gain - 1.0).abs() > f32::EPSILON {
             let base = frame * channels;

@@ -2,6 +2,8 @@ use super::FadeDirection;
 use crate::selection::FadeParams;
 use super::buffer::SelectionEditBuffer;
 
+const MIN_MUTE_FADE_SECS: f32 = 0.002;
+
 pub(crate) fn crop_buffer(buffer: &mut SelectionEditBuffer) -> Result<(), String> {
     let cropped = slice_frames(
         &buffer.samples,
@@ -159,9 +161,11 @@ pub(crate) fn apply_edge_fades(
 }
 
 /// Apply optional fade-in and fade-out ramps within the selection bounds.
+/// A minimal fade is applied when a mute region is present but the fade length is zero.
 pub(crate) fn apply_selection_fades(
     samples: &mut [f32],
     channels: usize,
+    sample_rate: u32,
     start_frame: usize,
     end_frame: usize,
     selection_gain: f32,
@@ -175,6 +179,9 @@ pub(crate) fn apply_selection_fades(
         return;
     }
     let selection_frames = clamped_end - clamped_start;
+    let min_fade_frames = ((sample_rate.max(1) as f32) * MIN_MUTE_FADE_SECS)
+        .round()
+        .max(1.0) as usize;
     if (selection_gain - 1.0).abs() > f32::EPSILON {
         for frame in clamped_start..clamped_end {
             let base = frame * channels;
@@ -186,9 +193,16 @@ pub(crate) fn apply_selection_fades(
         }
     }
     if let Some(fade_in) = fade_in {
-        let fade_frames = ((selection_frames as f32) * fade_in.length)
+        let base_fade_frames = ((selection_frames as f32) * fade_in.length)
             .round()
             .clamp(0.0, selection_frames as f32) as usize;
+        let fade_frames = if base_fade_frames > 0 {
+            base_fade_frames
+        } else if fade_in.mute > 0.0 {
+            min_fade_frames.min(selection_frames)
+        } else {
+            0
+        };
         if fade_frames > 0 {
             let mute_frames = ((selection_frames as f32) * fade_in.mute).round().max(0.0) as usize;
             if mute_frames > 0 {
@@ -211,9 +225,16 @@ pub(crate) fn apply_selection_fades(
         }
     }
     if let Some(fade_out) = fade_out {
-        let fade_frames = ((selection_frames as f32) * fade_out.length)
+        let base_fade_frames = ((selection_frames as f32) * fade_out.length)
             .round()
             .clamp(0.0, selection_frames as f32) as usize;
+        let fade_frames = if base_fade_frames > 0 {
+            base_fade_frames
+        } else if fade_out.mute > 0.0 {
+            min_fade_frames.min(selection_frames)
+        } else {
+            0
+        };
         if fade_frames > 0 {
             let mute_frames = ((selection_frames as f32) * fade_out.mute).round().max(0.0) as usize;
             if mute_frames > 0 {

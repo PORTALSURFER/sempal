@@ -290,6 +290,8 @@ impl SelectionRange {
 /// The position and selection bounds share the same unit (seconds or normalized 0-1).
 /// Returns 1.0 outside the selection or when the selection is empty.
 /// `selection_gain` scales the entire selection after fades/mutes are applied.
+/// `min_fade_len` is an optional minimum fade length in the same unit, used when a mute
+/// region exists but the fade length is zero (for click-free edges).
 pub(crate) fn fade_gain_at_position(
     position: f32,
     selection_start: f32,
@@ -297,6 +299,7 @@ pub(crate) fn fade_gain_at_position(
     selection_gain: f32,
     fade_in: Option<FadeParams>,
     fade_out: Option<FadeParams>,
+    min_fade_len: f32,
 ) -> f32 {
     let start = selection_start.min(selection_end);
     let end = selection_start.max(selection_end);
@@ -327,7 +330,14 @@ pub(crate) fn fade_gain_at_position(
     }
     let mut gain = 1.0;
     if let Some(fade_in) = fade_in {
-        let fade_len = width * (fade_in.length + fade_in.mute);
+        let fade_len = width * fade_in.length;
+        let fade_len = if fade_len > 0.0 {
+            fade_len
+        } else if fade_in.mute > 0.0 && min_fade_len > 0.0 {
+            min_fade_len.min(width)
+        } else {
+            0.0
+        };
         if fade_len > 0.0 {
             let time_in = position - start;
             if time_in < fade_len {
@@ -337,7 +347,14 @@ pub(crate) fn fade_gain_at_position(
         }
     }
     if let Some(fade_out) = fade_out {
-        let fade_len = width * (fade_out.length + fade_out.mute);
+        let fade_len = width * fade_out.length;
+        let fade_len = if fade_len > 0.0 {
+            fade_len
+        } else if fade_out.mute > 0.0 && min_fade_len > 0.0 {
+            min_fade_len.min(width)
+        } else {
+            0.0
+        };
         if fade_len > 0.0 {
             let time_until_end = end - position;
             if time_until_end < fade_len {
@@ -757,6 +774,7 @@ mod tests {
             range.gain(),
             range.fade_in(),
             range.fade_out(),
+            0.0,
         );
         let muted_end = fade_gain_at_position(
             0.82,
@@ -765,6 +783,7 @@ mod tests {
             range.gain(),
             range.fade_in(),
             range.fade_out(),
+            0.0,
         );
         let ramp_mid = fade_gain_at_position(
             0.5,
@@ -773,6 +792,7 @@ mod tests {
             range.gain(),
             range.fade_in(),
             range.fade_out(),
+            0.0,
         );
         assert!(muted_start.abs() < 1e-6);
         assert!(muted_end.abs() < 1e-6);
@@ -792,6 +812,7 @@ mod tests {
             range.gain(),
             range.fade_in(),
             range.fade_out(),
+            0.0,
         );
         assert!(muted_far_left.abs() < 1e-6);
     }
@@ -826,6 +847,7 @@ mod tests {
             range.gain(),
             range.fade_in(),
             range.fade_out(),
+            0.0,
         );
         let gain_mid = fade_gain_at_position(
             0.5,
@@ -834,6 +856,7 @@ mod tests {
             range.gain(),
             range.fade_in(),
             range.fade_out(),
+            0.0,
         );
         let gain_end = fade_gain_at_position(
             1.0,
@@ -842,9 +865,27 @@ mod tests {
             range.gain(),
             range.fade_in(),
             range.fade_out(),
+            0.0,
         );
         assert!(gain_start.abs() < 1e-6);
         assert!((gain_mid - 1.0).abs() < 1e-6);
         assert!(gain_end.abs() < 1e-6);
+    }
+
+    #[test]
+    fn fade_mute_does_not_extend_fade_curve() {
+        let range = SelectionRange::new(0.0, 1.0)
+            .with_fade_in(0.2, 0.0)
+            .with_fade_in_mute(0.3);
+        let post_fade_gain = fade_gain_at_position(
+            0.25,
+            range.start(),
+            range.end(),
+            range.gain(),
+            range.fade_in(),
+            range.fade_out(),
+            0.0,
+        );
+        assert!((post_fade_gain - 1.0).abs() < 1e-6);
     }
 }

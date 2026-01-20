@@ -4,6 +4,8 @@ use std::time::Duration;
 use crate::audio::Source;
 use crate::selection::{FadeParams, SelectionRange, fade_gain_at_position};
 
+const MIN_MUTE_FADE_SECS: f32 = 0.002;
+
 /// Snapshot of the current edit fade configuration.
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct EditFadeSnapshot {
@@ -183,6 +185,7 @@ where
             state.gain,
             state.fade_in,
             state.fade_out,
+            MIN_MUTE_FADE_SECS,
         );
         Some(sample * gain)
     }

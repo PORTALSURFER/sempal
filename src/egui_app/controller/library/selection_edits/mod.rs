@@ -90,6 +90,7 @@ impl EguiController {
             apply_selection_fades(
                 &mut buffer.samples,
                 buffer.channels,
+                buffer.sample_rate,
                 buffer.start_frame,
                 buffer.end_frame,
                 selection.gain(),
