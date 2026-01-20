@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 
 pub(crate) struct ControllerHistoryState {
     pub(crate) undo_stack: undo::UndoStack<super::super::EguiController>,
+    /// Deferred undo/redo action awaiting filesystem completion.
+    pub(crate) pending_undo: Option<undo::DeferredUndo<super::super::EguiController>>,
     pub(crate) random_history: RandomHistoryState,
     pub(crate) focus_history: FocusHistoryState,
 }
@@ -15,6 +17,7 @@ impl ControllerHistoryState {
     pub(crate) fn new(undo_limit: usize) -> Self {
         Self {
             undo_stack: undo::UndoStack::new(undo_limit),
+            pending_undo: None,
             random_history: RandomHistoryState::new(),
             focus_history: FocusHistoryState::new(),
         }

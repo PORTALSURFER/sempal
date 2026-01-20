@@ -12,6 +12,7 @@ pub(crate) mod controller_state;
 pub(crate) mod jobs;
 pub(crate) mod state;
 pub(crate) mod undo;
+mod undo_jobs;
 pub(crate) mod updates;
 
 use crate::{
@@ -203,6 +204,7 @@ impl EguiController {
         self.runtime.jobs.scan_in_progress()
             || self.runtime.jobs.trash_move_in_progress()
             || self.runtime.jobs.collection_move_in_progress()
+            || self.runtime.jobs.file_ops_in_progress()
             || self.runtime.jobs.umap_build_in_progress()
             || self.runtime.jobs.umap_cluster_build_in_progress()
             || self.runtime.jobs.update_check_in_progress()
@@ -217,6 +219,14 @@ impl EguiController {
     }
 
     pub(crate) fn undo(&mut self) {
+        if self.history.pending_undo.is_some() {
+            self.set_status("Undo already in progress", StatusTone::Warning);
+            return;
+        }
+        if self.runtime.jobs.file_ops_in_progress() {
+            self.set_status("File operation already in progress", StatusTone::Warning);
+            return;
+        }
         let mut stack = std::mem::replace(
             &mut self.history.undo_stack,
             undo::UndoStack::new(UNDO_LIMIT),
@@ -224,13 +234,26 @@ impl EguiController {
         let result = stack.undo(self);
         self.history.undo_stack = stack;
         match result {
-            Ok(Some(label)) => self.set_status(format!("Undid {label}"), StatusTone::Info),
-            Ok(None) => self.set_status("Nothing to undo", StatusTone::Info),
+            Ok(undo::UndoOutcome::Applied(label)) => {
+                self.set_status(format!("Undid {label}"), StatusTone::Info);
+            }
+            Ok(undo::UndoOutcome::Empty) => self.set_status("Nothing to undo", StatusTone::Info),
+            Ok(undo::UndoOutcome::Deferred(pending)) => {
+                self.begin_deferred_undo_job(pending);
+            }
             Err(err) => self.set_status(format!("Undo failed: {err}"), StatusTone::Error),
         }
     }
 
     pub(crate) fn redo(&mut self) {
+        if self.history.pending_undo.is_some() {
+            self.set_status("Redo already in progress", StatusTone::Warning);
+            return;
+        }
+        if self.runtime.jobs.file_ops_in_progress() {
+            self.set_status("File operation already in progress", StatusTone::Warning);
+            return;
+        }
         let mut stack = std::mem::replace(
             &mut self.history.undo_stack,
             undo::UndoStack::new(UNDO_LIMIT),
@@ -238,8 +261,13 @@ impl EguiController {
         let result = stack.redo(self);
         self.history.undo_stack = stack;
         match result {
-            Ok(Some(label)) => self.set_status(format!("Redid {label}"), StatusTone::Info),
-            Ok(None) => self.set_status("Nothing to redo", StatusTone::Info),
+            Ok(undo::UndoOutcome::Applied(label)) => {
+                self.set_status(format!("Redid {label}"), StatusTone::Info);
+            }
+            Ok(undo::UndoOutcome::Empty) => self.set_status("Nothing to redo", StatusTone::Info),
+            Ok(undo::UndoOutcome::Deferred(pending)) => {
+                self.begin_deferred_undo_job(pending);
+            }
             Err(err) => self.set_status(format!("Redo failed: {err}"), StatusTone::Error),
         }
     }
@@ -290,12 +318,12 @@ impl EguiController {
             move |controller| {
                 controller.selection_state.range.set_range(before);
                 controller.apply_selection(before);
-                Ok(())
+                Ok(undo::UndoExecution::Applied)
             },
             move |controller| {
                 controller.selection_state.range.set_range(after);
                 controller.apply_selection(after);
-                Ok(())
+                Ok(undo::UndoExecution::Applied)
             },
         ));
     }

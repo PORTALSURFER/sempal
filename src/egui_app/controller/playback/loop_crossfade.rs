@@ -1,3 +1,4 @@
+use crate::egui_app::controller::jobs::UndoFileJob;
 use crate::egui_app::controller::library::collection_items_helpers::{file_metadata, read_samples_for_normalization};
 use crate::egui_app::controller::undo;
 use super::*;
@@ -353,76 +354,27 @@ fn loop_crossfade_undo_entry(
     undo::UndoEntry::<EguiController>::new(
         label,
         move |controller: &mut EguiController| {
-            undo_loop_crossfade(controller, &undo_source_id, &undo_relative, &undo_absolute)
+            let source = loop_crossfade_source(controller, &undo_source_id)?;
+            Ok(undo::UndoExecution::Deferred(UndoFileJob::RemoveSample {
+                source_id: undo_source_id.clone(),
+                source_root: source.root,
+                relative_path: undo_relative.clone(),
+                absolute_path: undo_absolute.clone(),
+            }))
         },
         move |controller: &mut EguiController| {
-            redo_loop_crossfade(
-                controller,
-                &redo_source_id,
-                &redo_relative,
-                &redo_absolute,
+            let source = loop_crossfade_source(controller, &redo_source_id)?;
+            Ok(undo::UndoExecution::Deferred(UndoFileJob::RestoreSample {
+                source_id: redo_source_id.clone(),
+                source_root: source.root,
+                relative_path: redo_relative.clone(),
+                absolute_path: redo_absolute.clone(),
+                backup_path: after.clone(),
                 tag,
-                &after,
-            )
+            }))
         },
     )
     .with_cleanup_dir(backup_dir)
-}
-
-fn undo_loop_crossfade(
-    controller: &mut EguiController,
-    source_id: &SourceId,
-    relative_path: &Path,
-    absolute_path: &Path,
-) -> Result<(), String> {
-    let source = loop_crossfade_source(controller, source_id)?;
-    let db = controller
-        .database_for(&source)
-        .map_err(|err| format!("Database unavailable: {err}"))?;
-    let _ = std::fs::remove_file(absolute_path);
-    let _ = db.remove_file(relative_path);
-    controller.prune_cached_sample(&source, relative_path);
-    Ok(())
-}
-
-fn redo_loop_crossfade(
-    controller: &mut EguiController,
-    source_id: &SourceId,
-    relative_path: &Path,
-    absolute_path: &Path,
-    tag: crate::sample_sources::Rating,
-    after: &Path,
-) -> Result<(), String> {
-    let source = loop_crossfade_source(controller, source_id)?;
-    let db = controller
-        .database_for(&source)
-        .map_err(|err| format!("Database unavailable: {err}"))?;
-    if let Some(parent) = absolute_path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    std::fs::copy(after, absolute_path)
-        .map_err(|err| format!("Failed to restore loop crossfade: {err}"))?;
-    let (file_size, modified_ns) = file_metadata(absolute_path)?;
-    db.upsert_file(relative_path, file_size, modified_ns)
-        .map_err(|err| format!("Failed to sync database entry: {err}"))?;
-    db.set_tag(relative_path, tag)
-        .map_err(|err| format!("Failed to sync tag: {err}"))?;
-    controller.insert_cached_entry(
-        &source,
-        WavEntry {
-            relative_path: relative_path.to_path_buf(),
-            file_size,
-            modified_ns,
-            content_hash: None,
-            tag,
-            looped: false,
-            missing: false,
-            last_played_at: None,
-        },
-    );
-    controller.refresh_waveform_for_sample(&source, relative_path);
-    controller.reexport_collections_for_sample(&source.id, relative_path);
-    Ok(())
 }
 
 #[cfg(test)]

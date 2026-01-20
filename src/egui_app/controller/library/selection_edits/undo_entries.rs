@@ -1,7 +1,7 @@
-use crate::egui_app::controller::library::collection_items_helpers::file_metadata;
+use crate::egui_app::controller::jobs::UndoFileJob;
 use super::super::undo;
 use super::super::*;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 impl EguiController {
     pub(crate) fn selection_edit_undo_entry(
@@ -24,16 +24,36 @@ impl EguiController {
         undo::UndoEntry::<EguiController>::new(
             label,
             move |controller: &mut EguiController| {
-                std::fs::copy(&before, &undo_absolute)
-                    .map_err(|err| format!("Failed to restore audio: {err}"))?;
-                controller.sync_after_audio_overwrite(&undo_source_id, &undo_relative)?;
-                Ok(())
+                let source = controller
+                    .library
+                    .sources
+                    .iter()
+                    .find(|s| s.id == undo_source_id)
+                    .cloned()
+                    .ok_or_else(|| "Source not available".to_string())?;
+                Ok(undo::UndoExecution::Deferred(UndoFileJob::Overwrite {
+                    source_id: undo_source_id.clone(),
+                    source_root: source.root,
+                    relative_path: undo_relative.clone(),
+                    absolute_path: undo_absolute.clone(),
+                    backup_path: before.clone(),
+                }))
             },
             move |controller: &mut EguiController| {
-                std::fs::copy(&after, &redo_absolute)
-                    .map_err(|err| format!("Failed to reapply audio: {err}"))?;
-                controller.sync_after_audio_overwrite(&redo_source_id, &redo_relative)?;
-                Ok(())
+                let source = controller
+                    .library
+                    .sources
+                    .iter()
+                    .find(|s| s.id == redo_source_id)
+                    .cloned()
+                    .ok_or_else(|| "Source not available".to_string())?;
+                Ok(undo::UndoExecution::Deferred(UndoFileJob::Overwrite {
+                    source_id: redo_source_id.clone(),
+                    source_root: source.root,
+                    relative_path: redo_relative.clone(),
+                    absolute_path: redo_absolute.clone(),
+                    backup_path: after.clone(),
+                }))
             },
         )
         .with_cleanup_dir(backup_dir)
@@ -66,13 +86,12 @@ impl EguiController {
                     .find(|s| s.id == undo_source_id)
                     .cloned()
                     .ok_or_else(|| "Source not available".to_string())?;
-                let db = controller
-                    .database_for(&source)
-                    .map_err(|err| format!("Database unavailable: {err}"))?;
-                let _ = std::fs::remove_file(&undo_absolute);
-                let _ = db.remove_file(&undo_relative);
-                controller.prune_cached_sample(&source, &undo_relative);
-                Ok(())
+                Ok(undo::UndoExecution::Deferred(UndoFileJob::RemoveSample {
+                    source_id: undo_source_id.clone(),
+                    source_root: source.root,
+                    relative_path: undo_relative.clone(),
+                    absolute_path: undo_absolute.clone(),
+                }))
             },
             move |controller: &mut EguiController| {
                 let source = controller
@@ -82,74 +101,17 @@ impl EguiController {
                     .find(|s| s.id == redo_source_id)
                     .cloned()
                     .ok_or_else(|| "Source not available".to_string())?;
-                let db = controller
-                    .database_for(&source)
-                    .map_err(|err| format!("Database unavailable: {err}"))?;
-                if let Some(parent) = redo_absolute.parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-                std::fs::copy(&after, &redo_absolute)
-                    .map_err(|err| format!("Failed to restore crop file: {err}"))?;
-                let (file_size, modified_ns) = file_metadata(&redo_absolute)?;
-                db.upsert_file(&redo_relative, file_size, modified_ns)
-                    .map_err(|err| format!("Failed to sync database entry: {err}"))?;
-                db.set_tag(&redo_relative, tag)
-                    .map_err(|err| format!("Failed to sync tag: {err}"))?;
-                let last_played_at = controller
-                    .sample_last_played_for(&source, &redo_relative)
-                    .unwrap_or(None);
-                let looped = controller.sample_looped_for(&source, &redo_relative).unwrap_or(false);
-                controller.insert_cached_entry(
-                    &source,
-                    WavEntry {
-                        relative_path: redo_relative.clone(),
-                        file_size,
-                        modified_ns,
-                        content_hash: None,
-                        tag,
-                        looped,
-                        missing: false,
-                        last_played_at,
-                    },
-                );
-                controller.refresh_waveform_for_sample(&source, &redo_relative);
-                controller.reexport_collections_for_sample(&source.id, &redo_relative);
-                Ok(())
+                Ok(undo::UndoExecution::Deferred(UndoFileJob::RestoreSample {
+                    source_id: redo_source_id.clone(),
+                    source_root: source.root,
+                    relative_path: redo_relative.clone(),
+                    absolute_path: redo_absolute.clone(),
+                    backup_path: after.clone(),
+                    tag,
+                }))
             },
         )
         .with_cleanup_dir(backup_dir)
     }
 
-    pub(crate) fn sync_after_audio_overwrite(
-        &mut self,
-        source_id: &SourceId,
-        relative_path: &Path,
-    ) -> Result<(), String> {
-        let source = self
-            .library
-            .sources
-            .iter()
-            .find(|s| &s.id == source_id)
-            .cloned()
-            .ok_or_else(|| "Source not available".to_string())?;
-        let absolute_path = source.root.join(relative_path);
-        let (file_size, modified_ns) = file_metadata(&absolute_path)?;
-        let tag = self.sample_tag_for(&source, relative_path)?;
-        let looped = self.sample_looped_for(&source, relative_path)?;
-        let last_played_at = self.sample_last_played_for(&source, relative_path)?;
-        let entry = WavEntry {
-            relative_path: relative_path.to_path_buf(),
-            file_size,
-            modified_ns,
-            content_hash: None,
-            tag,
-            looped,
-            missing: false,
-            last_played_at,
-        };
-        self.update_cached_entry(&source, relative_path, entry);
-        self.refresh_waveform_for_sample(&source, relative_path);
-        self.reexport_collections_for_sample(&source.id, relative_path);
-        Ok(())
-    }
 }

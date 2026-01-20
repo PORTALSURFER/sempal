@@ -1,9 +1,16 @@
-use super::super::{DragDropController, file_metadata};
+use super::super::DragDropController;
+use crate::egui_app::controller::library::collection_items_helpers::file_metadata;
+use crate::egui_app::controller::jobs::{FileOpMessage, FileOpResult, SourceMoveRequest, SourceMoveResult, SourceMoveSuccess};
 use crate::egui_app::state::DragSample;
 use crate::egui_app::ui::style::StatusTone;
-use crate::sample_sources::{Rating, SourceId, WavEntry};
-use std::collections::HashSet;
+use crate::sample_sources::{SourceDatabase, SourceId, WavEntry};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+    mpsc::Sender,
+};
 use tracing::info;
 
 impl DragDropController<'_> {
@@ -13,146 +20,11 @@ impl DragDropController<'_> {
         relative_path: PathBuf,
         target_source_id: SourceId,
     ) -> bool {
-        if source_id == target_source_id {
-            self.set_status("Sample is already in that source", StatusTone::Info);
-            return false;
-        }
-        let Some(source) = self
-            .library
-            .sources
-            .iter()
-            .find(|s| s.id == source_id)
-            .cloned()
-        else {
-            self.set_status("Source not available for move", StatusTone::Error);
-            return false;
+        let sample = DragSample {
+            source_id,
+            relative_path,
         };
-        let Some(target_source) = self
-            .library
-            .sources
-            .iter()
-            .find(|s| s.id == target_source_id)
-            .cloned()
-        else {
-            self.set_status("Target source not available for move", StatusTone::Error);
-            return false;
-        };
-        if !target_source.root.is_dir() {
-            self.set_status(
-                format!(
-                    "Target source folder missing: {}",
-                    target_source.root.display()
-                ),
-                StatusTone::Error,
-            );
-            return false;
-        }
-        let absolute = source.root.join(&relative_path);
-        if !absolute.exists() {
-            self.set_status(
-                format!("File missing: {}", relative_path.display()),
-                StatusTone::Error,
-            );
-            return false;
-        }
-        let tag = match self.sample_tag_for(&source, &relative_path) {
-            Ok(tag) => tag,
-            Err(err) => {
-                self.set_status(err, StatusTone::Error);
-                return false;
-            }
-        };
-        let looped = match self.sample_looped_for(&source, &relative_path) {
-            Ok(looped) => looped,
-            Err(err) => {
-                self.set_status(err, StatusTone::Error);
-                return false;
-            }
-        };
-        let last_played_at = self
-            .sample_last_played_for(&source, &relative_path)
-            .unwrap_or(None);
-        let target_relative = match unique_destination_path(&target_source.root, &relative_path) {
-            Ok(path) => path,
-            Err(err) => {
-                self.set_status(err, StatusTone::Error);
-                return false;
-            }
-        };
-        if let Some(parent) = target_relative.parent() {
-            let target_dir = target_source.root.join(parent);
-            if let Err(err) = std::fs::create_dir_all(&target_dir) {
-                self.set_status(
-                    format!(
-                        "Failed to create target folder {}: {err}",
-                        target_dir.display()
-                    ),
-                    StatusTone::Error,
-                );
-                return false;
-            }
-        }
-        let target_absolute = target_source.root.join(&target_relative);
-        if let Err(err) = move_sample_file(&absolute, &target_absolute) {
-            self.set_status(err, StatusTone::Error);
-            return false;
-        }
-        let (file_size, modified_ns) = match file_metadata(&target_absolute) {
-            Ok(meta) => meta,
-            Err(err) => {
-                let _ = move_sample_file(&target_absolute, &absolute);
-                self.set_status(err, StatusTone::Error);
-                return false;
-            }
-        };
-        if let Err(err) = self.register_moved_sample_for_source(
-            &target_source,
-            &target_relative,
-            file_size,
-            modified_ns,
-            tag,
-            looped,
-            last_played_at,
-        ) {
-            let _ = move_sample_file(&target_absolute, &absolute);
-            self.set_status(err, StatusTone::Error);
-            return false;
-        }
-        if let Err(err) = self.remove_source_db_entry(&source, &relative_path) {
-            let _ = self.remove_target_db_entry(&target_source, &target_relative);
-            let _ = move_sample_file(&target_absolute, &absolute);
-            self.set_status(err, StatusTone::Error);
-            return false;
-        }
-        self.prune_cached_sample(&source, &relative_path);
-        let new_entry = WavEntry {
-            relative_path: target_relative.clone(),
-            file_size,
-            modified_ns,
-            content_hash: None,
-            tag,
-            looped,
-            missing: false,
-            last_played_at,
-        };
-        self.insert_cached_entry(&target_source, new_entry);
-        if self.update_collections_for_source_move(
-            &source.id,
-            &target_source.id,
-            &relative_path,
-            &target_relative,
-        ) {
-            let _ = self.persist_config("Failed to save collections after move");
-        }
-        info!(
-            "Source move success: {} -> {}",
-            relative_path.display(),
-            target_relative.display()
-        );
-        self.set_status(
-            format!("Moved to {}", target_source.root.display()),
-            StatusTone::Info,
-        );
+        self.handle_samples_drop_to_source(std::slice::from_ref(&sample), target_source_id);
         true
     }
 
@@ -161,17 +33,148 @@ impl DragDropController<'_> {
         samples: &[DragSample],
         target_source_id: SourceId,
     ) {
-        let mut moved_sources = HashSet::new();
+        if samples.is_empty() {
+            return;
+        }
+        if self.runtime.jobs.file_ops_in_progress() {
+            self.set_status("Another file operation is already running", StatusTone::Warning);
+            return;
+        }
+        if samples.iter().all(|sample| sample.source_id == target_source_id) {
+            self.set_status("Samples are already in that source", StatusTone::Info);
+            return;
+        }
+        let Some(target_source) = self
+            .library
+            .sources
+            .iter()
+            .find(|source| source.id == target_source_id)
+            .cloned()
+        else {
+            self.set_status("Target source not available for move", StatusTone::Error);
+            return;
+        };
+        let mut requests = Vec::new();
+        let mut errors = Vec::new();
         for sample in samples {
-            let moved = self.handle_sample_drop_to_source(
-                sample.source_id.clone(),
-                sample.relative_path.clone(),
-                target_source_id.clone(),
-            );
-            if moved {
-                moved_sources.insert(sample.source_id.clone());
-                moved_sources.insert(target_source_id.clone());
+            let Some(source) = self
+                .library
+                .sources
+                .iter()
+                .find(|source| source.id == sample.source_id)
+                .cloned()
+            else {
+                errors.push(format!(
+                    "Source not available for move: {}",
+                    sample.relative_path.display()
+                ));
+                continue;
+            };
+            requests.push(SourceMoveRequest {
+                source_id: source.id,
+                source_root: source.root,
+                relative_path: sample.relative_path.clone(),
+            });
+        }
+        if requests.is_empty() {
+            if let Some(err) = errors.pop() {
+                self.set_status(err, StatusTone::Error);
             }
+            return;
+        }
+        self.set_status("Moving samples...", StatusTone::Busy);
+        self.show_status_progress(
+            crate::egui_app::state::ProgressTaskKind::FileOps,
+            "Moving samples",
+            requests.len(),
+            true,
+        );
+        let target_root = target_source.root.clone();
+        let cancel = Arc::new(AtomicBool::new(false));
+        #[cfg(test)]
+        {
+            let result = run_source_move_task(
+                target_source_id,
+                target_root,
+                requests,
+                errors,
+                cancel,
+                None,
+            );
+            self.apply_source_move_result(result);
+            if self.ui.progress.task == Some(crate::egui_app::state::ProgressTaskKind::FileOps) {
+                self.clear_progress();
+            }
+        }
+        #[cfg(not(test))]
+        {
+            let (tx, rx) = std::sync::mpsc::channel();
+            self.runtime.jobs.start_file_ops(rx, cancel.clone());
+            std::thread::spawn(move || {
+                let result = run_source_move_task(
+                    target_source_id,
+                    target_root,
+                    requests,
+                    errors,
+                    cancel,
+                    Some(&tx),
+                );
+                let _ = tx.send(FileOpMessage::Finished(FileOpResult::SourceMove(result)));
+            });
+        }
+    }
+
+    /// Apply a completed background source move job.
+    pub(crate) fn apply_source_move_result(&mut self, result: SourceMoveResult) {
+        let Some(target_source) = self
+            .library
+            .sources
+            .iter()
+            .find(|source| source.id == result.target_source_id)
+            .cloned()
+        else {
+            self.set_status("Target source not available for move", StatusTone::Error);
+            return;
+        };
+        let mut moved_sources = HashSet::new();
+        let mut collections_changed = false;
+        for entry in &result.moved {
+            let Some(source) = self
+                .library
+                .sources
+                .iter()
+                .find(|source| source.id == entry.source_id)
+                .cloned()
+            else {
+                continue;
+            };
+            self.prune_cached_sample(&source, &entry.relative_path);
+            self.insert_cached_entry(
+                &target_source,
+                WavEntry {
+                    relative_path: entry.target_relative.clone(),
+                    file_size: entry.file_size,
+                    modified_ns: entry.modified_ns,
+                    content_hash: None,
+                    tag: entry.tag,
+                    looped: entry.looped,
+                    missing: false,
+                    last_played_at: entry.last_played_at,
+                },
+            );
+            moved_sources.insert(source.id.clone());
+            moved_sources.insert(target_source.id.clone());
+            if self.update_collections_for_source_move(
+                &source.id,
+                &target_source.id,
+                &entry.relative_path,
+                &entry.target_relative,
+            ) {
+                collections_changed = true;
+            }
+        }
+        if collections_changed {
+            let _ = self.persist_config("Failed to save collections after move");
         }
         for source_id in moved_sources {
             let Some(source) = self
@@ -185,6 +188,36 @@ impl DragDropController<'_> {
             };
             self.invalidate_wav_entries_for_source_preserve_folders(&source);
         }
+        let moved = result.moved.len();
+        if moved == 0 && result.errors.is_empty() {
+            if result.cancelled {
+                self.set_status("Move cancelled", StatusTone::Warning);
+            } else {
+                self.set_status("No samples moved", StatusTone::Warning);
+            }
+            return;
+        }
+        let tone = if result.errors.is_empty() && !result.cancelled {
+            StatusTone::Info
+        } else {
+            StatusTone::Warning
+        };
+        let mut message = format!("Moved {moved} sample(s)");
+        if !result.errors.is_empty() {
+            message.push_str(&format!(" with {} error(s)", result.errors.len()));
+        }
+        if result.cancelled {
+            message.push_str(" (cancelled)");
+        }
+        self.set_status(message, tone);
+        for err in &result.errors {
+            eprintln!("Source move error: {err}");
+        }
+        info!(
+            "Source move completed: {} moved, {} errors",
+            moved,
+            result.errors.len()
+        );
     }
 
     pub(super) fn register_moved_sample_for_source(
@@ -320,6 +353,224 @@ pub(super) fn move_sample_file(source: &Path, destination: &Path) -> Result<(), 
             }
             Ok(())
         }
+    }
+}
+
+fn run_source_move_task(
+    target_source_id: SourceId,
+    target_root: PathBuf,
+    requests: Vec<SourceMoveRequest>,
+    mut errors: Vec<String>,
+    cancel: Arc<AtomicBool>,
+    sender: Option<&Sender<FileOpMessage>>,
+) -> SourceMoveResult {
+    let mut moved = Vec::new();
+    let mut completed = 0usize;
+    let mut cancelled = false;
+    if !target_root.is_dir() {
+        errors.push(format!(
+            "Target source folder missing: {}",
+            target_root.display()
+        ));
+        return SourceMoveResult {
+            target_source_id,
+            moved,
+            errors,
+            cancelled,
+        };
+    }
+    let target_db = match SourceDatabase::open(&target_root) {
+        Ok(db) => db,
+        Err(err) => {
+            errors.push(format!("Failed to open target DB: {err}"));
+            return SourceMoveResult {
+                target_source_id,
+                moved,
+                errors,
+                cancelled,
+            };
+        }
+    };
+    let mut source_dbs: HashMap<PathBuf, SourceDatabase> = HashMap::new();
+
+    for request in requests {
+        if cancel.load(Ordering::Relaxed) {
+            cancelled = true;
+            break;
+        }
+        let detail = Some(format!("Moving {}", request.relative_path.display()));
+        let absolute = request.source_root.join(&request.relative_path);
+        if !absolute.is_file() {
+            errors.push(format!("File missing: {}", request.relative_path.display()));
+            completed += 1;
+            report_progress(sender, completed, detail);
+            continue;
+        }
+        let target_relative = match unique_destination_path(&target_root, &request.relative_path) {
+            Ok(path) => path,
+            Err(err) => {
+                errors.push(err);
+                completed += 1;
+                report_progress(sender, completed, detail);
+                continue;
+            }
+        };
+        if let Some(parent) = target_relative.parent() {
+            let target_dir = target_root.join(parent);
+            if let Err(err) = std::fs::create_dir_all(&target_dir) {
+                errors.push(format!(
+                    "Failed to create target folder {}: {err}",
+                    target_dir.display()
+                ));
+                completed += 1;
+                report_progress(sender, completed, detail);
+                continue;
+            }
+        }
+        let target_absolute = target_root.join(&target_relative);
+        if let Err(err) = move_sample_file(&absolute, &target_absolute) {
+            errors.push(err);
+            completed += 1;
+            report_progress(sender, completed, detail);
+            continue;
+        }
+        let (file_size, modified_ns) = match file_metadata(&target_absolute) {
+            Ok(meta) => meta,
+            Err(err) => {
+                let _ = move_sample_file(&target_absolute, &absolute);
+                errors.push(err);
+                completed += 1;
+                report_progress(sender, completed, detail);
+                continue;
+            }
+        };
+        let source_db = match source_dbs.entry(request.source_root.clone()) {
+            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::hash_map::Entry::Vacant(entry) => match SourceDatabase::open(&request.source_root) {
+                Ok(db) => entry.insert(db),
+                Err(err) => {
+                    let _ = move_sample_file(&target_absolute, &absolute);
+                    errors.push(format!("Failed to open source DB: {err}"));
+                    completed += 1;
+                    report_progress(sender, completed, detail);
+                    continue;
+                }
+            },
+        };
+        let tag = match source_db.tag_for_path(&request.relative_path) {
+            Ok(Some(tag)) => tag,
+            Ok(None) => {
+                let _ = move_sample_file(&target_absolute, &absolute);
+                errors.push("Sample not found in database".to_string());
+                completed += 1;
+                report_progress(sender, completed, detail);
+                continue;
+            }
+            Err(err) => {
+                let _ = move_sample_file(&target_absolute, &absolute);
+                errors.push(format!("Failed to read database: {err}"));
+                completed += 1;
+                report_progress(sender, completed, detail);
+                continue;
+            }
+        };
+        let looped = match source_db.looped_for_path(&request.relative_path) {
+            Ok(Some(looped)) => looped,
+            Ok(None) => {
+                let _ = move_sample_file(&target_absolute, &absolute);
+                errors.push("Sample not found in database".to_string());
+                completed += 1;
+                report_progress(sender, completed, detail);
+                continue;
+            }
+            Err(err) => {
+                let _ = move_sample_file(&target_absolute, &absolute);
+                errors.push(format!("Failed to read database: {err}"));
+                completed += 1;
+                report_progress(sender, completed, detail);
+                continue;
+            }
+        };
+        let last_played_at = match source_db.last_played_at_for_path(&request.relative_path) {
+            Ok(value) => value,
+            Err(err) => {
+                let _ = move_sample_file(&target_absolute, &absolute);
+                errors.push(format!("Failed to read database: {err}"));
+                completed += 1;
+                report_progress(sender, completed, detail);
+                continue;
+            }
+        };
+        if let Err(err) = target_db.upsert_file(&target_relative, file_size, modified_ns) {
+            let _ = move_sample_file(&target_absolute, &absolute);
+            errors.push(format!("Failed to register file: {err}"));
+            completed += 1;
+            report_progress(sender, completed, detail);
+            continue;
+        }
+        if let Err(err) = target_db.set_tag(&target_relative, tag) {
+            let _ = target_db.remove_file(&target_relative);
+            let _ = move_sample_file(&target_absolute, &absolute);
+            errors.push(format!("Failed to set tag: {err}"));
+            completed += 1;
+            report_progress(sender, completed, detail);
+            continue;
+        }
+        if let Err(err) = target_db.set_looped(&target_relative, looped) {
+            let _ = target_db.remove_file(&target_relative);
+            let _ = move_sample_file(&target_absolute, &absolute);
+            errors.push(format!("Failed to set loop marker: {err}"));
+            completed += 1;
+            report_progress(sender, completed, detail);
+            continue;
+        }
+        if let Some(last_played_at) = last_played_at {
+            if let Err(err) = target_db.set_last_played_at(&target_relative, last_played_at) {
+                let _ = target_db.remove_file(&target_relative);
+                let _ = move_sample_file(&target_absolute, &absolute);
+                errors.push(format!("Failed to copy playback age: {err}"));
+                completed += 1;
+                report_progress(sender, completed, detail);
+                continue;
+            }
+        }
+        if let Err(err) = source_db.remove_file(&request.relative_path) {
+            let _ = target_db.remove_file(&target_relative);
+            let _ = move_sample_file(&target_absolute, &absolute);
+            errors.push(format!("Failed to drop database row: {err}"));
+            completed += 1;
+            report_progress(sender, completed, detail);
+            continue;
+        }
+        moved.push(SourceMoveSuccess {
+            source_id: request.source_id,
+            target_source_id: target_source_id.clone(),
+            relative_path: request.relative_path,
+            target_relative,
+            file_size,
+            modified_ns,
+            tag,
+            looped,
+            last_played_at,
+        });
+        completed += 1;
+        report_progress(sender, completed, detail);
+    }
+    SourceMoveResult {
+        target_source_id,
+        moved,
+        errors,
+        cancelled,
+    }
+}
+
+fn report_progress(
+    sender: Option<&Sender<FileOpMessage>>,
+    completed: usize,
+    detail: Option<String>,
+) {
+    if let Some(tx) = sender {
+        let _ = tx.send(FileOpMessage::Progress { completed, detail });
     }
 }
 

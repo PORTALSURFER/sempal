@@ -12,6 +12,8 @@ pub enum ProgressTaskKind {
     Analysis,
     /// Normalizing audio samples.
     Normalization,
+    /// Copying, moving, or restoring files in the background.
+    FileOps,
 }
 
 use std::time::Instant;

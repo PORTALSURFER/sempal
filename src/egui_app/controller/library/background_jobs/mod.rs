@@ -28,6 +28,11 @@ impl EguiController {
                     self.runtime.analysis.cancel();
                     self.clear_progress();
                 }
+                Some(ProgressTaskKind::FileOps) => {
+                    if let Some(cancel) = self.runtime.jobs.file_ops_cancel().as_ref() {
+                        cancel.store(true, Ordering::Relaxed);
+                    }
+                }
                 _ => {}
             }
         }
@@ -128,6 +133,23 @@ impl EguiController {
                     self.runtime.jobs.clear_collection_move();
                     self.apply_collection_move_result(message);
                 }
+                JobMessage::FileOps(message) => match message {
+                    crate::egui_app::controller::jobs::FileOpMessage::Progress { completed, detail } => {
+                        progress::update_progress_detail(
+                            self,
+                            ProgressTaskKind::FileOps,
+                            completed,
+                            detail,
+                        );
+                    }
+                    crate::egui_app::controller::jobs::FileOpMessage::Finished(result) => {
+                        self.runtime.jobs.clear_file_ops();
+                        self.apply_file_op_result(result);
+                        if self.ui.progress.task == Some(ProgressTaskKind::FileOps) {
+                            self.clear_progress();
+                        }
+                    }
+                },
                 JobMessage::Analysis(message) => {
                     analysis::handle_analysis_message(self, message);
                 }

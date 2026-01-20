@@ -1,35 +1,75 @@
 use super::*;
 use crate::egui_app::controller::library::collection_export;
 use crate::egui_app::controller::library::collection_items_helpers::file_metadata;
-use crate::sample_sources::is_supported_audio;
+use crate::egui_app::controller::jobs::{
+    ClipboardPasteOutcome, ClipboardPasteResult, FileOpMessage, FileOpResult, SourcePasteAdded,
+};
+use crate::sample_sources::{SourceDatabase, is_supported_audio};
 use std::path::{Path, PathBuf};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+    mpsc::Sender,
+};
 
 impl EguiController {
     /// Paste file paths from the system clipboard into the active source or collection.
     pub fn paste_files_from_clipboard(&mut self) -> bool {
-        let input = match read_clipboard_audio_paths() {
-            Ok(Some(input)) => input,
+        let paths = match read_clipboard_paths() {
+            Ok(Some(paths)) => paths,
             Ok(None) => return false,
             Err(err) => {
                 self.set_status(err, StatusTone::Error);
                 return true;
             }
         };
-        if input.paths.is_empty() {
-            self.set_status(
-                "Clipboard has no supported audio files to paste",
-                StatusTone::Warning,
-            );
+        if self.runtime.jobs.file_ops_in_progress() {
+            self.set_status("Another file operation is already running", StatusTone::Warning);
             return true;
         }
-        let summary = match paste_clipboard_paths(self, input) {
-            Ok(summary) => summary,
-            Err(err) => {
-                self.set_status(err, StatusTone::Error);
+        let job = if let Some(collection_id) = self.current_collection_id() {
+            let Some(collection) = self
+                .library
+                .collections
+                .iter()
+                .find(|collection| &collection.id == &collection_id)
+            else {
+                self.set_status("Collection not found", StatusTone::Error);
                 return true;
+            };
+            ClipboardPasteJob {
+                kind: ClipboardPasteJobKind::Collection {
+                    collection_id,
+                    export_root: collection_export::resolved_export_dir(
+                        collection,
+                        self.settings.collection_export_root.as_deref(),
+                    ),
+                },
+                paths,
+                action_label: "paste",
+                action_progress: "Pasting",
+                action_past_tense: "Pasted",
+                target_label: "collection".to_string(),
+            }
+        } else {
+            let Some(source) = self.current_source() else {
+                self.set_status("Select a source first", StatusTone::Info);
+                return true;
+            };
+            ClipboardPasteJob {
+                kind: ClipboardPasteJobKind::Source {
+                    source_id: source.id,
+                    source_root: source.root,
+                    target_folder: PathBuf::new(),
+                },
+                paths,
+                action_label: "paste",
+                action_progress: "Pasting",
+                action_past_tense: "Pasted",
+                target_label: "source".to_string(),
             }
         };
-        report_paste_summary(self, summary);
+        self.begin_clipboard_paste_job(job, "Pasting files");
         true
     }
 
@@ -50,333 +90,85 @@ impl EguiController {
             self.set_status(err, StatusTone::Error);
             return;
         }
-        let (supported, skipped) = filter_supported_audio_paths(paths);
-        if supported.is_empty() {
-            self.set_status(
-                "No supported audio files to import",
-                StatusTone::Warning,
-            );
+        if self.runtime.jobs.file_ops_in_progress() {
+            self.set_status("Another file operation is already running", StatusTone::Warning);
             return;
         }
-        let result = import_files_into_source_folder(self, &source, &target_folder, &supported);
         let target_label = if target_folder.as_os_str().is_empty() {
             "source root".to_string()
         } else {
             format!("folder {}", target_folder.display())
         };
-        report_import_summary(
-            self,
-            ImportSummary {
-                added: result.added,
-                skipped,
-                errors: result.errors,
-                target_label,
+        let job = ClipboardPasteJob {
+            kind: ClipboardPasteJobKind::Source {
+                source_id: source.id,
+                source_root: source.root,
+                target_folder,
             },
-        );
+            paths,
+            action_label: "import",
+            action_progress: "Importing",
+            action_past_tense: "Imported",
+            target_label,
+        };
+        self.begin_clipboard_paste_job(job, "Importing files");
     }
 }
 
-struct PasteResult {
-    added: usize,
-    errors: Vec<String>,
-}
-
-struct ClipboardPasteInput {
+struct ClipboardPasteJob {
+    kind: ClipboardPasteJobKind,
     paths: Vec<PathBuf>,
-    skipped: usize,
-}
-
-struct PasteSummary {
-    added: usize,
-    skipped: usize,
-    errors: Vec<String>,
-    target_label: &'static str,
-}
-
-struct ImportResult {
-    added: usize,
-    errors: Vec<String>,
-}
-
-struct ImportSummary {
-    added: usize,
-    skipped: usize,
-    errors: Vec<String>,
+    action_label: &'static str,
+    action_progress: &'static str,
+    action_past_tense: &'static str,
     target_label: String,
 }
 
-fn read_clipboard_audio_paths() -> Result<Option<ClipboardPasteInput>, String> {
+enum ClipboardPasteJobKind {
+    Source {
+        source_id: SourceId,
+        source_root: PathBuf,
+        target_folder: PathBuf,
+    },
+    Collection {
+        collection_id: CollectionId,
+        export_root: Option<PathBuf>,
+    },
+}
+
+fn read_clipboard_paths() -> Result<Option<Vec<PathBuf>>, String> {
     let paths = crate::external_clipboard::read_file_paths()?;
     if paths.is_empty() {
-        return Ok(None);
+        Ok(None)
+    } else {
+        Ok(Some(paths))
     }
-    let (supported, skipped) = filter_supported_audio_paths(paths);
-    Ok(Some(ClipboardPasteInput {
-        paths: supported,
-        skipped,
-    }))
 }
 
-fn paste_clipboard_paths(
-    controller: &mut EguiController,
-    input: ClipboardPasteInput,
-) -> Result<PasteSummary, String> {
-    if let Some(collection_id) = controller.current_collection_id() {
-        let clip_root = collection_clip_root(controller, &collection_id)?;
-        let result =
-            paste_files_into_collection(controller, &collection_id, &clip_root, &input.paths);
-        return Ok(PasteSummary {
-            added: result.added,
-            skipped: input.skipped,
-            errors: result.errors,
-            target_label: "collection",
+impl EguiController {
+    fn begin_clipboard_paste_job(&mut self, job: ClipboardPasteJob, title: &str) {
+        if job.paths.is_empty() {
+            self.set_status(
+                format!("No files to {}", job.action_label),
+                StatusTone::Warning,
+            );
+            return;
+        }
+        let total = job.paths.len();
+        self.set_status(format!("{title}..."), StatusTone::Busy);
+        self.show_status_progress(
+            crate::egui_app::state::ProgressTaskKind::FileOps,
+            title,
+            total,
+            true,
+        );
+        let (tx, rx) = std::sync::mpsc::channel();
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.runtime.jobs.start_file_ops(rx, cancel.clone());
+        std::thread::spawn(move || {
+            let result = run_clipboard_paste_job(job, cancel, Some(&tx));
+            let _ = tx.send(FileOpMessage::Finished(FileOpResult::ClipboardPaste(result)));
         });
-    }
-    let Some(source) = controller.current_source() else {
-        return Err("Select a source first".into());
-    };
-    let result = paste_files_into_source(controller, &source, &input.paths);
-    Ok(PasteSummary {
-        added: result.added,
-        skipped: input.skipped,
-        errors: result.errors,
-        target_label: "source",
-    })
-}
-
-fn report_paste_summary(controller: &mut EguiController, summary: PasteSummary) {
-    if summary.added == 0 && summary.errors.is_empty() {
-        controller.set_status("No files pasted", StatusTone::Warning);
-        return;
-    }
-    let tone = if summary.errors.is_empty() {
-        StatusTone::Info
-    } else {
-        StatusTone::Warning
-    };
-    let mut message = format!(
-        "Pasted {} file(s) into {}",
-        summary.added, summary.target_label
-    );
-    if summary.skipped > 0 {
-        message.push_str(&format!(" (skipped {})", summary.skipped));
-    }
-    if !summary.errors.is_empty() {
-        message.push_str(&format!(" with {} error(s)", summary.errors.len()));
-    }
-    controller.set_status(message, tone);
-    for err in summary.errors {
-        eprintln!("Paste error: {err}");
-    }
-}
-
-fn report_import_summary(controller: &mut EguiController, summary: ImportSummary) {
-    if summary.added == 0 && summary.errors.is_empty() {
-        controller.set_status("No files imported", StatusTone::Warning);
-        return;
-    }
-    let tone = if summary.errors.is_empty() {
-        StatusTone::Info
-    } else {
-        StatusTone::Warning
-    };
-    let mut message = format!(
-        "Imported {} file(s) into {}",
-        summary.added, summary.target_label
-    );
-    if summary.skipped > 0 {
-        message.push_str(&format!(" (skipped {})", summary.skipped));
-    }
-    if !summary.errors.is_empty() {
-        message.push_str(&format!(" with {} error(s)", summary.errors.len()));
-    }
-    controller.set_status(message, tone);
-    for err in summary.errors {
-        eprintln!("Import error: {err}");
-    }
-}
-
-fn paste_files_into_source(
-    controller: &mut EguiController,
-    source: &SampleSource,
-    paths: &[PathBuf],
-) -> PasteResult {
-    let mut errors = Vec::new();
-    let mut added = 0usize;
-    let mut last_relative = None;
-    for path in paths {
-        match paste_file_to_source(controller, source, path) {
-            Ok(relative) => {
-                added += 1;
-                last_relative = Some(relative);
-            }
-            Err(err) => errors.push(err),
-        }
-    }
-    if let Some(relative) = last_relative {
-        controller
-            .runtime
-            .jobs
-            .set_pending_select_path(Some(relative));
-    }
-    if added > 0 {
-        controller.invalidate_wav_entries_for_source(source);
-    }
-    PasteResult { added, errors }
-}
-
-fn paste_file_to_source(
-    controller: &mut EguiController,
-    source: &SampleSource,
-    path: &Path,
-) -> Result<PathBuf, String> {
-    copy_file_to_source_folder(
-        controller,
-        source,
-        Path::new(""),
-        path,
-        "paste",
-        "pasted",
-    )
-}
-
-fn paste_files_into_collection(
-    controller: &mut EguiController,
-    collection_id: &CollectionId,
-    clip_root: &Path,
-    paths: &[PathBuf],
-) -> PasteResult {
-    let mut errors = Vec::new();
-    let mut added = 0usize;
-    for path in paths {
-        match paste_file_to_collection(controller, collection_id, clip_root, path) {
-            Ok(_) => {
-                added += 1;
-            }
-            Err(err) => errors.push(err),
-        }
-    }
-    PasteResult { added, errors }
-}
-
-fn paste_file_to_collection(
-    controller: &mut EguiController,
-    collection_id: &CollectionId,
-    clip_root: &Path,
-    path: &Path,
-) -> Result<PathBuf, String> {
-    if !clip_root.is_dir() {
-        return Err("Collection export folder is not available".into());
-    }
-    let relative = unique_destination_name(clip_root, path)?;
-    let absolute = clip_root.join(&relative);
-    std::fs::copy(path, &absolute)
-        .map_err(|err| format!("Failed to paste {}: {err}", path.display()))?;
-    controller.add_clip_to_collection(collection_id, clip_root.to_path_buf(), relative.clone())?;
-    Ok(relative)
-}
-
-fn import_files_into_source_folder(
-    controller: &mut EguiController,
-    source: &SampleSource,
-    target_folder: &Path,
-    paths: &[PathBuf],
-) -> ImportResult {
-    let mut errors = Vec::new();
-    let mut added = 0usize;
-    let mut last_relative = None;
-    for path in paths {
-        match import_file_to_source_folder(controller, source, target_folder, path) {
-            Ok(relative) => {
-                added += 1;
-                last_relative = Some(relative);
-            }
-            Err(err) => errors.push(err),
-        }
-    }
-    if let Some(relative) = last_relative {
-        controller
-            .runtime
-            .jobs
-            .set_pending_select_path(Some(relative));
-    }
-    if added > 0 {
-        controller.invalidate_wav_entries_for_source(source);
-    }
-    ImportResult {
-        added,
-        errors,
-    }
-}
-
-fn import_file_to_source_folder(
-    controller: &mut EguiController,
-    source: &SampleSource,
-    target_folder: &Path,
-    path: &Path,
-) -> Result<PathBuf, String> {
-    copy_file_to_source_folder(controller, source, target_folder, path, "import", "imported")
-}
-
-fn copy_file_to_source_folder(
-    controller: &mut EguiController,
-    source: &SampleSource,
-    target_folder: &Path,
-    path: &Path,
-    action_label: &str,
-    register_label: &str,
-) -> Result<PathBuf, String> {
-    if !source.root.is_dir() {
-        return Err("Source folder is not available".into());
-    }
-    validate_relative_folder_path(target_folder)?;
-    let target_root = source.root.join(target_folder);
-    if !target_root.exists() {
-        std::fs::create_dir_all(&target_root).map_err(|err| {
-            format!(
-                "Failed to create folder {}: {err}",
-                target_root.display()
-            )
-        })?;
-    } else if !target_root.is_dir() {
-        return Err(format!(
-            "Target folder is not a directory: {}",
-            target_root.display()
-        ));
-    }
-    let relative_name = unique_destination_name(&target_root, path)?;
-    let relative = if target_folder.as_os_str().is_empty() {
-        relative_name
-    } else {
-        target_folder.join(relative_name)
-    };
-    let absolute = source.root.join(&relative);
-    std::fs::copy(path, &absolute).map_err(|err| {
-        format!("Failed to {action_label} {}: {err}", path.display())
-    })?;
-    let result = (|| -> Result<(), String> {
-        let (file_size, modified_ns) = file_metadata(&absolute)?;
-        let db = controller
-            .database_for(source)
-            .map_err(|err| format!("Failed to open source DB: {err}"))?;
-        db.upsert_file(&relative, file_size, modified_ns).map_err(|err| {
-            format!("Failed to register {register_label} file: {err}")
-        })?;
-        controller.enqueue_similarity_for_new_sample(source, &relative, file_size, modified_ns);
-        Ok(())
-    })();
-    match result {
-        Ok(()) => Ok(relative),
-        Err(err) => {
-            if let Err(remove_err) = std::fs::remove_file(&absolute) {
-                Err(format!(
-                    "{err}; failed to remove {register_label} file {}: {remove_err}",
-                    absolute.display()
-                ))
-            } else {
-                Err(err)
-            }
-        }
     }
 }
 
@@ -410,19 +202,6 @@ fn unique_destination_name(root: &Path, path: &Path) -> Result<PathBuf, String> 
     Err("Unable to find a unique destination name".into())
 }
 
-fn filter_supported_audio_paths(paths: Vec<PathBuf>) -> (Vec<PathBuf>, usize) {
-    let mut supported = Vec::new();
-    let mut skipped = 0usize;
-    for path in paths {
-        if !path.is_file() || !is_supported_audio(&path) {
-            skipped += 1;
-            continue;
-        }
-        supported.push(path);
-    }
-    (supported, skipped)
-}
-
 fn validate_relative_folder_path(path: &Path) -> Result<(), String> {
     if path.is_absolute() {
         return Err("Target folder must be a relative path".into());
@@ -436,23 +215,11 @@ fn validate_relative_folder_path(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn collection_clip_root(
-    controller: &mut EguiController,
+fn resolve_collection_clip_root(
     collection_id: &CollectionId,
+    export_root: Option<PathBuf>,
 ) -> Result<PathBuf, String> {
-    let Some(collection) = controller
-        .library
-        .collections
-        .iter()
-        .find(|c| &c.id == collection_id)
-    else {
-        return Err("Collection not found".into());
-    };
-    let preferred = collection_export::resolved_export_dir(
-        collection,
-        controller.settings.collection_export_root.as_deref(),
-    );
-    if let Some(path) = preferred {
+    if let Some(path) = export_root {
         if path.exists() && !path.is_dir() {
             return Err(format!(
                 "Collection export path is not a directory: {}",
@@ -474,6 +241,230 @@ fn collection_clip_root(
     std::fs::create_dir_all(&fallback)
         .map_err(|err| format!("Failed to create collection clip folder: {err}"))?;
     Ok(fallback)
+}
+
+fn run_clipboard_paste_job(
+    job: ClipboardPasteJob,
+    cancel: Arc<AtomicBool>,
+    sender: Option<&Sender<FileOpMessage>>,
+) -> ClipboardPasteResult {
+    let mut skipped = 0usize;
+    let mut errors = Vec::new();
+    let mut completed = 0usize;
+    let mut cancelled = false;
+    let outcome = match job.kind {
+        ClipboardPasteJobKind::Source {
+            source_id,
+            source_root,
+            target_folder,
+        } => {
+            let mut added = Vec::new();
+            if let Err(err) = validate_relative_folder_path(&target_folder) {
+                errors.push(err);
+            } else if !source_root.is_dir() {
+                errors.push("Source folder is not available".to_string());
+            } else {
+                let target_root = source_root.join(&target_folder);
+                if !target_root.exists() {
+                    if let Err(err) = std::fs::create_dir_all(&target_root) {
+                        errors.push(format!(
+                            "Failed to create folder {}: {err}",
+                            target_root.display()
+                        ));
+                    }
+                } else if !target_root.is_dir() {
+                    errors.push(format!(
+                        "Target folder is not a directory: {}",
+                        target_root.display()
+                    ));
+                }
+                let db = match SourceDatabase::open(&source_root) {
+                    Ok(db) => Some(db),
+                    Err(err) => {
+                        errors.push(format!("Failed to open source DB: {err}"));
+                        None
+                    }
+                };
+                if errors.is_empty() {
+                    for path in job.paths {
+                        if cancel.load(Ordering::Relaxed) {
+                            cancelled = true;
+                            break;
+                        }
+                        let detail = Some(format!("{} {}", job.action_progress, path.display()));
+                        if !path.is_file() || !is_supported_audio(&path) {
+                            skipped += 1;
+                            completed += 1;
+                            report_progress(sender, completed, detail);
+                            continue;
+                        }
+                        let relative_name = match unique_destination_name(&target_root, &path) {
+                            Ok(name) => name,
+                            Err(err) => {
+                                errors.push(err);
+                                completed += 1;
+                                report_progress(sender, completed, detail);
+                                continue;
+                            }
+                        };
+                        let relative = if target_folder.as_os_str().is_empty() {
+                            relative_name
+                        } else {
+                            target_folder.join(relative_name)
+                        };
+                        let absolute = source_root.join(&relative);
+                        if let Err(err) = std::fs::copy(&path, &absolute) {
+                            errors.push(format!(
+                                "Failed to {} {}: {err}",
+                                job.action_label,
+                                path.display()
+                            ));
+                            completed += 1;
+                            report_progress(sender, completed, detail);
+                            continue;
+                        }
+                        let result = (|| -> Result<(u64, i64), String> {
+                            let (file_size, modified_ns) = file_metadata(&absolute)?;
+                            let db = db.as_ref().ok_or_else(|| "Source DB unavailable".to_string())?;
+                            db.upsert_file(&relative, file_size, modified_ns)
+                                .map_err(|err| format!("Failed to register file: {err}"))?;
+                            Ok((file_size, modified_ns))
+                        })();
+                        match result {
+                            Ok((file_size, modified_ns)) => {
+                                added.push(SourcePasteAdded {
+                                    relative_path: relative,
+                                    file_size,
+                                    modified_ns,
+                                });
+                            }
+                            Err(err) => {
+                                if let Err(remove_err) = std::fs::remove_file(&absolute) {
+                                    errors.push(format!(
+                                        "{err}; failed to remove file {}: {remove_err}",
+                                        absolute.display()
+                                    ));
+                                } else {
+                                    errors.push(err);
+                                }
+                            }
+                        }
+                        completed += 1;
+                        report_progress(sender, completed, detail);
+                    }
+                }
+            }
+            ClipboardPasteOutcome::Source { source_id, added }
+        }
+        ClipboardPasteJobKind::Collection {
+            collection_id,
+            export_root,
+        } => {
+            let mut added = Vec::new();
+            let clip_root = match resolve_collection_clip_root(&collection_id, export_root) {
+                Ok(path) => path,
+                Err(err) => {
+                    errors.push(err);
+                    return ClipboardPasteResult {
+                        outcome: ClipboardPasteOutcome::Collection {
+                            collection_id,
+                            clip_root: PathBuf::new(),
+                            added,
+                        },
+                        skipped,
+                        errors,
+                        cancelled,
+                        target_label: job.target_label,
+                        action_past_tense: job.action_past_tense,
+                    };
+                }
+            };
+            let db = match SourceDatabase::open(&clip_root) {
+                Ok(db) => Some(db),
+                Err(err) => {
+                    errors.push(format!("Failed to open collection DB: {err}"));
+                    None
+                }
+            };
+            for path in job.paths {
+                if cancel.load(Ordering::Relaxed) {
+                    cancelled = true;
+                    break;
+                }
+                let detail = Some(format!("{} {}", job.action_progress, path.display()));
+                if !path.is_file() || !is_supported_audio(&path) {
+                    skipped += 1;
+                    completed += 1;
+                    report_progress(sender, completed, detail);
+                    continue;
+                }
+                let relative = match unique_destination_name(&clip_root, &path) {
+                    Ok(name) => name,
+                    Err(err) => {
+                        errors.push(err);
+                        completed += 1;
+                        report_progress(sender, completed, detail);
+                        continue;
+                    }
+                };
+                let absolute = clip_root.join(&relative);
+                if let Err(err) = std::fs::copy(&path, &absolute) {
+                    errors.push(format!(
+                        "Failed to {} {}: {err}",
+                        job.action_label,
+                        path.display()
+                    ));
+                    completed += 1;
+                    report_progress(sender, completed, detail);
+                    continue;
+                }
+                let result = (|| -> Result<(), String> {
+                    let (file_size, modified_ns) = file_metadata(&absolute)?;
+                    let db = db.as_ref().ok_or_else(|| "Collection DB unavailable".to_string())?;
+                    db.upsert_file(&relative, file_size, modified_ns)
+                        .map_err(|err| format!("Failed to register collection file: {err}"))?;
+                    Ok(())
+                })();
+                if let Err(err) = result {
+                    if let Err(remove_err) = std::fs::remove_file(&absolute) {
+                        errors.push(format!(
+                            "{err}; failed to remove file {}: {remove_err}",
+                            absolute.display()
+                        ));
+                    } else {
+                        errors.push(err);
+                    }
+                } else {
+                    added.push(relative);
+                }
+                completed += 1;
+                report_progress(sender, completed, detail);
+            }
+            ClipboardPasteOutcome::Collection {
+                collection_id,
+                clip_root,
+                added,
+            }
+        }
+    };
+    ClipboardPasteResult {
+        outcome,
+        skipped,
+        errors,
+        cancelled,
+        target_label: job.target_label,
+        action_past_tense: job.action_past_tense,
+    }
+}
+
+fn report_progress(
+    sender: Option<&Sender<FileOpMessage>>,
+    completed: usize,
+    detail: Option<String>,
+) {
+    if let Some(tx) = sender {
+        let _ = tx.send(FileOpMessage::Progress { completed, detail });
+    }
 }
 
 #[cfg(test)]

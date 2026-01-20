@@ -7,6 +7,7 @@ pub(crate) mod clipboard;
 pub(crate) mod clipboard_paste;
 pub(crate) mod drag_drop_controller;
 pub(crate) mod feedback_issue;
+pub(crate) mod file_ops;
 pub(crate) mod focus;
 pub(crate) mod hotkeys;
 pub(crate) mod hotkeys_controller;

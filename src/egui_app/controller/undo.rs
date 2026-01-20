@@ -3,9 +3,48 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
+use super::jobs::UndoFileJob;
 use uuid::Uuid;
 
-pub(crate) type UndoResult = Result<(), String>;
+/// Execution result for an undo/redo action.
+pub(crate) enum UndoExecution {
+    /// Action completed immediately.
+    Applied,
+    /// Action should be completed asynchronously by running the provided job.
+    Deferred(UndoFileJob),
+}
+
+/// Result returned by undo/redo closures.
+pub(crate) type UndoResult = Result<UndoExecution, String>;
+
+/// Direction for a deferred undo/redo action.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum UndoDirection {
+    /// Undo action direction.
+    Undo,
+    /// Redo action direction.
+    Redo,
+}
+
+/// Deferred undo/redo action that will complete asynchronously.
+pub(crate) struct DeferredUndo<T> {
+    /// Pending undo/redo entry.
+    pub(crate) entry: UndoEntry<T>,
+    /// Direction to apply when the job completes.
+    pub(crate) direction: UndoDirection,
+    /// Job request to run on a background worker.
+    pub(crate) job: UndoFileJob,
+}
+
+/// Outcome of an undo/redo request.
+pub(crate) enum UndoOutcome<T> {
+    /// No undo/redo entry was available.
+    Empty,
+    /// Action applied immediately with this label.
+    Applied(String),
+    /// Action deferred until background completion.
+    Deferred(DeferredUndo<T>),
+}
 
 pub(crate) struct UndoEntry<T> {
     pub(crate) label: String,
@@ -57,16 +96,21 @@ impl<T> UndoStack<T> {
         }
     }
 
-    pub(crate) fn undo(&mut self, target: &mut T) -> Result<Option<String>, String> {
+    pub(crate) fn undo(&mut self, target: &mut T) -> Result<UndoOutcome<T>, String> {
         let Some(entry) = self.undo.pop_back() else {
-            return Ok(None);
+            return Ok(UndoOutcome::Empty);
         };
         let label = entry.label.clone();
         match (entry.undo)(target) {
-            Ok(()) => {
+            Ok(UndoExecution::Applied) => {
                 self.redo.push_back(entry);
-                Ok(Some(label))
+                Ok(UndoOutcome::Applied(label))
             }
+            Ok(UndoExecution::Deferred(job)) => Ok(UndoOutcome::Deferred(DeferredUndo {
+                entry,
+                direction: UndoDirection::Undo,
+                job,
+            })),
             Err(err) => {
                 self.undo.push_back(entry);
                 Err(err)
@@ -74,21 +118,44 @@ impl<T> UndoStack<T> {
         }
     }
 
-    pub(crate) fn redo(&mut self, target: &mut T) -> Result<Option<String>, String> {
+    pub(crate) fn redo(&mut self, target: &mut T) -> Result<UndoOutcome<T>, String> {
         let Some(entry) = self.redo.pop_back() else {
-            return Ok(None);
+            return Ok(UndoOutcome::Empty);
         };
         let label = entry.label.clone();
         match (entry.redo)(target) {
-            Ok(()) => {
+            Ok(UndoExecution::Applied) => {
                 self.undo.push_back(entry);
-                Ok(Some(label))
+                Ok(UndoOutcome::Applied(label))
             }
+            Ok(UndoExecution::Deferred(job)) => Ok(UndoOutcome::Deferred(DeferredUndo {
+                entry,
+                direction: UndoDirection::Redo,
+                job,
+            })),
             Err(err) => {
                 self.redo.push_back(entry);
                 Err(err)
             }
         }
+    }
+
+    /// Restore a popped entry back onto the undo stack.
+    pub(crate) fn restore_undo_entry(&mut self, entry: UndoEntry<T>) {
+        self.undo.push_back(entry);
+        while self.undo.len() > self.limit {
+            self.undo.pop_front();
+        }
+    }
+
+    /// Restore a popped entry back onto the redo stack.
+    pub(crate) fn restore_redo_entry(&mut self, entry: UndoEntry<T>) {
+        self.redo.push_back(entry);
+    }
+
+    /// Push a completed deferred entry onto the redo stack.
+    pub(crate) fn push_redo_entry(&mut self, entry: UndoEntry<T>) {
+        self.redo.push_back(entry);
     }
 }
 
@@ -155,23 +222,32 @@ mod tests {
                 format!("set {i}"),
                 move |c: &mut Counter| {
                     c.value = before;
-                    Ok(())
+                    Ok(UndoExecution::Applied)
                 },
                 move |c: &mut Counter| {
                     c.value = i;
-                    Ok(())
+                    Ok(UndoExecution::Applied)
                 },
             ));
         }
 
         assert_eq!(counter.value, 4);
-        assert_eq!(stack.undo(&mut counter).unwrap(), Some("set 4".into()));
+        assert!(matches!(
+            stack.undo(&mut counter).unwrap(),
+            UndoOutcome::Applied(label) if label == "set 4"
+        ));
         assert_eq!(counter.value, 3);
-        assert_eq!(stack.undo(&mut counter).unwrap(), Some("set 3".into()));
+        assert!(matches!(
+            stack.undo(&mut counter).unwrap(),
+            UndoOutcome::Applied(label) if label == "set 3"
+        ));
         assert_eq!(counter.value, 2);
-        assert_eq!(stack.undo(&mut counter).unwrap(), Some("set 2".into()));
+        assert!(matches!(
+            stack.undo(&mut counter).unwrap(),
+            UndoOutcome::Applied(label) if label == "set 2"
+        ));
         assert_eq!(counter.value, 1);
-        assert_eq!(stack.undo(&mut counter).unwrap(), None);
+        assert!(matches!(stack.undo(&mut counter).unwrap(), UndoOutcome::Empty));
         assert_eq!(counter.value, 1);
     }
 
@@ -183,17 +259,17 @@ mod tests {
         counter.value = 1;
         stack.push(UndoEntry::new(
             "set 1",
-            |c: &mut Counter| {
-                c.value = 0;
-                Ok(())
-            },
-            |c: &mut Counter| {
-                c.value = 1;
-                Ok(())
-            },
-        ));
+                |c: &mut Counter| {
+                    c.value = 0;
+                    Ok(UndoExecution::Applied)
+                },
+                |c: &mut Counter| {
+                    c.value = 1;
+                    Ok(UndoExecution::Applied)
+                },
+            ));
 
-        assert_eq!(stack.redo(&mut counter).unwrap(), None);
+        assert!(matches!(stack.redo(&mut counter).unwrap(), UndoOutcome::Empty));
 
         stack.undo(&mut counter).unwrap();
         assert_eq!(counter.value, 0);
@@ -201,16 +277,16 @@ mod tests {
         counter.value = 2;
         stack.push(UndoEntry::new(
             "set 2",
-            |c: &mut Counter| {
-                c.value = 1;
-                Ok(())
-            },
-            |c: &mut Counter| {
-                c.value = 2;
-                Ok(())
-            },
-        ));
+                |c: &mut Counter| {
+                    c.value = 1;
+                    Ok(UndoExecution::Applied)
+                },
+                |c: &mut Counter| {
+                    c.value = 2;
+                    Ok(UndoExecution::Applied)
+                },
+            ));
 
-        assert_eq!(stack.redo(&mut counter).unwrap(), None);
+        assert!(matches!(stack.redo(&mut counter).unwrap(), UndoOutcome::Empty));
     }
 }

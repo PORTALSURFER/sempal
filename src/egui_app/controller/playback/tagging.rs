@@ -82,7 +82,7 @@ pub(crate) fn tag_selected(controller: &mut EguiController, target: crate::sampl
                         controller.focus_browser_row_only(row);
                     }
                 }
-                Ok(())
+                Ok(super::undo::UndoExecution::Applied)
             },
             move |controller: &mut EguiController| {
                 for (source_id, path, tag) in redo_updates.iter() {
@@ -95,7 +95,7 @@ pub(crate) fn tag_selected(controller: &mut EguiController, target: crate::sampl
                         .ok_or_else(|| "Source not available".to_string())?;
                     controller.set_sample_tag_for_source(&source, path, *tag, false)?;
                 }
-                Ok(())
+                Ok(super::undo::UndoExecution::Applied)
             },
         ));
     }
@@ -235,7 +235,7 @@ pub(crate) fn adjust_selected_rating(controller: &mut EguiController, delta: i8)
                          controller.focus_browser_row_only(row);
                      }
                 }
-                Ok(())
+                Ok(super::undo::UndoExecution::Applied)
             },
             move |controller: &mut EguiController| {
                  for (source_id, path, tag) in redo_updates.iter() {
@@ -248,7 +248,7 @@ pub(crate) fn adjust_selected_rating(controller: &mut EguiController, delta: i8)
                         .ok_or_else(|| "Source not available".to_string())?;
                     controller.set_sample_tag_for_source(&source, path, *tag, false)?;
                 }
-                Ok(())
+                Ok(super::undo::UndoExecution::Applied)
             },
         ));
     }
