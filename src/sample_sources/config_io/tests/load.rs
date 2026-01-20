@@ -1,5 +1,5 @@
-use super::super::config_defaults::MAX_ANALYSIS_WORKER_COUNT;
-use super::super::config_types::AppSettings;
+use super::super::super::config_defaults::MAX_ANALYSIS_WORKER_COUNT;
+use super::super::super::config_types::AppSettings;
 use super::super::CONFIG_FILE_NAME;
 use super::super::load::{apply_app_data_dir, load_settings_from};
 use super::super::save::save_settings_to_path;
