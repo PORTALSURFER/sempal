@@ -13,6 +13,12 @@ pub struct ScanStats {
     pub total_files: usize,
     /// Number of files with changed content hashes.
     pub content_changed: usize,
+    /// Number of files whose content hashes were computed during the scan.
+    pub hashes_computed: usize,
+    /// Number of files whose content hashes were deferred during the scan.
+    pub hashes_pending: usize,
+    /// Number of missing rows reconciled to renamed files.
+    pub renames_reconciled: usize,
     /// Detailed list of changed samples.
     pub changed_samples: Vec<ChangedSample>,
 }

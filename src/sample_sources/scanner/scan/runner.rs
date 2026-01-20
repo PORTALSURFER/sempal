@@ -13,6 +13,7 @@ use super::{ScanContext, ScanError, ScanStats};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScanMode {
     /// Update the database with new/modified files and mark missing entries.
+    /// Full hashing is staged for large files to keep quick scans responsive.
     Quick,
     /// Force a full rescan, pruning missing rows to rebuild state from disk.
     Hard,
@@ -59,6 +60,8 @@ fn scan(
 pub fn scan_in_background(root: PathBuf) -> thread::JoinHandle<Result<ScanStats, ScanError>> {
     thread::spawn(move || {
         let db = SourceDatabase::open(root)?;
-        scan_once(&db)
+        let stats = scan_once(&db)?;
+        let _ = super::super::scan_hash::deep_hash_scan(&db, None)?;
+        Ok(stats)
     })
 }

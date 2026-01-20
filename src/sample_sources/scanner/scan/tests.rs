@@ -185,6 +185,49 @@ fn scan_detects_rename_and_preserves_tag() {
 }
 
 #[test]
+fn quick_scan_defers_hash_for_large_file() {
+    let dir = tempdir().unwrap();
+    let file_path = dir.path().join("large.wav");
+    std::fs::write(&file_path, vec![0u8; 9 * 1024 * 1024]).unwrap();
+
+    let db = SourceDatabase::open(dir.path()).unwrap();
+    let stats = scan_once(&db).unwrap();
+    assert_eq!(stats.hashes_pending, 1);
+    assert_eq!(stats.hashes_computed, 0);
+
+    let rows = db.list_files().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0].content_hash.is_none());
+}
+
+#[test]
+fn deep_hash_scan_reconciles_rename_after_quick_scan() {
+    let dir = tempdir().unwrap();
+    let first_path = dir.path().join("one.wav");
+    let second_path = dir.path().join("two.wav");
+    std::fs::write(&first_path, vec![0u8; 9 * 1024 * 1024]).unwrap();
+
+    let db = SourceDatabase::open(dir.path()).unwrap();
+    hard_rescan(&db).unwrap();
+    db.set_tag(Path::new("one.wav"), Rating::KEEP_1).unwrap();
+
+    std::fs::rename(&first_path, &second_path).unwrap();
+    let stats = scan_once(&db).unwrap();
+    assert_eq!(stats.renames_reconciled, 0);
+
+    let deep_stats = super::super::scan_hash::deep_hash_scan(&db, None).unwrap();
+    assert_eq!(deep_stats.hashes_computed, 1);
+    assert_eq!(deep_stats.renames_reconciled, 1);
+
+    let rows = db.list_files().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].relative_path, PathBuf::from("two.wav"));
+    assert_eq!(rows[0].tag, Rating::KEEP_1);
+    assert!(!rows[0].missing);
+    assert!(rows[0].content_hash.is_some());
+}
+
+#[test]
 fn hard_rescan_prunes_missing_files_with_tags() {
     let dir = tempdir().unwrap();
     let file_path = dir.path().join("one.wav");

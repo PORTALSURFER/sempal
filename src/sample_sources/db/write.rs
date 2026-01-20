@@ -182,6 +182,43 @@ impl<'conn> SourceWriteBatch<'conn> {
         Ok(())
     }
 
+    /// Insert or update a wav file row while clearing any stored content hash.
+    pub fn upsert_file_without_hash(
+        &mut self,
+        relative_path: &Path,
+        file_size: u64,
+        modified_ns: i64,
+    ) -> Result<(), SourceDbError> {
+        let path = normalize_relative_path(relative_path)?;
+        let extension = relative_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        self.tx
+            .prepare_cached(
+                "INSERT INTO wav_files (path, file_size, modified_ns, content_hash, tag, looped, missing, extension)
+                 VALUES (?1, ?2, ?3, NULL, ?4, ?5, ?6, ?7)
+                 ON CONFLICT(path) DO UPDATE SET file_size = excluded.file_size,
+                                                modified_ns = excluded.modified_ns,
+                                                content_hash = NULL,
+                                                missing = excluded.missing,
+                                                extension = excluded.extension",
+            )
+            .map_err(map_sql_error)?
+            .execute(params![
+                path,
+                file_size as i64,
+                modified_ns,
+                Rating::NEUTRAL.as_i64(),
+                0i64,
+                0i64,
+                extension
+            ])
+            .map_err(map_sql_error)?;
+        Ok(())
+    }
+
     /// Insert or update a wav file row, including the content hash.
     pub fn upsert_file_with_hash(
         &mut self,

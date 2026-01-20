@@ -9,6 +9,8 @@ use crate::sample_sources::db::{SourceWriteBatch, WavEntry};
 use super::scan::{ChangedSample, ScanError, ScanMode, ScanStats};
 use super::scan_fs::{FileFacts, compute_content_hash};
 
+const QUICK_HASH_MAX_BYTES: u64 = 8 * 1024 * 1024;
+
 pub(super) fn index_by_hash(
     existing: &HashMap<PathBuf, WavEntry>,
 ) -> HashMap<String, Vec<PathBuf>> {
@@ -31,50 +33,76 @@ pub(super) fn apply_diff(
     existing_by_hash: &mut HashMap<String, Vec<PathBuf>>,
     stats: &mut ScanStats,
     root: &Path,
+    mode: ScanMode,
     cancel: Option<&AtomicBool>,
 ) -> Result<(), ScanError> {
     let path = facts.relative.clone();
+    let should_hash = should_compute_full_hash(mode, facts.size);
     match existing.remove(&path) {
         Some(entry) if entry.file_size == facts.size && entry.modified_ns == facts.modified_ns => {
             remove_from_hash_index(existing_by_hash, entry.content_hash.as_deref(), &path);
             if entry.missing {
                 batch.set_missing(&path, false)?;
             }
+            if entry.content_hash.is_none() {
+                if should_hash {
+                    let absolute = root.join(&path);
+                    let hash = compute_content_hash(&absolute, cancel)?;
+                    batch.upsert_file_with_hash(&path, facts.size, facts.modified_ns, &hash)?;
+                    stats.hashes_computed += 1;
+                } else {
+                    stats.hashes_pending += 1;
+                }
+            }
         }
         Some(entry) => {
             remove_from_hash_index(existing_by_hash, entry.content_hash.as_deref(), &path);
             let absolute = root.join(&path);
-            let hash = compute_content_hash(&absolute, cancel)?;
             let previous_hash = entry.content_hash.as_deref();
-            batch.upsert_file_with_hash(&path, facts.size, facts.modified_ns, &hash)?;
-            if previous_hash != Some(hash.as_str()) {
+            if should_hash {
+                let hash = compute_content_hash(&absolute, cancel)?;
+                batch.upsert_file_with_hash(&path, facts.size, facts.modified_ns, &hash)?;
+                stats.hashes_computed += 1;
+                if previous_hash != Some(hash.as_str()) {
+                    stats.content_changed += 1;
+                    stats.changed_samples.push(ChangedSample {
+                        relative_path: path.clone(),
+                        file_size: facts.size,
+                        modified_ns: facts.modified_ns,
+                        content_hash: hash,
+                    });
+                }
+            } else {
+                batch.upsert_file_without_hash(&path, facts.size, facts.modified_ns)?;
+                stats.hashes_pending += 1;
+            }
+            stats.updated += 1;
+        }
+        None => {
+            let absolute = root.join(&path);
+            if should_hash {
+                let hash = compute_content_hash(&absolute, cancel)?;
+                if let Some(entry) = take_rename_candidate(existing, existing_by_hash, &hash) {
+                    apply_rename(batch, &path, &facts, &hash, entry)?;
+                    stats.updated += 1;
+                    stats.renames_reconciled += 1;
+                    return Ok(());
+                }
+                batch.upsert_file_with_hash(&path, facts.size, facts.modified_ns, &hash)?;
+                stats.added += 1;
                 stats.content_changed += 1;
+                stats.hashes_computed += 1;
                 stats.changed_samples.push(ChangedSample {
                     relative_path: path.clone(),
                     file_size: facts.size,
                     modified_ns: facts.modified_ns,
                     content_hash: hash,
                 });
+            } else {
+                batch.upsert_file_without_hash(&path, facts.size, facts.modified_ns)?;
+                stats.added += 1;
+                stats.hashes_pending += 1;
             }
-            stats.updated += 1;
-        }
-        None => {
-            let absolute = root.join(&path);
-            let hash = compute_content_hash(&absolute, cancel)?;
-            if let Some(entry) = take_rename_candidate(existing, existing_by_hash, &hash) {
-                apply_rename(batch, &path, &facts, &hash, entry)?;
-                stats.updated += 1;
-                return Ok(());
-            }
-            batch.upsert_file_with_hash(&path, facts.size, facts.modified_ns, &hash)?;
-            stats.added += 1;
-            stats.content_changed += 1;
-            stats.changed_samples.push(ChangedSample {
-                relative_path: path.clone(),
-                file_size: facts.size,
-                modified_ns: facts.modified_ns,
-                content_hash: hash,
-            });
         }
     }
     Ok(())
@@ -159,5 +187,12 @@ fn remove_from_hash_index(
         if paths.is_empty() {
             existing_by_hash.remove(hash);
         }
+    }
+}
+
+fn should_compute_full_hash(mode: ScanMode, size: u64) -> bool {
+    match mode {
+        ScanMode::Quick => size <= QUICK_HASH_MAX_BYTES,
+        ScanMode::Hard => true,
     }
 }

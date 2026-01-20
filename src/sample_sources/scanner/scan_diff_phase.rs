@@ -22,6 +22,7 @@ pub(super) fn diff_phase(
         &mut context.existing_by_hash,
         &mut context.stats,
         root,
+        context.mode,
         cancel,
     )?;
     context.stats.total_files += 1;
