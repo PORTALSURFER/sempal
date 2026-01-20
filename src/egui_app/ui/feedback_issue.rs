@@ -146,12 +146,22 @@ impl EguiApp {
                 }
                 let token_valid = state.token_input.trim().len() >= 20;
                 if ui
-                    .add_enabled(token_valid, egui::Button::new("Save"))
+                    .add_enabled(
+                        token_valid && !state.token_saving && !state.token_deleting,
+                        egui::Button::new("Save"),
+                    )
                     .clicked()
                 {
                     save_clicked = true;
                 }
             });
+            if state.token_saving {
+                ui.add_space(6.0);
+                ui.label(RichText::new("Saving token…").color(palette.text_muted));
+            } else if state.token_deleting {
+                ui.add_space(6.0);
+                ui.label(RichText::new("Removing token…").color(palette.text_muted));
+            }
             (cancel_clicked, save_clicked, state.token_input.clone())
         };
 
@@ -195,25 +205,35 @@ impl EguiApp {
                 self.controller.disconnect_github_issue_reporting();
             }
         });
-        let connecting = self.controller.ui.feedback_issue.connecting 
-            || self.controller.is_issue_gateway_poll_in_progress();
+        let state = &self.controller.ui.feedback_issue;
+        let connecting = state.connecting || self.controller.is_issue_gateway_poll_in_progress();
+        let token_busy = state.token_loading || state.token_saving || state.token_deleting;
 
         if connecting {
             ui.label(RichText::new("Status: connecting…").color(palette.text_muted));
+        } else if token_busy {
+            ui.label(RichText::new("Status: updating token…").color(palette.text_muted));
         } else {
-            match crate::issue_gateway::IssueTokenStore::new().and_then(|store| store.get()) {
-                Ok(Some(_)) => ui.label(
-                    RichText::new("Status: connected")
-                        .color(style::status_badge_color(style::StatusTone::Info)),
-                ),
-                Ok(None) => {
-                    ui.label(RichText::new("Status: not connected").color(palette.text_muted))
+            match &state.token_status {
+                crate::egui_app::state::IssueTokenStatus::Connected => {
+                    ui.label(
+                        RichText::new("Status: connected")
+                            .color(style::status_badge_color(style::StatusTone::Info)),
+                    );
                 }
-                Err(err) => ui.label(
-                    RichText::new(format!("Status: token store error ({err})"))
-                        .color(style::status_badge_color(style::StatusTone::Warning)),
-                ),
-            };
+                crate::egui_app::state::IssueTokenStatus::NotConnected => {
+                    ui.label(RichText::new("Status: not connected").color(palette.text_muted));
+                }
+                crate::egui_app::state::IssueTokenStatus::Error(err) => {
+                    ui.label(
+                        RichText::new(format!("Status: token store error ({err})"))
+                            .color(style::status_badge_color(style::StatusTone::Warning)),
+                    );
+                }
+                crate::egui_app::state::IssueTokenStatus::Unknown => {
+                    ui.label(RichText::new("Status: checking…").color(palette.text_muted));
+                }
+            }
         }
 
         if let Some(err) = self.controller.ui.feedback_issue.last_error.as_ref() {

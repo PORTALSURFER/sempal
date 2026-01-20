@@ -223,6 +223,15 @@ impl EguiController {
                 JobMessage::IssueGatewayAuthed(message) => {
                     updates::handle_issue_gateway_authed(self, message);
                 }
+                JobMessage::IssueTokenLoaded(message) => {
+                    updates::handle_issue_token_loaded(self, message);
+                }
+                JobMessage::IssueTokenSaved(message) => {
+                    updates::handle_issue_token_saved(self, message);
+                }
+                JobMessage::IssueTokenDeleted(message) => {
+                    updates::handle_issue_token_deleted(self, message);
+                }
                 JobMessage::BrowserSearchFinished(message) => {
                     if Some(&message.source_id) == self.selection_state.ctx.selected_source.as_ref()
                         && message.query == self.ui.browser.search_query

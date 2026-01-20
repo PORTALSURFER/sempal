@@ -1,5 +1,11 @@
 use super::*;
-use crate::egui_app::controller::jobs::{IssueGatewayAuthResult, IssueGatewayCreateResult};
+use crate::egui_app::controller::jobs::{
+    IssueGatewayAuthResult,
+    IssueGatewayCreateResult,
+    IssueTokenDeleteResult,
+    IssueTokenLoadResult,
+    IssueTokenSaveResult,
+};
 
 pub(crate) fn handle_update_checked(controller: &mut EguiController, message: UpdateCheckResult) {
     controller.runtime.jobs.clear_update_check();
@@ -41,9 +47,8 @@ pub(crate) fn handle_issue_gateway_created(
                 err,
                 crate::issue_gateway::api::CreateIssueError::Unauthorized
             ) {
-                if let Ok(store) = crate::issue_gateway::IssueTokenStore::new() {
-                    let _ = store.delete();
-                }
+                controller.ui.feedback_issue.token_deleting = true;
+                controller.runtime.jobs.begin_issue_token_delete();
                 controller.ui.feedback_issue.token_modal_open = true;
                 controller.ui.feedback_issue.focus_token_requested = true;
                 controller.ui.feedback_issue.last_error =
@@ -65,4 +70,91 @@ pub(crate) fn handle_issue_gateway_authed(
 ) {
     controller.runtime.jobs.clear_issue_gateway_auth();
     controller.complete_issue_gateway_auth(message.result);
+}
+
+/// Apply token load results to the feedback issue UI state.
+pub(crate) fn handle_issue_token_loaded(
+    controller: &mut EguiController,
+    message: IssueTokenLoadResult,
+) {
+    controller.runtime.jobs.clear_issue_token_load();
+    controller.ui.feedback_issue.token_loading = false;
+    match message.result {
+        Ok(Some(token)) => {
+            controller.ui.feedback_issue.token_cached = Some(token);
+            controller.ui.feedback_issue.token_status =
+                crate::egui_app::state::IssueTokenStatus::Connected;
+        }
+        Ok(None) => {
+            controller.ui.feedback_issue.token_cached = None;
+            controller.ui.feedback_issue.token_status =
+                crate::egui_app::state::IssueTokenStatus::NotConnected;
+            if controller.ui.feedback_issue.open {
+                controller.connect_github_issue_reporting();
+            }
+        }
+        Err(err) => {
+            controller.ui.feedback_issue.token_cached = None;
+            controller.ui.feedback_issue.token_status =
+                crate::egui_app::state::IssueTokenStatus::Error(err.to_string());
+            controller.ui.feedback_issue.last_error = Some(err.to_string());
+        }
+    }
+}
+
+/// Apply token save results to the feedback issue UI state.
+pub(crate) fn handle_issue_token_saved(
+    controller: &mut EguiController,
+    message: IssueTokenSaveResult,
+) {
+    controller.runtime.jobs.clear_issue_token_save();
+    controller.ui.feedback_issue.token_saving = false;
+    match message.result {
+        Ok(()) => {
+            controller.ui.feedback_issue.token_cached = Some(message.token);
+            controller.ui.feedback_issue.token_status =
+                crate::egui_app::state::IssueTokenStatus::Connected;
+            controller.ui.feedback_issue.token_modal_open = false;
+            controller.ui.feedback_issue.token_input.clear();
+            controller.ui.feedback_issue.token_autofill_last = None;
+            controller.set_status(
+                "GitHub connected for issue reporting".to_string(),
+                crate::egui_app::ui::style::StatusTone::Info,
+            );
+        }
+        Err(err) => {
+            controller.ui.feedback_issue.token_status =
+                crate::egui_app::state::IssueTokenStatus::Error(err.to_string());
+            controller.ui.feedback_issue.last_error = Some(err.to_string());
+            if message.reopen_modal {
+                controller.ui.feedback_issue.token_modal_open = true;
+                controller.ui.feedback_issue.focus_token_requested = true;
+            }
+        }
+    }
+}
+
+/// Apply token delete results to the feedback issue UI state.
+pub(crate) fn handle_issue_token_deleted(
+    controller: &mut EguiController,
+    message: IssueTokenDeleteResult,
+) {
+    controller.runtime.jobs.clear_issue_token_delete();
+    controller.ui.feedback_issue.token_deleting = false;
+    match message.result {
+        Ok(()) => {
+            controller.ui.feedback_issue.token_cached = None;
+            controller.ui.feedback_issue.token_status =
+                crate::egui_app::state::IssueTokenStatus::NotConnected;
+            controller.set_status(
+                "GitHub disconnected".to_string(),
+                crate::egui_app::ui::style::StatusTone::Info,
+            );
+        }
+        Err(err) => {
+            controller.ui.feedback_issue.token_status =
+                crate::egui_app::state::IssueTokenStatus::Error(err.to_string());
+            controller.ui.feedback_issue.last_error = Some(err.to_string());
+        }
+    }
 }

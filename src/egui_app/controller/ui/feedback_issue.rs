@@ -8,13 +8,9 @@ impl EguiController {
         self.ui.feedback_issue.last_success_url = None;
         self.ui.feedback_issue.token_autofill_last = None;
         self.ui.feedback_issue.connecting = false;
-        match crate::issue_gateway::IssueTokenStore::new().and_then(|store| store.get()) {
-            Ok(Some(_)) => {}
-            Ok(None) => self.connect_github_issue_reporting(),
-            Err(err) => {
-                self.ui.feedback_issue.last_error = Some(err.to_string());
-            }
-        }
+        self.ui.feedback_issue.token_status = crate::egui_app::state::IssueTokenStatus::Unknown;
+        self.ui.feedback_issue.token_cached = None;
+        self.start_issue_token_load();
     }
 
     pub(crate) fn close_feedback_issue_prompt(&mut self) {
@@ -64,10 +60,12 @@ impl EguiController {
     }
 
     pub(crate) fn disconnect_github_issue_reporting(&mut self) {
-        if let Ok(store) = crate::issue_gateway::IssueTokenStore::new() {
-            let _ = store.delete();
+        if self.ui.feedback_issue.token_deleting {
+            return;
         }
-        self.set_status("GitHub disconnected", StatusTone::Info);
+        self.ui.feedback_issue.token_deleting = true;
+        self.ui.feedback_issue.last_error = None;
+        self.runtime.jobs.begin_issue_token_delete();
     }
 
     pub(crate) fn submit_feedback_issue(&mut self, kind: crate::issue_gateway::api::IssueKind) {
@@ -79,23 +77,21 @@ impl EguiController {
             self.ui.feedback_issue.last_error = Some("Title must be 3–200 characters.".to_string());
             return;
         }
-        let store = match crate::issue_gateway::IssueTokenStore::new() {
-            Ok(store) => store,
-            Err(err) => {
-                self.ui.feedback_issue.last_error = Some(err.to_string());
-                return;
-            }
-        };
-        let token = match store.get() {
-            Ok(Some(token)) => token,
-            Ok(None) => {
-                self.ui.feedback_issue.last_error = Some("Connect GitHub first.".to_string());
-                self.ui.feedback_issue.token_modal_open = true;
-                self.ui.feedback_issue.focus_token_requested = true;
-                return;
-            }
-            Err(err) => {
-                self.ui.feedback_issue.last_error = Some(err.to_string());
+        let token = match self.ui.feedback_issue.token_cached.clone() {
+            Some(token) => token,
+            None => {
+                let loading = self.ui.feedback_issue.token_loading
+                    || self.ui.feedback_issue.token_saving
+                    || self.ui.feedback_issue.token_deleting;
+                if loading {
+                    self.ui.feedback_issue.last_error =
+                        Some("GitHub token is still loading. Try again.".to_string());
+                } else {
+                    self.ui.feedback_issue.last_error =
+                        Some("Connect GitHub first.".to_string());
+                    self.ui.feedback_issue.token_modal_open = true;
+                    self.ui.feedback_issue.focus_token_requested = true;
+                }
                 return;
             }
         };
@@ -176,25 +172,23 @@ impl EguiController {
                 Some("Invalid token (must be at least 20 characters).".to_string());
             return false;
         }
-        let store = match crate::issue_gateway::IssueTokenStore::new() {
-            Ok(store) => store,
-            Err(err) => {
-                self.ui.feedback_issue.last_error = Some(err.to_string());
-                return false;
-            }
-        };
-        if let Err(err) = store.set_and_verify(token) {
-            self.ui.feedback_issue.last_error = Some(err.to_string());
-            if reopen_modal {
-                self.ui.feedback_issue.token_modal_open = true;
-                self.ui.feedback_issue.focus_token_requested = true;
-            }
+        if self.ui.feedback_issue.token_saving {
             return false;
         }
-        self.ui.feedback_issue.token_modal_open = false;
-        self.ui.feedback_issue.token_input.clear();
-        self.ui.feedback_issue.token_autofill_last = None;
-        self.set_status("GitHub connected for issue reporting", StatusTone::Info);
+        self.ui.feedback_issue.last_error = None;
+        self.ui.feedback_issue.token_saving = true;
+        self.runtime.jobs.begin_issue_token_save(super::jobs::IssueTokenSaveJob {
+            token: token.to_string(),
+            reopen_modal,
+        });
         true
+    }
+
+    fn start_issue_token_load(&mut self) {
+        if self.ui.feedback_issue.token_loading {
+            return;
+        }
+        self.ui.feedback_issue.token_loading = true;
+        self.runtime.jobs.begin_issue_token_load();
     }
 }

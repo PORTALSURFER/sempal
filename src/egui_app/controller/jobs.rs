@@ -36,6 +36,9 @@ pub(crate) enum JobMessage {
     UpdateChecked(UpdateCheckResult),
     IssueGatewayCreated(IssueGatewayCreateResult),
     IssueGatewayAuthed(IssueGatewayAuthResult),
+    IssueTokenLoaded(IssueTokenLoadResult),
+    IssueTokenSaved(IssueTokenSaveResult),
+    IssueTokenDeleted(IssueTokenDeleteResult),
     BrowserSearchFinished(SearchResult),
     Normalized(NormalizationResult),
 }
@@ -85,6 +88,33 @@ pub(crate) struct IssueGatewayCreateResult {
 #[derive(Debug)]
 pub(crate) struct IssueGatewayAuthResult {
     pub(crate) result: Result<String, crate::issue_gateway::api::IssueAuthError>,
+}
+
+/// Request to save a GitHub issue token to persistent storage.
+#[derive(Debug)]
+pub(crate) struct IssueTokenSaveJob {
+    pub(crate) token: String,
+    pub(crate) reopen_modal: bool,
+}
+
+/// Result from attempting to load a GitHub issue token.
+#[derive(Debug)]
+pub(crate) struct IssueTokenLoadResult {
+    pub(crate) result: Result<Option<String>, crate::issue_gateway::IssueTokenStoreError>,
+}
+
+/// Result from attempting to save a GitHub issue token.
+#[derive(Debug)]
+pub(crate) struct IssueTokenSaveResult {
+    pub(crate) token: String,
+    pub(crate) reopen_modal: bool,
+    pub(crate) result: Result<(), crate::issue_gateway::IssueTokenStoreError>,
+}
+
+/// Result from attempting to delete a GitHub issue token.
+#[derive(Debug)]
+pub(crate) struct IssueTokenDeleteResult {
+    pub(crate) result: Result<(), crate::issue_gateway::IssueTokenStoreError>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -252,6 +282,9 @@ pub(crate) struct ControllerJobs {
     pub(super) issue_gateway_auth_in_progress: bool,
     pub(super) issue_gateway_poll_in_progress: bool,
     pub(super) issue_gateway_poll_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
+    pub(super) issue_token_load_in_progress: bool,
+    pub(super) issue_token_save_in_progress: bool,
+    pub(super) issue_token_delete_in_progress: bool,
     pub(super) repaint_signal: Arc<Mutex<Option<egui::Context>>>,
 }
 
@@ -291,6 +324,9 @@ impl ControllerJobs {
             issue_gateway_auth_in_progress: false,
             issue_gateway_poll_in_progress: false,
             issue_gateway_poll_cancel: None,
+            issue_token_load_in_progress: false,
+            issue_token_save_in_progress: false,
+            issue_token_delete_in_progress: false,
             repaint_signal: Arc::new(Mutex::new(None)),
         };
         jobs.forward_wav_results(wav_job_rx);
@@ -663,6 +699,89 @@ impl ControllerJobs {
         if let Some(cancel) = self.issue_gateway_poll_cancel.take() {
             cancel.store(true, std::sync::atomic::Ordering::Relaxed);
         }
+    }
+
+    /// Begin loading the persisted GitHub issue token on a background thread.
+    pub(super) fn begin_issue_token_load(&mut self) {
+        if self.issue_token_load_in_progress {
+            return;
+        }
+        self.issue_token_load_in_progress = true;
+        let tx = self.message_tx.clone();
+        let signal = self.repaint_signal.clone();
+        thread::spawn(move || {
+            let result = crate::issue_gateway::IssueTokenStore::new()
+                .and_then(|store| store.get());
+            let _ = tx.send(JobMessage::IssueTokenLoaded(IssueTokenLoadResult {
+                result,
+            }));
+            if let Ok(lock) = signal.lock() {
+                if let Some(ctx) = lock.as_ref() {
+                    ctx.request_repaint();
+                }
+            }
+        });
+    }
+
+    /// Clear the in-progress flag for issue token loads.
+    pub(super) fn clear_issue_token_load(&mut self) {
+        self.issue_token_load_in_progress = false;
+    }
+
+    /// Begin persisting a GitHub issue token on a background thread.
+    pub(super) fn begin_issue_token_save(&mut self, job: IssueTokenSaveJob) {
+        if self.issue_token_save_in_progress {
+            return;
+        }
+        self.issue_token_save_in_progress = true;
+        let tx = self.message_tx.clone();
+        let signal = self.repaint_signal.clone();
+        thread::spawn(move || {
+            let result = crate::issue_gateway::IssueTokenStore::new()
+                .and_then(|store| store.set_and_verify(&job.token));
+            let _ = tx.send(JobMessage::IssueTokenSaved(IssueTokenSaveResult {
+                token: job.token,
+                reopen_modal: job.reopen_modal,
+                result,
+            }));
+            if let Ok(lock) = signal.lock() {
+                if let Some(ctx) = lock.as_ref() {
+                    ctx.request_repaint();
+                }
+            }
+        });
+    }
+
+    /// Clear the in-progress flag for issue token saves.
+    pub(super) fn clear_issue_token_save(&mut self) {
+        self.issue_token_save_in_progress = false;
+    }
+
+    /// Begin deleting the persisted GitHub issue token on a background thread.
+    pub(super) fn begin_issue_token_delete(&mut self) {
+        if self.issue_token_delete_in_progress {
+            return;
+        }
+        self.issue_token_delete_in_progress = true;
+        let tx = self.message_tx.clone();
+        let signal = self.repaint_signal.clone();
+        thread::spawn(move || {
+            let result = crate::issue_gateway::IssueTokenStore::new()
+                .and_then(|store| store.delete());
+            let _ = tx.send(JobMessage::IssueTokenDeleted(IssueTokenDeleteResult {
+                result,
+            }));
+            if let Ok(lock) = signal.lock() {
+                if let Some(ctx) = lock.as_ref() {
+                    ctx.request_repaint();
+                }
+            }
+        });
+    }
+
+    /// Clear the in-progress flag for issue token deletes.
+    pub(super) fn clear_issue_token_delete(&mut self) {
+        self.issue_token_delete_in_progress = false;
     }
 
     pub(super) fn begin_normalization(&mut self, job: NormalizationJob) {

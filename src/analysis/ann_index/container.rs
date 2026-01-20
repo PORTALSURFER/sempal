@@ -10,6 +10,7 @@ const ANN_CONTAINER_VERSION: u32 = 1;
 const ANN_CONTAINER_CHECKSUM_LEN: usize = 32;
 const ANN_CONTAINER_HEADER_LEN: usize = 8 + 4 + 4 + 4 + 4 + (8 * 6) + ANN_CONTAINER_CHECKSUM_LEN;
 const MAX_MODEL_ID_LEN: u32 = 16 * 1024;
+const MAX_ID_MAP_LEN: u64 = 16 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug)]
 struct AnnContainerHeader {
@@ -46,6 +47,13 @@ pub(crate) fn write_container(
             "ANN model id too long: {} bytes (max {})",
             model_id_bytes.len(),
             MAX_MODEL_ID_LEN
+        ));
+    }
+    if id_map_bytes.len() as u64 > MAX_ID_MAP_LEN {
+        return Err(format!(
+            "ANN id map too large: {} bytes (max {})",
+            id_map_bytes.len(),
+            MAX_ID_MAP_LEN
         ));
     }
     let header = AnnContainerHeader::new(
@@ -117,6 +125,12 @@ impl AnnContainerHeader {
             return Err(format!(
                 "ANN container model id length too large: {} bytes (max {})",
                 self.model_id_len, MAX_MODEL_ID_LEN
+            ));
+        }
+        if self.id_map_len > MAX_ID_MAP_LEN {
+            return Err(format!(
+                "ANN container id map length too large: {} bytes (max {})",
+                self.id_map_len, MAX_ID_MAP_LEN
             ));
         }
         let expected_graph_offset = (ANN_CONTAINER_HEADER_LEN as u64)
@@ -467,5 +481,22 @@ mod tests {
         };
         let err = header.validate(u64::MAX).unwrap_err();
         assert!(err.contains("graph offset mismatch"));
+    }
+
+    #[test]
+    fn ann_container_rejects_oversized_id_map_len() {
+        let graph_offset = ANN_CONTAINER_HEADER_LEN as u64;
+        let header = AnnContainerHeader {
+            model_id_len: 0,
+            graph_offset,
+            graph_len: 0,
+            data_offset: graph_offset,
+            data_len: 0,
+            id_map_offset: graph_offset,
+            id_map_len: MAX_ID_MAP_LEN + 1,
+            checksum: [0u8; ANN_CONTAINER_CHECKSUM_LEN],
+        };
+        let err = header.validate(u64::MAX).unwrap_err();
+        assert!(err.contains("id map length"));
     }
 }
