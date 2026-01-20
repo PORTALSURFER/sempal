@@ -323,6 +323,35 @@ mod tests {
     }
 
     #[test]
+    fn open_removes_invalid_relative_paths() {
+        let dir = tempdir().unwrap();
+        let db_file = dir.path().join(DB_FILE_NAME);
+        {
+            let conn = Connection::open(&db_file).unwrap();
+            conn.execute(
+                "CREATE TABLE wav_files (
+                    path TEXT PRIMARY KEY,
+                    file_size INTEGER NOT NULL,
+                    modified_ns INTEGER NOT NULL
+                )",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO wav_files (path, file_size, modified_ns) VALUES (?1, ?2, ?3)",
+                params!["../escape.wav", 1i64, 1i64],
+            )
+            .unwrap();
+        }
+        let db = SourceDatabase::open(dir.path()).unwrap();
+        let count: i64 = db
+            .connection
+            .query_row("SELECT COUNT(*) FROM wav_files", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
     fn missing_columns_are_added_on_open() {
         let dir = tempdir().unwrap();
         let db_file = dir.path().join(DB_FILE_NAME);

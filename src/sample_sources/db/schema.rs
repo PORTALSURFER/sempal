@@ -2,7 +2,7 @@ use rusqlite::Connection;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::SourceDbError;
-use super::util::map_sql_error;
+use super::util::{map_sql_error, parse_relative_path_from_db};
 
 pub(super) fn apply_schema(connection: &Connection) -> Result<(), SourceDbError> {
     connection
@@ -129,6 +129,7 @@ pub(super) fn apply_schema(connection: &Connection) -> Result<(), SourceDbError>
         )
         .map_err(map_sql_error)?;
     ensure_optional_columns(connection)?;
+    remove_invalid_relative_paths(connection)?;
     connection
         .execute_batch(
             "CREATE INDEX IF NOT EXISTS idx_wav_files_missing
@@ -141,6 +142,32 @@ pub(super) fn apply_schema(connection: &Connection) -> Result<(), SourceDbError>
                  ON analysis_jobs (job_type, status);",
         )
         .map_err(map_sql_error)?;
+    Ok(())
+}
+
+fn remove_invalid_relative_paths(connection: &Connection) -> Result<(), SourceDbError> {
+    let mut stmt = connection
+        .prepare("SELECT path FROM wav_files")
+        .map_err(map_sql_error)?;
+    let paths = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(map_sql_error)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(map_sql_error)?;
+    let invalid_paths: Vec<String> = paths
+        .into_iter()
+        .filter(|path| parse_relative_path_from_db(path).is_err())
+        .collect();
+    if invalid_paths.is_empty() {
+        return Ok(());
+    }
+    let mut delete_stmt = connection
+        .prepare("DELETE FROM wav_files WHERE path = ?1")
+        .map_err(map_sql_error)?;
+    for path in invalid_paths {
+        tracing::warn!("Removing wav row with invalid relative path: {path}");
+        delete_stmt.execute([path]).map_err(map_sql_error)?;
+    }
     Ok(())
 }
 
