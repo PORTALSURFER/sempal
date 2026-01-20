@@ -37,11 +37,11 @@ pub(crate) enum RecordingWaveformUpdate {
 #[derive(Debug)]
 pub(crate) enum RecordingWaveformError {
     /// The recording file is missing.
-    Missing(String),
+    Missing,
     /// The recording file failed to load.
-    Failed(String),
+    Failed,
     /// The recording file could not be decoded.
-    DecodeFailed(String),
+    DecodeFailed,
 }
 
 /// Completed recording waveform refresh response.
@@ -129,15 +129,9 @@ fn load_recording_waveform(job: RecordingWaveformJob) -> RecordingWaveformLoadRe
         Err(err) => {
             let missing = err.kind() == std::io::ErrorKind::NotFound;
             let message = if missing {
-                RecordingWaveformError::Missing(format!(
-                    "Recording file missing: {} ({err})",
-                    job.absolute_path.display()
-                ))
+                RecordingWaveformError::Missing
             } else {
-                RecordingWaveformError::Failed(format!(
-                    "Failed to read recording metadata for {}: {err}",
-                    job.absolute_path.display()
-                ))
+                RecordingWaveformError::Failed
             };
             return RecordingWaveformLoadResult {
                 request_id: job.request_id,
@@ -162,15 +156,9 @@ fn load_recording_waveform(job: RecordingWaveformJob) -> RecordingWaveformLoadRe
         Err(err) => {
             let missing = err.kind() == std::io::ErrorKind::NotFound;
             let message = if missing {
-                RecordingWaveformError::Missing(format!(
-                    "Recording file missing: {} ({err})",
-                    job.absolute_path.display()
-                ))
+                RecordingWaveformError::Missing
             } else {
-                RecordingWaveformError::Failed(format!(
-                    "Failed to read recording file {}: {err}",
-                    job.absolute_path.display()
-                ))
+                RecordingWaveformError::Failed
             };
             return RecordingWaveformLoadResult {
                 request_id: job.request_id,
@@ -188,10 +176,7 @@ fn load_recording_waveform(job: RecordingWaveformJob) -> RecordingWaveformLoadRe
                 request_id: job.request_id,
                 source_id: job.source_id,
                 relative_path: job.relative_path,
-                result: Err(RecordingWaveformError::DecodeFailed(format!(
-                    "Failed to decode recording file {}",
-                    job.absolute_path.display()
-                ))),
+                result: Err(RecordingWaveformError::DecodeFailed),
             };
         }
     };
