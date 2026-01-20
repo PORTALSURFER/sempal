@@ -12,6 +12,14 @@ use std::time::Duration;
 
 use super::Source;
 
+fn duration_from_frames(frames: u64, sample_rate: u32) -> Duration {
+    let sample_rate = sample_rate.max(1) as u64;
+    let secs = frames / sample_rate;
+    let remainder = frames % sample_rate;
+    let nanos = ((remainder as u128) * 1_000_000_000u128) / sample_rate as u128;
+    Duration::new(secs, nanos as u32)
+}
+
 /// Streaming decoder that yields interleaved `f32` samples.
 pub struct SymphoniaDecoder {
     reader: Box<dyn FormatReader>,
@@ -50,7 +58,7 @@ impl SymphoniaDecoder {
         let channels = track.codec_params.channels.map(|c| c.count() as u16).unwrap_or(2);
         
         let total_duration = track.codec_params.n_frames.map(|frames| {
-            Duration::from_nanos((frames * 1_000_000_000) / sample_rate as u64)
+            duration_from_frames(frames, sample_rate)
         });
 
         Ok(Self {
@@ -240,5 +248,17 @@ impl Source for SymphoniaDecoder {
 
     fn last_error(&self) -> Option<String> {
         self.last_error.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::duration_from_frames;
+    use std::time::Duration;
+
+    #[test]
+    fn duration_from_frames_handles_u64_max() {
+        let duration = duration_from_frames(u64::MAX, 1);
+        assert_eq!(duration, Duration::new(u64::MAX, 0));
     }
 }
