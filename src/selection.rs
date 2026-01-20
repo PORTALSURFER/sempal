@@ -786,7 +786,7 @@ mod tests {
             0.0,
         );
         let ramp_mid = fade_gain_at_position(
-            0.5,
+            0.3,
             range.start(),
             range.end(),
             range.gain(),
