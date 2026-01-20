@@ -115,7 +115,11 @@ pub(super) struct RowMarker {
 pub(super) enum RowBackground {
     None,
     Solid(Color32),
-    Gradient { left: Color32, right: Color32 },
+    Gradient {
+        base: Color32,
+        highlight: Color32,
+        fade_ratio: f32,
+    },
 }
 
 impl RowBackground {
@@ -266,33 +270,47 @@ pub(super) fn render_list_row(ui: &mut Ui, row: ListRow<'_>) -> egui::Response {
         RowBackground::Solid(color) => {
             ui.painter().rect_filled(rect, 0.0, color);
         }
-        RowBackground::Gradient { left, right } => {
-            let mut mesh = egui::epaint::Mesh::default();
-            let idx = mesh.vertices.len() as u32;
-            let uv = egui::epaint::WHITE_UV;
-            mesh.vertices.push(egui::epaint::Vertex {
-                pos: rect.left_top(),
-                uv,
-                color: left,
-            });
-            mesh.vertices.push(egui::epaint::Vertex {
-                pos: rect.right_top(),
-                uv,
-                color: right,
-            });
-            mesh.vertices.push(egui::epaint::Vertex {
-                pos: rect.right_bottom(),
-                uv,
-                color: right,
-            });
-            mesh.vertices.push(egui::epaint::Vertex {
-                pos: rect.left_bottom(),
-                uv,
-                color: left,
-            });
-            mesh.indices
-                .extend_from_slice(&[idx, idx + 1, idx + 2, idx, idx + 2, idx + 3]);
-            ui.painter().add(egui::Shape::mesh(mesh));
+        RowBackground::Gradient {
+            base,
+            highlight,
+            fade_ratio,
+        } => {
+            ui.painter().rect_filled(rect, 0.0, base);
+            let fade_ratio = fade_ratio.clamp(0.0, 1.0);
+            let fade_width = rect.width() * fade_ratio;
+            if fade_width > 0.0 {
+                let fade_left = rect.right() - fade_width;
+                let fade_rect = egui::Rect::from_min_max(
+                    egui::pos2(fade_left, rect.top()),
+                    rect.right_bottom(),
+                );
+                let mut mesh = egui::epaint::Mesh::default();
+                let idx = mesh.vertices.len() as u32;
+                let uv = egui::epaint::WHITE_UV;
+                mesh.vertices.push(egui::epaint::Vertex {
+                    pos: fade_rect.left_top(),
+                    uv,
+                    color: base,
+                });
+                mesh.vertices.push(egui::epaint::Vertex {
+                    pos: fade_rect.right_top(),
+                    uv,
+                    color: highlight,
+                });
+                mesh.vertices.push(egui::epaint::Vertex {
+                    pos: fade_rect.right_bottom(),
+                    uv,
+                    color: highlight,
+                });
+                mesh.vertices.push(egui::epaint::Vertex {
+                    pos: fade_rect.left_bottom(),
+                    uv,
+                    color: base,
+                });
+                mesh.indices
+                    .extend_from_slice(&[idx, idx + 1, idx + 2, idx, idx + 2, idx + 3]);
+                ui.painter().add(egui::Shape::mesh(mesh));
+            }
         }
     }
     if let Some(marker) = row.marker {

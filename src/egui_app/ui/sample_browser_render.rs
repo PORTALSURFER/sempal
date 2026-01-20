@@ -232,8 +232,9 @@ impl EguiApp {
                 let row_background = if let Some(strength) = highlight_strength.filter(|_| !is_anchor)
                 {
                     RowBackground::Gradient {
-                        left: style::similar_score_fill(strength),
-                        right: row_bg.unwrap_or_else(style::compartment_fill),
+                        base: row_bg.unwrap_or_else(style::compartment_fill),
+                        highlight: style::similar_score_fill(strength),
+                        fade_ratio: 0.33,
                     }
                 } else {
                     RowBackground::from_option(row_bg)
