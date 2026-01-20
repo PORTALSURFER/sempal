@@ -46,6 +46,8 @@ pub struct Palette {
     pub accent_ice: Color32,
     /// Copper accent color.
     pub accent_copper: Color32,
+    /// Slate accent color.
+    pub accent_slate: Color32,
     /// Warning accent color.
     pub warning: Color32,
     /// Success accent color.
@@ -107,6 +109,7 @@ pub fn palette() -> Palette {
         accent_mint: Color32::from_rgb(152, 172, 158),
         accent_ice: Color32::from_rgb(168, 150, 126),
         accent_copper: Color32::from_rgb(186, 148, 108),
+        accent_slate: Color32::from_rgb(120, 146, 188),
         warning: Color32::from_rgb(194, 158, 108),
         success: Color32::from_rgb(186, 204, 186),
     }
@@ -280,7 +283,7 @@ pub fn loop_badge_text() -> Color32 {
 
 /// Fill color for the long sample badge shown in the sample browser list.
 pub fn long_sample_badge_fill() -> Color32 {
-    palette().warning
+    palette().accent_slate
 }
 
 /// Text color for the long sample badge shown in the sample browser list.
