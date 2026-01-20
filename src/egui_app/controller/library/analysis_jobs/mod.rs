@@ -10,9 +10,11 @@ pub(crate) use db::open_source_db;
 pub(crate) use db::purge_orphaned_samples;
 pub(crate) use db::{
     build_sample_id, parse_sample_id, sample_bpm, update_sample_bpms,
+    update_sample_duration,
 };
 #[cfg(test)]
 pub(crate) use db::update_sample_bpm;
+pub(crate) use enqueue::update_missing_durations_for_source;
 pub(crate) use enqueue::enqueue_jobs_for_source;
 pub(crate) use enqueue::enqueue_jobs_for_source_backfill;
 pub(crate) use enqueue::enqueue_jobs_for_source_backfill_full;
