@@ -125,7 +125,22 @@ pub(super) fn apply_schema(connection: &Connection) -> Result<(), SourceDbError>
                 count INTEGER NOT NULL,
                 params_json TEXT NOT NULL,
                 updated_at INTEGER NOT NULL
-             ) WITHOUT ROWID;",
+             ) WITHOUT ROWID;
+             CREATE TABLE IF NOT EXISTS file_ops_journal (
+                id TEXT PRIMARY KEY,
+                op_type TEXT NOT NULL,
+                stage TEXT NOT NULL,
+                source_root TEXT,
+                source_relative TEXT,
+                target_relative TEXT NOT NULL,
+                staged_relative TEXT,
+                file_size INTEGER,
+                modified_ns INTEGER,
+                tag INTEGER,
+                looped INTEGER,
+                last_played_at INTEGER,
+                created_at INTEGER NOT NULL
+             );",
         )
         .map_err(map_sql_error)?;
     ensure_optional_columns(connection)?;
@@ -139,7 +154,9 @@ pub(super) fn apply_schema(connection: &Connection) -> Result<(), SourceDbError>
              CREATE INDEX IF NOT EXISTS idx_analysis_jobs_source_job_status_created
                  ON analysis_jobs (source_id, job_type, status, created_at);
              CREATE INDEX IF NOT EXISTS idx_analysis_jobs_job_status
-                 ON analysis_jobs (job_type, status);",
+                 ON analysis_jobs (job_type, status);
+             CREATE INDEX IF NOT EXISTS idx_file_ops_journal_stage
+                 ON file_ops_journal (stage);",
         )
         .map_err(map_sql_error)?;
     Ok(())

@@ -8,6 +8,8 @@ use thiserror::Error;
 pub mod read;
 /// SQLite schema management for sample source databases.
 pub mod schema;
+/// Persistent file operation journal for crash recovery.
+pub mod file_ops_journal;
 /// Write-focused database helpers for sample sources.
 pub mod write;
 

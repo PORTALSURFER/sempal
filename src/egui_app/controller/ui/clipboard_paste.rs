@@ -4,6 +4,7 @@ use crate::egui_app::controller::library::collection_items_helpers::file_metadat
 use crate::egui_app::controller::jobs::{
     ClipboardPasteOutcome, ClipboardPasteResult, FileOpMessage, FileOpResult, SourcePasteAdded,
 };
+use crate::sample_sources::db::file_ops_journal;
 use crate::sample_sources::{SourceDatabase, is_supported_audio};
 use std::path::{Path, PathBuf};
 use std::sync::{
@@ -312,8 +313,47 @@ fn run_clipboard_paste_job(
                         } else {
                             target_folder.join(relative_name)
                         };
-                        let absolute = source_root.join(&relative);
-                        if let Err(err) = std::fs::copy(&path, &absolute) {
+                        let db = match db.as_ref() {
+                            Some(db) => db,
+                            None => {
+                                errors.push("Source DB unavailable".to_string());
+                                completed += 1;
+                                report_progress(sender, completed, detail);
+                                continue;
+                            }
+                        };
+                        let op_id = file_ops_journal::new_op_id();
+                        let staged_relative = match file_ops_journal::staged_relative_for_target(&relative, &op_id) {
+                            Ok(path) => path,
+                            Err(err) => {
+                                errors.push(format!("Failed to build staging path: {err}"));
+                                completed += 1;
+                                report_progress(sender, completed, detail);
+                                continue;
+                            }
+                        };
+                        let journal_entry = match file_ops_journal::FileOpJournalEntry::new_copy(
+                            op_id.clone(),
+                            relative.clone(),
+                            staged_relative.clone(),
+                        ) {
+                            Ok(entry) => entry,
+                            Err(err) => {
+                                errors.push(format!("Failed to stage copy journal: {err}"));
+                                completed += 1;
+                                report_progress(sender, completed, detail);
+                                continue;
+                            }
+                        };
+                        if let Err(err) = file_ops_journal::insert_entry(db, &journal_entry) {
+                            errors.push(format!("Failed to record copy journal: {err}"));
+                            completed += 1;
+                            report_progress(sender, completed, detail);
+                            continue;
+                        }
+                        let staged_absolute = source_root.join(&staged_relative);
+                        if let Err(err) = std::fs::copy(&path, &staged_absolute) {
+                            remove_copy_journal_entry(&mut errors, db, &op_id);
                             errors.push(format!(
                                 "Failed to {} {}: {err}",
                                 job.action_label,
@@ -323,32 +363,80 @@ fn run_clipboard_paste_job(
                             report_progress(sender, completed, detail);
                             continue;
                         }
-                        let result = (|| -> Result<(u64, i64), String> {
-                            let (file_size, modified_ns) = file_metadata(&absolute)?;
-                            let db = db.as_ref().ok_or_else(|| "Source DB unavailable".to_string())?;
-                            db.upsert_file(&relative, file_size, modified_ns)
-                                .map_err(|err| format!("Failed to register file: {err}"))?;
-                            Ok((file_size, modified_ns))
-                        })();
-                        match result {
-                            Ok((file_size, modified_ns)) => {
-                                added.push(SourcePasteAdded {
-                                    relative_path: relative,
-                                    file_size,
-                                    modified_ns,
-                                });
-                            }
+                        let (file_size, modified_ns) = match file_metadata(&staged_absolute) {
+                            Ok(meta) => meta,
                             Err(err) => {
-                                if let Err(remove_err) = std::fs::remove_file(&absolute) {
-                                    errors.push(format!(
-                                        "{err}; failed to remove file {}: {remove_err}",
-                                        absolute.display()
-                                    ));
-                                } else {
-                                    errors.push(err);
-                                }
+                                remove_staged_file(&mut errors, &staged_absolute);
+                                remove_copy_journal_entry(&mut errors, db, &op_id);
+                                errors.push(err);
+                                completed += 1;
+                                report_progress(sender, completed, detail);
+                                continue;
                             }
+                        };
+                        if let Err(err) = file_ops_journal::update_stage(
+                            db,
+                            &op_id,
+                            file_ops_journal::FileOpStage::Staged,
+                            Some(file_size),
+                            Some(modified_ns),
+                        ) {
+                            remove_staged_file(&mut errors, &staged_absolute);
+                            remove_copy_journal_entry(&mut errors, db, &op_id);
+                            errors.push(format!("Failed to update copy journal: {err}"));
+                            completed += 1;
+                            report_progress(sender, completed, detail);
+                            continue;
                         }
+                        let mut batch = match db.write_batch() {
+                            Ok(batch) => batch,
+                            Err(err) => {
+                                remove_staged_file(&mut errors, &staged_absolute);
+                                remove_copy_journal_entry(&mut errors, db, &op_id);
+                                errors.push(format!("Failed to open source DB batch: {err}"));
+                                completed += 1;
+                                report_progress(sender, completed, detail);
+                                continue;
+                            }
+                        };
+                        if let Err(err) = batch.upsert_file(&relative, file_size, modified_ns) {
+                            remove_staged_file(&mut errors, &staged_absolute);
+                            remove_copy_journal_entry(&mut errors, db, &op_id);
+                            errors.push(format!("Failed to register file: {err}"));
+                            completed += 1;
+                            report_progress(sender, completed, detail);
+                            continue;
+                        }
+                        if let Err(err) = batch.commit() {
+                            remove_staged_file(&mut errors, &staged_absolute);
+                            remove_copy_journal_entry(&mut errors, db, &op_id);
+                            errors.push(format!("Failed to commit source DB update: {err}"));
+                            completed += 1;
+                            report_progress(sender, completed, detail);
+                            continue;
+                        }
+                        if let Err(err) = file_ops_journal::update_stage(
+                            db,
+                            &op_id,
+                            file_ops_journal::FileOpStage::TargetDb,
+                            None,
+                            None,
+                        ) {
+                            errors.push(format!("Failed to update copy journal: {err}"));
+                        }
+                        let absolute = source_root.join(&relative);
+                        if let Err(err) = std::fs::rename(&staged_absolute, &absolute) {
+                            errors.push(format!("Failed to finalize copy: {err}"));
+                            completed += 1;
+                            report_progress(sender, completed, detail);
+                            continue;
+                        }
+                        remove_copy_journal_entry(&mut errors, db, &op_id);
+                        added.push(SourcePasteAdded {
+                            relative_path: relative,
+                            file_size,
+                            modified_ns,
+                        });
                         completed += 1;
                         report_progress(sender, completed, detail);
                     }
@@ -407,8 +495,47 @@ fn run_clipboard_paste_job(
                         continue;
                     }
                 };
-                let absolute = clip_root.join(&relative);
-                if let Err(err) = std::fs::copy(&path, &absolute) {
+                let db = match db.as_ref() {
+                    Some(db) => db,
+                    None => {
+                        errors.push("Collection DB unavailable".to_string());
+                        completed += 1;
+                        report_progress(sender, completed, detail);
+                        continue;
+                    }
+                };
+                let op_id = file_ops_journal::new_op_id();
+                let staged_relative = match file_ops_journal::staged_relative_for_target(&relative, &op_id) {
+                    Ok(path) => path,
+                    Err(err) => {
+                        errors.push(format!("Failed to build staging path: {err}"));
+                        completed += 1;
+                        report_progress(sender, completed, detail);
+                        continue;
+                    }
+                };
+                let journal_entry = match file_ops_journal::FileOpJournalEntry::new_copy(
+                    op_id.clone(),
+                    relative.clone(),
+                    staged_relative.clone(),
+                ) {
+                    Ok(entry) => entry,
+                    Err(err) => {
+                        errors.push(format!("Failed to stage copy journal: {err}"));
+                        completed += 1;
+                        report_progress(sender, completed, detail);
+                        continue;
+                    }
+                };
+                if let Err(err) = file_ops_journal::insert_entry(db, &journal_entry) {
+                    errors.push(format!("Failed to record copy journal: {err}"));
+                    completed += 1;
+                    report_progress(sender, completed, detail);
+                    continue;
+                }
+                let staged_absolute = clip_root.join(&staged_relative);
+                if let Err(err) = std::fs::copy(&path, &staged_absolute) {
+                    remove_copy_journal_entry(&mut errors, db, &op_id);
                     errors.push(format!(
                         "Failed to {} {}: {err}",
                         job.action_label,
@@ -418,25 +545,76 @@ fn run_clipboard_paste_job(
                     report_progress(sender, completed, detail);
                     continue;
                 }
-                let result = (|| -> Result<(), String> {
-                    let (file_size, modified_ns) = file_metadata(&absolute)?;
-                    let db = db.as_ref().ok_or_else(|| "Collection DB unavailable".to_string())?;
-                    db.upsert_file(&relative, file_size, modified_ns)
-                        .map_err(|err| format!("Failed to register collection file: {err}"))?;
-                    Ok(())
-                })();
-                if let Err(err) = result {
-                    if let Err(remove_err) = std::fs::remove_file(&absolute) {
-                        errors.push(format!(
-                            "{err}; failed to remove file {}: {remove_err}",
-                            absolute.display()
-                        ));
-                    } else {
+                let (file_size, modified_ns) = match file_metadata(&staged_absolute) {
+                    Ok(meta) => meta,
+                    Err(err) => {
+                        remove_staged_file(&mut errors, &staged_absolute);
+                        remove_copy_journal_entry(&mut errors, db, &op_id);
                         errors.push(err);
+                        completed += 1;
+                        report_progress(sender, completed, detail);
+                        continue;
                     }
-                } else {
-                    added.push(relative);
+                };
+                if let Err(err) = file_ops_journal::update_stage(
+                    db,
+                    &op_id,
+                    file_ops_journal::FileOpStage::Staged,
+                    Some(file_size),
+                    Some(modified_ns),
+                ) {
+                    remove_staged_file(&mut errors, &staged_absolute);
+                    remove_copy_journal_entry(&mut errors, db, &op_id);
+                    errors.push(format!("Failed to update copy journal: {err}"));
+                    completed += 1;
+                    report_progress(sender, completed, detail);
+                    continue;
                 }
+                let mut batch = match db.write_batch() {
+                    Ok(batch) => batch,
+                    Err(err) => {
+                        remove_staged_file(&mut errors, &staged_absolute);
+                        remove_copy_journal_entry(&mut errors, db, &op_id);
+                        errors.push(format!("Failed to open collection DB batch: {err}"));
+                        completed += 1;
+                        report_progress(sender, completed, detail);
+                        continue;
+                    }
+                };
+                if let Err(err) = batch.upsert_file(&relative, file_size, modified_ns) {
+                    remove_staged_file(&mut errors, &staged_absolute);
+                    remove_copy_journal_entry(&mut errors, db, &op_id);
+                    errors.push(format!("Failed to register collection file: {err}"));
+                    completed += 1;
+                    report_progress(sender, completed, detail);
+                    continue;
+                }
+                if let Err(err) = batch.commit() {
+                    remove_staged_file(&mut errors, &staged_absolute);
+                    remove_copy_journal_entry(&mut errors, db, &op_id);
+                    errors.push(format!("Failed to commit collection DB update: {err}"));
+                    completed += 1;
+                    report_progress(sender, completed, detail);
+                    continue;
+                }
+                if let Err(err) = file_ops_journal::update_stage(
+                    db,
+                    &op_id,
+                    file_ops_journal::FileOpStage::TargetDb,
+                    None,
+                    None,
+                ) {
+                    errors.push(format!("Failed to update copy journal: {err}"));
+                }
+                let absolute = clip_root.join(&relative);
+                if let Err(err) = std::fs::rename(&staged_absolute, &absolute) {
+                    errors.push(format!("Failed to finalize copy: {err}"));
+                    completed += 1;
+                    report_progress(sender, completed, detail);
+                    continue;
+                }
+                remove_copy_journal_entry(&mut errors, db, &op_id);
+                added.push(relative);
                 completed += 1;
                 report_progress(sender, completed, detail);
             }
@@ -464,6 +642,21 @@ fn report_progress(
 ) {
     if let Some(tx) = sender {
         let _ = tx.send(FileOpMessage::Progress { completed, detail });
+    }
+}
+
+fn remove_copy_journal_entry(errors: &mut Vec<String>, db: &SourceDatabase, op_id: &str) {
+    if let Err(err) = file_ops_journal::remove_entry(db, op_id) {
+        errors.push(format!("Failed to clear copy journal: {err}"));
+    }
+}
+
+fn remove_staged_file(errors: &mut Vec<String>, path: &Path) {
+    if let Err(err) = std::fs::remove_file(path) {
+        errors.push(format!(
+            "Failed to remove staged file {}: {err}",
+            path.display()
+        ));
     }
 }
 

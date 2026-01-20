@@ -3,7 +3,8 @@ use crate::egui_app::controller::library::collection_items_helpers::file_metadat
 use crate::egui_app::controller::jobs::{FileOpMessage, FileOpResult, SourceMoveRequest, SourceMoveResult, SourceMoveSuccess};
 use crate::egui_app::state::DragSample;
 use crate::egui_app::ui::style::StatusTone;
-use crate::sample_sources::{SourceDatabase, SourceId, WavEntry};
+use crate::sample_sources::{Rating, SourceDatabase, SourceId, WavEntry};
+use crate::sample_sources::db::file_ops_journal;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{
@@ -427,29 +428,11 @@ fn run_source_move_task(
                 continue;
             }
         }
-        let target_absolute = target_root.join(&target_relative);
-        if let Err(err) = move_sample_file(&absolute, &target_absolute) {
-            errors.push(err);
-            completed += 1;
-            report_progress(sender, completed, detail);
-            continue;
-        }
-        let (file_size, modified_ns) = match file_metadata(&target_absolute) {
-            Ok(meta) => meta,
-            Err(err) => {
-                let _ = move_sample_file(&target_absolute, &absolute);
-                errors.push(err);
-                completed += 1;
-                report_progress(sender, completed, detail);
-                continue;
-            }
-        };
         let source_db = match source_dbs.entry(request.source_root.clone()) {
             std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::hash_map::Entry::Vacant(entry) => match SourceDatabase::open(&request.source_root) {
                 Ok(db) => entry.insert(db),
                 Err(err) => {
-                    let _ = move_sample_file(&target_absolute, &absolute);
                     errors.push(format!("Failed to open source DB: {err}"));
                     completed += 1;
                     report_progress(sender, completed, detail);
@@ -460,14 +443,12 @@ fn run_source_move_task(
         let tag = match source_db.tag_for_path(&request.relative_path) {
             Ok(Some(tag)) => tag,
             Ok(None) => {
-                let _ = move_sample_file(&target_absolute, &absolute);
                 errors.push("Sample not found in database".to_string());
                 completed += 1;
                 report_progress(sender, completed, detail);
                 continue;
             }
             Err(err) => {
-                let _ = move_sample_file(&target_absolute, &absolute);
                 errors.push(format!("Failed to read database: {err}"));
                 completed += 1;
                 report_progress(sender, completed, detail);
@@ -477,14 +458,12 @@ fn run_source_move_task(
         let looped = match source_db.looped_for_path(&request.relative_path) {
             Ok(Some(looped)) => looped,
             Ok(None) => {
-                let _ = move_sample_file(&target_absolute, &absolute);
                 errors.push("Sample not found in database".to_string());
                 completed += 1;
                 report_progress(sender, completed, detail);
                 continue;
             }
             Err(err) => {
-                let _ = move_sample_file(&target_absolute, &absolute);
                 errors.push(format!("Failed to read database: {err}"));
                 completed += 1;
                 report_progress(sender, completed, detail);
@@ -494,54 +473,164 @@ fn run_source_move_task(
         let last_played_at = match source_db.last_played_at_for_path(&request.relative_path) {
             Ok(value) => value,
             Err(err) => {
-                let _ = move_sample_file(&target_absolute, &absolute);
                 errors.push(format!("Failed to read database: {err}"));
                 completed += 1;
                 report_progress(sender, completed, detail);
                 continue;
             }
         };
-        if let Err(err) = target_db.upsert_file(&target_relative, file_size, modified_ns) {
-            let _ = move_sample_file(&target_absolute, &absolute);
+        let op_id = file_ops_journal::new_op_id();
+        let staged_relative = match file_ops_journal::staged_relative_for_target(&target_relative, &op_id) {
+            Ok(path) => path,
+            Err(err) => {
+                errors.push(format!("Failed to build staging path: {err}"));
+                completed += 1;
+                report_progress(sender, completed, detail);
+                continue;
+            }
+        };
+        let journal_entry = match file_ops_journal::FileOpJournalEntry::new_move(
+            op_id.clone(),
+            request.source_root.clone(),
+            request.relative_path.clone(),
+            target_relative.clone(),
+            staged_relative.clone(),
+            tag,
+            looped,
+            last_played_at,
+        ) {
+            Ok(entry) => entry,
+            Err(err) => {
+                errors.push(format!("Failed to stage move journal: {err}"));
+                completed += 1;
+                report_progress(sender, completed, detail);
+                continue;
+            }
+        };
+        if let Err(err) = file_ops_journal::insert_entry(&target_db, &journal_entry) {
+            errors.push(format!("Failed to record move journal: {err}"));
+            completed += 1;
+            report_progress(sender, completed, detail);
+            continue;
+        }
+        let staged_absolute = target_root.join(&staged_relative);
+        if let Err(err) = move_sample_file(&absolute, &staged_absolute) {
+            remove_move_journal_entry(&mut errors, &target_db, &op_id);
+            errors.push(err);
+            completed += 1;
+            report_progress(sender, completed, detail);
+            continue;
+        }
+        let (file_size, modified_ns) = match file_metadata(&staged_absolute) {
+            Ok(meta) => meta,
+            Err(err) => {
+                rollback_move_to_source(&mut errors, &staged_absolute, &absolute);
+                remove_move_journal_entry(&mut errors, &target_db, &op_id);
+                errors.push(err);
+                completed += 1;
+                report_progress(sender, completed, detail);
+                continue;
+            }
+        };
+        if let Err(err) = file_ops_journal::update_stage(
+            &target_db,
+            &op_id,
+            file_ops_journal::FileOpStage::Staged,
+            Some(file_size),
+            Some(modified_ns),
+        ) {
+            rollback_move_to_source(&mut errors, &staged_absolute, &absolute);
+            remove_move_journal_entry(&mut errors, &target_db, &op_id);
+            errors.push(format!("Failed to update move journal: {err}"));
+            completed += 1;
+            report_progress(sender, completed, detail);
+            continue;
+        }
+        let mut batch = match target_db.write_batch() {
+            Ok(batch) => batch,
+            Err(err) => {
+                rollback_move_to_source(&mut errors, &staged_absolute, &absolute);
+                remove_move_journal_entry(&mut errors, &target_db, &op_id);
+                errors.push(format!("Failed to open target DB batch: {err}"));
+                completed += 1;
+                report_progress(sender, completed, detail);
+                continue;
+            }
+        };
+        if let Err(err) = batch.upsert_file(&target_relative, file_size, modified_ns) {
+            rollback_move_to_source(&mut errors, &staged_absolute, &absolute);
+            remove_move_journal_entry(&mut errors, &target_db, &op_id);
             errors.push(format!("Failed to register file: {err}"));
             completed += 1;
             report_progress(sender, completed, detail);
             continue;
         }
-        if let Err(err) = target_db.set_tag(&target_relative, tag) {
-            let _ = target_db.remove_file(&target_relative);
-            let _ = move_sample_file(&target_absolute, &absolute);
+        if let Err(err) = batch.set_tag(&target_relative, tag) {
+            rollback_move_to_source(&mut errors, &staged_absolute, &absolute);
+            remove_move_journal_entry(&mut errors, &target_db, &op_id);
             errors.push(format!("Failed to set tag: {err}"));
             completed += 1;
             report_progress(sender, completed, detail);
             continue;
         }
-        if let Err(err) = target_db.set_looped(&target_relative, looped) {
-            let _ = target_db.remove_file(&target_relative);
-            let _ = move_sample_file(&target_absolute, &absolute);
+        if let Err(err) = batch.set_looped(&target_relative, looped) {
+            rollback_move_to_source(&mut errors, &staged_absolute, &absolute);
+            remove_move_journal_entry(&mut errors, &target_db, &op_id);
             errors.push(format!("Failed to set loop marker: {err}"));
             completed += 1;
             report_progress(sender, completed, detail);
             continue;
         }
         if let Some(last_played_at) = last_played_at {
-            if let Err(err) = target_db.set_last_played_at(&target_relative, last_played_at) {
-                let _ = target_db.remove_file(&target_relative);
-                let _ = move_sample_file(&target_absolute, &absolute);
+            if let Err(err) = batch.set_last_played_at(&target_relative, last_played_at) {
+                rollback_move_to_source(&mut errors, &staged_absolute, &absolute);
+                remove_move_journal_entry(&mut errors, &target_db, &op_id);
                 errors.push(format!("Failed to copy playback age: {err}"));
                 completed += 1;
                 report_progress(sender, completed, detail);
                 continue;
             }
         }
+        if let Err(err) = batch.commit() {
+            rollback_move_to_source(&mut errors, &staged_absolute, &absolute);
+            remove_move_journal_entry(&mut errors, &target_db, &op_id);
+            errors.push(format!("Failed to commit target DB update: {err}"));
+            completed += 1;
+            report_progress(sender, completed, detail);
+            continue;
+        }
+        if let Err(err) = file_ops_journal::update_stage(
+            &target_db,
+            &op_id,
+            file_ops_journal::FileOpStage::TargetDb,
+            None,
+            None,
+        ) {
+            errors.push(format!("Failed to update move journal: {err}"));
+        }
         if let Err(err) = source_db.remove_file(&request.relative_path) {
-            let _ = target_db.remove_file(&target_relative);
-            let _ = move_sample_file(&target_absolute, &absolute);
             errors.push(format!("Failed to drop database row: {err}"));
             completed += 1;
             report_progress(sender, completed, detail);
             continue;
         }
+        if let Err(err) = file_ops_journal::update_stage(
+            &target_db,
+            &op_id,
+            file_ops_journal::FileOpStage::SourceDb,
+            None,
+            None,
+        ) {
+            errors.push(format!("Failed to update move journal: {err}"));
+        }
+        let target_absolute = target_root.join(&target_relative);
+        if let Err(err) = std::fs::rename(&staged_absolute, &target_absolute) {
+            errors.push(format!("Failed to finalize move: {err}"));
+            completed += 1;
+            report_progress(sender, completed, detail);
+            continue;
+        }
+        remove_move_journal_entry(&mut errors, &target_db, &op_id);
         moved.push(SourceMoveSuccess {
             source_id: request.source_id,
             target_source_id: target_source_id.clone(),
@@ -561,6 +650,22 @@ fn run_source_move_task(
         moved,
         errors,
         cancelled,
+    }
+}
+
+fn remove_move_journal_entry(
+    errors: &mut Vec<String>,
+    db: &SourceDatabase,
+    op_id: &str,
+) {
+    if let Err(err) = file_ops_journal::remove_entry(db, op_id) {
+        errors.push(format!("Failed to clear move journal: {err}"));
+    }
+}
+
+fn rollback_move_to_source(errors: &mut Vec<String>, from: &Path, to: &Path) {
+    if let Err(err) = move_sample_file(from, to) {
+        errors.push(format!("Failed to restore moved file: {err}"));
     }
 }
 

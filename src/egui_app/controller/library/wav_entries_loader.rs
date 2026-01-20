@@ -29,6 +29,32 @@ pub(crate) fn load_entries(job: &WavLoadJob) -> (Result<Vec<WavEntry>, LoadEntri
         Ok(db) => db,
         Err(err) => return (Err(LoadEntriesError::Db(err)), 0),
     };
+    match crate::sample_sources::db::file_ops_journal::reconcile_pending_ops(&db) {
+        Ok(summary) => {
+            if summary.total > 0 {
+                if summary.errors.is_empty() {
+                    tracing::info!(
+                        "Reconciled {} pending file ops for {}",
+                        summary.completed,
+                        job.root.display()
+                    );
+                } else {
+                    for err in summary.errors {
+                        tracing::warn!(
+                            "File op recovery issue for {}: {err}",
+                            job.root.display()
+                        );
+                    }
+                }
+            }
+        }
+        Err(err) => {
+            tracing::warn!(
+                "Failed to reconcile file ops for {}: {err}",
+                job.root.display()
+            );
+        }
+    }
     let mut total = match db.count_files() {
         Ok(total) => total,
         Err(err) => return (Err(LoadEntriesError::Db(err)), 0),
