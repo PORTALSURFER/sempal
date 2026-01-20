@@ -288,7 +288,7 @@ fn quick_scan_avoids_ambiguous_large_rename() {
     assert_eq!(rows.len(), 3);
     let mut keep_row = None;
     let mut new_row = None;
-    for row in rows {
+    for row in &rows {
         if row.relative_path == PathBuf::from("one.wav") {
             keep_row = Some(row);
         }
