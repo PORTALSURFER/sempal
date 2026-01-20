@@ -54,6 +54,7 @@ impl EguiController {
         self.ui.waveform.bpm_lock_enabled = self.settings.controls.bpm_lock_enabled;
         self.ui.waveform.bpm_stretch_enabled = self.settings.controls.bpm_stretch_enabled;
         self.ui.waveform.bpm_value = normalize_bpm_value(self.settings.controls.bpm_value);
+        self.ui.waveform.loop_lock_enabled = self.settings.controls.loop_lock_enabled;
         self.ui.waveform.transient_markers_enabled =
             self.settings.controls.transient_markers_enabled;
         self.ui.waveform.transient_snap_enabled = self.settings.controls.transient_snap_enabled

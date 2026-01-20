@@ -243,6 +243,13 @@ pub(crate) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         command: HotkeyCommand::ToggleLoop,
     },
     HotkeyAction {
+        id: "toggle-loop-lock",
+        label: "Toggle loop lock",
+        gesture: HotkeyGesture::with_shift(Key::L),
+        scope: HotkeyScope::Global,
+        command: HotkeyCommand::ToggleLoopLock,
+    },
+    HotkeyAction {
         id: "focus-waveform",
         label: "Focus waveform",
         gesture: HotkeyGesture::with_chord(KeyPress::new(Key::G), KeyPress::new(Key::W)),

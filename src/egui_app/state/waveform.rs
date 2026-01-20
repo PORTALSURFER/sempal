@@ -55,6 +55,8 @@ pub struct WaveformState {
     pub view: WaveformView,
     /// Whether looped playback is enabled.
     pub loop_enabled: bool,
+    /// When true, loop playback state is locked against auto-updates.
+    pub loop_lock_enabled: bool,
     /// Whether to normalize audition playback.
     pub normalized_audition_enabled: bool,
     /// Optional notice text displayed near the waveform.
@@ -103,6 +105,7 @@ impl Default for WaveformState {
             transient_cache_token: None,
             view: WaveformView::default(),
             loop_enabled: false,
+            loop_lock_enabled: false,
             normalized_audition_enabled: false,
             notice: None,
             loading: None,

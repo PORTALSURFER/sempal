@@ -356,8 +356,14 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
 
                 // Loop Toggle (Relocated to Transport)
                 let loop_enabled = app.controller.ui.waveform.loop_enabled;
+                let loop_locked = app.controller.ui.waveform.loop_lock_enabled;
                 let (loop_rect, loop_response) = ui.allocate_exact_size(egui::vec2(32.0, 24.0), egui::Sense::click());
-                let loop_color = if loop_enabled { palette.accent_mint } else { icon_off };
+                let loop_color = match (loop_locked, loop_enabled) {
+                    (true, true) => style::destructive_text(),
+                    (true, false) => style::warning_soft_text(),
+                    (false, true) => palette.accent_mint,
+                    (false, false) => icon_off,
+                };
                 let center = loop_rect.center();
                 let radius = 5.0;
                 let mut points = vec![];
@@ -376,12 +382,18 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
                     ui.painter().rect_filled(loop_rect.shrink(2.0), 2.0, style::row_hover_fill());
                 }
                 if loop_response.clicked() {
-                    app.controller.toggle_loop();
+                    let modifiers = ui.input(|i| i.modifiers);
+                    if modifiers.shift {
+                        app.controller
+                            .set_loop_lock_enabled(!app.controller.ui.waveform.loop_lock_enabled);
+                    } else {
+                        app.controller.toggle_loop();
+                    }
                 }
                 helpers::tooltip(
                     loop_response,
                     "Toggle Loop",
-                    "Continuously loop the current selection. Use 'L' to toggle.",
+                    "Continuously loop the current selection. Use 'L' to toggle.\nShift+Click or Shift+L locks the loop state.",
                     tooltip_mode,
                 );
 

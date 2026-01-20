@@ -49,12 +49,15 @@ pub(crate) fn select_wav_by_path_with_rebuild(
         .entry(index)
         .map(|entry| entry.looped)
         .unwrap_or(false);
+    let loop_lock_enabled = controller.ui.waveform.loop_lock_enabled;
     if path_changed {
         let _ = controller.commit_edit_selection_fades();
     }
     if path_changed {
         controller.ui.waveform.last_start_marker = None;
-        controller.ui.waveform.loop_enabled = entry_looped;
+        if !loop_lock_enabled {
+            controller.ui.waveform.loop_enabled = entry_looped;
+        }
     }
     controller.sample_view.wav.selected_wav = Some(path.to_path_buf());
     controller.ui.browser.last_focused_path = Some(path.to_path_buf());
@@ -92,7 +95,7 @@ pub(crate) fn select_wav_by_path_with_rebuild(
         let autoplay = controller.settings.feature_flags.autoplay_selection
             && !controller.selection_state.suppress_autoplay_once;
         controller.selection_state.suppress_autoplay_once = false;
-        let selection_looped = if path_changed {
+        let selection_looped = if path_changed && !loop_lock_enabled {
             entry_looped
         } else {
             controller.ui.waveform.loop_enabled

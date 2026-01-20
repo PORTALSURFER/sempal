@@ -225,6 +225,16 @@ impl EguiController {
         }
     }
 
+    /// Enable/disable loop lock and persist the setting.
+    pub fn set_loop_lock_enabled(&mut self, enabled: bool) {
+        if self.settings.controls.loop_lock_enabled == enabled {
+            return;
+        }
+        self.settings.controls.loop_lock_enabled = enabled;
+        self.ui.waveform.loop_lock_enabled = enabled;
+        self.persist_controls();
+    }
+
     /// Update and persist the BPM snap value for waveform snapping and stretching.
     ///
     /// When stretch is enabled and a sample is loaded, the waveform reloads to

@@ -213,6 +213,7 @@ fn settings_round_trip_preserves_fields() {
                 normalized_audition_enabled: true,
                 advance_after_rating: true,
                 tooltip_mode: TooltipMode::Regular,
+                loop_lock_enabled: true,
             },
         },
     };
@@ -357,6 +358,10 @@ fn settings_round_trip_preserves_fields() {
     assert_eq!(
         round_trip.core.controls.tooltip_mode,
         cfg.core.controls.tooltip_mode
+    );
+    assert_eq!(
+        round_trip.core.controls.loop_lock_enabled,
+        cfg.core.controls.loop_lock_enabled
     );
 }
 

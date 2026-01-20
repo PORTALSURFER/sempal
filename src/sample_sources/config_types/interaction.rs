@@ -42,7 +42,7 @@ impl Display for TooltipMode {
 /// `anti_clip_fade_ms`, `destructive_yolo_mode`, `waveform_channel_view`,
 /// `bpm_snap_enabled`, `bpm_lock_enabled`, `bpm_stretch_enabled`, `bpm_value`,
 /// `transient_markers_enabled`, `transient_snap_enabled`, `input_monitoring_enabled`,
-/// `normalized_audition_enabled`.
+/// `normalized_audition_enabled`, `loop_lock_enabled`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InteractionOptions {
     /// Invert mouse wheel direction for waveform scrolling.
@@ -99,6 +99,9 @@ pub struct InteractionOptions {
     /// Tooltip detail level.
     #[serde(default = "default_tooltip_mode")]
     pub tooltip_mode: TooltipMode,
+    /// Lock loop playback state to prevent auto-updates on sample load/selection.
+    #[serde(default = "default_false")]
+    pub loop_lock_enabled: bool,
 }
 
 impl Default for InteractionOptions {
@@ -122,6 +125,7 @@ impl Default for InteractionOptions {
             normalized_audition_enabled: default_false(),
             advance_after_rating: true,
             tooltip_mode: default_tooltip_mode(),
+            loop_lock_enabled: default_false(),
         }
     }
 }

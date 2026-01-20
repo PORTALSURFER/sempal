@@ -120,6 +120,7 @@ pub(crate) enum HotkeyCommand {
     AddFocusedToCollection,
     ToggleOverlay,
     ToggleLoop,
+    ToggleLoopLock,
     FocusWaveform,
     FocusBrowserSamples,
     FocusLoadedSample,

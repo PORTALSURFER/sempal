@@ -89,6 +89,11 @@ impl HotkeysController<'_> {
                 self.toggle_loop();
                 true
             }
+            HotkeyCommand::ToggleLoopLock => {
+                let enabled = !self.ui.waveform.loop_lock_enabled;
+                self.set_loop_lock_enabled(enabled);
+                true
+            }
             HotkeyCommand::FocusWaveform => {
                 self.focus_waveform();
                 true

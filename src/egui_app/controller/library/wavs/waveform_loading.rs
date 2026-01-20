@@ -356,6 +356,9 @@ impl EguiController {
     }
 
     fn apply_loaded_sample_loop_marker(&mut self, source: &SampleSource, relative_path: &Path) {
+        if self.ui.waveform.loop_lock_enabled {
+            return;
+        }
         let looped = match self.database_for(source) {
             Ok(db) => match db.looped_for_path(relative_path) {
                 Ok(Some(looped)) => looped,
