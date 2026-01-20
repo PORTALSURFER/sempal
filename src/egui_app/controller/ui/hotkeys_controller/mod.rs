@@ -110,6 +110,10 @@ impl HotkeysController<'_> {
                 self.focus_collection_samples_list();
                 true
             }
+            HotkeyCommand::FocusFolderTree => {
+                self.focus_context_from_ui(FocusContext::SourceFolders);
+                true
+            }
             HotkeyCommand::FocusSourcesList => {
                 self.focus_sources_list();
                 true

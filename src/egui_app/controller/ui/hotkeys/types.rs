@@ -125,6 +125,7 @@ pub(crate) enum HotkeyCommand {
     FocusBrowserSamples,
     FocusLoadedSample,
     FocusCollectionSamples,
+    FocusFolderTree,
     FocusSourcesList,
     FocusCollectionsList,
     PlayRandomSample,

@@ -259,9 +259,16 @@ pub(crate) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
     HotkeyAction {
         id: "focus-browser",
         label: "Focus source samples",
-        gesture: HotkeyGesture::with_chord(KeyPress::new(Key::G), KeyPress::new(Key::S)),
+        gesture: HotkeyGesture::with_chord(KeyPress::new(Key::G), KeyPress::new(Key::B)),
         scope: HotkeyScope::Global,
         command: HotkeyCommand::FocusBrowserSamples,
+    },
+    HotkeyAction {
+        id: "focus-folder-tree",
+        label: "Focus folder tree",
+        gesture: HotkeyGesture::with_chord(KeyPress::new(Key::G), KeyPress::new(Key::T)),
+        scope: HotkeyScope::Global,
+        command: HotkeyCommand::FocusFolderTree,
     },
     HotkeyAction {
         id: "focus-collection-samples",
@@ -273,7 +280,7 @@ pub(crate) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
     HotkeyAction {
         id: "focus-sources-list",
         label: "Focus sources list",
-        gesture: HotkeyGesture::with_chord(KeyPress::new(Key::G), KeyPress::with_shift(Key::S)),
+        gesture: HotkeyGesture::with_chord(KeyPress::new(Key::G), KeyPress::new(Key::S)),
         scope: HotkeyScope::Global,
         command: HotkeyCommand::FocusSourcesList,
     },
