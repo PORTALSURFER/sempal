@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ringbuf::{traits::*, HeapRb};
 
@@ -10,6 +10,7 @@ use crate::audio::Source;
 
 const DEFAULT_BUFFER_SECONDS: f32 = 1.0;
 const PRODUCER_BACKOFF: Duration = Duration::from_millis(1);
+const INITIAL_SAMPLE_WAIT: Duration = Duration::from_millis(10);
 
 /// Streams samples from a source on a background thread into a lock-free ring buffer.
 pub(crate) struct AsyncSource<S> {
@@ -19,6 +20,7 @@ pub(crate) struct AsyncSource<S> {
     total_duration: Option<Duration>,
     done: Arc<AtomicBool>,
     stop: Arc<AtomicBool>,
+    has_produced: Arc<AtomicBool>,
     last_error: Arc<Mutex<Option<String>>>,
     _marker: PhantomData<S>,
 }
@@ -45,10 +47,12 @@ where
         let done = Arc::new(AtomicBool::new(false));
         let stop = Arc::new(AtomicBool::new(false));
         let last_error = Arc::new(Mutex::new(None));
+        let has_produced = Arc::new(AtomicBool::new(false));
 
         let thread_done = Arc::clone(&done);
         let thread_stop = Arc::clone(&stop);
         let thread_error = Arc::clone(&last_error);
+        let thread_has_produced = Arc::clone(&has_produced);
 
         let spawn_result = thread::Builder::new()
             .name("audio-decode".to_string())
@@ -66,7 +70,10 @@ where
                                     break;
                                 }
                                 match producer.try_push(sample) {
-                                    Ok(()) => break,
+                                    Ok(()) => {
+                                        thread_has_produced.store(true, Ordering::Relaxed);
+                                        break;
+                                    }
                                     Err(returned) => {
                                         sample = returned;
                                         thread::sleep(PRODUCER_BACKOFF);
@@ -101,6 +108,7 @@ where
             total_duration,
             done,
             stop,
+            has_produced,
             last_error,
             _marker: PhantomData,
         }
@@ -119,6 +127,24 @@ where
         }
         if self.done.load(Ordering::Relaxed) {
             return None;
+        }
+        if !self.has_produced.load(Ordering::Relaxed) {
+            let deadline = Instant::now() + INITIAL_SAMPLE_WAIT;
+            while Instant::now() < deadline {
+                if let Some(sample) = self.consumer.try_pop() {
+                    return Some(sample);
+                }
+                if self.done.load(Ordering::Relaxed) {
+                    return None;
+                }
+                thread::sleep(PRODUCER_BACKOFF);
+            }
+            if let Some(sample) = self.consumer.try_pop() {
+                return Some(sample);
+            }
+            if self.done.load(Ordering::Relaxed) {
+                return None;
+            }
         }
         Some(0.0)
     }
