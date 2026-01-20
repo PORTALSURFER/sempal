@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::time::Instant;
 
 /// Sample browser state for wav entries with filterable rows.
 #[derive(Clone, Debug)]
@@ -51,6 +52,10 @@ pub struct SampleBrowserState {
     pub active_tab: SampleBrowserTab,
     /// True when a background search/filter job is running.
     pub search_busy: bool,
+    /// Paths that should flash in the browser list after a copy action.
+    pub copy_flash_paths: Vec<PathBuf>,
+    /// Start time for the current browser copy flash.
+    pub copy_flash_at: Option<Instant>,
 }
 
 impl Default for SampleBrowserState {
@@ -80,6 +85,8 @@ impl Default for SampleBrowserState {
             rename_focus_requested: false,
             active_tab: SampleBrowserTab::List,
             search_busy: false,
+            copy_flash_paths: Vec::new(),
+            copy_flash_at: None,
         }
     }
 }

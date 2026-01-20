@@ -3,6 +3,7 @@ use super::*;
 use crate::egui_app::state::DragSource;
 use crate::egui_app::view_model;
 use eframe::egui::{self, StrokeKind, Ui};
+use std::time::Duration;
 
 mod base_render;
 mod beat_grid;
@@ -24,11 +25,16 @@ impl EguiApp {
         let highlight = palette.accent_copper;
         let cursor_color = palette.accent_mint;
         let start_marker_color = palette.accent_ice;
-        let is_loading = self.controller.ui.waveform.loading.is_some();
-        controls::render_waveform_controls(self, ui, &palette);
-        let frame = style::section_frame();
-        let tooltip_mode = self.controller.ui.controls.tooltip_mode;
-        let frame_response = frame.show(ui, |ui| {
+            let is_loading = self.controller.ui.waveform.loading.is_some();
+            let flash_alpha = helpers::flash_alpha(
+                &mut self.controller.ui.waveform.copy_flash_at,
+                Duration::from_millis(260),
+                70,
+            );
+            controls::render_waveform_controls(self, ui, &palette);
+            let frame = style::section_frame();
+            let tooltip_mode = self.controller.ui.controls.tooltip_mode;
+            let frame_response = frame.show(ui, |ui| {
             let view = self.controller.ui.waveform.view;
             // Always use the actual f64 view for precision
             // Don't use the image's snapped view as it causes desync
@@ -122,6 +128,11 @@ impl EguiApp {
                 start_marker_color,
                 &to_screen_x,
             );
+            if let Some(alpha) = flash_alpha {
+                let flash_color =
+                    style::with_alpha(style::semantic_palette().drag_highlight, alpha);
+                ui.painter().rect_filled(waveform_rect, 0.0, flash_color);
+            }
             render_waveform_drag_handle(self, ui, waveform_rect, &palette);
 
             interactions::handle_waveform_interactions(

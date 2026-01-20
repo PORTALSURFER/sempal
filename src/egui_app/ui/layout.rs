@@ -116,6 +116,8 @@ impl EguiApp {
             || self.controller.ui.drag.payload.is_some()
             || self.controller.is_recording()
             || self.controller.ui.waveform.loading.is_some()
+            || self.controller.ui.waveform.copy_flash_at.is_some()
+            || self.controller.ui.browser.copy_flash_at.is_some()
         {
             ctx.request_repaint();
         }

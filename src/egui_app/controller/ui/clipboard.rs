@@ -1,4 +1,5 @@
 use super::*;
+use std::time::Instant;
 use std::path::{Path, PathBuf};
 
 impl EguiController {
@@ -16,6 +17,7 @@ impl EguiController {
                 } else {
                     let label = clipboard_copy_label(&paths);
                     self.set_status(label, StatusTone::Info);
+                    self.record_copy_flash();
                 }
             }
             Err(err) => self.set_status(err, StatusTone::Error),
@@ -115,6 +117,32 @@ impl EguiController {
         paths.retain(|p| p.exists());
         Ok(paths)
     }
+
+    fn record_copy_flash(&mut self) {
+        let now = Instant::now();
+        self.ui.waveform.copy_flash_at = Some(now);
+        let paths = self.copy_flash_paths();
+        if paths.is_empty() {
+            self.ui.browser.copy_flash_paths.clear();
+            self.ui.browser.copy_flash_at = None;
+            return;
+        }
+        self.ui.browser.copy_flash_paths = paths;
+        self.ui.browser.copy_flash_at = Some(now);
+    }
+
+    fn copy_flash_paths(&self) -> Vec<PathBuf> {
+        if !self.ui.browser.selected_paths.is_empty() {
+            return self.ui.browser.selected_paths.clone();
+        }
+        if let Some(selected) = self.sample_view.wav.selected_wav.as_ref() {
+            return vec![selected.clone()];
+        }
+        if let Some(loaded) = self.sample_view.wav.loaded_audio.as_ref() {
+            return vec![loaded.relative_path.clone()];
+        }
+        Vec::new()
+    }
 }
 
 fn display_path(path: &Path) -> String {
@@ -174,6 +202,24 @@ mod tests {
                 .file_name()
                 .and_then(|n| n.to_str())
                 .is_some_and(|n| n.starts_with("clip_sel"))
+        );
+    }
+
+    #[test]
+    fn copy_flash_paths_prefers_browser_selection() {
+        let renderer = crate::waveform::WaveformRenderer::new(8, 8);
+        let mut controller = EguiController::new(renderer, None);
+        controller.ui.browser.selected_paths = vec![
+            PathBuf::from("alpha.wav"),
+            PathBuf::from("beta.wav"),
+        ];
+        controller.sample_view.wav.selected_wav = Some(PathBuf::from("fallback.wav"));
+
+        let paths = controller.copy_flash_paths();
+
+        assert_eq!(
+            paths,
+            vec![PathBuf::from("alpha.wav"), PathBuf::from("beta.wav")]
         );
     }
 }

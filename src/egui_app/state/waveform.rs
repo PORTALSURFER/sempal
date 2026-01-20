@@ -77,6 +77,8 @@ pub struct WaveformState {
     pub suppress_hover_cursor: bool,
     /// Last pointer position used for middle-button waveform panning.
     pub pan_drag_pos: Option<egui::Pos2>,
+    /// Start time for the current waveform copy flash.
+    pub copy_flash_at: Option<Instant>,
 }
 
 impl Default for WaveformState {
@@ -116,6 +118,7 @@ impl Default for WaveformState {
             hover_pointer_last_moved_at: None,
             suppress_hover_cursor: false,
             pan_drag_pos: None,
+            copy_flash_at: None,
         }
     }
 }

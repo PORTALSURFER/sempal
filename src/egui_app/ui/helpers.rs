@@ -4,6 +4,7 @@ use eframe::egui::{self, Align2, Color32, PopupAnchor, TextStyle, Tooltip, Ui};
 use crate::sample_sources::Rating;
 use crate::sample_sources::config::TooltipMode;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 /// Display a contextual hint tooltip if hints are enabled and the last response was hovered.
 pub(super) fn show_hover_hint(ui: &mut Ui, mode: TooltipMode, hint: &str) {
@@ -96,6 +97,24 @@ pub(super) fn external_dropped_paths(ctx: &egui::Context) -> Vec<PathBuf> {
             .filter_map(|file| file.path.clone())
             .collect()
     })
+}
+
+pub(super) fn flash_alpha(
+    start: &mut Option<Instant>,
+    duration: Duration,
+    max_alpha: u8,
+) -> Option<u8> {
+    let started_at = start.as_ref()?;
+    let elapsed = started_at.elapsed();
+    if elapsed >= duration {
+        *start = None;
+        return None;
+    }
+    let progress = (elapsed.as_secs_f32() / duration.as_secs_f32()).clamp(0.0, 1.0);
+    let remaining = 1.0 - progress;
+    let eased = remaining * remaining;
+    let alpha = (max_alpha as f32 * eased).round().clamp(0.0, max_alpha as f32) as u8;
+    Some(alpha)
 }
 
 /// Metadata for rendering a fixed-width number column alongside a list row.

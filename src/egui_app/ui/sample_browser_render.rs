@@ -15,6 +15,7 @@ use crate::egui_app::state::{
 use crate::egui_app::view_model;
 use eframe::egui::{self, StrokeKind, Ui};
 use std::path::PathBuf;
+use std::time::Duration;
 
 impl EguiApp {
     pub(super) fn render_sample_browser(&mut self, ui: &mut Ui) {
@@ -28,6 +29,15 @@ impl EguiApp {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i64;
+        let flash_alpha = helpers::flash_alpha(
+            &mut self.controller.ui.browser.copy_flash_at,
+            Duration::from_millis(260),
+            60,
+        );
+        if flash_alpha.is_none() {
+            self.controller.ui.browser.copy_flash_paths.clear();
+        }
+        let flash_paths = self.controller.ui.browser.copy_flash_paths.clone();
         ui.horizontal(|ui| {
             if ui
                 .selectable_label(tab == SampleBrowserTab::List, "Samples")
@@ -248,7 +258,7 @@ impl EguiApp {
                     } else {
                         egui::Sense::click_and_drag()
                     };
-                    let response = render_list_row(
+                let response = render_list_row(
                         ui,
                         super::helpers::ListRow {
                             label: &row_label,
@@ -270,6 +280,15 @@ impl EguiApp {
                             bpm_label: if rename_match { None } else { bpm_label.as_deref() },
                         },
                     );
+                    if let Some(alpha) = flash_alpha {
+                        if flash_paths.iter().any(|p| p == &path) && alpha > 0 {
+                            let flash_color = style::with_alpha(
+                                style::semantic_palette().drag_highlight,
+                                alpha,
+                            );
+                            ui.painter().rect_filled(response.rect, 0.0, flash_color);
+                        }
+                    }
                     let mut hover_text = status_label.hover_text.clone();
                     if long_sample && !rename_match {
                         let entry = "Long sample".to_string();
