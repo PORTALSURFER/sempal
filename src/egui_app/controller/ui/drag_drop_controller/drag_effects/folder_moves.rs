@@ -776,6 +776,7 @@ fn run_folder_move_task(
                 source_id: request.source_id,
                 old_folder: request.folder,
                 new_folder: new_relative,
+                folder_moved,
                 moved,
                 errors,
                 cancelled,
