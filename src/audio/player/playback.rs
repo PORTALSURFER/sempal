@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::audio::Source;
+use crate::audio::{AsyncSource, Source};
 use crate::audio::SamplesBuffer;
 
 use super::super::fade::{EdgeFade, fade_duration};
@@ -199,7 +199,8 @@ impl AudioPlayer {
             );
             Box::new(editable)
         } else {
-            let limited = source.take_duration(loop_duration).buffered();
+            let async_source = AsyncSource::new(source);
+            let limited = async_source.take_duration(loop_duration).buffered();
             let editable = EditFadeSource::new(limited, self.edit_fade_handle.clone(), bounded_start);
             let faded = EdgeFade::new(editable, fade);
             Box::new(faded)
