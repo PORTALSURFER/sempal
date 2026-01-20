@@ -4,10 +4,11 @@ use super::super::super::config_types::{
     WgpuPowerPreference,
 };
 use super::super::load::load_settings_from;
-use super::super::save::save_to_path;
+use super::super::save::{save_settings_to_path, save_to_path};
 use super::TestConfigEnv;
 use crate::audio::{AudioInputConfig, AudioOutputConfig};
 use crate::sample_sources::config::AppConfig;
+use crate::sample_sources::config_types::AppSettings;
 use crate::sample_sources::library::LibraryState;
 use crate::sample_sources::{Collection, SampleSource, SourceId};
 use crate::waveform::WaveformChannelView;
@@ -349,4 +350,31 @@ fn settings_round_trip_preserves_fields() {
         round_trip.core.controls.tooltip_mode,
         cfg.core.controls.tooltip_mode
     );
+}
+
+#[test]
+#[cfg(unix)]
+fn settings_atomic_write_preserves_existing_on_failure() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let env = TestConfigEnv::new();
+    let path = env.path("cfg.toml");
+    env.write(&path, "sentinel = true\n");
+
+    let dir = path.parent().unwrap();
+    let mut permissions = std::fs::metadata(dir).unwrap().permissions();
+    permissions.set_mode(0o500);
+    std::fs::set_permissions(dir, permissions).unwrap();
+
+    let mut settings = AppSettings::default();
+    settings.core.volume = 0.33;
+    let result = save_settings_to_path(&settings, &path);
+    assert!(result.is_err());
+
+    let mut restore = std::fs::metadata(dir).unwrap().permissions();
+    restore.set_mode(0o700);
+    std::fs::set_permissions(dir, restore).unwrap();
+
+    let contents = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(contents, "sentinel = true\n");
 }
