@@ -348,16 +348,8 @@ fn remove_stale_paths(
         if !path.exists() {
             continue;
         }
-        match fs::metadata(path).map(|m| m.file_type().is_dir()) {
-            Ok(true) => {
-                if let Err(err) = fs::remove_dir_all(path) {
-                    failures.push(StaleRemovalFailure {
-                        path: path.clone(),
-                        error: err.to_string(),
-                    });
-                }
-            }
-            Ok(false) => {
+        match fs::symlink_metadata(path) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
                 if let Err(err) = fs::remove_file(path) {
                     failures.push(StaleRemovalFailure {
                         path: path.clone(),
@@ -365,29 +357,28 @@ fn remove_stale_paths(
                     });
                 }
             }
+            Ok(metadata) if metadata.is_dir() => {
+                if let Err(err) = fs::remove_dir_all(path) {
+                    failures.push(StaleRemovalFailure {
+                        path: path.clone(),
+                        error: err.to_string(),
+                    });
+                }
+            }
+            Ok(_) => {
+                if let Err(err) = fs::remove_file(path) {
+                    failures.push(StaleRemovalFailure {
+                        path: path.clone(),
+                        error: err.to_string(),
+                    });
+                }
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
             Err(err) => {
-                let mut removed = false;
-                match fs::remove_dir_all(path) {
-                    Ok(_) => {
-                        removed = true;
-                    }
-                    Err(dir_err) => {
-                        if fs::remove_file(path).is_ok() {
-                            removed = true;
-                        } else {
-                            failures.push(StaleRemovalFailure {
-                                path: path.clone(),
-                                error: format!(
-                                    "metadata error: {err}; remove dir error: {dir_err}"
-                                ),
-                            });
-                        }
-                    }
-                }
-                if removed {
-                    let _ = prune_empty_parents(install_dir, path);
-                }
-                continue;
+                failures.push(StaleRemovalFailure {
+                    path: path.clone(),
+                    error: format!("metadata error: {err}"),
+                });
             }
         }
         let _ = prune_empty_parents(install_dir, path);
@@ -399,6 +390,10 @@ fn prune_empty_parents(install_dir: &Path, path: &Path) -> Result<(), UpdateErro
     let mut current = path.parent();
     while let Some(dir) = current {
         if dir == install_dir {
+            break;
+        }
+        let metadata = fs::symlink_metadata(dir)?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
             break;
         }
         if fs::read_dir(dir)?.next().is_some() {
@@ -659,5 +654,27 @@ mod tests {
             perms.set_mode(0o755);
             fs::set_permissions(&stale_dir, perms).unwrap();
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn remove_stale_paths_removes_symlink_without_touching_target() {
+        use std::os::unix::fs::symlink;
+
+        let tmp = tempdir().unwrap();
+        let install_dir = tmp.path().join("install");
+        let outside_dir = tmp.path().join("outside");
+        fs::create_dir_all(&install_dir).unwrap();
+        fs::create_dir_all(&outside_dir).unwrap();
+        fs::write(outside_dir.join("keep.txt"), "keep").unwrap();
+
+        let link_path = install_dir.join("stale-link");
+        symlink(&outside_dir, &link_path).unwrap();
+
+        let failures = remove_stale_paths(&[link_path.clone()], &install_dir).unwrap();
+
+        assert!(failures.is_empty());
+        assert!(!link_path.exists());
+        assert!(outside_dir.join("keep.txt").exists());
     }
 }
