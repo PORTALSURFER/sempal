@@ -70,12 +70,19 @@ impl EguiController {
 
     fn ensure_feature_cache(&mut self, source_id: &SourceId) -> Result<(), String> {
         let needs_len = self.wav_entries_len();
-        let existing = self.ui_cache.browser.features.get(source_id);
-        if existing.is_some_and(|cache| {
+        let existing_complete = self.ui_cache.browser.features.get(source_id).is_some_and(|cache| {
             cache.rows.len() == needs_len && cache.rows.iter().all(|row| row.is_some())
-        }) {
+        });
+        if existing_complete {
             return Ok(());
         }
+        let fallback_rows = self
+            .ui_cache
+            .browser
+            .features
+            .get(source_id)
+            .map(|cache| cache.rows.clone())
+            .unwrap_or_default();
         let source = self
             .library
             .sources
@@ -145,13 +152,25 @@ impl EguiController {
                 continue;
             };
             let key = normalize_relative_key(&entry.relative_path.to_string_lossy());
-            let status = sample_map.remove(&key).unwrap_or(FeatureStatus {
+            let mut status = sample_map.remove(&key).unwrap_or(FeatureStatus {
                 has_features_v1: false,
                 has_embedding: false,
                 duration_seconds: None,
                 sr_used: None,
                 analysis_status: None,
             });
+            if status.duration_seconds.is_none() {
+                if let Some(fallback) = fallback_rows.get(idx).and_then(|row| row.as_ref()) {
+                    if let Some(duration) =
+                        fallback.duration_seconds.filter(|value| value.is_finite() && *value > 0.0)
+                    {
+                        status.duration_seconds = Some(duration);
+                        if status.sr_used.is_none() {
+                            status.sr_used = fallback.sr_used;
+                        }
+                    }
+                }
+            }
             rows[idx] = Some(status);
         }
         self.ui_cache
