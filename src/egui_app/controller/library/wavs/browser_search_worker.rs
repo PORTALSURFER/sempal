@@ -4,7 +4,8 @@ use crate::sample_sources::Rating;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use std::cmp::Ordering;
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::Receiver;
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 
 struct CompactSearchEntry {
@@ -30,18 +31,78 @@ impl Default for SearchWorkerCache {
     }
 }
 
-pub(crate) fn spawn_search_worker() -> (Sender<SearchJob>, Receiver<SearchResult>) {
-    let (tx, rx) = std::sync::mpsc::channel::<SearchJob>();
+#[derive(Default)]
+struct SearchJobQueueState {
+    pending: Option<SearchJob>,
+}
+
+/// Latest-only queue for browser search jobs.
+struct SearchJobQueue {
+    state: Mutex<SearchJobQueueState>,
+    ready: Condvar,
+}
+
+impl SearchJobQueue {
+    fn new() -> Self {
+        Self {
+            state: Mutex::new(SearchJobQueueState::default()),
+            ready: Condvar::new(),
+        }
+    }
+
+    fn send(&self, job: SearchJob) {
+        let mut state = self.state.lock().expect("search job queue poisoned");
+        state.pending = Some(job);
+        self.ready.notify_one();
+    }
+
+    fn take_blocking(&self) -> SearchJob {
+        let mut state = self.state.lock().expect("search job queue poisoned");
+        loop {
+            if let Some(job) = state.pending.take() {
+                return job;
+            }
+            state = self.ready.wait(state).expect("search job queue poisoned");
+        }
+    }
+
+    #[cfg(test)]
+    fn try_take(&self) -> Option<SearchJob> {
+        let mut state = self.state.lock().expect("search job queue poisoned");
+        state.pending.take()
+    }
+}
+
+/// Sender handle for coalesced search jobs.
+#[derive(Clone)]
+pub(crate) struct SearchJobSender {
+    queue: Arc<SearchJobQueue>,
+}
+
+impl SearchJobSender {
+    /// Replace any pending search job with the latest request.
+    pub(crate) fn send(&self, job: SearchJob) {
+        self.queue.send(job);
+    }
+}
+
+/// Spawn a background worker that processes the latest pending search job.
+pub(crate) fn spawn_search_worker() -> (SearchJobSender, Receiver<SearchResult>) {
+    let queue = Arc::new(SearchJobQueue::new());
+    let sender = SearchJobSender {
+        queue: Arc::clone(&queue),
+    };
     let (result_tx, result_rx) = std::sync::mpsc::channel::<SearchResult>();
     thread::spawn(move || {
         let matcher = SkimMatcherV2::default();
         let mut cache = SearchWorkerCache::default();
-        while let Ok(job) = rx.recv() {
+        loop {
+            let job = queue.take_blocking();
             let result = process_search_job(job, &matcher, &mut cache);
             let _ = result_tx.send(result);
         }
     });
-    (tx, result_rx)
+    (sender, result_rx)
 }
 
 fn process_search_job(
@@ -294,6 +355,7 @@ fn sort_visible_by_playback_age(
 mod tests {
     use super::*;
     use crate::sample_sources::WavEntry;
+    use crate::sample_sources::SourceId;
 
     #[test]
     fn test_compact_search_entry() {
@@ -338,5 +400,41 @@ mod tests {
         assert_eq!(compacts[0].display_label.as_ref(), "kick");
         assert_eq!(compacts[1].display_label.as_ref(), "snare");
         assert_eq!(compacts[0].relative_path.as_ref(), "kits/drums/kick.wav");
+    }
+
+    #[test]
+    fn latest_search_job_replaces_pending() {
+        let queue = Arc::new(SearchJobQueue::new());
+        let sender = SearchJobSender {
+            queue: Arc::clone(&queue),
+        };
+
+        let first = SearchJob {
+            source_id: SourceId::new(),
+            source_root: std::path::PathBuf::from("one"),
+            query: "first".to_string(),
+            filter: TriageFlagFilter::All,
+            sort: SampleBrowserSort::ListOrder,
+            similar_query: None,
+            folder_selection: None,
+            folder_negated: None,
+        };
+        let second = SearchJob {
+            source_id: SourceId::new(),
+            source_root: std::path::PathBuf::from("two"),
+            query: "second".to_string(),
+            filter: TriageFlagFilter::All,
+            sort: SampleBrowserSort::ListOrder,
+            similar_query: None,
+            folder_selection: None,
+            folder_negated: None,
+        };
+
+        sender.send(first);
+        sender.send(second);
+
+        let pending = queue.try_take().expect("expected pending search job");
+        assert_eq!(pending.query, "second");
+        assert!(queue.try_take().is_none());
     }
 }

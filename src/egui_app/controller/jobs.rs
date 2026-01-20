@@ -480,7 +480,7 @@ pub(crate) enum UndoFileOutcome {
 pub(crate) struct ControllerJobs {
     pub(crate) wav_job_tx: Sender<WavLoadJob>,
     pub(crate) audio_job_tx: Sender<AudioLoadJob>,
-    pub(crate) search_job_tx: Sender<SearchJob>,
+    pub(crate) search_job_tx: crate::egui_app::controller::library::wavs::browser_search_worker::SearchJobSender,
     source_watch_tx: Sender<SourceWatchCommand>,
     message_tx: Sender<JobMessage>,
     message_rx: Receiver<JobMessage>,
@@ -515,7 +515,7 @@ impl ControllerJobs {
         wav_job_rx: Receiver<WavLoadResult>,
         audio_job_tx: Sender<AudioLoadJob>,
         audio_job_rx: Receiver<AudioLoadResult>,
-        search_job_tx: Sender<SearchJob>,
+        search_job_tx: crate::egui_app::controller::library::wavs::browser_search_worker::SearchJobSender,
         search_job_rx: Receiver<SearchResult>,
     ) -> Self {
         let (message_tx, message_rx) = std::sync::mpsc::channel::<JobMessage>();
