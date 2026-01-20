@@ -547,14 +547,14 @@ fn update_sample_duration_updates_when_hash_differs() {
 
 #[test]
 fn update_sample_duration_creates_row_on_load() {
-    let conn = conn_with_schema();
+    let mut conn = conn_with_schema();
     let samples = vec![SampleMetadata {
         sample_id: "s::a.wav".to_string(),
         content_hash: "fast-10-5".to_string(),
         size: 10,
         mtime_ns: 5,
     }];
-    upsert_samples(&conn, &samples).unwrap();
+    upsert_samples(&mut conn, &samples).unwrap();
     let updated = update_sample_duration(
         &conn,
         "s::a.wav",

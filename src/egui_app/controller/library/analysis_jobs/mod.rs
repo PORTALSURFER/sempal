@@ -10,7 +10,8 @@ pub(crate) use db::open_source_db;
 pub(crate) use db::purge_orphaned_samples;
 pub(crate) use db::{
     build_sample_id, parse_sample_id, sample_bpm, update_sample_bpms,
-    update_sample_duration,
+    update_sample_duration, update_sample_long_mark,
+    upsert_samples, SampleMetadata,
 };
 #[cfg(test)]
 pub(crate) use db::update_sample_bpm;
@@ -20,6 +21,7 @@ pub(crate) use enqueue::enqueue_jobs_for_source_backfill;
 pub(crate) use enqueue::enqueue_jobs_for_source_backfill_full;
 pub(crate) use enqueue::enqueue_jobs_for_source_missing_features;
 pub(crate) use enqueue::{enqueue_jobs_for_embedding_backfill, enqueue_jobs_for_embedding_samples};
+pub(crate) use enqueue::fast_content_hash;
 pub(crate) use failures::failed_samples_for_source;
 pub(crate) use pool::AnalysisWorkerPool;
 pub(crate) use types::{AnalysisJobMessage, AnalysisProgress, RunningJobInfo};

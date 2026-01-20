@@ -321,7 +321,7 @@ impl EguiController {
             None => return,
         };
         let sample_id = analysis_jobs::build_sample_id(source.id.as_str(), relative_path);
-        let conn = match analysis_jobs::open_source_db(&source.root) {
+        let mut conn = match analysis_jobs::open_source_db(&source.root) {
             Ok(conn) => conn,
             Err(err) => {
                 tracing::warn!(
@@ -332,7 +332,7 @@ impl EguiController {
             }
         };
         if let Err(err) = analysis_jobs::upsert_samples(
-            &conn,
+            &mut conn,
             &[analysis_jobs::SampleMetadata {
                 sample_id: sample_id.clone(),
                 content_hash,
