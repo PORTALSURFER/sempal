@@ -3,13 +3,14 @@
 use crate::egui_app::controller::jobs::JobMessage;
 use crate::sample_sources::{SourceId, db::DB_FILE_NAME, is_supported_audio};
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Result as NotifyResult, Watcher};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const COMMAND_POLL_INTERVAL: Duration = Duration::from_millis(200);
+const SOURCE_WATCH_DEBOUNCE: Duration = Duration::from_millis(400);
 
 /// Input used to configure which source roots are actively watched.
 #[derive(Clone, Debug)]
@@ -30,6 +31,8 @@ impl SourceWatchEntry {
 pub(crate) enum SourceWatchCommand {
     /// Replace the watched sources with a new list of source roots.
     ReplaceSources(Vec<SourceWatchEntry>),
+    /// Tell the watcher whether a scan job is currently running.
+    SetScanInProgress { in_progress: bool },
 }
 
 /// Event emitted when a watched source sees an on-disk change worth syncing.
@@ -60,6 +63,8 @@ fn run_source_watcher(command_rx: Receiver<SourceWatchCommand>, message_tx: Send
     };
     let mut watched_roots: HashSet<PathBuf> = HashSet::new();
     let mut sources: Vec<SourceWatchEntry> = Vec::new();
+    let mut pending: HashMap<SourceId, PendingSourceWatch> = HashMap::new();
+    let mut scan_in_progress = false;
 
     loop {
         match command_rx.recv_timeout(COMMAND_POLL_INTERVAL) {
@@ -67,6 +72,10 @@ fn run_source_watcher(command_rx: Receiver<SourceWatchCommand>, message_tx: Send
                 SourceWatchCommand::ReplaceSources(next_sources) => {
                     update_watched_sources(&mut watcher, &mut watched_roots, &next_sources);
                     sources = next_sources;
+                    prune_pending_sources(&mut pending, &sources);
+                }
+                SourceWatchCommand::SetScanInProgress { in_progress } => {
+                    scan_in_progress = in_progress;
                 }
             },
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
@@ -94,10 +103,63 @@ fn run_source_watcher(command_rx: Receiver<SourceWatchCommand>, message_tx: Send
                 }
             }
             for source_id in impacted {
-                let _ = message_tx.send(JobMessage::SourceWatch(SourceWatchEvent { source_id }));
+                update_pending_watch(&mut pending, source_id, Instant::now());
             }
         }
+
+        let ready = drain_ready_sources(
+            &mut pending,
+            Instant::now(),
+            SOURCE_WATCH_DEBOUNCE,
+            scan_in_progress,
+        );
+        for source_id in ready {
+            let _ = message_tx.send(JobMessage::SourceWatch(SourceWatchEvent { source_id }));
+        }
     }
+}
+
+#[derive(Debug, Copy, Clone)]
+struct PendingSourceWatch {
+    last_event: Instant,
+}
+
+fn update_pending_watch(
+    pending: &mut HashMap<SourceId, PendingSourceWatch>,
+    source_id: SourceId,
+    now: Instant,
+) {
+    pending.insert(source_id, PendingSourceWatch { last_event: now });
+}
+
+fn drain_ready_sources(
+    pending: &mut HashMap<SourceId, PendingSourceWatch>,
+    now: Instant,
+    debounce: Duration,
+    scan_in_progress: bool,
+) -> Vec<SourceId> {
+    if scan_in_progress {
+        return Vec::new();
+    }
+    let ready: Vec<SourceId> = pending
+        .iter()
+        .filter_map(|(source_id, entry)| {
+            (now.saturating_duration_since(entry.last_event) >= debounce)
+                .then(|| source_id.clone())
+        })
+        .collect();
+    for source_id in &ready {
+        pending.remove(source_id);
+    }
+    ready
+}
+
+fn prune_pending_sources(
+    pending: &mut HashMap<SourceId, PendingSourceWatch>,
+    sources: &[SourceWatchEntry],
+) {
+    let allowed: HashSet<&SourceId> = sources.iter().map(|entry| &entry.source_id).collect();
+    pending.retain(|source_id, _| allowed.contains(source_id));
 }
 
 fn update_watched_sources(
@@ -150,7 +212,7 @@ fn path_is_candidate(path: &Path) -> bool {
     if is_supported_audio(path) {
         return true;
     }
-    path.extension().is_none()
+    path_extensionless_is_directory(path)
 }
 
 fn path_is_ignored(path: &Path) -> bool {
@@ -158,6 +220,16 @@ fn path_is_ignored(path: &Path) -> bool {
         return false;
     };
     name.starts_with(DB_FILE_NAME)
+}
+
+fn path_extensionless_is_directory(path: &Path) -> bool {
+    if path.extension().is_some() {
+        return false;
+    }
+    match path.metadata() {
+        Ok(metadata) => metadata.is_dir(),
+        Err(_) => true,
+    }
 }
 
 #[cfg(test)]
@@ -177,8 +249,11 @@ mod tests {
     }
 
     #[test]
-    fn path_is_candidate_allows_extensionless_paths() {
-        assert!(path_is_candidate(Path::new("Samples")));
+    fn path_is_candidate_allows_extensionless_directories() {
+        let root = std::env::temp_dir().join("sempal_source_watch_dir");
+        std::fs::create_dir_all(&root).unwrap();
+        assert!(path_is_candidate(&root));
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
@@ -194,5 +269,43 @@ mod tests {
         let path = Path::new("/music/drums/kicks/kick.wav");
         let selected = select_source_for_path(&[first, second], path).unwrap();
         assert_eq!(selected.as_str(), "b");
+    }
+
+    #[test]
+    fn drain_ready_sources_waits_for_debounce() {
+        let mut pending = HashMap::new();
+        let source_id = SourceId::from_string("a");
+        let start = Instant::now();
+        update_pending_watch(&mut pending, source_id.clone(), start);
+        assert!(drain_ready_sources(
+            &mut pending,
+            start + Duration::from_millis(200),
+            Duration::from_millis(400),
+            false
+        )
+        .is_empty());
+        let ready = drain_ready_sources(
+            &mut pending,
+            start + Duration::from_millis(500),
+            Duration::from_millis(400),
+            false,
+        );
+        assert_eq!(ready, vec![source_id]);
+    }
+
+    #[test]
+    fn drain_ready_sources_honors_scan_in_progress() {
+        let mut pending = HashMap::new();
+        let source_id = SourceId::from_string("a");
+        let start = Instant::now();
+        update_pending_watch(&mut pending, source_id, start);
+        let ready = drain_ready_sources(
+            &mut pending,
+            start + Duration::from_millis(500),
+            Duration::from_millis(400),
+            true,
+        );
+        assert!(ready.is_empty());
+        assert_eq!(pending.len(), 1);
     }
 }

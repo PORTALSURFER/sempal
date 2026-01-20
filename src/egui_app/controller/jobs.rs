@@ -822,6 +822,7 @@ impl ControllerJobs {
     pub(super) fn start_scan(&mut self, rx: Receiver<ScanJobMessage>, cancel: Arc<AtomicBool>) {
         self.scan_in_progress = true;
         self.scan_cancel = Some(cancel);
+        self.send_source_watch_scan_state(true);
         let tx = self.message_tx.clone();
         let signal = self.repaint_signal.clone();
         thread::spawn(move || {
@@ -847,6 +848,13 @@ impl ControllerJobs {
     pub(super) fn clear_scan(&mut self) {
         self.scan_in_progress = false;
         self.scan_cancel = None;
+        self.send_source_watch_scan_state(false);
+    }
+
+    fn send_source_watch_scan_state(&self, in_progress: bool) {
+        let _ = self
+            .source_watch_tx
+            .send(SourceWatchCommand::SetScanInProgress { in_progress });
     }
 
     pub(super) fn trash_move_in_progress(&self) -> bool {
