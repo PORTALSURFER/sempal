@@ -359,9 +359,12 @@ impl EguiController {
         let looped = match self.database_for(source) {
             Ok(db) => match db.looped_for_path(relative_path) {
                 Ok(Some(looped)) => looped,
-                Ok(None) => return,
+                Ok(None) => false,
                 Err(err) => {
-                    tracing::warn!("Failed to load loop marker for {}: {err}", relative_path.display());
+                    tracing::warn!(
+                        "Failed to load loop marker for {}: {err}",
+                        relative_path.display()
+                    );
                     return;
                 }
             },

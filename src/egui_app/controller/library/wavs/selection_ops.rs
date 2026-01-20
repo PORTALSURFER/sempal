@@ -44,11 +44,17 @@ pub(crate) fn select_wav_by_path_with_rebuild(
         }
     }
     let path_changed = controller.sample_view.wav.selected_wav.as_deref() != Some(path);
+    let entry_looped = controller
+        .wav_entries
+        .entry(index)
+        .map(|entry| entry.looped)
+        .unwrap_or(false);
     if path_changed {
         let _ = controller.commit_edit_selection_fades();
     }
     if path_changed {
         controller.ui.waveform.last_start_marker = None;
+        controller.ui.waveform.loop_enabled = entry_looped;
     }
     controller.sample_view.wav.selected_wav = Some(path.to_path_buf());
     controller.ui.browser.last_focused_path = Some(path.to_path_buf());
@@ -86,11 +92,16 @@ pub(crate) fn select_wav_by_path_with_rebuild(
         let autoplay = controller.settings.feature_flags.autoplay_selection
             && !controller.selection_state.suppress_autoplay_once;
         controller.selection_state.suppress_autoplay_once = false;
+        let selection_looped = if path_changed {
+            entry_looped
+        } else {
+            controller.ui.waveform.loop_enabled
+        };
         let pending_playback = if autoplay {
             Some(PendingPlayback {
                 source_id: source.id.clone(),
                 relative_path: path.to_path_buf(),
-                looped: controller.ui.waveform.loop_enabled,
+                looped: selection_looped,
                 start_override: None,
             })
         } else {

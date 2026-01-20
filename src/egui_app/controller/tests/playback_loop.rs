@@ -251,3 +251,37 @@ fn adjusting_bpm_while_playing_keeps_playing() {
 
     assert!(controller.is_playing());
 }
+
+#[test]
+fn loading_non_looped_sample_disables_loop_playback() {
+    let (mut controller, source) = dummy_controller();
+    controller.library.sources.push(source.clone());
+    controller.settings.feature_flags.autoplay_selection = true;
+    controller.ui.waveform.loop_enabled = true;
+
+    let wav_path = source.root.join("non_loop.wav");
+    write_test_wav(&wav_path, &[0.0, 0.5, -0.5]);
+    controller.set_wav_entries_for_tests(vec![WavEntry {
+        relative_path: PathBuf::from("non_loop.wav"),
+        file_size: 0,
+        modified_ns: 0,
+        content_hash: None,
+        tag: crate::sample_sources::Rating::NEUTRAL,
+        looped: false,
+        missing: false,
+        last_played_at: None,
+    }]);
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    controller.select_wav_by_path(Path::new("non_loop.wav"));
+
+    assert!(!controller.ui.waveform.loop_enabled);
+    let pending = controller
+        .runtime
+        .jobs
+        .pending_playback
+        .as_ref()
+        .expect("pending playback to be queued");
+    assert!(!pending.looped);
+}
