@@ -1,6 +1,6 @@
 use super::super::DragDropController;
 use crate::egui_app::controller::library::collection_items_helpers::file_metadata;
-use crate::egui_app::controller::jobs::{FileOpMessage, FileOpResult, SourceMoveRequest, SourceMoveResult, SourceMoveSuccess};
+use crate::egui_app::controller::jobs::{FileOpMessage, SourceMoveRequest, SourceMoveResult, SourceMoveSuccess};
 use crate::egui_app::state::DragSample;
 use crate::egui_app::ui::style::StatusTone;
 use crate::sample_sources::{Rating, SourceDatabase, SourceId, WavEntry};

@@ -74,8 +74,15 @@ pub(crate) fn run_undo_file_job(
             relative_path,
             absolute_path,
         } => {
-            let db = SourceDatabase::open(&source_root)
-                .map_err(|err| format!("Database unavailable: {err}"))?;
+            let db = match SourceDatabase::open(&source_root) {
+                Ok(db) => db,
+                Err(err) => {
+                    return UndoFileOpResult {
+                        result: Err(format!("Database unavailable: {err}")),
+                        cancelled: false,
+                    };
+                }
+            };
             let _ = std::fs::remove_file(&absolute_path);
             let _ = db.remove_file(&relative_path);
             Ok(UndoFileOutcome::Removed {
