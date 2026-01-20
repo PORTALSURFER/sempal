@@ -13,6 +13,7 @@ pub(crate) struct SourceCacheInvalidator<'a> {
     wav_cache: &'a mut HashMap<SourceId, super::WavEntriesState>,
     label_cache: &'a mut HashMap<SourceId, Vec<String>>,
     bpm_cache: &'a mut HashMap<SourceId, HashMap<PathBuf, Option<f32>>>,
+    duration_cache: &'a mut HashMap<SourceId, HashMap<PathBuf, f32>>,
     analysis_failures_cache: &'a mut HashMap<SourceId, HashMap<PathBuf, String>>,
     feature_cache: &'a mut HashMap<SourceId, FeatureCache>,
     missing_wavs: &'a mut HashMap<SourceId, HashSet<PathBuf>>,
@@ -30,6 +31,7 @@ impl<'a> SourceCacheInvalidator<'a> {
             &mut cache.wav.entries,
             &mut ui_cache.browser.labels,
             &mut ui_cache.browser.bpm_values,
+            &mut ui_cache.browser.durations,
             &mut ui_cache.browser.analysis_failures,
             &mut ui_cache.browser.features,
             &mut missing.wavs,
@@ -42,6 +44,7 @@ impl<'a> SourceCacheInvalidator<'a> {
         wav_cache: &'a mut HashMap<SourceId, super::WavEntriesState>,
         label_cache: &'a mut HashMap<SourceId, Vec<String>>,
         bpm_cache: &'a mut HashMap<SourceId, HashMap<PathBuf, Option<f32>>>,
+        duration_cache: &'a mut HashMap<SourceId, HashMap<PathBuf, f32>>,
         analysis_failures_cache: &'a mut HashMap<SourceId, HashMap<PathBuf, String>>,
         feature_cache: &'a mut HashMap<SourceId, FeatureCache>,
         missing_wavs: &'a mut HashMap<SourceId, HashSet<PathBuf>>,
@@ -52,6 +55,7 @@ impl<'a> SourceCacheInvalidator<'a> {
             wav_cache,
             label_cache,
             bpm_cache,
+            duration_cache,
             analysis_failures_cache,
             feature_cache,
             missing_wavs,
@@ -63,6 +67,7 @@ impl<'a> SourceCacheInvalidator<'a> {
         self.wav_cache.remove(source_id);
         self.label_cache.remove(source_id);
         self.bpm_cache.remove(source_id);
+        self.duration_cache.remove(source_id);
         self.analysis_failures_cache.remove(source_id);
         self.feature_cache.remove(source_id);
         self.missing_wavs.remove(source_id);

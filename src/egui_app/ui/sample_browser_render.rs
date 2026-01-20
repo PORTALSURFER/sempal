@@ -142,13 +142,14 @@ impl EguiApp {
                 let feature_status = self
                     .controller
                     .cached_feature_status_for_entry(entry_index);
-                let needs_similarity_data = feature_status.is_some_and(|status| !status.has_embedding);
-                let long_sample = feature_status
+                let duration_seconds = feature_status
                     .and_then(|status| status.duration_seconds)
-                    .is_some_and(|duration| {
-                        duration.is_finite()
-                            && duration > self.controller.long_sample_threshold_seconds()
-                    });
+                    .or_else(|| self.controller.cached_duration_seconds_for_path(&path));
+                let needs_similarity_data = feature_status.is_some_and(|status| !status.has_embedding);
+                let long_sample = duration_seconds.is_some_and(|duration| {
+                    duration.is_finite()
+                        && duration > self.controller.long_sample_threshold_seconds()
+                });
                 let indicator_radius = if needs_similarity_data {
                     style::similarity_missing_dot_radius()
                 } else {
