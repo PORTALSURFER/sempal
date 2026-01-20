@@ -33,22 +33,6 @@ pub(crate) fn rename_target(target: &Path, new_name: &str) -> Result<PathBuf, St
     Ok(folder_with_name(target, &name))
 }
 
-pub(crate) fn move_target(folder: &Path, target_folder: &Path) -> Result<PathBuf, String> {
-    if folder.as_os_str().is_empty() {
-        return Err("Root folder cannot be moved".into());
-    }
-    if target_folder.starts_with(folder) {
-        return Err("Cannot move a folder into itself".into());
-    }
-    let name = folder
-        .file_name()
-        .ok_or_else(|| "Folder name unavailable for move".to_string())?;
-    Ok(if target_folder.as_os_str().is_empty() {
-        PathBuf::from(name)
-    } else {
-        target_folder.join(name)
-    })
-}
 
 pub(crate) fn normalize_folder_hotkey(hotkey: Option<u8>) -> Result<Option<u8>, String> {
     match hotkey {

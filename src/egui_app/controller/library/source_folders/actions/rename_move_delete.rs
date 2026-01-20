@@ -52,44 +52,6 @@ impl EguiController {
         Ok(())
     }
 
-    pub(crate) fn move_folder_to_parent(
-        &mut self,
-        folder: &Path,
-        target_folder: &Path,
-    ) -> Result<PathBuf, String> {
-        let new_relative = ops::move_target(folder, target_folder)?;
-        let source = self
-            .current_source()
-            .ok_or_else(|| "Select a source first".to_string())?;
-        let absolute_old = source.root.join(folder);
-        if !absolute_old.is_dir() {
-            return Err(format!("Folder not found: {}", folder.display()));
-        }
-        if !target_folder.as_os_str().is_empty() {
-            let destination_dir = source.root.join(target_folder);
-            if !destination_dir.is_dir() {
-                return Err(format!("Folder not found: {}", target_folder.display()));
-            }
-        }
-        let absolute_new = source.root.join(&new_relative);
-        if absolute_new.exists() {
-            return Err(format!("Folder already exists: {}", new_relative.display()));
-        }
-        let affected = self.folder_entries(folder);
-        fs::rename(&absolute_old, &absolute_new)
-            .map_err(|err| format!("Failed to move folder: {err}"))?;
-        if let Err(err) = self.rewrite_entries_for_folder(&source, folder, &new_relative, &affected)
-        {
-            let _ = fs::rename(&absolute_new, &absolute_old);
-            return Err(err);
-        }
-        self.remap_folder_state(folder, &new_relative);
-        self.remap_manual_folders(folder, &new_relative);
-        self.refresh_folder_browser();
-        self.focus_folder_by_path(&new_relative);
-        Ok(new_relative)
-    }
-
     fn remove_folder(&mut self, target: &Path) -> Result<(), String> {
         let source = self
             .current_source()

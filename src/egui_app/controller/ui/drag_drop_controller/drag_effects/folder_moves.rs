@@ -107,8 +107,6 @@ impl DragDropController<'_> {
                 continue;
             }
             requests.push(FolderSampleMoveRequest {
-                source_id: source.id.clone(),
-                source_root: source.root.clone(),
                 relative_path: sample.relative_path.clone(),
                 target_relative: new_relative,
             });
@@ -951,8 +949,6 @@ mod tests {
         batch.commit().unwrap();
 
         let request = FolderSampleMoveRequest {
-            source_id: source.id.clone(),
-            source_root: source_root.clone(),
             relative_path: PathBuf::from("one.wav"),
             target_relative: PathBuf::from("folder/one.wav"),
         };

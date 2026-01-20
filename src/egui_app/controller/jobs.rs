@@ -385,10 +385,6 @@ pub(crate) struct SourceMoveSuccess {
 /// Request payload for a background in-source folder sample move.
 #[derive(Debug, Clone)]
 pub(crate) struct FolderSampleMoveRequest {
-    /// Source identifier for the sample.
-    pub(crate) source_id: crate::sample_sources::SourceId,
-    /// Root folder for the source.
-    pub(crate) source_root: PathBuf,
     /// Relative path of the sample to move.
     pub(crate) relative_path: PathBuf,
     /// Relative destination path within the same source.
