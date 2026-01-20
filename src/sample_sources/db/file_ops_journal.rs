@@ -518,6 +518,61 @@ mod tests {
     }
 
     #[test]
+    fn reconcile_same_source_move_from_staged_file() {
+        let temp = tempdir().unwrap();
+        let source_root = temp.path().join("source");
+        std::fs::create_dir_all(&source_root).unwrap();
+        let db = SourceDatabase::open(&source_root).unwrap();
+
+        let source_relative = PathBuf::from("one.wav");
+        let source_absolute = source_root.join(&source_relative);
+        write_wav(&source_absolute);
+        db.upsert_file(&source_relative, 16, 1).unwrap();
+        db.set_tag(&source_relative, Rating::KEEP_1).unwrap();
+        db.set_looped(&source_relative, true).unwrap();
+        db.set_last_played_at(&source_relative, 123).unwrap();
+
+        let target_relative = PathBuf::from("moved.wav");
+        let staged_relative = staged_relative_for_target(&target_relative, "test").unwrap();
+        let entry = FileOpJournalEntry::new_move(
+            "move-test".to_string(),
+            source_root.clone(),
+            source_relative.clone(),
+            target_relative.clone(),
+            staged_relative.clone(),
+            Rating::KEEP_1,
+            true,
+            Some(123),
+        )
+        .unwrap();
+        insert_entry(&db, &entry).unwrap();
+
+        let staged_absolute = source_root.join(&staged_relative);
+        std::fs::rename(&source_absolute, &staged_absolute).unwrap();
+        update_stage(&db, &entry.id, FileOpStage::Staged, Some(16), Some(1)).unwrap();
+
+        let summary = reconcile_pending_ops(&db).unwrap();
+        assert_eq!(summary.completed, 1);
+
+        assert!(!staged_absolute.exists());
+        assert!(source_root.join(&target_relative).exists());
+        assert!(db.tag_for_path(&source_relative).unwrap().is_none());
+        assert_eq!(
+            db.tag_for_path(&target_relative).unwrap(),
+            Some(Rating::KEEP_1)
+        );
+        assert_eq!(
+            db.looped_for_path(&target_relative).unwrap(),
+            Some(true)
+        );
+        assert_eq!(
+            db.last_played_at_for_path(&target_relative).unwrap(),
+            Some(123)
+        );
+        assert!(list_entries(&db).unwrap().is_empty());
+    }
+
+    #[test]
     fn reconcile_copy_from_staged_file() {
         let temp = tempdir().unwrap();
         let target_root = temp.path().join("target");

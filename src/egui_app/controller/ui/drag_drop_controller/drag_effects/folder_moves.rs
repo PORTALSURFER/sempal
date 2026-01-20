@@ -5,6 +5,7 @@ use crate::egui_app::controller::jobs::{
 };
 use crate::egui_app::state::{DragSample, ProgressTaskKind};
 use crate::egui_app::ui::style::StatusTone;
+use crate::sample_sources::db::file_ops_journal;
 use crate::sample_sources::{SourceDatabase, SourceId, WavEntry};
 use std::path::{Path, PathBuf};
 use std::sync::{
@@ -537,26 +538,81 @@ fn run_folder_sample_move_task(
                 continue;
             }
         };
-        if let Err(err) = std::fs::rename(&absolute, &target_absolute) {
+        let op_id = file_ops_journal::new_op_id();
+        let staged_relative = match file_ops_journal::staged_relative_for_target(
+            &request.target_relative,
+            &op_id,
+        ) {
+            Ok(path) => path,
+            Err(err) => {
+                errors.push(format!("Failed to build staging path: {err}"));
+                completed += 1;
+                report_progress(sender, completed, detail);
+                continue;
+            }
+        };
+        let journal_entry = match file_ops_journal::FileOpJournalEntry::new_move(
+            op_id.clone(),
+            source_root.clone(),
+            request.relative_path.clone(),
+            request.target_relative.clone(),
+            staged_relative.clone(),
+            tag,
+            looped,
+            last_played_at,
+        ) {
+            Ok(entry) => entry,
+            Err(err) => {
+                errors.push(format!("Failed to stage move journal: {err}"));
+                completed += 1;
+                report_progress(sender, completed, detail);
+                continue;
+            }
+        };
+        if let Err(err) = file_ops_journal::insert_entry(&db, &journal_entry) {
+            errors.push(format!("Failed to record move journal: {err}"));
+            completed += 1;
+            report_progress(sender, completed, detail);
+            continue;
+        }
+        let staged_absolute = source_root.join(&staged_relative);
+        if let Err(err) = std::fs::rename(&absolute, &staged_absolute) {
+            remove_folder_move_journal_entry(&mut errors, &db, &op_id);
             errors.push(format!("Failed to move file: {err}"));
             completed += 1;
             report_progress(sender, completed, detail);
             continue;
         }
-        let (file_size, modified_ns) = match file_metadata(&target_absolute) {
+        let (file_size, modified_ns) = match file_metadata(&staged_absolute) {
             Ok(meta) => meta,
             Err(err) => {
-                let _ = std::fs::rename(&target_absolute, &absolute);
+                rollback_folder_move_to_source(&mut errors, &staged_absolute, &absolute);
+                remove_folder_move_journal_entry(&mut errors, &db, &op_id);
                 errors.push(err);
                 completed += 1;
                 report_progress(sender, completed, detail);
                 continue;
             }
         };
+        if let Err(err) = file_ops_journal::update_stage(
+            &db,
+            &op_id,
+            file_ops_journal::FileOpStage::Staged,
+            Some(file_size),
+            Some(modified_ns),
+        ) {
+            rollback_folder_move_to_source(&mut errors, &staged_absolute, &absolute);
+            remove_folder_move_journal_entry(&mut errors, &db, &op_id);
+            errors.push(format!("Failed to update move journal: {err}"));
+            completed += 1;
+            report_progress(sender, completed, detail);
+            continue;
+        }
         let mut batch = match db.write_batch() {
             Ok(batch) => batch,
             Err(err) => {
-                let _ = std::fs::rename(&target_absolute, &absolute);
+                rollback_folder_move_to_source(&mut errors, &staged_absolute, &absolute);
+                remove_folder_move_journal_entry(&mut errors, &db, &op_id);
                 errors.push(format!("Failed to start database update: {err}"));
                 completed += 1;
                 report_progress(sender, completed, detail);
@@ -564,28 +620,32 @@ fn run_folder_sample_move_task(
             }
         };
         if let Err(err) = batch.remove_file(&request.relative_path) {
-            let _ = std::fs::rename(&target_absolute, &absolute);
+            rollback_folder_move_to_source(&mut errors, &staged_absolute, &absolute);
+            remove_folder_move_journal_entry(&mut errors, &db, &op_id);
             errors.push(format!("Failed to drop old entry: {err}"));
             completed += 1;
             report_progress(sender, completed, detail);
             continue;
         }
         if let Err(err) = batch.upsert_file(&request.target_relative, file_size, modified_ns) {
-            let _ = std::fs::rename(&target_absolute, &absolute);
+            rollback_folder_move_to_source(&mut errors, &staged_absolute, &absolute);
+            remove_folder_move_journal_entry(&mut errors, &db, &op_id);
             errors.push(format!("Failed to register moved file: {err}"));
             completed += 1;
             report_progress(sender, completed, detail);
             continue;
         }
         if let Err(err) = batch.set_tag(&request.target_relative, tag) {
-            let _ = std::fs::rename(&target_absolute, &absolute);
+            rollback_folder_move_to_source(&mut errors, &staged_absolute, &absolute);
+            remove_folder_move_journal_entry(&mut errors, &db, &op_id);
             errors.push(format!("Failed to copy tag: {err}"));
             completed += 1;
             report_progress(sender, completed, detail);
             continue;
         }
         if let Err(err) = batch.set_looped(&request.target_relative, looped) {
-            let _ = std::fs::rename(&target_absolute, &absolute);
+            rollback_folder_move_to_source(&mut errors, &staged_absolute, &absolute);
+            remove_folder_move_journal_entry(&mut errors, &db, &op_id);
             errors.push(format!("Failed to copy loop marker: {err}"));
             completed += 1;
             report_progress(sender, completed, detail);
@@ -593,7 +653,8 @@ fn run_folder_sample_move_task(
         }
         if let Some(last_played_at) = last_played_at {
             if let Err(err) = batch.set_last_played_at(&request.target_relative, last_played_at) {
-                let _ = std::fs::rename(&target_absolute, &absolute);
+                rollback_folder_move_to_source(&mut errors, &staged_absolute, &absolute);
+                remove_folder_move_journal_entry(&mut errors, &db, &op_id);
                 errors.push(format!("Failed to copy playback age: {err}"));
                 completed += 1;
                 report_progress(sender, completed, detail);
@@ -601,12 +662,38 @@ fn run_folder_sample_move_task(
             }
         }
         if let Err(err) = batch.commit() {
-            let _ = std::fs::rename(&target_absolute, &absolute);
+            rollback_folder_move_to_source(&mut errors, &staged_absolute, &absolute);
+            remove_folder_move_journal_entry(&mut errors, &db, &op_id);
             errors.push(format!("Failed to save move: {err}"));
             completed += 1;
             report_progress(sender, completed, detail);
             continue;
         }
+        if let Err(err) = file_ops_journal::update_stage(
+            &db,
+            &op_id,
+            file_ops_journal::FileOpStage::TargetDb,
+            None,
+            None,
+        ) {
+            errors.push(format!("Failed to update move journal: {err}"));
+        }
+        if let Err(err) = file_ops_journal::update_stage(
+            &db,
+            &op_id,
+            file_ops_journal::FileOpStage::SourceDb,
+            None,
+            None,
+        ) {
+            errors.push(format!("Failed to update move journal: {err}"));
+        }
+        if let Err(err) = std::fs::rename(&staged_absolute, &target_absolute) {
+            errors.push(format!("Failed to finalize move: {err}"));
+            completed += 1;
+            report_progress(sender, completed, detail);
+            continue;
+        }
+        remove_folder_move_journal_entry(&mut errors, &db, &op_id);
         moved.push(FolderEntryMove {
             old_relative: request.relative_path,
             new_relative: request.target_relative,
@@ -624,6 +711,22 @@ fn run_folder_sample_move_task(
         moved,
         errors,
         cancelled,
+    }
+}
+
+fn remove_folder_move_journal_entry(
+    errors: &mut Vec<String>,
+    db: &SourceDatabase,
+    op_id: &str,
+) {
+    if let Err(err) = file_ops_journal::remove_entry(db, op_id) {
+        errors.push(format!("Failed to clear move journal: {err}"));
+    }
+}
+
+fn rollback_folder_move_to_source(errors: &mut Vec<String>, from: &Path, to: &Path) {
+    if let Err(err) = std::fs::rename(from, to) {
+        errors.push(format!("Failed to restore moved file: {err}"));
     }
 }
 
