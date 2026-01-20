@@ -220,9 +220,9 @@ impl EguiApp {
                 {
                     row_bg = Some(style::duplicate_hover_fill());
                 } else if is_focused {
-                    row_bg = Some(style::row_selected_fill());
+                    row_bg = Some(style::row_primary_selection_fill());
                 } else if is_selected {
-                    row_bg = Some(style::row_multi_selected_fill());
+                    row_bg = Some(style::row_secondary_selection_fill());
                 }
                 let skip_hover = is_anchor;
                 if is_anchor {

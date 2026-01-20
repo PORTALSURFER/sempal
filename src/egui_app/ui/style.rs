@@ -382,25 +382,25 @@ pub fn row_hover_fill() -> Color32 {
     with_alpha(palette().accent_ice, 66)
 }
 
-/// Background used for selected list rows.
-pub fn row_selected_fill() -> Color32 {
+/// Background used for the primary selected list row (last selected).
+pub fn row_primary_selection_fill() -> Color32 {
     let palette = palette();
     Color32::from_rgba_unmultiplied(
         palette.accent_mint.r(),
         palette.accent_mint.g(),
         palette.accent_mint.b(),
-        140,
+        70,
     )
 }
 
-/// Softer background for multi-selected rows that are not focused.
-pub fn row_multi_selected_fill() -> Color32 {
+/// Softer background for secondary selected rows in multi-selection sets.
+pub fn row_secondary_selection_fill() -> Color32 {
     let palette = palette();
     Color32::from_rgba_unmultiplied(
         palette.text_muted.r(),
         palette.text_muted.g(),
         palette.text_muted.b(),
-        80,
+        40,
     )
 }
 

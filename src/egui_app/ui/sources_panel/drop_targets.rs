@@ -100,7 +100,7 @@ impl EguiApp {
                             style::high_contrast_text()
                         };
                         let bg = RowBackground::from_option(
-                            is_selected.then_some(style::row_selected_fill()),
+                            is_selected.then_some(style::row_primary_selection_fill()),
                         );
                         let marker = row
                             .color

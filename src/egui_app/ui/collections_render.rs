@@ -84,7 +84,9 @@ impl EguiApp {
                                 clamp_label_for_width(&label, label_width)
                             };
                             let bg =
-                                RowBackground::from_option(selected.then_some(style::row_selected_fill()));
+                                RowBackground::from_option(
+                                    selected.then_some(style::row_primary_selection_fill()),
+                                );
                             let hotkey_text = collection.hotkey.map(|key| key.to_string()).unwrap_or_default();
                             let response = render_list_row(
                                 ui,
@@ -284,7 +286,7 @@ impl EguiApp {
                 let bg = RowBackground::from_option(if is_duplicate_hover {
                     Some(style::duplicate_hover_fill())
                 } else if is_focused {
-                    Some(style::row_selected_fill())
+                    Some(style::row_primary_selection_fill())
                 } else {
                     None
                 });

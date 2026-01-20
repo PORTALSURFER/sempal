@@ -55,7 +55,7 @@ impl EguiApp {
                 label: "",
                 row_width,
                 row_height,
-                background: RowBackground::Solid(style::row_selected_fill()),
+                background: RowBackground::Solid(style::row_primary_selection_fill()),
                 skip_hover: false,
                 text_color: style::high_contrast_text(),
                 sense: egui::Sense::hover(),

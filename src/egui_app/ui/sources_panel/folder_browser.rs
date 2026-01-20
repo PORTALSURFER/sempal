@@ -127,8 +127,10 @@ impl EguiApp {
                 };
                 let is_focused = self.controller.ui.sources.folders.focused == Some(0);
                 let is_selected = root_row.selected;
-                let bg = RowBackground::from_option(if is_focused || is_selected {
-                    Some(style::row_selected_fill())
+                let bg = RowBackground::from_option(if is_focused {
+                    Some(style::row_primary_selection_fill())
+                } else if is_selected {
+                    Some(style::row_secondary_selection_fill())
                 } else {
                     None
                 });
@@ -318,8 +320,10 @@ impl EguiApp {
                             ..
                         }) if target == &row.path
                     );
-                    let bg = RowBackground::from_option(if row.selected || is_focused {
-                        Some(style::row_selected_fill())
+                    let bg = RowBackground::from_option(if is_focused {
+                        Some(style::row_primary_selection_fill())
+                    } else if row.selected {
+                        Some(style::row_secondary_selection_fill())
                     } else {
                         None
                     });
