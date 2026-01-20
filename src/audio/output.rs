@@ -360,9 +360,24 @@ pub fn supported_sample_rates(
 }
 
 /// Open an audio stream honoring user preferences with safe fallbacks.
+///
+/// On Windows test builds, set `SEMPAL_TEST_AUDIO_OUTPUT=1` to exercise the
+/// real output device; otherwise the function returns `NoOutputDevices` to
+/// avoid driver crashes during automated runs.
 pub fn open_output_stream(
     config: &AudioOutputConfig,
 ) -> Result<OpenStreamOutcome, AudioOutputError> {
+    #[cfg(all(test, windows))]
+    {
+        // Avoid CPAL driver crashes in Windows test runs unless explicitly enabled.
+        if std::env::var("SEMPAL_TEST_AUDIO_OUTPUT")
+            .ok()
+            .map(|value| value.trim() == "1")
+            != Some(true)
+        {
+            return Err(AudioOutputError::NoOutputDevices);
+        }
+    }
     let (host, host_id, host_fallback) = resolve_host(config.host.as_deref())?;
     let (device, device_name, device_fallback) = resolve_device(&host, config.device.as_deref())?;
 
