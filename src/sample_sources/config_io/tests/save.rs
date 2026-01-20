@@ -157,6 +157,7 @@ fn settings_round_trip_preserves_fields() {
             analysis: AnalysisSettings {
                 max_analysis_duration_seconds: 12.5,
                 limit_similarity_prep_duration: false,
+                long_sample_threshold_seconds: 42.0,
                 analysis_worker_count: 2,
                 fast_similarity_prep: true,
                 fast_similarity_prep_sample_rate: 8_000,
@@ -239,6 +240,10 @@ fn settings_round_trip_preserves_fields() {
     assert_eq!(
         round_trip.core.analysis.limit_similarity_prep_duration,
         cfg.core.analysis.limit_similarity_prep_duration
+    );
+    assert_eq!(
+        round_trip.core.analysis.long_sample_threshold_seconds,
+        cfg.core.analysis.long_sample_threshold_seconds
     );
     assert_eq!(
         round_trip.core.analysis.analysis_worker_count,

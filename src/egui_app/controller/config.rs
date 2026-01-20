@@ -11,6 +11,10 @@ impl EguiController {
             super::library::analysis_options::clamp_max_analysis_duration_seconds(
                 self.settings.analysis.max_analysis_duration_seconds,
             );
+        self.settings.analysis.long_sample_threshold_seconds =
+            super::library::analysis_options::clamp_long_sample_threshold_seconds(
+                self.settings.analysis.long_sample_threshold_seconds,
+            );
         self.settings.updates = cfg.core.updates.clone();
         self.settings.app_data_dir = cfg.core.app_data_dir.clone();
         self.settings.trash_folder = cfg.core.trash_folder.clone();

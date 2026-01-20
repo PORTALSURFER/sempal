@@ -2,7 +2,8 @@ use super::drag_targets;
 use super::flat_items_list::{FlatItemsListConfig, render_flat_items_list};
 use super::helpers::{
     NumberColumn, RowBackground, RowMarker, bpm_badge_space, clamp_label_for_width,
-    external_dropped_paths, external_hover_has_audio, format_bpm_input, loop_badge_space,
+    external_dropped_paths, external_hover_has_audio, format_bpm_input, long_badge_space,
+    loop_badge_space,
     render_list_row,
 };
 use super::status_badges;
@@ -138,10 +139,16 @@ impl EguiApp {
                     width: style::triage_marker_width(),
                     color,
                 });
-                let needs_similarity_data = self
+                let feature_status = self
                     .controller
-                    .cached_feature_status_for_entry(entry_index)
-                    .is_some_and(|status| !status.has_embedding);
+                    .cached_feature_status_for_entry(entry_index);
+                let needs_similarity_data = feature_status.is_some_and(|status| !status.has_embedding);
+                let long_sample = feature_status
+                    .and_then(|status| status.duration_seconds)
+                    .is_some_and(|duration| {
+                        duration.is_finite()
+                            && duration > self.controller.long_sample_threshold_seconds()
+                    });
                 let indicator_radius = if needs_similarity_data {
                     style::similarity_missing_dot_radius()
                 } else {
@@ -154,6 +161,11 @@ impl EguiApp {
                 };
                 let loop_space = if looped && !rename_match {
                     loop_badge_space(ui)
+                } else {
+                    0.0
+                };
+                let long_space = if long_sample && !rename_match {
+                    long_badge_space(ui)
                 } else {
                     0.0
                 };
@@ -170,6 +182,7 @@ impl EguiApp {
                         .map(|width| width + metrics.padding * 0.5)
                         .unwrap_or(0.0)
                     + loop_space
+                    + long_space
                     + bpm_space;
 
                 let mut base_label = self
@@ -256,10 +269,24 @@ impl EguiApp {
                             marker: triage_marker,
                             rating: if rename_match { None } else { Some(tag) },
                             looped: looped && !rename_match,
+                            long_sample: long_sample && !rename_match,
                             bpm_label: if rename_match { None } else { bpm_label.as_deref() },
                         },
                     );
-                    let response = if let Some(hover) = status_label.hover_text.as_deref() {
+                    let mut hover_text = status_label.hover_text.clone();
+                    if long_sample && !rename_match {
+                        let entry = "Long sample".to_string();
+                        match hover_text.as_mut() {
+                            Some(text) => {
+                                text.push('\n');
+                                text.push_str(&entry);
+                            }
+                            None => {
+                                hover_text = Some(entry);
+                            }
+                        }
+                    }
+                    let response = if let Some(hover) = hover_text.as_deref() {
                         response.on_hover_text(hover)
                     } else {
                         response

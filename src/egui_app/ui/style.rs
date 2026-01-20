@@ -278,6 +278,16 @@ pub fn loop_badge_text() -> Color32 {
     high_contrast_text()
 }
 
+/// Fill color for the long sample badge shown in the sample browser list.
+pub fn long_sample_badge_fill() -> Color32 {
+    palette().warning
+}
+
+/// Text color for the long sample badge shown in the sample browser list.
+pub fn long_sample_badge_text() -> Color32 {
+    high_contrast_text()
+}
+
 /// Fill color for the BPM badge shown in the sample browser list.
 pub fn bpm_badge_fill() -> Color32 {
     palette().accent_mint

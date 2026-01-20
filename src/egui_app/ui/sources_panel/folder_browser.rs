@@ -155,6 +155,7 @@ impl EguiApp {
                         marker: None,
                         rating: None,
                         looped: false,
+                        long_sample: false,
                         bpm_label: None,
                     },
                 );
@@ -351,6 +352,7 @@ impl EguiApp {
                             marker: None,
                             rating: None,
                             looped: false,
+                            long_sample: false,
                             bpm_label: None,
                         },
                     );

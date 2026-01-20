@@ -197,6 +197,10 @@ const LOOP_BADGE_TEXT: &str = "LOOP";
 const LOOP_BADGE_PADDING_X: f32 = 6.0;
 const LOOP_BADGE_PADDING_Y: f32 = 2.0;
 const LOOP_BADGE_GAP: f32 = 6.0;
+const LONG_BADGE_TEXT: &str = "LONG";
+const LONG_BADGE_PADDING_X: f32 = 6.0;
+const LONG_BADGE_PADDING_Y: f32 = 2.0;
+const LONG_BADGE_GAP: f32 = 6.0;
 const BPM_BADGE_PADDING_X: f32 = 6.0;
 const BPM_BADGE_PADDING_Y: f32 = 2.0;
 const BPM_BADGE_GAP: f32 = 6.0;
@@ -212,6 +216,18 @@ pub(super) fn loop_badge_space(ui: &Ui) -> f32 {
         .size()
         .x;
     LOOP_BADGE_GAP + text_width + LOOP_BADGE_PADDING_X * 2.0
+}
+
+pub(super) fn long_badge_space(ui: &Ui) -> f32 {
+    let font_id = TextStyle::Button.resolve(ui.style());
+    let text_width = ui
+        .ctx()
+        .fonts_mut(|fonts| {
+            fonts.layout_no_wrap(LONG_BADGE_TEXT.to_string(), font_id, Color32::WHITE)
+        })
+        .size()
+        .x;
+    LONG_BADGE_GAP + text_width + LONG_BADGE_PADDING_X * 2.0
 }
 
 pub(super) fn bpm_badge_space(ui: &Ui, label: &str) -> f32 {
@@ -238,6 +254,7 @@ pub(super) struct ListRow<'a> {
     pub marker: Option<RowMarker>,
     pub rating: Option<Rating>,
     pub looped: bool,
+    pub long_sample: bool,
     pub bpm_label: Option<&'a str>,
 }
 
@@ -346,6 +363,36 @@ pub(super) fn render_list_row(ui: &mut Ui, row: ListRow<'_>) -> egui::Response {
             LOOP_BADGE_TEXT,
             font_id.clone(),
             style::loop_badge_text(),
+        );
+        trailing_x = badge_rect.right();
+    }
+    if row.long_sample {
+        let badge_galley = ui.ctx().fonts_mut(|fonts| {
+            fonts.layout_no_wrap(
+                LONG_BADGE_TEXT.to_string(),
+                font_id.clone(),
+                style::long_sample_badge_text(),
+            )
+        });
+        let badge_min = egui::pos2(
+            trailing_x + LONG_BADGE_GAP,
+            rect.center().y - badge_galley.size().y * 0.5 - LONG_BADGE_PADDING_Y,
+        );
+        let badge_rect = egui::Rect::from_min_size(
+            badge_min,
+            egui::vec2(
+                badge_galley.size().x + LONG_BADGE_PADDING_X * 2.0,
+                badge_galley.size().y + LONG_BADGE_PADDING_Y * 2.0,
+            ),
+        );
+        ui.painter()
+            .rect_filled(badge_rect, 0.0, style::long_sample_badge_fill());
+        ui.painter().text(
+            badge_rect.center(),
+            Align2::CENTER_CENTER,
+            LONG_BADGE_TEXT,
+            font_id.clone(),
+            style::long_sample_badge_text(),
         );
         trailing_x = badge_rect.right();
     }

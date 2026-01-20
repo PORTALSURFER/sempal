@@ -122,6 +122,7 @@ impl EguiApp {
                                 marker,
                                 rating: None,
                                 looped: false,
+                                long_sample: false,
                                 bpm_label: None,
                             },
                         );

@@ -108,6 +108,7 @@ impl EguiApp {
                                     marker: None,
                                     rating: None,
                                     looped: false,
+                                    long_sample: false,
                                     bpm_label: None,
                                 },
                             );
@@ -322,6 +323,7 @@ impl EguiApp {
                                 marker: triage_marker,
                                 rating: Some(sample.tag),
                                 looped: false,
+                                long_sample: false,
                                 bpm_label: None,
                             },
                         );

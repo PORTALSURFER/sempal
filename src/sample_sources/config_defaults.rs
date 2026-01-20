@@ -26,6 +26,10 @@ pub(super) fn default_max_analysis_duration_seconds() -> f32 {
     300.0
 }
 
+pub(super) fn default_long_sample_threshold_seconds() -> f32 {
+    30.0
+}
+
 pub(super) fn default_analysis_worker_count() -> u32 {
     0
 }

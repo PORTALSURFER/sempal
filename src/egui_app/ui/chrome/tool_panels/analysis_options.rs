@@ -32,6 +32,26 @@ impl EguiApp {
         }
 
         ui.add_space(ui.spacing().item_spacing.y);
+        ui.label(
+            RichText::new("Mark samples longer than:")
+                .color(palette.text_muted),
+        );
+        let mut threshold = self.controller.long_sample_threshold_seconds();
+        let drag = egui::DragValue::new(&mut threshold)
+            .speed(1.0)
+            .range(1.0..=3600.0)
+            .suffix(" s");
+        let response = helpers::tooltip(
+            ui.add(drag),
+            "Long Sample Threshold",
+            "Add a long-sample marker in the browser for files longer than this duration. Adjust this when you want to spotlight extended recordings.",
+            tooltip_mode,
+        );
+        if response.changed() {
+            self.controller.set_long_sample_threshold_seconds(threshold);
+        }
+
+        ui.add_space(ui.spacing().item_spacing.y);
         ui.label(RichText::new("Analysis workers (0 = auto):").color(palette.text_muted));
         let mut workers = self.controller.analysis_worker_count() as i64;
         let auto_workers = self.controller.analysis_auto_worker_count();
