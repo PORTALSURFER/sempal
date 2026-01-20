@@ -365,7 +365,9 @@ mod tests {
     impl EnvVarGuard {
         fn set(key: &str, value: &str) -> Self {
             let previous = std::env::var(key).ok();
-            std::env::set_var(key, value);
+            unsafe {
+                std::env::set_var(key, value);
+            }
             Self {
                 key: key.to_string(),
                 previous,
@@ -377,9 +379,13 @@ mod tests {
     impl Drop for EnvVarGuard {
         fn drop(&mut self) {
             if let Some(value) = self.previous.take() {
-                std::env::set_var(&self.key, value);
+                unsafe {
+                    std::env::set_var(&self.key, value);
+                }
             } else {
-                std::env::remove_var(&self.key);
+                unsafe {
+                    std::env::remove_var(&self.key);
+                }
             }
         }
     }
