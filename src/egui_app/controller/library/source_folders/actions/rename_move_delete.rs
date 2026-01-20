@@ -322,7 +322,8 @@ impl EguiController {
             .map(|row| row.path.clone())
     }
 
-    fn remap_folder_state(&mut self, old: &Path, new: &Path) {
+    /// Remap folder selection state after a folder move within the current source.
+    pub(crate) fn remap_folder_state(&mut self, old: &Path, new: &Path) {
         let Some(model) = self.current_folder_model_mut() else {
             return;
         };

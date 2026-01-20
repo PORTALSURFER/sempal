@@ -21,6 +21,12 @@ impl EguiController {
             FileOpResult::SourceMove(result) => {
                 self.drag_drop().apply_source_move_result(result);
             }
+            FileOpResult::FolderSampleMove(result) => {
+                self.drag_drop().apply_folder_sample_move_result(result);
+            }
+            FileOpResult::FolderMove(result) => {
+                self.drag_drop().apply_folder_move_result(result);
+            }
             FileOpResult::UndoFile(result) => self.apply_undo_file_result(result),
         }
     }

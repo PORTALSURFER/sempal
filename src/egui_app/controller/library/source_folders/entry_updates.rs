@@ -98,7 +98,8 @@ impl EguiController {
         Ok(())
     }
 
-    fn apply_folder_entry_updates(
+    /// Apply in-memory updates for entries moved within a source folder.
+    pub(crate) fn apply_folder_entry_updates(
         &mut self,
         source: &SampleSource,
         updates: &[(WavEntry, WavEntry)],
