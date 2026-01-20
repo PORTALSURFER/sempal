@@ -4,6 +4,26 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tempfile::tempdir;
 
+#[cfg(unix)]
+fn set_file_times(path: &Path, seconds: i64, nanos: i64) {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let c_path = CString::new(path.as_os_str().as_bytes()).unwrap();
+    let times = [
+        libc::timespec {
+            tv_sec: seconds,
+            tv_nsec: nanos,
+        },
+        libc::timespec {
+            tv_sec: seconds,
+            tv_nsec: nanos,
+        },
+    ];
+    let result = unsafe { libc::utimensat(libc::AT_FDCWD, c_path.as_ptr(), times.as_ptr(), 0) };
+    assert_eq!(result, 0);
+}
+
 #[test]
 fn scan_add_update_mark_missing() {
     let dir = tempdir().unwrap();
@@ -201,7 +221,7 @@ fn quick_scan_defers_hash_for_large_file() {
 }
 
 #[test]
-fn deep_hash_scan_reconciles_rename_after_quick_scan() {
+fn quick_scan_reconciles_large_rename_and_preserves_tag() {
     let dir = tempdir().unwrap();
     let first_path = dir.path().join("one.wav");
     let second_path = dir.path().join("two.wav");
@@ -213,11 +233,19 @@ fn deep_hash_scan_reconciles_rename_after_quick_scan() {
 
     std::fs::rename(&first_path, &second_path).unwrap();
     let stats = scan_once(&db).unwrap();
-    assert_eq!(stats.renames_reconciled, 0);
+    assert_eq!(stats.renames_reconciled, 1);
+    assert_eq!(stats.hashes_pending, 1);
+
+    let rows = db.list_files().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].relative_path, PathBuf::from("two.wav"));
+    assert_eq!(rows[0].tag, Rating::KEEP_1);
+    assert!(!rows[0].missing);
+    assert!(rows[0].content_hash.is_none());
 
     let deep_stats = super::super::scan_hash::deep_hash_scan(&db, None).unwrap();
     assert_eq!(deep_stats.hashes_computed, 1);
-    assert_eq!(deep_stats.renames_reconciled, 1);
+    assert_eq!(deep_stats.renames_reconciled, 0);
 
     let rows = db.list_files().unwrap();
     assert_eq!(rows.len(), 1);
@@ -225,6 +253,55 @@ fn deep_hash_scan_reconciles_rename_after_quick_scan() {
     assert_eq!(rows[0].tag, Rating::KEEP_1);
     assert!(!rows[0].missing);
     assert!(rows[0].content_hash.is_some());
+}
+
+#[cfg(unix)]
+#[test]
+fn quick_scan_avoids_ambiguous_large_rename() {
+    let dir = tempdir().unwrap();
+    let first_path = dir.path().join("one.wav");
+    let second_path = dir.path().join("two.wav");
+    let third_path = dir.path().join("three.wav");
+    let payload = vec![0u8; 9 * 1024 * 1024];
+    std::fs::write(&first_path, &payload).unwrap();
+    std::fs::write(&second_path, &payload).unwrap();
+
+    let timestamp = 1_700_000_000i64;
+    set_file_times(&first_path, timestamp, 0);
+    set_file_times(&second_path, timestamp, 0);
+
+    let db = SourceDatabase::open(dir.path()).unwrap();
+    hard_rescan(&db).unwrap();
+    db.set_tag(Path::new("one.wav"), Rating::KEEP_1).unwrap();
+
+    std::fs::remove_file(&first_path).unwrap();
+    std::fs::remove_file(&second_path).unwrap();
+    std::fs::write(&third_path, &payload).unwrap();
+    set_file_times(&third_path, timestamp, 0);
+
+    let stats = scan_once(&db).unwrap();
+    assert_eq!(stats.renames_reconciled, 0);
+    assert_eq!(stats.added, 1);
+    assert_eq!(stats.missing, 2);
+
+    let rows = db.list_files().unwrap();
+    assert_eq!(rows.len(), 3);
+    let mut keep_row = None;
+    let mut new_row = None;
+    for row in rows {
+        if row.relative_path == PathBuf::from("one.wav") {
+            keep_row = Some(row);
+        }
+        if row.relative_path == PathBuf::from("three.wav") {
+            new_row = Some(row);
+        }
+    }
+    let keep_row = keep_row.unwrap();
+    let new_row = new_row.unwrap();
+    assert!(keep_row.missing);
+    assert_eq!(keep_row.tag, Rating::KEEP_1);
+    assert!(!new_row.missing);
+    assert_eq!(new_row.tag, Rating::NEUTRAL);
 }
 
 #[test]

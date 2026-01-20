@@ -20,6 +20,7 @@ pub(super) fn diff_phase(
         facts,
         &mut context.existing,
         &mut context.existing_by_hash,
+        &mut context.existing_by_facts,
         &mut context.stats,
         root,
         context.mode,
