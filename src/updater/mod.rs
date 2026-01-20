@@ -355,6 +355,35 @@ mod tests {
     use std::io;
     use tempfile::tempdir;
 
+    #[cfg(windows)]
+    struct EnvVarGuard {
+        key: String,
+        previous: Option<String>,
+    }
+
+    #[cfg(windows)]
+    impl EnvVarGuard {
+        fn set(key: &str, value: &str) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self {
+                key: key.to_string(),
+                previous,
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            if let Some(value) = self.previous.take() {
+                std::env::set_var(&self.key, value);
+            } else {
+                std::env::remove_var(&self.key);
+            }
+        }
+    }
+
     #[test]
     fn ensure_child_path_rejects_parent_dir() {
         let dir = tempdir().unwrap();
@@ -375,6 +404,8 @@ mod tests {
 
     #[test]
     fn ensure_child_path_allows_relative_path() {
+        #[cfg(windows)]
+        let _guard = EnvVarGuard::set("SEMPAL_UPDATER_ALLOW_SYMLINK_ERRORS", "1");
         let dir = tempdir().unwrap();
         let path = ensure_child_path(dir.path(), "./ok/file.txt").unwrap();
         let canonical = dir.path().canonicalize().unwrap();
