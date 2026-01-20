@@ -201,14 +201,8 @@ pub(super) fn render_edit_selection_overlay(
         fade_handle_rect(selection_rect, false)
     };
 
-    let fade_in_lower_handle_rect = selection
-        .fade_in()
-        .map(|_| fade_lower_handle_rect(selection_rect, true))
-        .unwrap_or(egui::Rect::NOTHING);
-    let fade_out_lower_handle_rect = selection
-        .fade_out()
-        .map(|_| fade_lower_handle_rect(selection_rect, false))
-        .unwrap_or(egui::Rect::NOTHING);
+    let fade_in_lower_handle_rect = fade_lower_handle_rect(selection_rect, true);
+    let fade_out_lower_handle_rect = fade_lower_handle_rect(selection_rect, false);
     let fade_in_mute_handle_rect = selection
         .fade_in()
         .map(|_| fade_mute_handle_rect(selection_rect, true))
@@ -391,11 +385,13 @@ pub(super) fn render_edit_selection_overlay(
     if fade_in_active {
         ui.output_mut(|o| o.cursor_icon = CursorIcon::ResizeHorizontal);
     }
-    if selection.fade_in().is_some() && fade_in_lower_handle_rect != egui::Rect::NOTHING {
+    if fade_in_lower_handle_rect != egui::Rect::NOTHING {
         let fade_in_lower_color = if fade_in_lower_active {
             style::with_alpha(highlight, 255)
-        } else {
+        } else if selection.fade_in().is_some() {
             style::with_alpha(highlight, 245)
+        } else {
+            style::with_alpha(highlight, 220)
         };
         paint_handle_effects(
             ui.painter(),
@@ -436,11 +432,13 @@ pub(super) fn render_edit_selection_overlay(
     if fade_out_active {
         ui.output_mut(|o| o.cursor_icon = CursorIcon::ResizeHorizontal);
     }
-    if selection.fade_out().is_some() && fade_out_lower_handle_rect != egui::Rect::NOTHING {
+    if fade_out_lower_handle_rect != egui::Rect::NOTHING {
         let fade_out_lower_color = if fade_out_lower_active {
             style::with_alpha(highlight, 255)
-        } else {
+        } else if selection.fade_out().is_some() {
             style::with_alpha(highlight, 245)
+        } else {
+            style::with_alpha(highlight, 220)
         };
         paint_handle_effects(
             ui.painter(),
