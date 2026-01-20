@@ -99,6 +99,17 @@ pub(super) fn render_selection_context_menu(app: &mut EguiApp, ui: &mut egui::Ui
     ).clicked() {
         request_edit(DestructiveSelectionEdit::ShortEdgeFades);
     }
+    let mut auto_edge_fades = app.controller.ui.controls.auto_edge_fades_on_selection_exports;
+    let auto_edge_response = helpers::tooltip(
+        ui.checkbox(&mut auto_edge_fades, "Auto short edge fades on new samples"),
+        "Auto short edge fades on new samples",
+        "When enabled, samples created from selections are saved with the same short edge fades used by the Short edge fades action.",
+        tooltip_mode,
+    );
+    if auto_edge_response.changed() {
+        app.controller
+            .set_auto_edge_fades_on_selection_exports(auto_edge_fades);
+    }
     if helpers::tooltip(
         ui.button("Normalize selection"),
         "Normalize selection",

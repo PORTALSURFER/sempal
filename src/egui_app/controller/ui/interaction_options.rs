@@ -113,6 +113,16 @@ impl EguiController {
         self.persist_controls();
     }
 
+    /// Toggle and persist auto edge fades for new samples exported from selections.
+    pub fn set_auto_edge_fades_on_selection_exports(&mut self, enabled: bool) {
+        if self.settings.controls.auto_edge_fades_on_selection_exports == enabled {
+            return;
+        }
+        self.settings.controls.auto_edge_fades_on_selection_exports = enabled;
+        self.ui.controls.auto_edge_fades_on_selection_exports = enabled;
+        self.persist_controls();
+    }
+
     /// Toggle and persist destructive "yolo mode" (skip confirmation prompts).
     pub fn set_destructive_yolo_mode(&mut self, enabled: bool) {
         if self.settings.controls.destructive_yolo_mode == enabled {

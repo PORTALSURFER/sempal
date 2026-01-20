@@ -148,6 +148,16 @@ impl EguiController {
         if buffer.samples.is_empty() {
             return Err("Selection has no audio to crop".into());
         }
+        if self.settings.controls.auto_edge_fades_on_selection_exports {
+            let fade_ms = self.settings.controls.anti_clip_fade_ms.max(0.0);
+            let fade_duration = Duration::from_secs_f32(fade_ms / 1000.0);
+            apply_short_edge_fades_to_clip(
+                &mut buffer.samples,
+                buffer.channels,
+                buffer.sample_rate,
+                fade_duration,
+            );
+        }
         let spec = hound::WavSpec {
             channels: buffer.spec_channels,
             sample_rate: buffer.sample_rate.max(1),
@@ -500,6 +510,26 @@ fn selection_target_range(
     edit_selection
         .or(play_selection)
         .unwrap_or_else(|| SelectionRange::new(0.0, 1.0))
+}
+
+/// Apply short edge fades across an entire clip, returning true when applied.
+pub(crate) fn apply_short_edge_fades_to_clip(
+    samples: &mut [f32],
+    channels: usize,
+    sample_rate: u32,
+    fade_duration: Duration,
+) -> bool {
+    let channels = channels.max(1);
+    let total_frames = samples.len() / channels;
+    if total_frames == 0 {
+        return false;
+    }
+    let fade_frames = edge_fade_frame_count(sample_rate.max(1), total_frames, fade_duration);
+    if fade_frames == 0 {
+        return false;
+    }
+    apply_edge_fades(samples, channels, 0, total_frames, fade_frames);
+    true
 }
 
 fn edge_fade_frame_count(sample_rate: u32, selection_frames: usize, duration: Duration) -> usize {

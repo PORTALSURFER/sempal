@@ -1,7 +1,8 @@
 use super::*;
+use super::selection_edits::apply_short_edge_fades_to_clip;
 use crate::sample_sources::Rating;
 use std::fs;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use crate::egui_app::controller::playback::audio_samples::{crop_samples, decode_samples_from_bytes, write_wav};
 use rusqlite::params;
@@ -26,7 +27,12 @@ impl EguiController {
             .ok_or_else(|| "Source not available".to_string())?;
         let target_rel = self.next_selection_path_in_dir(&source.root, &audio.relative_path);
         let target_abs = source.root.join(&target_rel);
-        let (samples, spec) = crop_selection_samples(&audio, bounds)?;
+        let (mut samples, spec) = crop_selection_samples(&audio, bounds)?;
+        self.apply_auto_edge_fades_to_selection_export(
+            &mut samples,
+            spec.sample_rate,
+            spec.channels,
+        );
         write_wav(&target_abs, &samples, spec.sample_rate, spec.channels)?;
         let (looped, bpm) = self.selection_export_metadata();
         self.record_selection_entry(
@@ -67,7 +73,12 @@ impl EguiController {
         );
         let target_rel = self.next_selection_path_in_dir(&source.root, &name_hint);
         let target_abs = source.root.join(&target_rel);
-        let (samples, spec) = crop_selection_samples(&audio, bounds)?;
+        let (mut samples, spec) = crop_selection_samples(&audio, bounds)?;
+        self.apply_auto_edge_fades_to_selection_export(
+            &mut samples,
+            spec.sample_rate,
+            spec.channels,
+        );
         write_wav(&target_abs, &samples, spec.sample_rate, spec.channels)?;
         let (looped, bpm) = self.selection_export_metadata();
         self.record_selection_entry(
@@ -159,7 +170,12 @@ impl EguiController {
         let audio = self.selection_audio(source_id, relative_path)?;
         let target_rel = self.next_selection_path_in_dir(clip_root, name_hint);
         let target_abs = clip_root.join(&target_rel);
-        let (samples, spec) = crop_selection_samples(&audio, bounds)?;
+        let (mut samples, spec) = crop_selection_samples(&audio, bounds)?;
+        self.apply_auto_edge_fades_to_selection_export(
+            &mut samples,
+            spec.sample_rate,
+            spec.channels,
+        );
         write_wav(&target_abs, &samples, spec.sample_rate, spec.channels)?;
         let source = SampleSource {
             id: SourceId::new(),
@@ -200,6 +216,20 @@ impl EguiController {
             .bpm_value
             .filter(|value| value.is_finite() && *value > 0.0);
         (looped, if looped { bpm } else { None })
+    }
+
+    fn apply_auto_edge_fades_to_selection_export(
+        &self,
+        samples: &mut [f32],
+        sample_rate: u32,
+        channels: u16,
+    ) {
+        if !self.settings.controls.auto_edge_fades_on_selection_exports {
+            return;
+        }
+        let fade_ms = self.settings.controls.anti_clip_fade_ms.max(0.0);
+        let fade_duration = Duration::from_secs_f32(fade_ms / 1000.0);
+        apply_short_edge_fades_to_clip(samples, channels as usize, sample_rate, fade_duration);
     }
 
     fn next_selection_path_in_dir(&self, root: &Path, original: &Path) -> PathBuf {

@@ -201,6 +201,7 @@ fn settings_round_trip_preserves_fields() {
                 keyboard_zoom_factor: 1.2,
                 anti_clip_fade_enabled: false,
                 anti_clip_fade_ms: 12.0,
+                auto_edge_fades_on_selection_exports: false,
                 destructive_yolo_mode: true,
                 waveform_channel_view: WaveformChannelView::SplitStereo,
                 bpm_snap_enabled: true,
@@ -310,6 +311,10 @@ fn settings_round_trip_preserves_fields() {
     assert_eq!(
         round_trip.core.controls.anti_clip_fade_ms,
         cfg.core.controls.anti_clip_fade_ms
+    );
+    assert_eq!(
+        round_trip.core.controls.auto_edge_fades_on_selection_exports,
+        cfg.core.controls.auto_edge_fades_on_selection_exports
     );
     assert_eq!(
         round_trip.core.controls.destructive_yolo_mode,

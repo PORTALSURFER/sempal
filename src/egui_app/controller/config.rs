@@ -43,6 +43,10 @@ impl EguiController {
             keyboard_zoom_factor: self.settings.controls.keyboard_zoom_factor,
             anti_clip_fade_enabled: self.settings.controls.anti_clip_fade_enabled,
             anti_clip_fade_ms: self.settings.controls.anti_clip_fade_ms,
+            auto_edge_fades_on_selection_exports: self
+                .settings
+                .controls
+                .auto_edge_fades_on_selection_exports,
             destructive_yolo_mode: self.settings.controls.destructive_yolo_mode,
             waveform_channel_view: self.settings.controls.waveform_channel_view,
             input_monitoring_enabled: self.settings.controls.input_monitoring_enabled,

@@ -15,6 +15,8 @@ pub struct InteractionOptionsState {
     pub anti_clip_fade_enabled: bool,
     /// Anti-clip fade duration in milliseconds.
     pub anti_clip_fade_ms: f32,
+    /// Auto-apply short edge fades when exporting new samples from selections.
+    pub auto_edge_fades_on_selection_exports: bool,
     /// Allow destructive edits without confirmation.
     pub destructive_yolo_mode: bool,
     /// Default waveform channel view.
@@ -36,6 +38,7 @@ impl Default for InteractionOptionsState {
             keyboard_zoom_factor: 0.9,
             anti_clip_fade_enabled: true,
             anti_clip_fade_ms: 2.0,
+            auto_edge_fades_on_selection_exports: true,
             destructive_yolo_mode: false,
             waveform_channel_view: WaveformChannelView::Mono,
             input_monitoring_enabled: true,

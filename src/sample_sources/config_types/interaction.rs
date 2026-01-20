@@ -39,10 +39,10 @@ impl Display for TooltipMode {
 ///
 /// Config keys: `invert_waveform_scroll`, `waveform_scroll_speed`,
 /// `wheel_zoom_factor`, `keyboard_zoom_factor`, `anti_clip_fade_enabled`,
-/// `anti_clip_fade_ms`, `destructive_yolo_mode`, `waveform_channel_view`,
-/// `bpm_snap_enabled`, `bpm_lock_enabled`, `bpm_stretch_enabled`, `bpm_value`,
-/// `transient_markers_enabled`, `transient_snap_enabled`, `input_monitoring_enabled`,
-/// `normalized_audition_enabled`, `loop_lock_enabled`.
+/// `anti_clip_fade_ms`, `auto_edge_fades_on_selection_exports`, `destructive_yolo_mode`,
+/// `waveform_channel_view`, `bpm_snap_enabled`, `bpm_lock_enabled`, `bpm_stretch_enabled`,
+/// `bpm_value`, `transient_markers_enabled`, `transient_snap_enabled`,
+/// `input_monitoring_enabled`, `normalized_audition_enabled`, `loop_lock_enabled`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InteractionOptions {
     /// Invert mouse wheel direction for waveform scrolling.
@@ -63,6 +63,9 @@ pub struct InteractionOptions {
     /// Anti-clip fade duration in milliseconds.
     #[serde(default = "default_anti_clip_fade_ms")]
     pub anti_clip_fade_ms: f32,
+    /// Auto-apply short edge fades when exporting new samples from selections.
+    #[serde(default = "default_true")]
+    pub auto_edge_fades_on_selection_exports: bool,
     /// Allow destructive edits without confirmation.
     #[serde(default)]
     pub destructive_yolo_mode: bool,
@@ -113,6 +116,7 @@ impl Default for InteractionOptions {
             keyboard_zoom_factor: default_keyboard_zoom_factor(),
             anti_clip_fade_enabled: true,
             anti_clip_fade_ms: default_anti_clip_fade_ms(),
+            auto_edge_fades_on_selection_exports: default_true(),
             destructive_yolo_mode: false,
             waveform_channel_view: WaveformChannelView::Mono,
             bpm_snap_enabled: default_false(),
