@@ -35,17 +35,6 @@ impl EguiController {
             .and_then(|row| row.as_ref())
     }
 
-    /// Return cached duration metadata for a sample path, when available.
-    pub(crate) fn cached_duration_seconds_for_path(&self, path: &Path) -> Option<f32> {
-        let source_id = self.selection_state.ctx.selected_source.as_ref()?;
-        self.ui_cache
-            .browser
-            .durations
-            .get(source_id)
-            .and_then(|cache| cache.get(path).copied())
-            .filter(|value| value.is_finite() && *value > 0.0)
-    }
-
     /// Patch cached duration metadata for a sample if the feature cache is live.
     pub(crate) fn update_cached_duration_for_path(
         &mut self,
@@ -269,18 +258,4 @@ mod tests {
     use crate::sample_sources::Rating;
     use std::path::Path;
 
-    #[test]
-    fn cached_duration_seconds_for_path_returns_cached_value() {
-        let (mut controller, source) = test_support::prepare_with_source_and_wav_entries(vec![
-            test_support::sample_entry("long.wav", Rating::NEUTRAL),
-        ]);
-        controller.update_cached_duration_for_path(
-            &source.id,
-            Path::new("long.wav"),
-            120.0,
-            48_000,
-        );
-        let duration = controller.cached_duration_seconds_for_path(Path::new("long.wav"));
-        assert_eq!(duration, Some(120.0));
-    }
 }
