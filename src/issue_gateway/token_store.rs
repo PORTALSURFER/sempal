@@ -777,6 +777,8 @@ mod tests {
         enable_mock_keyring();
         let _env_guard = env_lock();
         reset_cache();
+        disallow_fallback();
+        clear_env_key();
         unsafe {
             std::env::set_var("SEMPAL_DISABLE_KEYRING", "1");
         }
