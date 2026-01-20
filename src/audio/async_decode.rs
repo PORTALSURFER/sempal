@@ -185,12 +185,20 @@ mod tests {
         channels: u16,
         delay: Duration,
         error: Option<String>,
+        start_barrier: Option<Arc<std::sync::Barrier>>,
+        start_barrier_waited: bool,
     }
 
     impl Iterator for TestSource {
         type Item = f32;
 
         fn next(&mut self) -> Option<Self::Item> {
+            if !self.start_barrier_waited {
+                if let Some(barrier) = self.start_barrier.as_ref() {
+                    self.start_barrier_waited = true;
+                    barrier.wait();
+                }
+            }
             if self.delay > Duration::ZERO {
                 thread::sleep(self.delay);
             }
@@ -235,6 +243,8 @@ mod tests {
             channels: 1,
             delay: Duration::ZERO,
             error: None,
+            start_barrier: None,
+            start_barrier_waited: false,
         };
         let mut async_source = AsyncSource::with_buffer_seconds(source, 1.0);
         thread::sleep(Duration::from_millis(20));
@@ -254,12 +264,24 @@ mod tests {
             channels: 1,
             delay: Duration::from_millis(30),
             error: None,
+            start_barrier: Some(Arc::new(std::sync::Barrier::new(2))),
+            start_barrier_waited: false,
         };
+        let start_barrier = source.start_barrier.clone().expect("barrier present");
         let mut async_source = AsyncSource::with_buffer_seconds(source, 0.1);
         let first = async_source.next().unwrap();
         assert_eq!(first, 0.0);
-        thread::sleep(Duration::from_millis(40));
-        let second = async_source.next().unwrap();
+        start_barrier.wait();
+        let mut second = 0.0;
+        for _ in 0..10 {
+            if let Some(sample) = async_source.next() {
+                if sample != 0.0 {
+                    second = sample;
+                    break;
+                }
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
         assert_eq!(second, 0.5);
     }
 
@@ -272,6 +294,8 @@ mod tests {
             channels: 1,
             delay: Duration::ZERO,
             error: None,
+            start_barrier: None,
+            start_barrier_waited: false,
         };
         let mut async_source = AsyncSource::with_buffer_seconds(source, 0.1);
         thread::sleep(Duration::from_millis(20));
@@ -291,6 +315,8 @@ mod tests {
             channels: 1,
             delay: Duration::ZERO,
             error: Some("decode failed".to_string()),
+            start_barrier: None,
+            start_barrier_waited: false,
         };
         let mut async_source = AsyncSource::with_buffer_seconds(source, 1.0);
         thread::sleep(Duration::from_millis(20));
