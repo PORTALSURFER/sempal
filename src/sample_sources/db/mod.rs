@@ -83,16 +83,9 @@ impl Rating {
     }
 
     /// Parse an integer column value into a tag.
-    /// Handles migration of legacy values:
-    /// 1 -> Keep (1)
-    /// 2 -> Trash (-1)
-    /// others -> mapped directly if in range, else Neutral
+    /// Values are clamped into the supported range to keep persisted tags stable.
     pub fn from_i64(value: i64) -> Self {
-        match value {
-            1 => Self(1),
-            2 => Self(-1), // Legacy Trash -> Trash Level 1
-            v => Self(v.clamp(-3, 3) as i8),
-        }
+        Self(value.clamp(-3, 3) as i8)
     }
 }
 

@@ -10,15 +10,11 @@ mod tests {
     }
 
     #[test]
-    fn test_legacy_migration() {
-        // Legacy 1 (Keep) -> 1
+    fn test_persisted_rating_mapping() {
         assert_eq!(Rating::from_i64(1).val(), 1);
-        // Legacy 2 (Trash) -> -1 (Level 1 trash)
-        assert_eq!(Rating::from_i64(2).val(), -1);
-        // New values
+        assert_eq!(Rating::from_i64(2).val(), 2);
         assert_eq!(Rating::from_i64(3).val(), 3);
         assert_eq!(Rating::from_i64(-3).val(), -3);
-        // Zero
         assert_eq!(Rating::from_i64(0).val(), 0);
     }
 
