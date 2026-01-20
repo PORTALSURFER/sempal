@@ -122,15 +122,32 @@ pub(super) fn read_facts(root: &Path, path: &Path) -> Result<FileFacts, ScanErro
     })
 }
 
-pub(super) fn compute_content_hash(path: &Path) -> Result<String, ScanError> {
+/// Hash the entire file contents for change detection, honoring cancellation when requested.
+pub(super) fn compute_content_hash(
+    path: &Path,
+    cancel: Option<&AtomicBool>,
+) -> Result<String, ScanError> {
     let mut file = fs::File::open(path).map_err(|source| ScanError::Io {
         path: path.to_path_buf(),
         source,
     })?;
+    compute_content_hash_with_reader(path, &mut file, cancel)
+}
+
+fn compute_content_hash_with_reader(
+    path: &Path,
+    reader: &mut impl Read,
+    cancel: Option<&AtomicBool>,
+) -> Result<String, ScanError> {
     let mut hasher = blake3::Hasher::new();
     let mut buffer = [0u8; 64 * 1024];
     loop {
-        let read = file.read(&mut buffer).map_err(|source| ScanError::Io {
+        if let Some(cancel) = cancel
+            && cancel.load(Ordering::Relaxed)
+        {
+            return Err(ScanError::Canceled);
+        }
+        let read = reader.read(&mut buffer).map_err(|source| ScanError::Io {
             path: path.to_path_buf(),
             source,
         })?;
@@ -161,4 +178,57 @@ fn to_nanos(time: &SystemTime, path: &Path) -> Result<i64, ScanError> {
             path: path.to_path_buf(),
         })?;
     Ok(duration.as_nanos().min(i64::MAX as u128) as i64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io;
+    use std::sync::atomic::AtomicBool;
+
+    struct CancelingReader {
+        remaining: usize,
+        chunk: usize,
+        cancel: std::sync::Arc<AtomicBool>,
+        canceled: bool,
+    }
+
+    impl CancelingReader {
+        fn new(total_bytes: usize, chunk: usize, cancel: std::sync::Arc<AtomicBool>) -> Self {
+            Self {
+                remaining: total_bytes,
+                chunk,
+                cancel,
+                canceled: false,
+            }
+        }
+    }
+
+    impl io::Read for CancelingReader {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if self.remaining == 0 {
+                return Ok(0);
+            }
+            let to_write = self.chunk.min(self.remaining).min(buf.len());
+            buf[..to_write].fill(0);
+            self.remaining -= to_write;
+            if !self.canceled {
+                self.cancel.store(true, Ordering::Relaxed);
+                self.canceled = true;
+            }
+            Ok(to_write)
+        }
+    }
+
+    #[test]
+    fn compute_content_hash_cancels_during_read() {
+        let cancel = std::sync::Arc::new(AtomicBool::new(false));
+        let mut reader = CancelingReader::new(256 * 1024, 64 * 1024, cancel.clone());
+        let result = compute_content_hash_with_reader(
+            Path::new("fake.wav"),
+            &mut reader,
+            Some(cancel.as_ref()),
+        );
+        assert!(matches!(result, Err(ScanError::Canceled)));
+    }
 }

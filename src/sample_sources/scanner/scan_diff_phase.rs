@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 
 use crate::sample_sources::db::SourceWriteBatch;
 
@@ -11,6 +12,7 @@ pub(super) fn diff_phase(
     root: &Path,
     path: &Path,
     context: &mut ScanContext,
+    cancel: Option<&AtomicBool>,
 ) -> Result<(), ScanError> {
     let facts = read_facts(root, path)?;
     apply_diff(
@@ -20,6 +22,7 @@ pub(super) fn diff_phase(
         &mut context.existing_by_hash,
         &mut context.stats,
         root,
+        cancel,
     )?;
     context.stats.total_files += 1;
     Ok(())

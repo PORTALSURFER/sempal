@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
+    sync::atomic::AtomicBool,
 };
 
 use crate::sample_sources::db::{SourceWriteBatch, WavEntry};
@@ -30,6 +31,7 @@ pub(super) fn apply_diff(
     existing_by_hash: &mut HashMap<String, Vec<PathBuf>>,
     stats: &mut ScanStats,
     root: &Path,
+    cancel: Option<&AtomicBool>,
 ) -> Result<(), ScanError> {
     let path = facts.relative.clone();
     match existing.remove(&path) {
@@ -42,7 +44,7 @@ pub(super) fn apply_diff(
         Some(entry) => {
             remove_from_hash_index(existing_by_hash, entry.content_hash.as_deref(), &path);
             let absolute = root.join(&path);
-            let hash = compute_content_hash(&absolute)?;
+            let hash = compute_content_hash(&absolute, cancel)?;
             let previous_hash = entry.content_hash.as_deref();
             batch.upsert_file_with_hash(&path, facts.size, facts.modified_ns, &hash)?;
             if previous_hash != Some(hash.as_str()) {
@@ -58,7 +60,7 @@ pub(super) fn apply_diff(
         }
         None => {
             let absolute = root.join(&path);
-            let hash = compute_content_hash(&absolute)?;
+            let hash = compute_content_hash(&absolute, cancel)?;
             if let Some(entry) = take_rename_candidate(existing, existing_by_hash, &hash) {
                 apply_rename(batch, &path, &facts, &hash, entry)?;
                 stats.updated += 1;

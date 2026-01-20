@@ -22,7 +22,7 @@ pub(super) fn walk_phase(
         {
             return Err(ScanError::Canceled);
         }
-        diff_phase(batch, root, path, context)?;
+        diff_phase(batch, root, path, context, cancel)?;
         if let Some(on_progress) = on_progress.as_mut() {
             on_progress(context.stats.total_files, path);
         }
