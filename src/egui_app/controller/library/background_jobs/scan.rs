@@ -67,6 +67,7 @@ pub(crate) fn handle_scan_finished(controller: &mut EguiController, result: Scan
                 .iter()
                 .find(|source| source.id == result.source_id)
                 .cloned();
+            let source_for_duration = source_for_jobs.clone();
 
             if scan_changed {
                 if let Some(source) = source_for_jobs.clone() {
@@ -94,7 +95,7 @@ pub(crate) fn handle_scan_finished(controller: &mut EguiController, result: Scan
                         }
                     });
                 }
-            } else if let Some(source) = source_for_jobs {
+            } else if let Some(source) = source_for_jobs.clone() {
                 if similarity_prep_active {
                     controller.handle_similarity_scan_finished(&result.source_id, false);
                     return;
@@ -132,6 +133,18 @@ pub(crate) fn handle_scan_finished(controller: &mut EguiController, result: Scan
                                 super::AnalysisJobMessage::EmbeddingBackfillEnqueueFailed(err),
                             ));
                         }
+                    }
+                });
+            }
+            if let Some(source) = source_for_duration {
+                std::thread::spawn(move || {
+                    if let Err(err) =
+                        analysis_jobs::update_missing_durations_for_source(&source)
+                    {
+                        tracing::warn!(
+                            "Duration probe after scan failed for {}: {err}",
+                            source.id.as_str()
+                        );
                     }
                 });
             }

@@ -13,8 +13,8 @@ mod tests;
 
 pub(crate) use artifacts::{
     CachedEmbedding, CachedFeatures, cached_embedding_by_hash, cached_features_by_hash,
-    invalidate_analysis_artifacts, update_analysis_metadata, upsert_analysis_features,
-    upsert_cached_embedding, upsert_cached_features, upsert_embedding,
+    invalidate_analysis_artifacts, update_analysis_metadata, update_sample_duration,
+    upsert_analysis_features, upsert_cached_embedding, upsert_cached_features, upsert_embedding,
 };
 pub(crate) use cleanup::purge_orphaned_samples;
 pub(crate) use cleanup::{
@@ -33,8 +33,8 @@ pub(crate) use ids::{build_sample_id, parse_sample_id};
 pub(crate) use jobs::claim_next_job;
 pub(crate) use jobs::{
     SampleAnalysisState, claim_next_jobs, mark_done, mark_failed_with_reason,
-    mark_pending, sample_analysis_states, sample_bpm, sample_content_hash, touch_running_at,
-    update_sample_bpms,
+    mark_pending, sample_analysis_states, sample_bpm, sample_content_hash,
+    sample_ids_missing_duration, touch_running_at, update_sample_bpms,
 };
 #[cfg(test)]
 pub(crate) use jobs::update_sample_bpm;

@@ -294,7 +294,55 @@ impl EguiController {
             Ok(None) => {}
             Err(err) => self.set_status(err, StatusTone::Warning),
         }
+        self.update_loaded_sample_duration(source, relative_path, duration_seconds, sample_rate);
         Ok(())
+    }
+
+    fn update_loaded_sample_duration(
+        &mut self,
+        source: &SampleSource,
+        relative_path: &Path,
+        duration_seconds: f32,
+        sample_rate: u32,
+    ) {
+        if !duration_seconds.is_finite() || duration_seconds <= 0.0 {
+            return;
+        }
+        let mut content_hash = None;
+        if let Some(index) = self.wav_index_for_path(relative_path) {
+            if let Some(entry) = self.wav_entry(index) {
+                content_hash = entry.content_hash.clone();
+            }
+        }
+        let sample_id = analysis_jobs::build_sample_id(source.id.as_str(), relative_path);
+        let conn = match analysis_jobs::open_source_db(&source.root) {
+            Ok(conn) => conn,
+            Err(err) => {
+                tracing::warn!(
+                    "Failed to open source DB for duration update ({}): {err}",
+                    relative_path.display()
+                );
+                return;
+            }
+        };
+        if let Err(err) = analysis_jobs::update_sample_duration(
+            &conn,
+            &sample_id,
+            content_hash.as_deref(),
+            duration_seconds,
+            sample_rate,
+        ) {
+            tracing::warn!(
+                "Failed to store duration metadata for {}: {err}",
+                relative_path.display()
+            );
+        }
+        self.update_cached_duration_for_path(
+            &source.id,
+            relative_path,
+            duration_seconds,
+            sample_rate,
+        );
     }
 
     fn apply_loaded_sample_bpm(&mut self, source: &SampleSource, relative_path: &Path) {

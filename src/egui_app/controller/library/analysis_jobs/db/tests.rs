@@ -415,6 +415,58 @@ fn update_analysis_metadata_updates_matching_hash() {
 }
 
 #[test]
+fn update_sample_duration_preserves_analysis_version() {
+    let conn = conn_with_schema();
+    conn.execute(
+        "INSERT INTO samples (sample_id, content_hash, size, mtime_ns, analysis_version)
+         VALUES ('s::a.wav', 'h1', 10, 5, 'analysis_v1_test')",
+        [],
+    )
+    .unwrap();
+    update_sample_duration(
+        &conn,
+        "s::a.wav",
+        Some("h1"),
+        2.5,
+        crate::analysis::audio::ANALYSIS_SAMPLE_RATE,
+    )
+    .unwrap();
+    let (duration, version): (Option<f64>, Option<String>) = conn
+        .query_row(
+            "SELECT duration_seconds, analysis_version FROM samples WHERE sample_id = 's::a.wav'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(duration, Some(2.5));
+    assert_eq!(version.as_deref(), Some("analysis_v1_test"));
+}
+
+#[test]
+fn sample_ids_missing_duration_finds_nulls() {
+    let conn = conn_with_schema();
+    conn.execute(
+        "INSERT INTO samples (sample_id, content_hash, size, mtime_ns, duration_seconds)
+         VALUES ('s::missing.wav', 'h1', 10, 5, NULL)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO samples (sample_id, content_hash, size, mtime_ns, duration_seconds)
+         VALUES ('s::ok.wav', 'h2', 10, 5, 1.0)",
+        [],
+    )
+    .unwrap();
+    let missing = sample_ids_missing_duration(
+        &conn,
+        &vec!["s::missing.wav".to_string(), "s::ok.wav".to_string()],
+    )
+    .unwrap();
+    assert!(missing.contains("s::missing.wav"));
+    assert!(!missing.contains("s::ok.wav"));
+}
+
+#[test]
 fn upsert_analysis_features_overwrites_existing() {
     let conn = conn_with_schema();
     upsert_analysis_features(&conn, "s::a.wav", b"one", 1, 100).unwrap();

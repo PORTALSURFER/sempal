@@ -3,7 +3,7 @@ use super::{invalidate, persist, scan};
 use crate::egui_app::controller::library::analysis_jobs::db;
 use crate::egui_app::controller::library::analysis_jobs::types::AnalysisProgress;
 use rusqlite::params;
-use tracing::info;
+use tracing::{info, warn};
 
 struct EnqueueSamplesRequest<'a> {
     source: &'a crate::sample_sources::SampleSource,
@@ -19,6 +19,15 @@ pub(crate) fn enqueue_jobs_for_source(
         changed_samples,
     };
     enqueue_samples(request)
+}
+
+/// Probe and store missing duration metadata for samples in a source.
+pub(crate) fn update_missing_durations_for_source(
+    source: &crate::sample_sources::SampleSource,
+) -> Result<(), String> {
+    let mut conn = db::open_source_db(&source.root)?;
+    let staged_samples = scan::stage_samples_for_source(source, true)?;
+    update_missing_sample_durations(&mut conn, source, &staged_samples)
 }
 
 fn enqueue_samples(
@@ -49,14 +58,23 @@ fn enqueue_samples(
     );
 
     let created_at = now_epoch_seconds();
-    persist::write_changed_samples(
+    let (inserted, progress) = persist::write_changed_samples(
         &mut conn,
         &sample_metadata,
         &invalidate,
         &jobs,
         request.source.id.as_str(),
         created_at,
-    )
+    )?;
+    if let Err(err) =
+        update_missing_sample_durations(&mut conn, request.source, &sample_metadata)
+    {
+        warn!(
+            source_id = %request.source.id,
+            "Failed to update sample durations after scan: {err}"
+        );
+    }
+    Ok((inserted, progress))
 }
 
 struct EnqueueSourceRequest<'a> {
@@ -120,6 +138,7 @@ fn enqueue_source_backfill(
     }
     enqueue_from_staged_samples(
         &mut conn,
+        request.source,
         staged_samples,
         db::ANALYZE_SAMPLE_JOB_TYPE,
         force_full,
@@ -150,6 +169,7 @@ fn enqueue_missing_features(
     }
     enqueue_from_staged_samples(
         &mut conn,
+        request.source,
         staged_samples,
         db::ANALYZE_SAMPLE_JOB_TYPE,
         false,
@@ -160,6 +180,7 @@ fn enqueue_missing_features(
 
 fn enqueue_from_staged_samples(
     conn: &mut rusqlite::Connection,
+    source: &crate::sample_sources::SampleSource,
     staged_samples: Vec<db::SampleMetadata>,
     job_type: &str,
     force_full: bool,
@@ -204,6 +225,12 @@ fn enqueue_from_staged_samples(
         source_id,
         created_at,
     )?;
+    if let Err(err) = update_missing_sample_durations(conn, source, &plan.sample_metadata) {
+        warn!(
+            source_id = %source.id,
+            "Failed to update sample durations during backfill: {err}"
+        );
+    }
     info!(
         "Analysis backfill enqueued (inserted={}, staged={}, jobs={}, failed_requeued={}, source_id={}, job_type={})",
         inserted,
@@ -214,4 +241,68 @@ fn enqueue_from_staged_samples(
         job_type
     );
     Ok((inserted, progress))
+}
+
+fn update_missing_sample_durations(
+    conn: &mut rusqlite::Connection,
+    source: &crate::sample_sources::SampleSource,
+    samples: &[db::SampleMetadata],
+) -> Result<(), String> {
+    if samples.is_empty() {
+        return Ok(());
+    }
+    let sample_ids: Vec<String> = samples
+        .iter()
+        .map(|sample| sample.sample_id.clone())
+        .collect();
+    let missing_ids = db::sample_ids_missing_duration(conn, &sample_ids)?;
+    if missing_ids.is_empty() {
+        return Ok(());
+    }
+    for sample in samples {
+        if !missing_ids.contains(&sample.sample_id) {
+            continue;
+        }
+        let (_source_id, relative_path) = match db::parse_sample_id(&sample.sample_id) {
+            Ok(parsed) => parsed,
+            Err(err) => {
+                warn!("Skipping duration probe for {}: {err}", sample.sample_id);
+                continue;
+            }
+        };
+        let absolute = source.root.join(&relative_path);
+        let probe = match crate::analysis::audio::probe_metadata(&absolute) {
+            Ok(probe) => probe,
+            Err(err) => {
+                warn!(
+                    "Failed to probe duration for {}: {err}",
+                    absolute.display()
+                );
+                continue;
+            }
+        };
+        let Some(duration_seconds) = probe
+            .duration_seconds
+            .filter(|duration| duration.is_finite() && *duration > 0.0)
+        else {
+            continue;
+        };
+        let sample_rate = probe
+            .sample_rate
+            .unwrap_or(crate::analysis::audio::ANALYSIS_SAMPLE_RATE)
+            .max(1);
+        if let Err(err) = db::update_sample_duration(
+            conn,
+            &sample.sample_id,
+            Some(sample.content_hash.as_str()),
+            duration_seconds,
+            sample_rate,
+        ) {
+            warn!(
+                "Failed to store duration for {}: {err}",
+                sample.sample_id
+            );
+        }
+    }
+    Ok(())
 }

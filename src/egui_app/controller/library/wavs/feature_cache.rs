@@ -4,6 +4,7 @@ use crate::egui_app::controller::controller_state::{
 };
 use rusqlite::params;
 use std::collections::HashMap;
+use std::path::Path;
 
 const ANALYSIS_JOB_TYPE: &str = "wav_metadata_v1";
 
@@ -32,6 +33,39 @@ impl EguiController {
             .get(source_id)
             .and_then(|cache| cache.rows.get(entry_index))
             .and_then(|row| row.as_ref())
+    }
+
+    /// Patch cached duration metadata for a sample if the feature cache is live.
+    pub(crate) fn update_cached_duration_for_path(
+        &mut self,
+        source_id: &SourceId,
+        relative_path: &Path,
+        duration_seconds: f32,
+        sample_rate: u32,
+    ) {
+        let Some(cache) = self.ui_cache.browser.features.get_mut(source_id) else {
+            return;
+        };
+        let normalized = relative_path.to_string_lossy().replace('\\', "/");
+        let Some(index) = self
+            .wav_entries
+            .lookup
+            .get(Path::new(&normalized))
+            .copied()
+        else {
+            return;
+        };
+        if let Some(slot) = cache.rows.get_mut(index) {
+            let status = slot.get_or_insert(FeatureStatus {
+                has_features_v1: false,
+                has_embedding: false,
+                duration_seconds: None,
+                sr_used: None,
+                analysis_status: None,
+            });
+            status.duration_seconds = Some(duration_seconds);
+            status.sr_used = Some(sample_rate as i64);
+        }
     }
 
     fn ensure_feature_cache(&mut self, source_id: &SourceId) -> Result<(), String> {

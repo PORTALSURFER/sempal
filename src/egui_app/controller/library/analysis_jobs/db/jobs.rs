@@ -1,6 +1,6 @@
 use super::types::ClaimedJob;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params, params_from_iter};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -137,6 +137,41 @@ pub(crate) fn sample_analysis_states(
         );
     }
     Ok(states)
+}
+
+/// Return the subset of sample ids that lack a stored duration.
+pub(crate) fn sample_ids_missing_duration(
+    conn: &Connection,
+    sample_ids: &[String],
+) -> Result<HashSet<String>, String> {
+    let mut missing = HashSet::new();
+    if sample_ids.is_empty() {
+        return Ok(missing);
+    }
+    let placeholders = std::iter::repeat("?")
+        .take(sample_ids.len())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "SELECT sample_id
+         FROM samples
+         WHERE sample_id IN ({placeholders})
+           AND (duration_seconds IS NULL OR duration_seconds <= 0)"
+    );
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|err| format!("Failed to prepare duration lookup: {err}"))?;
+    let mut rows = stmt
+        .query(params_from_iter(sample_ids.iter()))
+        .map_err(|err| format!("Failed to query duration metadata: {err}"))?;
+    while let Some(row) = rows
+        .next()
+        .map_err(|err| format!("Failed to query duration metadata: {err}"))?
+    {
+        let sample_id: String = row.get(0).map_err(|err| err.to_string())?;
+        missing.insert(sample_id);
+    }
+    Ok(missing)
 }
 
 #[cfg(test)]
