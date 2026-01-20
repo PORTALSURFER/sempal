@@ -106,7 +106,7 @@ fn upsert_samples_tx(
     const BATCH_SIZE: usize = 200;
     for chunk in samples.chunks(BATCH_SIZE) {
         let mut sql = String::from(
-            "INSERT INTO samples (sample_id, content_hash, size, mtime_ns, duration_seconds, sr_used, analysis_version, bpm) VALUES ",
+            "INSERT INTO samples (sample_id, content_hash, size, mtime_ns, duration_seconds, sr_used, analysis_version, bpm, long_sample_mark) VALUES ",
         );
         let mut params: Vec<Value> = Vec::with_capacity(chunk.len() * 4);
         for (idx, sample) in chunk.iter().enumerate() {
@@ -115,7 +115,7 @@ fn upsert_samples_tx(
             }
             let base = idx * 4;
             sql.push_str(&format!(
-                "(?{}, ?{}, ?{}, ?{}, NULL, NULL, NULL, NULL)",
+                "(?{}, ?{}, ?{}, ?{}, NULL, NULL, NULL, NULL, NULL)",
                 base + 1,
                 base + 2,
                 base + 3,
@@ -133,18 +133,35 @@ fn upsert_samples_tx(
                 mtime_ns = excluded.mtime_ns,
                 duration_seconds = CASE
                     WHEN samples.content_hash != excluded.content_hash
+                         AND NOT (samples.content_hash LIKE 'fast-%'
+                                  AND samples.size = excluded.size
+                                  AND samples.mtime_ns = excluded.mtime_ns)
                     THEN NULL
                     ELSE samples.duration_seconds
                 END,
                 sr_used = CASE
                     WHEN samples.content_hash != excluded.content_hash
+                         AND NOT (samples.content_hash LIKE 'fast-%'
+                                  AND samples.size = excluded.size
+                                  AND samples.mtime_ns = excluded.mtime_ns)
                     THEN NULL
                     ELSE samples.sr_used
                 END,
                 analysis_version = CASE
                     WHEN samples.content_hash != excluded.content_hash
+                         AND NOT (samples.content_hash LIKE 'fast-%'
+                                  AND samples.size = excluded.size
+                                  AND samples.mtime_ns = excluded.mtime_ns)
                     THEN NULL
                     ELSE samples.analysis_version
+                END,
+                long_sample_mark = CASE
+                    WHEN samples.content_hash != excluded.content_hash
+                         AND NOT (samples.content_hash LIKE 'fast-%'
+                                  AND samples.size = excluded.size
+                                  AND samples.mtime_ns = excluded.mtime_ns)
+                    THEN NULL
+                    ELSE samples.long_sample_mark
                 END,
                 bpm = samples.bpm",
         );

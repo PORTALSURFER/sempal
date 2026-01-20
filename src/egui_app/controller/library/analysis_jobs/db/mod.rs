@@ -14,6 +14,7 @@ mod tests;
 pub(crate) use artifacts::{
     CachedEmbedding, CachedFeatures, cached_embedding_by_hash, cached_features_by_hash,
     invalidate_analysis_artifacts, update_analysis_metadata, update_sample_duration,
+    update_sample_long_mark,
     upsert_analysis_features, upsert_cached_embedding, upsert_cached_features, upsert_embedding,
 };
 pub(crate) use cleanup::purge_orphaned_samples;

@@ -47,7 +47,8 @@ pub(super) fn apply_schema(connection: &Connection) -> Result<(), SourceDbError>
                 duration_seconds REAL,
                 sr_used INTEGER,
                 analysis_version TEXT,
-                bpm REAL
+                bpm REAL,
+                long_sample_mark INTEGER
              );
              CREATE TABLE IF NOT EXISTS analysis_features (
                 sample_id TEXT PRIMARY KEY,
@@ -353,6 +354,11 @@ fn ensure_samples_optional_columns(connection: &Connection) -> Result<(), Source
     if !columns.contains("bpm") {
         connection
             .execute("ALTER TABLE samples ADD COLUMN bpm REAL", [])
+            .map_err(map_sql_error)?;
+    }
+    if !columns.contains("long_sample_mark") {
+        connection
+            .execute("ALTER TABLE samples ADD COLUMN long_sample_mark INTEGER", [])
             .map_err(map_sql_error)?;
     }
     Ok(())

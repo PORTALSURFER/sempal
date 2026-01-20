@@ -80,6 +80,7 @@ impl EguiController {
                 has_embedding: false,
                 duration_seconds: None,
                 sr_used: None,
+                long_sample_mark: None,
                 analysis_status: None,
             });
             status.duration_seconds = Some(duration_seconds);
@@ -121,6 +122,7 @@ impl EguiController {
                     "SELECT s.sample_id,
                             s.duration_seconds,
                             s.sr_used,
+                            s.long_sample_mark,
                             CASE WHEN f.sample_id IS NULL THEN 0 ELSE 1 END AS has_features_v1,
                             CASE WHEN e.sample_id IS NULL THEN 0 ELSE 1 END AS has_embedding,
                             j.status
@@ -146,9 +148,10 @@ impl EguiController {
                 let sample_id: String = row.get::<_, String>(0).map_err(|err| err.to_string())?;
                 let duration_seconds: Option<f64> = row.get::<_, Option<f64>>(1).map_err(|err| err.to_string())?;
                 let sr_used: Option<i64> = row.get::<_, Option<i64>>(2).map_err(|err| err.to_string())?;
-                let has_features_v1: i64 = row.get::<_, i64>(3).map_err(|err| err.to_string())?;
-                let has_embedding: i64 = row.get::<_, i64>(4).map_err(|err| err.to_string())?;
-                let status: Option<String> = row.get::<_, Option<String>>(5).map_err(|err| err.to_string())?;
+                let long_sample_mark: Option<i64> = row.get::<_, Option<i64>>(3).map_err(|err| err.to_string())?;
+                let has_features_v1: i64 = row.get::<_, i64>(4).map_err(|err| err.to_string())?;
+                let has_embedding: i64 = row.get::<_, i64>(5).map_err(|err| err.to_string())?;
+                let status: Option<String> = row.get::<_, Option<String>>(6).map_err(|err| err.to_string())?;
                 let analysis_status = status.as_deref().and_then(parse_job_status);
                 let Some(relative_path) = sample_id.split_once("::").map(|(_, p)| p) else {
                     continue;
@@ -160,6 +163,7 @@ impl EguiController {
                         has_embedding: has_embedding != 0,
                         duration_seconds: duration_seconds.map(|s| s as f32),
                         sr_used,
+                        long_sample_mark: long_sample_mark.map(|value| value != 0),
                         analysis_status,
                     },
                 );
@@ -176,6 +180,7 @@ impl EguiController {
                 has_embedding: false,
                 duration_seconds: None,
                 sr_used: None,
+                long_sample_mark: None,
                 analysis_status: None,
             });
             if status.duration_seconds.is_none() {
@@ -190,6 +195,11 @@ impl EguiController {
                     }
                 }
             }
+            if status.long_sample_mark.is_none() {
+                if let Some(fallback) = fallback_rows.get(idx).and_then(|row| row.as_ref()) {
+                    status.long_sample_mark = fallback.long_sample_mark;
+                }
+            }
             rows[idx] = Some(status);
         }
         self.ui_cache
@@ -198,6 +208,40 @@ impl EguiController {
             .insert(source_id.clone(), FeatureCache { rows });
 
         Ok(())
+    }
+}
+
+impl EguiController {
+    /// Update the cached long-sample marker for a sample if the feature cache is live.
+    pub(crate) fn update_cached_long_mark_for_path(
+        &mut self,
+        source_id: &SourceId,
+        relative_path: &Path,
+        long_sample_mark: bool,
+    ) {
+        let Some(cache) = self.ui_cache.browser.features.get_mut(source_id) else {
+            return;
+        };
+        let normalized = relative_path.to_string_lossy().replace('\\', "/");
+        let Some(index) = self
+            .wav_entries
+            .lookup
+            .get(Path::new(&normalized))
+            .copied()
+        else {
+            return;
+        };
+        if let Some(slot) = cache.rows.get_mut(index) {
+            let status = slot.get_or_insert(FeatureStatus {
+                has_features_v1: false,
+                has_embedding: false,
+                duration_seconds: None,
+                sr_used: None,
+                long_sample_mark: None,
+                analysis_status: None,
+            });
+            status.long_sample_mark = Some(long_sample_mark);
+        }
     }
 }
 

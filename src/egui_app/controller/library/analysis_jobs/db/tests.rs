@@ -26,7 +26,8 @@ fn conn_with_schema() -> Connection {
             duration_seconds REAL,
             sr_used INTEGER,
             analysis_version TEXT,
-            bpm REAL
+            bpm REAL,
+            long_sample_mark INTEGER
         );
         CREATE TABLE wav_files (
             path TEXT PRIMARY KEY,
@@ -121,6 +122,60 @@ fn upsert_samples_preserves_bpm_on_hash_change() {
     upsert_samples(&mut conn, &samples).unwrap();
     let bpm = sample_bpm(&conn, "s::a.wav").unwrap();
     assert_eq!(bpm, Some(124.0));
+}
+
+#[test]
+fn upsert_samples_preserves_long_mark_on_fast_hash_upgrade() {
+    let mut conn = conn_with_schema();
+    conn.execute(
+        "INSERT INTO samples (sample_id, content_hash, size, mtime_ns, duration_seconds, long_sample_mark)
+         VALUES (?1, ?2, 10, 5, 12.0, 1)",
+        params!["s::a.wav", "fast-10-5"],
+    )
+    .unwrap();
+    let samples = vec![SampleMetadata {
+        sample_id: "s::a.wav".to_string(),
+        content_hash: "full-hash".to_string(),
+        size: 10,
+        mtime_ns: 5,
+    }];
+    upsert_samples(&mut conn, &samples).unwrap();
+    let (duration, mark): (Option<f64>, Option<i64>) = conn
+        .query_row(
+            "SELECT duration_seconds, long_sample_mark FROM samples WHERE sample_id = 's::a.wav'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(duration, Some(12.0));
+    assert_eq!(mark, Some(1));
+}
+
+#[test]
+fn upsert_samples_clears_long_mark_on_edit() {
+    let mut conn = conn_with_schema();
+    conn.execute(
+        "INSERT INTO samples (sample_id, content_hash, size, mtime_ns, duration_seconds, long_sample_mark)
+         VALUES (?1, ?2, 10, 5, 12.0, 1)",
+        params!["s::a.wav", "fast-10-5"],
+    )
+    .unwrap();
+    let samples = vec![SampleMetadata {
+        sample_id: "s::a.wav".to_string(),
+        content_hash: "full-hash".to_string(),
+        size: 11,
+        mtime_ns: 6,
+    }];
+    upsert_samples(&mut conn, &samples).unwrap();
+    let (duration, mark): (Option<f64>, Option<i64>) = conn
+        .query_row(
+            "SELECT duration_seconds, long_sample_mark FROM samples WHERE sample_id = 's::a.wav'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(duration, None);
+    assert_eq!(mark, None);
 }
 
 #[test]
@@ -488,6 +543,34 @@ fn update_sample_duration_updates_when_hash_differs() {
         .unwrap();
     assert_eq!(duration, Some(3.0));
     assert_eq!(hash.as_deref(), Some("old-hash"));
+}
+
+#[test]
+fn update_sample_duration_creates_row_on_load() {
+    let conn = conn_with_schema();
+    let samples = vec![SampleMetadata {
+        sample_id: "s::a.wav".to_string(),
+        content_hash: "fast-10-5".to_string(),
+        size: 10,
+        mtime_ns: 5,
+    }];
+    upsert_samples(&conn, &samples).unwrap();
+    let updated = update_sample_duration(
+        &conn,
+        "s::a.wav",
+        4.0,
+        crate::analysis::audio::ANALYSIS_SAMPLE_RATE,
+    )
+    .unwrap();
+    assert!(updated);
+    let duration: Option<f64> = conn
+        .query_row(
+            "SELECT duration_seconds FROM samples WHERE sample_id = 's::a.wav'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(duration, Some(4.0));
 }
 
 #[test]

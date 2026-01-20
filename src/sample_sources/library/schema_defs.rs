@@ -70,8 +70,9 @@ impl LibraryDatabase {
                     duration_seconds REAL,
                     sr_used INTEGER,
                     analysis_version TEXT,
-                    bpm REAL
-                );
+                    bpm REAL,
+                    long_sample_mark INTEGER
+                 );
                  CREATE TABLE IF NOT EXISTS analysis_features (
                     sample_id TEXT PRIMARY KEY,
                     content_hash TEXT NOT NULL,

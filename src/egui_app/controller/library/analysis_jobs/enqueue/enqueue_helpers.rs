@@ -7,6 +7,7 @@ pub(crate) fn now_epoch_seconds() -> i64 {
         .as_secs() as i64
 }
 
+/// Build a stable, size/mtime-derived hash when a full content hash is unavailable.
 pub(crate) fn fast_content_hash(size: u64, modified_ns: i64) -> String {
     format!("fast-{}-{}", size, modified_ns)
 }

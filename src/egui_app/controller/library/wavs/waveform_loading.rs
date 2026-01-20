@@ -308,6 +308,18 @@ impl EguiController {
         if !duration_seconds.is_finite() || duration_seconds <= 0.0 {
             return;
         }
+        let (size, modified_ns, content_hash) = match self.wav_index_for_path(relative_path)
+            .and_then(|index| self.wav_entry(index))
+        {
+            Some(entry) => (
+                entry.file_size,
+                entry.modified_ns,
+                entry.content_hash.clone().unwrap_or_else(|| {
+                    analysis_jobs::fast_content_hash(entry.file_size, entry.modified_ns)
+                }),
+            ),
+            None => return,
+        };
         let sample_id = analysis_jobs::build_sample_id(source.id.as_str(), relative_path);
         let conn = match analysis_jobs::open_source_db(&source.root) {
             Ok(conn) => conn,
@@ -319,6 +331,20 @@ impl EguiController {
                 return;
             }
         };
+        if let Err(err) = analysis_jobs::upsert_samples(
+            &conn,
+            &[analysis_jobs::SampleMetadata {
+                sample_id: sample_id.clone(),
+                content_hash,
+                size,
+                mtime_ns: modified_ns,
+            }],
+        ) {
+            tracing::warn!(
+                "Failed to ensure analysis row for {}: {err}",
+                relative_path.display()
+            );
+        }
         if let Err(err) =
             analysis_jobs::update_sample_duration(&conn, &sample_id, duration_seconds, sample_rate)
         {
@@ -326,6 +352,26 @@ impl EguiController {
                 "Failed to store duration metadata for {}: {err}",
                 relative_path.display()
             );
+        }
+        if self.sample_view.wav.selected_wav.as_deref() == Some(relative_path) {
+            let long_sample_mark = duration_seconds.is_finite()
+                && duration_seconds > self.long_sample_threshold_seconds();
+            if let Err(err) = analysis_jobs::update_sample_long_mark(
+                &conn,
+                &sample_id,
+                long_sample_mark,
+            ) {
+                tracing::warn!(
+                    "Failed to store long sample mark for {}: {err}",
+                    relative_path.display()
+                );
+            } else {
+                self.update_cached_long_mark_for_path(
+                    &source.id,
+                    relative_path,
+                    long_sample_mark,
+                );
+            }
         }
         self.update_cached_duration_for_path(
             &source.id,

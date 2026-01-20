@@ -105,6 +105,21 @@ pub(crate) fn update_sample_duration(
     Ok(updated > 0)
 }
 
+/// Persist the long-sample marker for a sample row.
+pub(crate) fn update_sample_long_mark(
+    conn: &Connection,
+    sample_id: &str,
+    long_sample_mark: bool,
+) -> Result<(), String> {
+    let mark = if long_sample_mark { 1i64 } else { 0i64 };
+    conn.execute(
+        "UPDATE samples SET long_sample_mark = ?2 WHERE sample_id = ?1",
+        params![sample_id, mark],
+    )
+    .map_err(|err| format!("Failed to update long sample mark: {err}"))?;
+    Ok(())
+}
+
 pub(crate) fn upsert_analysis_features(
     conn: &Connection,
     sample_id: &str,
