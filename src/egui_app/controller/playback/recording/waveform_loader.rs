@@ -46,7 +46,6 @@ pub(crate) enum RecordingWaveformError {
 
 /// Completed recording waveform refresh response.
 pub(crate) struct RecordingWaveformLoadResult {
-pub(crate) struct RecordingWaveformLoadResult {
     pub(crate) request_id: u64,
     pub(crate) source_id: SourceId,
     pub(crate) relative_path: PathBuf,
