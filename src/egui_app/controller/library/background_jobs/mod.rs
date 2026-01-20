@@ -115,20 +115,26 @@ impl EguiController {
                         continue;
                     }
                     self.runtime.jobs.set_pending_recording_waveform(None);
-                    let Some(target) = self.audio.recording_target.as_mut() else {
-                        continue;
+                    let target_matches = match self.audio.recording_target.as_ref() {
+                        Some(target) => {
+                            target.source_id == pending.source_id
+                                && target.relative_path == pending.relative_path
+                                && target.absolute_path == pending.absolute_path
+                        }
+                        None => {
+                            continue;
+                        }
                     };
-                    if target.source_id != pending.source_id
-                        || target.relative_path != pending.relative_path
-                        || target.absolute_path != pending.absolute_path
-                    {
+                    if !target_matches {
                         continue;
                     }
                     let now = Instant::now();
                     match message.result {
                         Ok(update) => match update {
                             RecordingWaveformUpdate::NoChange { file_len } => {
-                                target.last_file_len = file_len;
+                                if let Some(target) = self.audio.recording_target.as_mut() {
+                                    target.last_file_len = file_len;
+                                }
                             }
                             RecordingWaveformUpdate::Updated {
                                 decoded,
@@ -152,17 +158,23 @@ impl EguiController {
                                             false,
                                             None,
                                         );
-                                        target.loaded_once = true;
+                                        if let Some(target) = self.audio.recording_target.as_mut() {
+                                            target.loaded_once = true;
+                                        }
                                     } else {
                                         self.apply_waveform_image(decoded, None);
                                     }
                                 }
-                                target.last_file_len = file_len;
+                                if let Some(target) = self.audio.recording_target.as_mut() {
+                                    target.last_file_len = file_len;
+                                }
                             }
                         },
                         Err(_) => {}
                     }
-                    target.last_refresh_at = Some(now);
+                    if let Some(target) = self.audio.recording_target.as_mut() {
+                        target.last_refresh_at = Some(now);
+                    }
                 }
                 JobMessage::Scan(message) => match message {
                     ScanJobMessage::Progress { completed, detail } => {
