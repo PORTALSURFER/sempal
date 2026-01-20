@@ -142,6 +142,7 @@ fn selection_drop_to_browser_creates_clip_in_focused_folder() {
             negated: false,
             hotkey: None,
             is_root: true,
+            root_filter_mode: Some(crate::egui_app::state::RootFolderFilterMode::AllDescendants),
         },
         crate::egui_app::state::FolderRowView {
             path: PathBuf::from("sub"),
@@ -153,6 +154,7 @@ fn selection_drop_to_browser_creates_clip_in_focused_folder() {
             negated: false,
             hotkey: None,
             is_root: false,
+            root_filter_mode: None,
         },
     ];
     controller.ui.sources.folders.focused = Some(1);

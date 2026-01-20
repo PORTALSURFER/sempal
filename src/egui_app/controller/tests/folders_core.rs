@@ -192,9 +192,15 @@ fn selecting_root_filters_to_root_files() -> Result<(), String> {
     controller.replace_folder_selection(0);
     assert_eq!(
         visible_paths(&mut controller),
-        vec![PathBuf::from("root.wav")]
+        vec![PathBuf::from("root.wav"), PathBuf::from("rooted/clip.wav")]
     );
     assert_eq!(controller.ui.sources.folders.focused, Some(0));
+
+    controller.replace_folder_selection(0);
+    assert_eq!(
+        visible_paths(&mut controller),
+        vec![PathBuf::from("root.wav")]
+    );
 
     controller.toggle_folder_row_selection(folder_index);
     assert_eq!(

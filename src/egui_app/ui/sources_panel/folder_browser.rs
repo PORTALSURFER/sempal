@@ -6,7 +6,7 @@ use super::helpers::{
 use super::style;
 use super::utils::{folder_row_label, sample_housing_folders};
 use crate::egui_app::controller::hotkeys;
-use crate::egui_app::state::{DragSource, DragTarget, FocusContext};
+use crate::egui_app::state::{DragSource, DragTarget, FocusContext, RootFolderFilterMode};
 use eframe::egui::{self, Align, Align2, Layout, RichText, StrokeKind, TextStyle, Ui};
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -159,8 +159,14 @@ impl EguiApp {
                         bpm_label: None,
                     },
                 );
+                let mut badge_offset = 0.0;
+                if is_selected {
+                    if let Some(mode) = root_row.root_filter_mode {
+                        badge_offset = paint_root_filter_badge(ui, response.rect, mode, root_row.negated);
+                    }
+                }
                 if sample_parent_folders.contains(&root_row.path) {
-                    let offset = if root_row.negated { 8.0 } else { 0.0 };
+                    let offset = badge_offset + if root_row.negated { 8.0 } else { 0.0 };
                     paint_right_side_dot(ui, response.rect, offset);
                 }
                 if root_row.negated {
@@ -577,4 +583,34 @@ fn paint_negation_marker(ui: &mut Ui, rect: egui::Rect) {
     );
     ui.painter()
         .rect_filled(marker_rect, 1.0, style::destructive_text());
+}
+
+fn paint_root_filter_badge(
+    ui: &mut Ui,
+    rect: egui::Rect,
+    mode: RootFolderFilterMode,
+    negated: bool,
+) -> f32 {
+    let palette = style::palette();
+    let (label, color) = match mode {
+        RootFolderFilterMode::AllDescendants => ("ALL", palette.accent_mint),
+        RootFolderFilterMode::RootOnly => ("ROOT", palette.accent_copper),
+    };
+    let font_id = TextStyle::Button.resolve(ui.style());
+    let galley = ui.ctx().fonts_mut(|fonts| {
+        fonts.layout_no_wrap(label.to_string(), font_id.clone(), color)
+    });
+    let padding = ui.spacing().button_padding.x;
+    let dot_radius = 3.0;
+    let dot_gap = 6.0;
+    let negation_offset = if negated { 8.0 } else { 0.0 };
+    let right_edge = rect.right() - padding - negation_offset;
+    let text_pos = egui::pos2(right_edge, rect.center().y);
+    ui.painter()
+        .text(text_pos, Align2::RIGHT_CENTER, label, font_id, color);
+    let text_left = right_edge - galley.size().x;
+    let dot_center = egui::pos2(text_left - dot_gap - dot_radius, rect.center().y);
+    ui.painter()
+        .circle_filled(dot_center, dot_radius, color);
+    galley.size().x + dot_gap + dot_radius * 2.0 + negation_offset + 6.0
 }

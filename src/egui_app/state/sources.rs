@@ -54,6 +54,26 @@ pub struct FolderBrowserUiState {
     pub new_folder: Option<InlineFolderCreation>,
 }
 
+/// Root selection behavior for the folder browser.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RootFolderFilterMode {
+    /// Root selection includes all descendants.
+    #[default]
+    AllDescendants,
+    /// Root selection includes only files at the source root.
+    RootOnly,
+}
+
+impl RootFolderFilterMode {
+    /// Toggle between showing all descendants and root-only results.
+    pub(crate) fn toggle(self) -> Self {
+        match self {
+            Self::AllDescendants => Self::RootOnly,
+            Self::RootOnly => Self::AllDescendants,
+        }
+    }
+}
+
 /// Render-friendly folder row.
 #[derive(Clone, Debug)]
 pub struct FolderRowView {
@@ -75,6 +95,8 @@ pub struct FolderRowView {
     pub hotkey: Option<u8>,
     /// Whether this row represents the root.
     pub is_root: bool,
+    /// Root filter mode when this row represents the root.
+    pub root_filter_mode: Option<RootFolderFilterMode>,
 }
 
 /// Pending inline action for the folder browser.

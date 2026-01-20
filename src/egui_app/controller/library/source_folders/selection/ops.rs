@@ -262,12 +262,19 @@ impl EguiController {
                     return;
                 };
                 let before = model.selected.clone();
+                let before_mode = model.root_filter_mode;
                 let root_path = PathBuf::new();
                 match mode {
                     FolderSelectMode::Replace => {
-                        model.selected.clear();
-                        model.selected.insert(root_path.clone());
-                        model.selection_anchor = Some(root_path.clone());
+                        if model.selected.contains(&root_path) {
+                            model.root_filter_mode = model.root_filter_mode.toggle();
+                        } else {
+                            model.selected.clear();
+                            model.selected.insert(root_path.clone());
+                            model.selection_anchor = Some(root_path.clone());
+                            model.root_filter_mode =
+                                crate::egui_app::state::RootFolderFilterMode::AllDescendants;
+                        }
                     }
                     FolderSelectMode::Toggle => {
                         if model.selected.contains(&root_path) {
@@ -280,13 +287,15 @@ impl EguiController {
                             if model.selection_anchor.is_none() {
                                 model.selection_anchor = Some(root_path.clone());
                             }
+                            model.root_filter_mode =
+                                crate::egui_app::state::RootFolderFilterMode::AllDescendants;
                         }
                     }
                 }
                 if model.selected.is_empty() {
                     model.selection_anchor = None;
                 }
-                let changed = before != model.selected;
+                let changed = before != model.selected || before_mode != model.root_filter_mode;
                 if changed {
                     model.focused = Some(root_path);
                 }

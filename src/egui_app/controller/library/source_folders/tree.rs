@@ -25,6 +25,7 @@ pub(crate) struct FolderBrowserModel {
     pub(crate) search_query: String,
     pub(crate) last_disk_refresh: Option<Instant>,
     pub(crate) hotkeys: BTreeMap<u8, PathBuf>,
+    pub(crate) root_filter_mode: crate::egui_app::state::RootFolderFilterMode,
 }
 
 impl FolderBrowserModel {
@@ -203,6 +204,7 @@ impl EguiController {
                 negated: model.negated.contains(Path::new("")),
                 hotkey,
                 is_root: true,
+                root_filter_mode: Some(model.root_filter_mode),
             });
         }
         rows.extend(folder_rows);
@@ -303,6 +305,7 @@ impl EguiController {
                 negated,
                 hotkey,
                 is_root: false,
+                root_filter_mode: None,
             };
             rows.push(row);
             if has_children && is_expanded {

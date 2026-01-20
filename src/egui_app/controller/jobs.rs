@@ -58,6 +58,7 @@ pub(crate) struct SearchJob {
     pub(super) similar_query: Option<crate::egui_app::state::SimilarQuery>,
     pub(super) folder_selection: Option<BTreeSet<PathBuf>>,
     pub(super) folder_negated: Option<BTreeSet<PathBuf>>,
+    pub(super) root_mode: crate::egui_app::state::RootFolderFilterMode,
 }
 
 #[derive(Debug)]

@@ -217,6 +217,7 @@ fn process_search_job(
             path,
             job.folder_selection.as_ref(),
             job.folder_negated.as_ref(),
+            job.root_mode,
         )
     };
 
@@ -316,8 +317,12 @@ fn process_search_job(
         visible = scratch.into_iter().map(|(index, _)| index).collect();
     }
 
-    let has_folder_filters = job.folder_selection.as_ref().is_some_and(|s: &std::collections::BTreeSet<std::path::PathBuf>| !s.is_empty())
-        || job.folder_negated.as_ref().is_some_and(|n: &std::collections::BTreeSet<std::path::PathBuf>| !n.is_empty());
+    let has_folder_filters =
+        crate::egui_app::controller::library::source_folders::folder_filters_active(
+            job.folder_selection.as_ref(),
+            job.folder_negated.as_ref(),
+            job.root_mode,
+        );
     if !has_query
         && !has_folder_filters
         && job.filter == TriageFlagFilter::All
@@ -462,6 +467,7 @@ mod tests {
             similar_query: None,
             folder_selection: None,
             folder_negated: None,
+            root_mode: crate::egui_app::state::RootFolderFilterMode::AllDescendants,
         };
         let second = SearchJob {
             source_id: SourceId::new(),
@@ -472,6 +478,7 @@ mod tests {
             similar_query: None,
             folder_selection: None,
             folder_negated: None,
+            root_mode: crate::egui_app::state::RootFolderFilterMode::AllDescendants,
         };
 
         sender.send(first);

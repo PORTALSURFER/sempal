@@ -43,17 +43,20 @@ impl EguiController {
         };
         let folder_selection = self.folder_selection_for_filter().cloned();
         let folder_negated = self.folder_negation_for_filter().cloned();
-        let has_folder_filters = folder_selection
-            .as_ref()
-            .is_some_and(|selection| !selection.is_empty())
-            || folder_negated
-                .as_ref()
-                .is_some_and(|negated| !negated.is_empty());
+        let root_mode = self
+            .root_folder_filter_mode_for_filter()
+            .unwrap_or_default();
+        let has_folder_filters = crate::egui_app::controller::library::source_folders::folder_filters_active(
+            folder_selection.as_ref(),
+            folder_negated.as_ref(),
+            root_mode,
+        );
         let folder_accepts = |relative_path: &Path| {
             crate::egui_app::controller::library::source_folders::folder_filter_accepts(
                 relative_path,
                 folder_selection.as_ref(),
                 folder_negated.as_ref(),
+                root_mode,
             )
         };
         let sort_mode = self.ui.browser.sort;
@@ -332,6 +335,9 @@ impl EguiController {
         let similar_query = self.ui.browser.similar_query.clone();
         let folder_selection = self.folder_selection_for_filter().cloned();
         let folder_negated = self.folder_negation_for_filter().cloned();
+        let root_mode = self
+            .root_folder_filter_mode_for_filter()
+            .unwrap_or_default();
 
         self.ui.browser.search_busy = true;
         self.runtime.jobs.send_search_job(crate::egui_app::controller::jobs::SearchJob {
@@ -343,6 +349,7 @@ impl EguiController {
             similar_query,
             folder_selection,
             folder_negated,
+            root_mode,
         });
     }
 }
