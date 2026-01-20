@@ -52,7 +52,7 @@ impl EguiApp {
         }
 
         let palette = style::palette();
-        ui.horizontal(|ui| {
+        let header_response = ui.horizontal(|ui| {
             ui.label(RichText::new("Folders").color(palette.text_primary));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let mut query = self.controller.ui.sources.folders.search_query.clone();
@@ -74,6 +74,9 @@ impl EguiApp {
                 }
             });
         });
+        let header_gap = ui.spacing().item_spacing.y;
+        ui.add_space(header_gap);
+        let content_height = (height - header_response.response.rect.height() - header_gap).max(0.0);
         let frame = style::section_frame();
         let focused = matches!(
             self.controller.ui.focus.context,
@@ -101,8 +104,8 @@ impl EguiApp {
         }
         let inline_parent_for_rows = inline_parent.clone();
         let frame_response = frame.show(ui, |ui| {
-            ui.set_min_height(height);
-            ui.set_max_height(height);
+            ui.set_min_height(content_height);
+            ui.set_max_height(content_height);
             let row_height = list_row_height(ui);
             let hotkey_width = if show_hotkey_column {
                 number_column_width(10, ui)
@@ -254,7 +257,7 @@ impl EguiApp {
             let inline_parent = inline_parent_for_rows.clone();
             let scroll = egui::ScrollArea::vertical()
                 .id_salt("folder_browser_scroll")
-                .max_height(height);
+                .max_height(content_height);
             scroll.show(ui, |ui| {
                 let mut inline_rendered = false;
                 let inline_is_root = inline_parent
