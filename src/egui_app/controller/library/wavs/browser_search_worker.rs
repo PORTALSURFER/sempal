@@ -60,6 +60,7 @@ impl Default for SearchWorkerCache {
 #[derive(Default)]
 struct SearchJobQueueState {
     pending: Option<SearchJob>,
+    poisoned_recovered: bool,
 }
 
 /// Latest-only queue for browser search jobs.
@@ -119,11 +120,14 @@ impl SearchJobQueue {
         context: &'static str,
         poisoned: std::sync::PoisonError<std::sync::MutexGuard<'a, SearchJobQueueState>>,
     ) -> std::sync::MutexGuard<'a, SearchJobQueueState> {
-        warn!(
-            "Search job queue {context} poisoned; recovering and clearing pending job."
-        );
         let mut guard = poisoned.into_inner();
-        guard.pending = None;
+        if !guard.poisoned_recovered {
+            warn!(
+                "Search job queue {context} poisoned; recovering and clearing pending job."
+            );
+            guard.pending = None;
+            guard.poisoned_recovered = true;
+        }
         guard
     }
 }
