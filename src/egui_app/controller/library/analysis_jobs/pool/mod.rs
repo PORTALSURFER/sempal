@@ -31,6 +31,7 @@ pub(crate) struct AnalysisWorkerPool {
     #[cfg_attr(test, allow(dead_code))]
     decode_worker_count_override: Arc<AtomicU32>,
     _progress_cache: Arc<RwLock<ProgressCache>>,
+    #[cfg_attr(test, allow(dead_code))]
     progress_wakeup: Arc<job_progress::ProgressPollerWakeup>,
     repaint_signal: Arc<Mutex<Option<egui::Context>>>,
     threads: Vec<JoinHandle<()>>,
