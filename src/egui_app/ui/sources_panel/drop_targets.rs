@@ -25,6 +25,8 @@ impl EguiApp {
                 self.controller.add_drop_target_via_dialog();
             }
         });
+        self.controller.ui.sources.drop_targets.header_height =
+            header_response.response.rect.height();
         let header_gap = ui.spacing().item_spacing.y;
         ui.add_space(header_gap);
         let content_height =

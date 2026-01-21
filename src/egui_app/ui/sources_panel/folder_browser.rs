@@ -74,6 +74,7 @@ impl EguiApp {
                 }
             });
         });
+        self.controller.ui.sources.folders.header_height = header_response.response.rect.height();
         let header_gap = ui.spacing().item_spacing.y;
         ui.add_space(header_gap);
         let content_height = (height - header_response.response.rect.height() - header_gap).max(0.0);

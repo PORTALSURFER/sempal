@@ -12,6 +12,10 @@ pub struct SourcePanelState {
     pub menu_row: Option<usize>,
     /// Row index to scroll into view.
     pub scroll_to: Option<usize>,
+    /// User-defined height for the sources section, including its header.
+    pub sources_height_override: Option<f32>,
+    /// Cached height at the start of a sources resize drag for stable deltas.
+    pub sources_resize_origin_height: Option<f32>,
     /// Folder browser sub-state.
     pub folders: FolderBrowserUiState,
     /// Drop target sub-state.
@@ -52,6 +56,8 @@ pub struct FolderBrowserUiState {
     pub pending_action: Option<FolderActionPrompt>,
     /// Inline folder creation state.
     pub new_folder: Option<InlineFolderCreation>,
+    /// Cached header height for the folder browser section.
+    pub header_height: f32,
 }
 
 /// Root selection behavior for the folder browser.
@@ -137,6 +143,8 @@ pub struct DropTargetsUiState {
     pub height_override: Option<f32>,
     /// Cached height at the start of a resize drag for stable deltas.
     pub resize_origin_height: Option<f32>,
+    /// Cached header height for the drop targets section.
+    pub header_height: f32,
 }
 
 /// Display data for a single drop target row.
