@@ -144,6 +144,22 @@ jobs:
             exit 1
           fi
           cat "${entries[@]}" > "dist/release/${CHECKSUMS_NAME}"
+      - name: Sign checksums
+        env:
+          CHECKSUMS_SIGNING_KEY: ${{ secrets.SEMPAL_CHECKSUMS_ED25519_KEY }}
+        run: |
+          if [[ -z "${CHECKSUMS_SIGNING_KEY}" ]]; then
+            echo "Missing SEMPAL_CHECKSUMS_ED25519_KEY secret." >&2
+            exit 1
+          fi
+          key_path="dist/release/checksums-signing-key.pem"
+          printf "%s" "$CHECKSUMS_SIGNING_KEY" > "$key_path"
+          openssl pkeyutl -sign -inkey "$key_path" -rawin \
+            -in "dist/release/${CHECKSUMS_NAME}" \
+            -out "dist/release/${CHECKSUMS_NAME}.sig.bin"
+          base64 -w 0 "dist/release/${CHECKSUMS_NAME}.sig.bin" \
+            > "dist/release/${CHECKSUMS_NAME}.sig"
+          rm -f "$key_path" "dist/release/${CHECKSUMS_NAME}.sig.bin"
       - name: Upload release assets
         uses: softprops/action-gh-release@v1
         with:

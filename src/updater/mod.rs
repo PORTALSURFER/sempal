@@ -29,7 +29,7 @@ pub const APP_NAME: &str = "sempal";
 /// Canonical GitHub repository slug (`OWNER/REPO`) used for update checks.
 pub const REPO_SLUG: &str = "PORTALSURFER/sempal";
 /// Base64-encoded Ed25519 public key used to verify checksum signatures.
-pub(crate) const CHECKSUMS_PUBLIC_KEY_BASE64: &str = "kicipwnHITr+xoX96bXvp85X2el7+2JyVsYldhtRWDY=";
+pub(crate) const CHECKSUMS_PUBLIC_KEY_BASE64: &str = "sT8/QMlRMT9CFkFMeBYaP1MSWD8mP3fFFiAgPz837D4=";
 
 /// Update channel selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

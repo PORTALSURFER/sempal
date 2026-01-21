@@ -65,6 +65,11 @@ The checksums file is expected to include a SHA-256 entry for the zip asset:
 The checksums signature file contains a base64-encoded Ed25519 signature of the
 checksums file bytes.
 
+CI signs the checksums file using OpenSSL and uploads the signature as
+`checksums-...txt.sig`. The signature must be generated with the private key
+stored in the `SEMPAL_CHECKSUMS_ED25519_KEY` GitHub Actions secret, and the app
+embeds the corresponding public key for verification.
+
 ## Zip layout
 
 The zip expands to exactly one root folder:
