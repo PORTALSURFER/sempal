@@ -23,6 +23,7 @@ pub(crate) struct AudioLoadJob {
     pub stretch_ratio: Option<f64>,
 }
 
+#[derive(Debug)]
 pub(crate) struct AudioLoadOutcome {
     pub decoded: DecodedWaveform,
     pub bytes: Vec<u8>,

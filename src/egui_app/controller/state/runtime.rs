@@ -98,6 +98,7 @@ pub(crate) struct WavLoadResult {
     pub(crate) page_index: usize,
 }
 
+#[derive(Debug)]
 pub(crate) struct ScanResult {
     pub(crate) source_id: SourceId,
     pub(crate) mode: ScanMode,

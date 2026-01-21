@@ -19,6 +19,7 @@ pub(crate) enum TrashMoveMessage {
 }
 
 #[derive(Clone)]
+#[derive(Debug)]
 pub(crate) struct TrashMoveFinished {
     pub(crate) total: usize,
     pub(crate) moved: usize,

@@ -26,6 +26,7 @@ pub(crate) struct RecordingWaveformJob {
 
 /// Result of a recording waveform refresh operation.
 #[derive(Clone)]
+#[derive(Debug)]
 pub(crate) enum RecordingWaveformUpdate {
     /// The file length did not change since the last refresh.
     NoChange { file_len: u64 },
