@@ -161,7 +161,14 @@ impl EguiApp {
                                     ))
                                     .clicked()
                                 {
-                                    let _ = open::that("https://www.buymeacoffee.com/portalsurfer");
+                                    if let Err(err) =
+                                        open::that("https://www.buymeacoffee.com/portalsurfer")
+                                    {
+                                        self.controller.set_status(
+                                            format!("Failed to open donate link: {err}"),
+                                            style::StatusTone::Warning,
+                                        );
+                                    }
                                 }
                                 let mode = self.controller.ui.controls.tooltip_mode;
                                 let color = match mode {

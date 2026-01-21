@@ -258,7 +258,12 @@ impl EguiApp {
                 }
             });
             if open_clicked {
-                let _ = open::that(&url);
+                if let Err(err) = open::that(&url) {
+                    self.controller.set_status(
+                        format!("Failed to open issue link: {err}"),
+                        style::StatusTone::Warning,
+                    );
+                }
             }
             if close_clicked {
                 self.controller.close_feedback_issue_prompt();

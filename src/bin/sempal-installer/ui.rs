@@ -85,6 +85,7 @@ struct InstallerApp {
     error: Option<String>,
     open_folder_on_finish: bool,
     launch_on_finish: bool,
+    finish_errors: Vec<String>,
     logs: Vec<String>,
     install_finished: bool,
 }
@@ -105,6 +106,7 @@ impl InstallerApp {
             error: None,
             open_folder_on_finish: true,
             launch_on_finish: true,
+            finish_errors: Vec::new(),
             logs: Vec::new(),
             install_finished: false,
         }
@@ -118,6 +120,7 @@ impl InstallerApp {
         self.progress = InstallProgress::default();
         self.step = InstallStep::Installing;
         self.install_finished = false;
+        self.finish_errors.clear();
         self.logs.clear();
         thread::spawn(move || {
             if let Err(err) = install::run_install(&bundle_dir, &install_dir, tx.clone()) {
@@ -242,6 +245,7 @@ impl eframe::App for InstallerApp {
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             if ui.button("Continue").clicked() {
                                 self.step = InstallStep::Done;
+                                self.finish_errors.clear();
                             }
                         });
                     }
@@ -250,16 +254,36 @@ impl eframe::App for InstallerApp {
                     ui.label(RichText::new("Installation complete.").strong());
                     ui.checkbox(&mut self.open_folder_on_finish, "Open install folder");
                     ui.checkbox(&mut self.launch_on_finish, "Launch SemPal");
+                    if !self.finish_errors.is_empty() {
+                        ui.add_space(8.0);
+                        ui.label(
+                            RichText::new("Could not complete all finish actions:")
+                                .color(style::palette().warning),
+                        );
+                        for message in &self.finish_errors {
+                            ui.label(RichText::new(message).color(style::palette().warning));
+                        }
+                    }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if ui.add(Button::new("Finish")).clicked() {
+                            self.finish_errors.clear();
                             if self.open_folder_on_finish {
-                                let _ = open::that(&self.install_dir);
+                                if let Err(err) = open::that(&self.install_dir) {
+                                    self.finish_errors.push(format!(
+                                        "Failed to open install folder: {err}"
+                                    ));
+                                }
                             }
                             if self.launch_on_finish {
                                 let exe = self.install_dir.join("sempal.exe");
-                                let _ = std::process::Command::new(exe).spawn();
+                                if let Err(err) = std::process::Command::new(exe).spawn() {
+                                    self.finish_errors
+                                        .push(format!("Failed to launch SemPal: {err}"));
+                                }
                             }
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                            if self.finish_errors.is_empty() {
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                            }
                         }
                     });
                 }
