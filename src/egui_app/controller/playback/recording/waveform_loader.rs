@@ -1036,6 +1036,9 @@ mod tests {
 
         let second = build_wav_samples(&[0.25, -0.5]);
         temp.as_file_mut().set_len(0).expect("truncate wav");
+        temp.as_file_mut()
+            .seek(SeekFrom::Start(0))
+            .expect("seek wav");
         temp.write_all(&second).expect("write wav");
 
         let second_job = RecordingWaveformJob {
