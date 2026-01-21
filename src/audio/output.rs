@@ -124,7 +124,7 @@ impl Default for ResolvedOutput {
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
-use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError};
+use std::sync::mpsc::{self, Receiver, Sender, SyncSender, TryRecvError, TrySendError};
 use cpal::traits::StreamTrait;
 
 /// Commands sent to the audio callback for non-blocking control.
