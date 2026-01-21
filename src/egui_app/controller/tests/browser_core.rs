@@ -1,11 +1,9 @@
 use super::super::test_support::{dummy_controller, sample_entry};
-use super::super::*;
 use super::common::visible_indices;
 use crate::egui_app::state::{
-    DragPayload, DragSource, DragTarget, TriageFlagColumn, TriageFlagFilter,
+    TriageFlagColumn, TriageFlagFilter,
 };
 use std::path::{Path, PathBuf};
-use tempfile::tempdir;
 
 #[test]
 fn missing_source_is_marked_during_load() {
@@ -295,7 +293,7 @@ fn browser_selection_is_cleared_when_focus_leaves_browser() {
     assert_eq!(controller.ui.browser.selected_visible, Some(0));
     assert!(controller.ui.browser.selected.is_some());
 
-    controller.focus_collections_list_context();
+    controller.focus_sources_list();
     controller.blur_browser_focus();
 
     assert!(controller.ui.browser.selected_visible.is_none());

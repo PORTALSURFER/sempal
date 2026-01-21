@@ -268,7 +268,6 @@ mod tests {
 
         let finished = run_trash_move_task_with_progress(
             vec![source],
-            vec![],
             trash_root,
             cancel,
             |_| {},
@@ -298,7 +297,6 @@ mod tests {
 
         let finished = run_trash_move_task_with_progress(
             vec![source],
-            vec![],
             trash_root,
             cancel,
             |_| {},

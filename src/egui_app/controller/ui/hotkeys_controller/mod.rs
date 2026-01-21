@@ -156,7 +156,7 @@ impl HotkeysController<'_> {
         }
     }
 
-    fn handle_tagging_command(&mut self, command: HotkeyCommand, focus: FocusContext) -> bool {
+    fn handle_tagging_command(&mut self, command: HotkeyCommand, _focus: FocusContext) -> bool {
         match command {
             HotkeyCommand::TagNeutralSelected => {
                 self.tag_selected(Rating::NEUTRAL);

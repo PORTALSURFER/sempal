@@ -4,7 +4,7 @@ use super::super::test_support::{
 };
 use crate::sample_sources::Rating;
 use super::super::*;
-use super::common::{max_sample_amplitude, visible_indices};
+use super::common::visible_indices;
 use crate::egui_app::controller::ui::hotkeys;
 use crate::egui_app::state::FocusContext;
 use hound::WavReader;

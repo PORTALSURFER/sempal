@@ -8,7 +8,7 @@ use egui::Key;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use rand::seq::IteratorRandom;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tempfile::tempdir;
 
 #[test]
