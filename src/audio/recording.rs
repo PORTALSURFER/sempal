@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread::{self, JoinHandle};
-use std::time::Instant;
 
 use cpal::Stream;
 use cpal::traits::StreamTrait;
@@ -32,12 +31,12 @@ pub struct RecordingOutcome {
 
 /// Active audio recorder that streams samples to a WAV file.
 pub struct AudioRecorder {
-    stream: Stream,
-    writer: RecorderWriter,
+    stream: Option<Stream>,
+    writer: Option<RecorderWriter>,
     resolved: ResolvedInput,
     path: PathBuf,
-    started_at: Instant,
     monitor_sender: Arc<std::sync::Mutex<Option<Sender<MonitorCommand>>>>,
+    active: bool,
 }
 
 impl AudioRecorder {
@@ -77,20 +76,29 @@ impl AudioRecorder {
             .play()
             .map_err(|source| AudioInputError::StartStream { source })?;
         Ok(Self {
-            stream,
-            writer,
+            stream: Some(stream),
+            writer: Some(writer),
             resolved: resolved.resolved,
             path,
-            started_at: Instant::now(),
             monitor_sender,
+            active: true,
         })
     }
 
     /// Stop recording and return summary metadata.
-    pub fn stop(mut self) -> Result<RecordingOutcome, AudioInputError> {
-        drop(self.stream);
-        let _ = self.writer.stop();
-        let stats = self.writer.join()?;
+    pub fn stop(&mut self) -> Result<RecordingOutcome, AudioInputError> {
+        if !self.active {
+            return Err(AudioInputError::RecordingFailed {
+                detail: "Recorder already stopped".into(),
+            });
+        }
+        self.active = false;
+        drop(self.stream.take());
+        let mut writer = self.writer.take().ok_or_else(|| AudioInputError::RecordingFailed {
+            detail: "Recorder writer unavailable".into(),
+        })?;
+        let _ = writer.stop();
+        let stats = writer.join()?;
         let duration_seconds = if stats.frames == 0 {
             0.0
         } else {
@@ -104,9 +112,9 @@ impl AudioRecorder {
         })
     }
 
-    /// Return true while the recorder has been started.
+    /// Return true while the recorder is actively capturing audio.
     pub fn is_active(&self) -> bool {
-        self.started_at.elapsed().as_secs_f32() >= 0.0
+        self.active
     }
 
     /// Return the resolved input configuration used for recording.
@@ -336,5 +344,35 @@ mod tests {
         assert_eq!(spec.sample_rate, 48_000);
         assert_eq!(spec.sample_format, hound::SampleFormat::Float);
         assert_eq!(reader.samples::<f32>().count(), 4);
+    }
+
+    #[test]
+    fn recorder_is_active_clears_after_stop() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("recording.wav");
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let writer = RecorderWriter::spawn(path.clone(), 48_000, 2, receiver, sender).unwrap();
+        let resolved = ResolvedInput {
+            host_id: "test".to_string(),
+            device_name: "test device".to_string(),
+            sample_rate: 48_000,
+            buffer_size_frames: Some(128),
+            channel_count: 2,
+            selected_channels: vec![1, 2],
+            used_fallback: false,
+        };
+        let mut recorder = AudioRecorder {
+            stream: None,
+            writer: Some(writer),
+            resolved,
+            path,
+            monitor_sender: Arc::new(std::sync::Mutex::new(None)),
+            active: true,
+        };
+
+        assert!(recorder.is_active());
+        let outcome = recorder.stop().unwrap();
+        assert!(!recorder.is_active());
+        assert_eq!(outcome.frames, 0);
     }
 }

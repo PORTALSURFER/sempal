@@ -58,7 +58,7 @@ pub(crate) fn stop_recording(
         .runtime
         .jobs
         .set_pending_recording_waveform(None);
-    let Some(recorder) = controller.audio.recorder.take() else {
+    let Some(mut recorder) = controller.audio.recorder.take() else {
         return Ok(None);
     };
     let outcome = recorder.stop().map_err(|err| err.to_string())?;
