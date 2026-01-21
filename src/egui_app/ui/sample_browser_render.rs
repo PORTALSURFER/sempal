@@ -68,8 +68,7 @@ impl EguiApp {
         let pointer_pos = drag_targets::pointer_pos_for_drag(ui, self.controller.ui.drag.position);
         let external_pointer_pos = pointer_pos.or(self.external_drop_hover_pos);
         let external_drop_ready = external_hover_has_audio(ui.ctx());
-        let autoscroll_enabled = self.controller.ui.browser.autoscroll
-            && self.controller.ui.collections.selected_sample.is_none();
+        let autoscroll_enabled = self.controller.ui.browser.autoscroll;
         let total_rows = self.controller.visible_browser_len();
         let focused_section = matches!(
             self.controller.ui.focus.context,

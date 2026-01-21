@@ -1,8 +1,6 @@
 use super::super::test_support::dummy_controller;
 use super::super::*;
-use crate::sample_sources::Collection;
 use crate::sample_sources::SourceDatabase;
-use crate::sample_sources::collections::CollectionMember;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tempfile::tempdir;
@@ -36,53 +34,6 @@ fn selecting_missing_sample_sets_waveform_notice() {
             .is_some_and(|msg| msg.contains("one.wav"))
     );
     assert!(controller.sample_view.wav.loaded_audio.is_none());
-}
-
-#[test]
-fn collection_views_flag_missing_members() {
-    let (mut controller, source) = dummy_controller();
-    controller.library.sources.push(source.clone());
-    controller.selection_state.ctx.selected_source = Some(source.id.clone());
-    controller.set_wav_entries_for_tests(vec![WavEntry {
-        relative_path: PathBuf::from("one.wav"),
-        file_size: 1,
-        modified_ns: 1,
-        content_hash: None,
-        tag: crate::sample_sources::Rating::NEUTRAL,
-        looped: false,
-        missing: true,
-        last_played_at: None,
-    }]);
-    controller.rebuild_wav_lookup();
-    controller.rebuild_browser_lists();
-    controller.rebuild_missing_lookup_for_source(&source.id);
-
-    let mut collection = Collection::new("Test");
-    collection.members.push(CollectionMember {
-        source_id: source.id.clone(),
-        relative_path: PathBuf::from("one.wav"),
-        clip_root: None,
-    });
-    controller.selection_state.ctx.selected_collection = Some(collection.id.clone());
-    controller.library.collections.push(collection);
-    controller.refresh_collections_ui();
-
-    assert!(
-        controller
-            .ui
-            .collections
-            .rows
-            .first()
-            .is_some_and(|row| row.missing)
-    );
-    assert!(
-        controller
-            .ui
-            .collections
-            .samples
-            .iter()
-            .any(|sample| sample.missing)
-    );
 }
 
 #[test]
@@ -254,41 +205,6 @@ fn remove_dead_links_rebuilds_missing_state() -> Result<(), String> {
         entries
             .iter()
             .all(|entry| entry.relative_path != PathBuf::from("gone.wav"))
-    );
-    Ok(())
-}
-
-#[test]
-fn remove_dead_links_prunes_collections() -> Result<(), String> {
-    let temp = tempdir().unwrap();
-    let root = temp.path().join("source");
-    std::fs::create_dir_all(&root).unwrap();
-    let renderer = WaveformRenderer::new(10, 10);
-    let mut controller = EguiController::new(renderer, None);
-    let source = SampleSource::new(root.clone());
-    controller.library.sources.push(source.clone());
-    controller.selection_state.ctx.selected_source = Some(source.id.clone());
-    controller.cache_db(&source).unwrap();
-
-    let db = SourceDatabase::open(&root).unwrap();
-    db.upsert_file(Path::new("alive.wav"), 1, 1).unwrap();
-    db.upsert_file(Path::new("gone.wav"), 1, 1).unwrap();
-    db.set_missing(Path::new("gone.wav"), true).unwrap();
-
-    let mut collection = Collection::new("Test");
-    collection.add_member(source.id.clone(), PathBuf::from("alive.wav"));
-    collection.add_member(source.id.clone(), PathBuf::from("gone.wav"));
-    controller.library.collections.push(collection);
-    controller.refresh_collections_ui();
-
-    let removed = controller.remove_dead_links_for_source_entries(&source)?;
-    assert_eq!(removed, 1);
-
-    let collection = controller.library.collections.first().expect("collection");
-    assert_eq!(collection.members.len(), 1);
-    assert_eq!(
-        collection.members[0].relative_path,
-        PathBuf::from("alive.wav")
     );
     Ok(())
 }

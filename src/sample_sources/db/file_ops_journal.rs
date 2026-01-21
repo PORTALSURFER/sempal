@@ -12,7 +12,7 @@ use super::{Rating, SourceDatabase, SourceDbError};
 pub(crate) enum FileOpKind {
     /// Moving a file between sources.
     Move,
-    /// Copying a file into a source or collection.
+    /// Copying a file into a source.
     Copy,
 }
 

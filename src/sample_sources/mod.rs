@@ -4,8 +4,6 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 mod audio_support;
-/// Collection definitions and helpers.
-pub mod collections;
 /// User configuration loading/saving for sample sources.
 pub mod config;
 /// Per-source database helpers.
@@ -18,7 +16,6 @@ pub mod scan_state;
 pub mod scanner;
 
 pub(crate) use audio_support::{is_supported_audio, supported_audio_where_clause};
-pub use collections::{Collection, CollectionId};
 pub use db::{DB_FILE_NAME, Rating, SourceDatabase, SourceDbError, WavEntry};
 pub use db::normalize_relative_path;
 pub use scan_state::ScanTracker;

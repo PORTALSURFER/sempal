@@ -7,7 +7,6 @@ use crate::egui_app::controller::jobs::{
 };
 use crate::egui_app::controller::undo_jobs;
 use crate::egui_app::controller::undo::{DeferredUndo, UndoDirection};
-use crate::sample_sources::collections::CollectionMember;
 use std::sync::{
     Arc,
     atomic::AtomicBool,
@@ -62,72 +61,13 @@ impl EguiController {
                     return;
                 }
             }
-            ClipboardPasteOutcome::Collection {
-                collection_id,
-                clip_root,
-                added,
-            } => {
-                if let Err(err) = self.apply_collection_clip_add(
-                    collection_id,
-                    clip_root,
-                    added,
-                ) {
-                    self.set_status(err, StatusTone::Error);
-                    return;
-                }
-            }
         }
         self.report_clipboard_paste_summary(&result);
-    }
-
-    fn apply_collection_clip_add(
-        &mut self,
-        collection_id: &CollectionId,
-        clip_root: &std::path::Path,
-        added: &[std::path::PathBuf],
-    ) -> Result<(), String> {
-        if !self.settings.feature_flags.collections_enabled {
-            return Err("Collections are disabled".into());
-        }
-        let Some(collection) = self
-            .library
-            .collections
-            .iter_mut()
-            .find(|collection| &collection.id == collection_id)
-        else {
-            return Err("Collection not found".into());
-        };
-        let clip_source_id =
-            SourceId::from_string(format!("collection-{}", collection_id.as_str()));
-        let mut added_members = Vec::new();
-        for relative in added {
-            let member = CollectionMember {
-                source_id: clip_source_id.clone(),
-                relative_path: relative.clone(),
-                clip_root: Some(clip_root.to_path_buf()),
-            };
-            if !collection.contains(&member.source_id, &member.relative_path) {
-                collection.members.push(member.clone());
-                added_members.push(member);
-            }
-        }
-        if added_members.is_empty() {
-            return Ok(());
-        }
-        self.persist_config("Failed to save collection")?;
-        self.refresh_collections_ui();
-        for member in &added_members {
-            if let Err(err) = self.export_member_if_needed(collection_id, member) {
-                self.set_status(err, StatusTone::Warning);
-            }
-        }
-        Ok(())
     }
 
     fn report_clipboard_paste_summary(&mut self, result: &ClipboardPasteResult) {
         let added = match &result.outcome {
             ClipboardPasteOutcome::Source { added, .. } => added.len(),
-            ClipboardPasteOutcome::Collection { added, .. } => added.len(),
         };
         if added == 0 && result.errors.is_empty() && result.skipped == 0 {
             if result.cancelled {
@@ -246,7 +186,6 @@ impl EguiController {
                 };
                 self.update_cached_entry(&source, relative_path, entry);
                 self.refresh_waveform_for_sample(&source, relative_path);
-                self.reexport_collections_for_sample(&source.id, relative_path);
             }
             UndoFileOutcome::Removed {
                 source_id,
@@ -297,7 +236,6 @@ impl EguiController {
                     },
                 );
                 self.refresh_waveform_for_sample(&source, relative_path);
-                self.reexport_collections_for_sample(&source.id, relative_path);
             }
         }
     }

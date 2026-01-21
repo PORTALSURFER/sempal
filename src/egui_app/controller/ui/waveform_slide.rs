@@ -1,4 +1,6 @@
-use crate::egui_app::controller::library::collection_items_helpers::{file_metadata, read_samples_for_normalization};
+use crate::egui_app::controller::library::wav_io::{
+    file_metadata, read_samples_for_normalization,
+};
 use super::*;
 use crate::waveform::DecodedWaveform;
 use hound::SampleFormat;
@@ -245,7 +247,6 @@ impl EguiController {
         };
         self.update_cached_entry(&state.source, &state.relative_path, entry);
         self.refresh_waveform_for_sample(&state.source, &state.relative_path);
-        self.reexport_collections_for_sample(&state.source.id, &state.relative_path);
         self.push_undo_entry(self.selection_edit_undo_entry(
             format!("Circular slide {}", state.relative_path.display()),
             state.source.id.clone(),

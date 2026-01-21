@@ -12,10 +12,6 @@ pub(crate) mod analysis_jobs;
 pub(crate) mod analysis_options;
 pub(crate) mod background_jobs;
 pub(crate) mod browser_controller;
-pub(crate) mod collection_export;
-pub(crate) mod collection_items;
-pub(crate) mod collection_items_helpers;
-pub(crate) mod collections_controller;
 pub(crate) mod drop_targets;
 pub(crate) mod missing_samples;
 pub(crate) mod progress;
@@ -31,7 +27,5 @@ pub(crate) mod sources;
 pub(crate) mod trash;
 pub(crate) mod trash_move;
 pub(crate) mod wav_entries_loader;
+pub(crate) mod wav_io;
 pub(crate) mod wavs;
-
-#[cfg(test)]
-mod collection_items_tests;

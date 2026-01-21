@@ -1,6 +1,6 @@
-//! Library state for sources, collections, and missing entries.
+//! Library state for sources and missing entries.
 
-use super::super::{Collection, SampleSource, SourceId};
+use super::super::{SampleSource, SourceId};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
@@ -26,7 +26,6 @@ impl MissingState {
 
 pub(crate) struct LibraryState {
     pub(crate) sources: Vec<SampleSource>,
-    pub(crate) collections: Vec<Collection>,
     pub(crate) missing: MissingState,
 }
 
@@ -34,7 +33,6 @@ impl LibraryState {
     pub(crate) fn new() -> Self {
         Self {
             sources: Vec::new(),
-            collections: Vec::new(),
             missing: MissingState::new(),
         }
     }

@@ -75,7 +75,6 @@ impl EguiController {
         let Some(path) = self.browser_path_for_visible(visible_row) else {
             return;
         };
-        self.ui.collections.selected_sample = None;
         self.focus_browser_context();
         self.ui.browser.autoscroll = true;
         self.ui.browser.selection_anchor_visible = Some(visible_row);
@@ -166,7 +165,6 @@ impl EguiController {
         if self.ui.browser.visible.len() == 0 {
             return;
         }
-        self.ui.collections.selected_sample = None;
         self.focus_browser_context();
         self.ui.browser.autoscroll = false;
         self.ui.browser.selected_paths.clear();
@@ -251,7 +249,6 @@ impl EguiController {
         let Some(path) = self.browser_path_for_visible(visible_row) else {
             return;
         };
-        self.ui.collections.selected_sample = None;
         self.focus_browser_context();
         self.ui.browser.autoscroll = true;
         match action {

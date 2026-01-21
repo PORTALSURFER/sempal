@@ -13,7 +13,7 @@ use crate::sample_sources::config::AppConfig;
 #[cfg(unix)]
 use super::super::super::config_types::AppSettings;
 use crate::sample_sources::library::LibraryState;
-use crate::sample_sources::{Collection, SampleSource, SourceId};
+use crate::sample_sources::{SampleSource, SourceId};
 use crate::waveform::WaveformChannelView;
 
 #[test]
@@ -122,23 +122,6 @@ fn trash_folder_round_trips() {
 }
 
 #[test]
-fn collection_export_root_round_trips() {
-    let env = TestConfigEnv::new();
-    let path = env.path("cfg.toml");
-    let root = std::path::PathBuf::from("exports");
-    let cfg = AppConfig {
-        core: AppSettingsCore {
-            collection_export_root: Some(root.clone()),
-            ..AppSettingsCore::default()
-        },
-        ..AppConfig::default()
-    };
-    save_to_path(&cfg, &path).unwrap();
-    let loaded = load_settings_from(&path).unwrap();
-    assert_eq!(loaded.core.collection_export_root, Some(root));
-}
-
-#[test]
 fn settings_round_trip_preserves_fields() {
     let env = TestConfigEnv::new();
     let path = env.path("cfg.toml");
@@ -148,10 +131,8 @@ fn settings_round_trip_preserves_fields() {
             source_id.clone(),
             std::path::PathBuf::from("samples"),
         )],
-        collections: vec![Collection::new("Test Collection")],
         core: AppSettingsCore {
             feature_flags: FeatureFlags {
-                collections_enabled: false,
                 autoplay_selection: false,
             },
             analysis: AnalysisSettings {
@@ -171,7 +152,6 @@ fn settings_round_trip_preserves_fields() {
             },
             app_data_dir: Some(std::path::PathBuf::from("data_root")),
             trash_folder: Some(std::path::PathBuf::from("trash_bin")),
-            collection_export_root: Some(std::path::PathBuf::from("exports_root")),
             drop_targets: vec![
                 DropTargetConfig {
                     path: std::path::PathBuf::from("drops/a"),
@@ -223,14 +203,9 @@ fn settings_round_trip_preserves_fields() {
     let loaded_settings = load_settings_from(&path).unwrap();
     let library_state = LibraryState {
         sources: cfg.sources.clone(),
-        collections: cfg.collections.clone(),
     };
     let round_trip = AppConfig::from((loaded_settings, library_state));
 
-    assert_eq!(
-        round_trip.core.feature_flags.collections_enabled,
-        cfg.core.feature_flags.collections_enabled
-    );
     assert_eq!(
         round_trip.core.feature_flags.autoplay_selection,
         cfg.core.feature_flags.autoplay_selection
@@ -278,10 +253,6 @@ fn settings_round_trip_preserves_fields() {
     );
     assert_eq!(round_trip.core.app_data_dir, cfg.core.app_data_dir);
     assert_eq!(round_trip.core.trash_folder, cfg.core.trash_folder);
-    assert_eq!(
-        round_trip.core.collection_export_root,
-        cfg.core.collection_export_root
-    );
     assert_eq!(
         round_trip.core.last_selected_source,
         cfg.core.last_selected_source

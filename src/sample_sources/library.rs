@@ -1,6 +1,5 @@
-//! Global SQLite storage for sources and collections that should not live in the config file.
+//! Global SQLite storage for sources that should not live in the config file.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
 
@@ -13,9 +12,8 @@ mod migrations;
 mod schema_checks;
 mod schema_defs;
 
-use super::{Collection, CollectionId, SampleSource, SourceId};
+use super::{SampleSource, SourceId};
 use crate::app_dirs;
-use crate::sample_sources::collections::{CollectionMember, collection_folder_name_from_str};
 use crate::sample_sources::config::normalize_path;
 
 /// Filename for the global library database stored under the user app directory.
@@ -26,16 +24,8 @@ pub const LIBRARY_DB_FILE_NAME: &str = "library.db";
 pub struct LibraryState {
     /// All configured sample sources.
     pub sources: Vec<SampleSource>,
-    /// All saved collections.
-    pub collections: Vec<Collection>,
 }
 
-const COLLECTION_EXPORT_PATHS_VERSION_KEY: &str = "collections_export_paths_version";
-const COLLECTION_EXPORT_PATHS_VERSION_V2: &str = "2";
-const COLLECTION_MEMBER_CLIP_ROOT_VERSION_KEY: &str = "collection_members_clip_root_version";
-const COLLECTION_MEMBER_CLIP_ROOT_VERSION_V1: &str = "1";
-const COLLECTION_HOTKEY_VERSION_KEY: &str = "collections_hotkey_version";
-const COLLECTION_HOTKEY_VERSION_V1: &str = "1";
 const KNOWN_SOURCES_KEY: &str = "known_sources_v1";
 
 static LIBRARY_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
@@ -62,14 +52,14 @@ pub enum LibraryError {
     Json(#[from] serde_json::Error),
 }
 
-/// Load all sources and collections from the global library database, creating it if missing.
+/// Load all sources from the global library database, creating it if missing.
 pub fn load() -> Result<LibraryState, LibraryError> {
     let _guard = lock_library();
     let db = LibraryDatabase::open()?;
     db.load_state()
 }
 
-/// Persist sources and collections to the global library database, replacing existing rows.
+/// Persist sources to the global library database, replacing existing rows.
 pub fn save(state: &LibraryState) -> Result<(), LibraryError> {
     let _guard = lock_library();
     let mut db = LibraryDatabase::open()?;
@@ -115,9 +105,6 @@ impl LibraryDatabase {
         let mut db = Self { connection };
         db.apply_pragmas()?;
         db.apply_schema()?;
-        db.migrate_collection_hotkeys()?;
-        db.migrate_collection_member_clip_roots()?;
-        db.migrate_collection_export_paths()?;
         db.migrate_analysis_jobs_content_hash()?;
         db.migrate_samples_analysis_metadata()?;
         db.migrate_features_table()?;
@@ -134,17 +121,12 @@ impl LibraryDatabase {
 
     fn load_state(&self) -> Result<LibraryState, LibraryError> {
         let sources = self.load_sources()?;
-        let collections = self.load_collections()?;
-        Ok(LibraryState {
-            sources,
-            collections,
-        })
+        Ok(LibraryState { sources })
     }
 
     fn replace_state(&mut self, state: &LibraryState) -> Result<(), LibraryError> {
         let tx = self.connection.transaction().map_err(map_sql_error)?;
         Self::replace_sources(&tx, &state.sources)?;
-        Self::replace_collections(&tx, &state.collections)?;
         tx.commit().map_err(map_sql_error)?;
         self.remember_known_sources(&state.sources)?;
         Ok(())
@@ -172,79 +154,6 @@ impl LibraryDatabase {
             .collect::<Result<Vec<_>, _>>()
             .map_err(map_sql_error)?;
         Ok(rows)
-    }
-
-    fn load_collections(&self) -> Result<Vec<Collection>, LibraryError> {
-        let mut collections = self.fetch_collections()?;
-        let mut collection_index = HashMap::with_capacity(collections.len());
-        for (idx, collection) in collections.iter().enumerate() {
-            collection_index.insert(collection.id.as_str().to_string(), idx);
-        }
-        let members = self.fetch_collection_members()?;
-        for (collection_id, member) in members {
-            if let Some(idx) = collection_index.get(&collection_id) {
-                let collection = &mut collections[*idx];
-                collection.members.push(member);
-            }
-        }
-        Ok(collections)
-    }
-
-    fn fetch_collections(&self) -> Result<Vec<Collection>, LibraryError> {
-        let mut stmt = self
-            .connection
-            .prepare(
-                "SELECT id, name, export_path, hotkey
-                 FROM collections
-                 ORDER BY sort_order ASC, id ASC",
-            )
-            .map_err(map_sql_error)?;
-        stmt.query_map([], |row| {
-            let id: String = row.get(0)?;
-            let name: String = row.get(1)?;
-            let export_path: Option<String> = row.get(2)?;
-            let hotkey: Option<i64> = row.get(3)?;
-            Ok(Collection {
-                id: CollectionId::from_string(id),
-                name,
-                members: Vec::new(),
-                export_path: export_path.map(PathBuf::from),
-                hotkey: hotkey
-                    .and_then(|value| u8::try_from(value).ok())
-                    .filter(|value| (1..=9).contains(value)),
-            })
-        })
-        .map_err(map_sql_error)?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(map_sql_error)
-    }
-
-    fn fetch_collection_members(&self) -> Result<Vec<(String, CollectionMember)>, LibraryError> {
-        let mut stmt = self
-            .connection
-            .prepare(
-                "SELECT collection_id, source_id, relative_path, clip_root
-                 FROM collection_members
-                 ORDER BY sort_order ASC",
-            )
-            .map_err(map_sql_error)?;
-        stmt.query_map([], |row| {
-            let collection_id: String = row.get(0)?;
-            let source_id: String = row.get(1)?;
-            let relative_path: String = row.get(2)?;
-            let clip_root: Option<String> = row.get(3)?;
-            Ok((
-                collection_id,
-                CollectionMember {
-                    source_id: SourceId::from_string(source_id),
-                    relative_path: PathBuf::from(relative_path),
-                    clip_root: clip_root.map(PathBuf::from),
-                },
-            ))
-        })
-        .map_err(map_sql_error)?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(map_sql_error)
     }
 
     fn replace_sources(tx: &Transaction<'_>, sources: &[SampleSource]) -> Result<(), LibraryError> {
@@ -303,79 +212,6 @@ impl LibraryDatabase {
         serde_json::from_str::<Vec<KnownSourceMapping>>(&value).or_else(|_| Ok(Vec::new()))
     }
 
-    fn replace_collections(
-        tx: &Transaction<'_>,
-        collections: &[Collection],
-    ) -> Result<(), LibraryError> {
-        Self::clear_collections(tx)?;
-        if collections.is_empty() {
-            return Ok(());
-        }
-        Self::insert_collections(tx, collections)?;
-        Self::insert_collection_members(tx, collections)
-    }
-
-    fn clear_collections(tx: &Transaction<'_>) -> Result<(), LibraryError> {
-        tx.execute("DELETE FROM collection_members", [])
-            .map_err(map_sql_error)?;
-        tx.execute("DELETE FROM collections", [])
-            .map_err(map_sql_error)?;
-        Ok(())
-    }
-
-    fn insert_collections(
-        tx: &Transaction<'_>,
-        collections: &[Collection],
-    ) -> Result<(), LibraryError> {
-        let mut insert_collection = tx
-            .prepare(
-                "INSERT INTO collections (id, name, export_path, hotkey, sort_order)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-            )
-            .map_err(map_sql_error)?;
-        for (collection_idx, collection) in collections.iter().enumerate() {
-            insert_collection
-                .execute(params![
-                    collection.id.as_str(),
-                    &collection.name,
-                    collection.export_path.as_ref().map(|p| p.to_string_lossy()),
-                    collection.hotkey.map(i64::from),
-                    collection_idx as i64
-                ])
-                .map_err(map_sql_error)?;
-        }
-        Ok(())
-    }
-
-    fn insert_collection_members(
-        tx: &Transaction<'_>,
-        collections: &[Collection],
-    ) -> Result<(), LibraryError> {
-        let mut insert_member = tx
-            .prepare(
-                "INSERT INTO collection_members (collection_id, source_id, relative_path, clip_root, sort_order)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-            )
-            .map_err(map_sql_error)?;
-        for collection in collections {
-            for (member_idx, member) in collection.members.iter().enumerate() {
-                let clip_root_str = member
-                    .clip_root
-                    .as_ref()
-                    .map(|path| path.to_string_lossy().to_string());
-                insert_member
-                    .execute(params![
-                        collection.id.as_str(),
-                        member.source_id.as_str(),
-                        member.relative_path.to_string_lossy(),
-                        clip_root_str,
-                        member_idx as i64
-                    ])
-                    .map_err(map_sql_error)?;
-            }
-        }
-        Ok(())
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

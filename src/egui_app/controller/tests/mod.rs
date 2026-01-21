@@ -3,11 +3,9 @@
 mod browser_actions;
 mod browser_core;
 mod browser_selection;
-mod collections;
 mod common;
 mod drag_drop_folders;
 mod drag_drop_drop_targets;
-mod drag_drop_selection;
 mod drag_drop_waveform;
 mod external_drop_import;
 mod focus_random;

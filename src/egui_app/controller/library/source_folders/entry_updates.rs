@@ -75,7 +75,6 @@ impl EguiController {
         new_folder: &Path,
         entries: &[WavEntry],
     ) -> Result<(), String> {
-        let mut collections_changed = false;
         let mut updates: Vec<(WavEntry, WavEntry)> = Vec::with_capacity(entries.len());
         for entry in entries {
             let suffix = entry
@@ -87,14 +86,8 @@ impl EguiController {
             new_entry.relative_path = updated_path.clone();
             new_entry.missing = false;
             updates.push((entry.clone(), new_entry));
-            if self.update_collections_for_rename(&source.id, &entry.relative_path, &updated_path) {
-                collections_changed = true;
-            }
         }
         self.apply_folder_entry_updates(source, &updates);
-        if collections_changed {
-            self.persist_config("Failed to save collection after folder rename")?;
-        }
         Ok(())
     }
 

@@ -5,7 +5,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use crate::{
     audio::{AudioInputConfig, AudioOutputConfig},
     sample_sources::library::LibraryState,
-    sample_sources::{Collection, SampleSource, SourceId},
+    sample_sources::{SampleSource, SourceId},
 };
 
 use super::super::config_defaults::{
@@ -17,16 +17,14 @@ use super::{AnalysisSettings, InteractionOptions, UpdateSettings};
 /// Aggregate application state loaded from disk.
 ///
 /// Config keys (TOML): `feature_flags`, `analysis`, `updates`, `app_data_dir`,
-/// `trash_folder`, `collection_export_root`, `drop_targets`, `last_selected_source`,
+/// `trash_folder`, `drop_targets`, `last_selected_source`,
 /// `volume`, `audio_output`, `audio_input`, `controls`.
 ///
-/// `sources` and `collections` are stored in the library database.
+/// `sources` are stored in the library database.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     /// Sample sources loaded from the library database.
     pub sources: Vec<SampleSource>,
-    /// Collections loaded from the library database.
-    pub collections: Vec<Collection>,
     #[serde(default, flatten)]
     /// Core settings persisted in the config file.
     pub core: AppSettingsCore,
@@ -59,7 +57,6 @@ impl From<(AppSettings, LibraryState)> for AppConfig {
     fn from((settings, library): (AppSettings, LibraryState)) -> Self {
         Self {
             sources: library.sources,
-            collections: library.collections,
             core: settings.core,
         }
     }
@@ -83,9 +80,6 @@ pub struct AppSettingsCore {
     #[serde(default)]
     /// Optional trash folder path.
     pub trash_folder: Option<PathBuf>,
-    /// Optional default root used when creating collection export folders.
-    #[serde(default)]
-    pub collection_export_root: Option<PathBuf>,
     /// User-defined drop target folders used by the sidebar, with optional colors.
     #[serde(default, deserialize_with = "deserialize_drop_targets")]
     /// Drop target configurations for the sidebar.
@@ -156,12 +150,9 @@ impl DropTargetConfig {
 
 /// Toggleable features that can be persisted and evolve without breaking old configs.
 ///
-/// Config keys: `collections_enabled`, `autoplay_selection`.
+/// Config keys: `autoplay_selection`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeatureFlags {
-    #[serde(default = "default_true")]
-    /// Enable collections UI.
-    pub collections_enabled: bool,
     #[serde(default = "default_true")]
     /// Auto-play when selection changes.
     pub autoplay_selection: bool,
@@ -171,7 +162,6 @@ pub struct FeatureFlags {
 impl Default for FeatureFlags {
     fn default() -> Self {
         Self {
-            collections_enabled: true,
             autoplay_selection: true,
         }
     }
@@ -181,7 +171,6 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             sources: Vec::new(),
-            collections: Vec::new(),
             core: AppSettingsCore::default(),
         }
     }
@@ -203,7 +192,6 @@ impl Default for AppSettingsCore {
             updates: UpdateSettings::default(),
             app_data_dir: None,
             trash_folder: None,
-            collection_export_root: None,
             drop_targets: Vec::new(),
             last_selected_source: None,
             audio_output: default_audio_output(),

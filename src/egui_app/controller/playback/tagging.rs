@@ -15,7 +15,6 @@ pub(crate) fn tag_selected(controller: &mut EguiController, target: crate::sampl
         None => return,
     };
     let rows = controller.action_rows_from_primary(primary_row);
-    controller.ui.collections.selected_sample = None;
     controller.focus_browser_context();
     controller.ui.browser.autoscroll = true;
     let mut last_error = None;
@@ -151,7 +150,6 @@ pub(crate) fn adjust_selected_rating(controller: &mut EguiController, delta: i8)
         None => return,
     };
     let rows = controller.action_rows_from_primary(primary_row);
-    controller.ui.collections.selected_sample = None;
     controller.focus_browser_context();
     controller.ui.browser.autoscroll = true;
     let mut last_error = None;

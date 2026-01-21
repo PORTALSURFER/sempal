@@ -36,7 +36,6 @@ pub(super) fn migrate_legacy_config(
     })?;
     let library = LibraryState {
         sources: legacy.sources.clone(),
-        collections: legacy.collections.clone(),
     };
     crate::sample_sources::library::save(&library)?;
     let settings = AppSettings::from(&legacy).normalized();

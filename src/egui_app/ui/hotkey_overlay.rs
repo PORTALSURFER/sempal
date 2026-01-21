@@ -64,9 +64,7 @@ fn focus_header(focus: FocusContext) -> &'static str {
         FocusContext::Waveform => "Waveform",
         FocusContext::SampleBrowser => "Focused sample (browser)",
         FocusContext::SourceFolders => "Source folders",
-        FocusContext::CollectionSample => "Focused sample (collection)",
         FocusContext::SourcesList => "Sources list",
-        FocusContext::CollectionsList => "Collections list",
         FocusContext::None => "Focused sample",
     }
 }

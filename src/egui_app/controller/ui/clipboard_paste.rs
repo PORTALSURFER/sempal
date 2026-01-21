@@ -1,6 +1,5 @@
 use super::*;
-use crate::egui_app::controller::library::collection_export;
-use crate::egui_app::controller::library::collection_items_helpers::file_metadata;
+use crate::egui_app::controller::library::wav_io::file_metadata;
 use crate::egui_app::controller::jobs::{
     ClipboardPasteOutcome, ClipboardPasteResult, FileOpMessage, FileOpResult, SourcePasteAdded,
 };
@@ -14,7 +13,7 @@ use std::sync::{
 };
 
 impl EguiController {
-    /// Paste file paths from the system clipboard into the active source or collection.
+    /// Paste file paths from the system clipboard into the active source.
     pub fn paste_files_from_clipboard(&mut self) -> bool {
         let paths = match read_clipboard_paths() {
             Ok(Some(paths)) => paths,
@@ -28,47 +27,21 @@ impl EguiController {
             self.set_status("Another file operation is already running", StatusTone::Warning);
             return true;
         }
-        let job = if let Some(collection_id) = self.current_collection_id() {
-            let Some(collection) = self
-                .library
-                .collections
-                .iter()
-                .find(|collection| &collection.id == &collection_id)
-            else {
-                self.set_status("Collection not found", StatusTone::Error);
-                return true;
-            };
-            ClipboardPasteJob {
-                kind: ClipboardPasteJobKind::Collection {
-                    collection_id,
-                    export_root: collection_export::resolved_export_dir(
-                        collection,
-                        self.settings.collection_export_root.as_deref(),
-                    ),
-                },
-                paths,
-                action_label: "paste",
-                action_progress: "Pasting",
-                action_past_tense: "Pasted",
-                target_label: "collection".to_string(),
-            }
-        } else {
-            let Some(source) = self.current_source() else {
-                self.set_status("Select a source first", StatusTone::Info);
-                return true;
-            };
-            ClipboardPasteJob {
-                kind: ClipboardPasteJobKind::Source {
-                    source_id: source.id,
-                    source_root: source.root,
-                    target_folder: PathBuf::new(),
-                },
-                paths,
-                action_label: "paste",
-                action_progress: "Pasting",
-                action_past_tense: "Pasted",
-                target_label: "source".to_string(),
-            }
+        let Some(source) = self.current_source() else {
+            self.set_status("Select a source first", StatusTone::Info);
+            return true;
+        };
+        let job = ClipboardPasteJob {
+            kind: ClipboardPasteJobKind::Source {
+                source_id: source.id,
+                source_root: source.root,
+                target_folder: PathBuf::new(),
+            },
+            paths,
+            action_label: "paste",
+            action_progress: "Pasting",
+            action_past_tense: "Pasted",
+            target_label: "source".to_string(),
         };
         self.begin_clipboard_paste_job(job, "Pasting files");
         true
@@ -174,10 +147,6 @@ enum ClipboardPasteJobKind {
         source_root: PathBuf,
         target_folder: PathBuf,
     },
-    Collection {
-        collection_id: CollectionId,
-        export_root: Option<PathBuf>,
-    },
 }
 
 fn read_clipboard_paths() -> Result<Option<Vec<PathBuf>>, String> {
@@ -257,34 +226,6 @@ fn validate_relative_folder_path(path: &Path) -> Result<(), String> {
         return Err("Target folder cannot contain '..'".into());
     }
     Ok(())
-}
-
-fn resolve_collection_clip_root(
-    collection_id: &CollectionId,
-    export_root: Option<PathBuf>,
-) -> Result<PathBuf, String> {
-    if let Some(path) = export_root {
-        if path.exists() && !path.is_dir() {
-            return Err(format!(
-                "Collection export path is not a directory: {}",
-                path.display()
-            ));
-        }
-        std::fs::create_dir_all(&path).map_err(|err| {
-            format!(
-                "Failed to create collection export path {}: {err}",
-                path.display()
-            )
-        })?;
-        return Ok(path);
-    }
-    let fallback = crate::app_dirs::app_root_dir()
-        .map_err(|err| err.to_string())?
-        .join("collection_clips")
-        .join(collection_id.as_str());
-    std::fs::create_dir_all(&fallback)
-        .map_err(|err| format!("Failed to create collection clip folder: {err}"))?;
-    Ok(fallback)
 }
 
 fn run_clipboard_paste_job(
@@ -486,186 +427,6 @@ fn run_clipboard_paste_job(
                 }
             }
             ClipboardPasteOutcome::Source { source_id, added }
-        }
-        ClipboardPasteJobKind::Collection {
-            collection_id,
-            export_root,
-        } => {
-            let mut added = Vec::new();
-            let clip_root = match resolve_collection_clip_root(&collection_id, export_root) {
-                Ok(path) => path,
-                Err(err) => {
-                    errors.push(err);
-                    return ClipboardPasteResult {
-                        outcome: ClipboardPasteOutcome::Collection {
-                            collection_id,
-                            clip_root: PathBuf::new(),
-                            added,
-                        },
-                        skipped,
-                        errors,
-                        cancelled,
-                        target_label: job.target_label,
-                        action_past_tense: job.action_past_tense,
-                    };
-                }
-            };
-            let db = match SourceDatabase::open(&clip_root) {
-                Ok(db) => Some(db),
-                Err(err) => {
-                    errors.push(format!("Failed to open collection DB: {err}"));
-                    None
-                }
-            };
-            for path in job.paths {
-                if cancel.load(Ordering::Relaxed) {
-                    cancelled = true;
-                    break;
-                }
-                let detail = Some(format!("{} {}", job.action_progress, path.display()));
-                if !path.is_file() || !is_supported_audio(&path) {
-                    skipped += 1;
-                    completed += 1;
-                    report_progress(sender, completed, detail);
-                    continue;
-                }
-                let relative = match unique_destination_name(&clip_root, &path) {
-                    Ok(name) => name,
-                    Err(err) => {
-                        errors.push(err);
-                        completed += 1;
-                        report_progress(sender, completed, detail);
-                        continue;
-                    }
-                };
-                let db = match db.as_ref() {
-                    Some(db) => db,
-                    None => {
-                        errors.push("Collection DB unavailable".to_string());
-                        completed += 1;
-                        report_progress(sender, completed, detail);
-                        continue;
-                    }
-                };
-                let op_id = file_ops_journal::new_op_id();
-                let staged_relative = match file_ops_journal::staged_relative_for_target(&relative, &op_id) {
-                    Ok(path) => path,
-                    Err(err) => {
-                        errors.push(format!("Failed to build staging path: {err}"));
-                        completed += 1;
-                        report_progress(sender, completed, detail);
-                        continue;
-                    }
-                };
-                let journal_entry = match file_ops_journal::FileOpJournalEntry::new_copy(
-                    op_id.clone(),
-                    relative.clone(),
-                    staged_relative.clone(),
-                ) {
-                    Ok(entry) => entry,
-                    Err(err) => {
-                        errors.push(format!("Failed to stage copy journal: {err}"));
-                        completed += 1;
-                        report_progress(sender, completed, detail);
-                        continue;
-                    }
-                };
-                if let Err(err) = file_ops_journal::insert_entry(db, &journal_entry) {
-                    errors.push(format!("Failed to record copy journal: {err}"));
-                    completed += 1;
-                    report_progress(sender, completed, detail);
-                    continue;
-                }
-                let staged_absolute = clip_root.join(&staged_relative);
-                if let Err(err) = std::fs::copy(&path, &staged_absolute) {
-                    remove_copy_journal_entry(&mut errors, db, &op_id);
-                    errors.push(format!(
-                        "Failed to {} {}: {err}",
-                        job.action_label,
-                        path.display()
-                    ));
-                    completed += 1;
-                    report_progress(sender, completed, detail);
-                    continue;
-                }
-                let (file_size, modified_ns) = match file_metadata(&staged_absolute) {
-                    Ok(meta) => meta,
-                    Err(err) => {
-                        remove_staged_file(&mut errors, &staged_absolute);
-                        remove_copy_journal_entry(&mut errors, db, &op_id);
-                        errors.push(err);
-                        completed += 1;
-                        report_progress(sender, completed, detail);
-                        continue;
-                    }
-                };
-                if let Err(err) = file_ops_journal::update_stage(
-                    db,
-                    &op_id,
-                    file_ops_journal::FileOpStage::Staged,
-                    Some(file_size),
-                    Some(modified_ns),
-                ) {
-                    remove_staged_file(&mut errors, &staged_absolute);
-                    remove_copy_journal_entry(&mut errors, db, &op_id);
-                    errors.push(format!("Failed to update copy journal: {err}"));
-                    completed += 1;
-                    report_progress(sender, completed, detail);
-                    continue;
-                }
-                let mut batch = match db.write_batch() {
-                    Ok(batch) => batch,
-                    Err(err) => {
-                        remove_staged_file(&mut errors, &staged_absolute);
-                        remove_copy_journal_entry(&mut errors, db, &op_id);
-                        errors.push(format!("Failed to open collection DB batch: {err}"));
-                        completed += 1;
-                        report_progress(sender, completed, detail);
-                        continue;
-                    }
-                };
-                if let Err(err) = batch.upsert_file(&relative, file_size, modified_ns) {
-                    remove_staged_file(&mut errors, &staged_absolute);
-                    remove_copy_journal_entry(&mut errors, db, &op_id);
-                    errors.push(format!("Failed to register collection file: {err}"));
-                    completed += 1;
-                    report_progress(sender, completed, detail);
-                    continue;
-                }
-                if let Err(err) = batch.commit() {
-                    remove_staged_file(&mut errors, &staged_absolute);
-                    remove_copy_journal_entry(&mut errors, db, &op_id);
-                    errors.push(format!("Failed to commit collection DB update: {err}"));
-                    completed += 1;
-                    report_progress(sender, completed, detail);
-                    continue;
-                }
-                if let Err(err) = file_ops_journal::update_stage(
-                    db,
-                    &op_id,
-                    file_ops_journal::FileOpStage::TargetDb,
-                    None,
-                    None,
-                ) {
-                    errors.push(format!("Failed to update copy journal: {err}"));
-                }
-                let absolute = clip_root.join(&relative);
-                if let Err(err) = std::fs::rename(&staged_absolute, &absolute) {
-                    errors.push(format!("Failed to finalize copy: {err}"));
-                    completed += 1;
-                    report_progress(sender, completed, detail);
-                    continue;
-                }
-                remove_copy_journal_entry(&mut errors, db, &op_id);
-                added.push(relative);
-                completed += 1;
-                report_progress(sender, completed, detail);
-            }
-            ClipboardPasteOutcome::Collection {
-                collection_id,
-                clip_root,
-                added,
-            }
         }
     };
     ClipboardPasteResult {

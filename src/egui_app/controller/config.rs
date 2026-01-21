@@ -18,9 +18,7 @@ impl EguiController {
         self.settings.updates = cfg.core.updates.clone();
         self.settings.app_data_dir = cfg.core.app_data_dir.clone();
         self.settings.trash_folder = cfg.core.trash_folder.clone();
-        self.settings.collection_export_root = cfg.core.collection_export_root.clone();
         self.settings.drop_targets = cfg.core.drop_targets.clone();
-        self.ui.collections.enabled = self.settings.feature_flags.collections_enabled;
         self.settings.audio_output = cfg.core.audio_output.clone();
         self.ui.audio.selected = self.settings.audio_output.clone();
         self.settings.audio_input = cfg.core.audio_input.clone();
@@ -79,7 +77,6 @@ impl EguiController {
         self.refresh_audio_input_options(true);
         self.apply_volume(cfg.core.volume);
         self.ui.trash_folder = cfg.core.trash_folder.clone();
-        self.ui.collection_export_root = cfg.core.collection_export_root.clone();
         self.ui.update.last_seen_nightly_published_at =
             cfg.core.updates.last_seen_nightly_published_at.clone();
         self.library.sources = cfg.sources.clone();
@@ -92,7 +89,6 @@ impl EguiController {
                 StatusTone::Warning,
             );
         }
-        self.library.collections = cfg.collections;
         let mut purge_failures = Vec::new();
         for source in &self.library.sources {
             if let Ok(mut conn) = super::library::analysis_jobs::open_source_db(&source.root) {
@@ -107,39 +103,13 @@ impl EguiController {
                 StatusTone::Warning,
             );
         }
-        // Backfill clip roots for legacy collection-owned clips that were not persisted.
-        for collection in self.library.collections.iter_mut() {
-            let expected_source_prefix = format!("collection-{}", collection.id.as_str());
-            let resolved_root =
-                crate::egui_app::controller::library::collection_export::resolved_export_dir(
-                    collection,
-                    self.settings.collection_export_root.as_deref(),
-                )
-                .or_else(|| {
-                    crate::app_dirs::app_root_dir()
-                        .ok()
-                        .map(|root| root.join("collection_clips").join(collection.id.as_str()))
-                });
-            if let Some(root) = resolved_root {
-                for member in collection.members.iter_mut() {
-                    if member.clip_root.is_none()
-                        && member.source_id.as_str() == expected_source_prefix
-                    {
-                        member.clip_root = Some(root.clone());
-                    }
-                }
-            }
-        }
-        self.sync_collection_exports_on_startup();
         self.selection_state.ctx.selected_source = cfg
             .core
             .last_selected_source
             .filter(|id| self.library.sources.iter().any(|s| &s.id == id));
         self.selection_state.ctx.last_selected_browsable_source =
             self.selection_state.ctx.selected_source.clone();
-        self.ensure_collection_selection();
         self.refresh_sources_ui();
-        self.refresh_collections_ui();
         if self.selection_state.ctx.selected_source.is_some() {
             let _ = self.refresh_wavs();
         }
@@ -168,14 +138,12 @@ impl EguiController {
     ) -> Result<(), crate::sample_sources::config::ConfigError> {
         crate::sample_sources::config::save(&crate::sample_sources::config::AppConfig {
             sources: self.library.sources.clone(),
-            collections: self.library.collections.clone(),
             core: crate::sample_sources::config::AppSettingsCore {
                 feature_flags: self.settings.feature_flags.clone(),
                 analysis: self.settings.analysis.clone(),
                 updates: self.settings.updates.clone(),
                 app_data_dir: self.settings.app_data_dir.clone(),
                 trash_folder: self.settings.trash_folder.clone(),
-                collection_export_root: self.settings.collection_export_root.clone(),
                 drop_targets: self.settings.drop_targets.clone(),
                 last_selected_source: self
                     .selection_state

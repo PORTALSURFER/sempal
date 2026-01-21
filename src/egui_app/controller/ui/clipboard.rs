@@ -82,23 +82,6 @@ impl EguiController {
     }
 
     fn selected_sample_paths(&self) -> Result<Vec<PathBuf>, String> {
-        if let Some(idx) = self.ui.collections.selected_sample {
-            let sample = self
-                .ui
-                .collections
-                .samples
-                .get(idx)
-                .ok_or_else(|| "Collection sample not found".to_string())?;
-            let source = self
-                .library
-                .sources
-                .iter()
-                .find(|s| s.id == sample.source_id)
-                .ok_or_else(|| "Source not available for this sample".to_string())?;
-            let path = source.root.join(&sample.path);
-            return Ok(vec![path]);
-        }
-
         let Some(source) = self.current_source() else {
             return Err("Select a source first".into());
         };

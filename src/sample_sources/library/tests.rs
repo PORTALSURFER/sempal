@@ -19,20 +19,6 @@ CREATE TABLE sources (
     root TEXT NOT NULL,
     sort_order INTEGER NOT NULL
 );
-CREATE TABLE collections (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    export_path TEXT,
-    sort_order INTEGER NOT NULL
-);
-CREATE TABLE collection_members (
-    collection_id TEXT NOT NULL,
-    source_id TEXT NOT NULL,
-    relative_path TEXT NOT NULL,
-    sort_order INTEGER NOT NULL,
-    PRIMARY KEY (collection_id, source_id, relative_path),
-    FOREIGN KEY(collection_id) REFERENCES collections(id) ON DELETE CASCADE
-);
 CREATE TABLE analysis_jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     sample_id TEXT NOT NULL,
@@ -104,106 +90,6 @@ fn assert_has_columns(conn: &Connection, table: &str, columns: &[&str]) {
 }
 
 #[test]
-fn saves_and_loads_sources_and_collections() {
-    let temp = tempdir().unwrap();
-    with_config_home(temp.path(), || {
-        let state = LibraryState {
-            sources: vec![
-                SampleSource::new(PathBuf::from("one")),
-                SampleSource::new(PathBuf::from("two")),
-            ],
-            collections: vec![Collection {
-                id: CollectionId::new(),
-                name: "Test".into(),
-                members: vec![CollectionMember {
-                    source_id: SourceId::new(),
-                    relative_path: PathBuf::from("file.wav"),
-                    clip_root: None,
-                }],
-                export_path: None,
-                hotkey: Some(2),
-            }],
-        };
-        save(&state).unwrap();
-        let loaded = load().unwrap();
-        assert_eq!(loaded.sources.len(), 2);
-        assert_eq!(loaded.collections.len(), 1);
-        assert_eq!(loaded.collections[0].members.len(), 1);
-        assert_eq!(loaded.collections[0].hotkey, Some(2));
-    });
-}
-
-#[test]
-fn preserves_collection_and_member_order() {
-    let temp = tempdir().unwrap();
-    with_config_home(temp.path(), || {
-        let collection_one_id = CollectionId::new();
-        let collection_two_id = CollectionId::new();
-        let state = LibraryState {
-            sources: vec![],
-            collections: vec![
-                Collection {
-                    id: collection_one_id.clone(),
-                    name: "First".into(),
-                    members: vec![
-                        CollectionMember {
-                            source_id: SourceId::new(),
-                            relative_path: PathBuf::from("alpha.wav"),
-                            clip_root: None,
-                        },
-                        CollectionMember {
-                            source_id: SourceId::new(),
-                            relative_path: PathBuf::from("beta.wav"),
-                            clip_root: None,
-                        },
-                    ],
-                    export_path: None,
-                    hotkey: None,
-                },
-                Collection {
-                    id: collection_two_id.clone(),
-                    name: "Second".into(),
-                    members: vec![CollectionMember {
-                        source_id: SourceId::new(),
-                        relative_path: PathBuf::from("gamma.wav"),
-                        clip_root: None,
-                    }],
-                    export_path: None,
-                    hotkey: None,
-                },
-            ],
-        };
-
-        save(&state).unwrap();
-        let loaded = load().unwrap();
-
-        assert_eq!(loaded.collections.len(), 2);
-        assert_eq!(
-            loaded.collections[0].id.as_str(),
-            collection_one_id.as_str()
-        );
-        assert_eq!(
-            loaded.collections[1].id.as_str(),
-            collection_two_id.as_str()
-        );
-        assert_eq!(loaded.collections[0].members.len(), 2);
-        assert_eq!(
-            loaded.collections[0].members[0].relative_path,
-            PathBuf::from("alpha.wav")
-        );
-        assert_eq!(
-            loaded.collections[0].members[1].relative_path,
-            PathBuf::from("beta.wav")
-        );
-        assert_eq!(loaded.collections[1].members.len(), 1);
-        assert_eq!(
-            loaded.collections[1].members[0].relative_path,
-            PathBuf::from("gamma.wav")
-        );
-    });
-}
-
-#[test]
 fn recovers_from_library_lock_poisoning() {
     let temp = tempdir().unwrap();
     with_config_home(temp.path(), || {
@@ -215,12 +101,10 @@ fn recovers_from_library_lock_poisoning() {
 
         let state = LibraryState {
             sources: Vec::new(),
-            collections: Vec::new(),
         };
         save(&state).unwrap();
         let loaded = load().unwrap();
         assert!(loaded.sources.is_empty());
-        assert!(loaded.collections.is_empty());
     });
 }
 
@@ -295,14 +179,12 @@ fn reuses_known_source_id_for_same_root() {
         let id = SourceId::new();
         save(&LibraryState {
             sources: vec![SampleSource::new_with_id(id.clone(), root.clone())],
-            collections: vec![],
         })
         .unwrap();
 
         // Simulate removal by saving with no sources; mapping should still be remembered.
         save(&LibraryState {
             sources: vec![],
-            collections: vec![],
         })
         .unwrap();
 

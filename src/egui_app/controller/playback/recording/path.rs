@@ -58,7 +58,8 @@ pub(crate) fn register_recording_in_browser(
     recording_path: &PathBuf,
 ) -> Result<(), String> {
     let (source, relative_path) = resolve_recording_target(controller, target, recording_path)?;
-    let (file_size, modified_ns) = crate::egui_app::controller::library::collection_items_helpers::file_metadata(recording_path)?;
+    let (file_size, modified_ns) =
+        crate::egui_app::controller::library::wav_io::file_metadata(recording_path)?;
     let db = controller
         .database_for(&source)
         .map_err(|err| format!("Database unavailable: {err}"))?;

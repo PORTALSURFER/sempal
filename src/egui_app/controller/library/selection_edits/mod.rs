@@ -1,4 +1,4 @@
-use crate::egui_app::controller::library::collection_items_helpers::file_metadata;
+use crate::egui_app::controller::library::wav_io::file_metadata;
 use super::*;
 use crate::egui_app::state::DestructiveSelectionEdit;
 use hound::SampleFormat;
@@ -195,7 +195,6 @@ impl EguiController {
             modified_ns,
         );
         self.refresh_waveform_for_sample(&context.source, &context.relative_path);
-        self.reexport_collections_for_sample(&context.source.id, &new_relative);
 
         let was_playing = self.is_playing();
         let was_looping = self.ui.waveform.loop_enabled;
@@ -456,7 +455,6 @@ impl EguiController {
             }));
         }
 
-        self.reexport_collections_for_sample(&context.source.id, &context.relative_path);
         self.maybe_trigger_pending_playback();
         self.push_undo_entry(self.selection_edit_undo_entry(
             format!("{action_label} {}", context.relative_path.display()),

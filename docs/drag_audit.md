@@ -1,10 +1,5 @@
 # Drag/Drop Call Site Audit
 
-## `ui/collections_panel.rs`
-- **Collection list rows**: hover sets `DragTarget::CollectionsRow(id)` so dropping onto a row is explicit.
-- **Collection samples list drag**: while dragging, sends `DragTarget::None` updates just to keep pointer position.
-- **Drop zone frame hover**: when pointer is within the drop zone, sets `DragTarget::CollectionsDropZone { collection_id: current_selection }`.
-
 ## `ui/sample_browser_panel.rs`
 - **Sample row drag / frame hover**: sets `DragTarget::BrowserTriage(column)` whenever the pointer sits over a triage column target.
 

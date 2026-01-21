@@ -58,7 +58,7 @@ impl EguiController {
         }
         if !self.confirm_warning(
             "Move trashed samples?",
-            "All samples tagged as Trash will be moved to the configured trash folder and removed from sources/collections. Continue?",
+            "All samples tagged as Trash will be moved to the configured trash folder. Continue?",
         ) {
             return;
         }
@@ -77,14 +77,11 @@ impl EguiController {
         let cancel = Arc::new(AtomicBool::new(false));
 
         let sources = self.library.sources.clone();
-        let collections = self.library.collections.clone();
-
         #[cfg(test)]
         {
             let cancel_after = self.runtime.progress_cancel_after;
             let finished = run_trash_move_task_with_progress(
                 sources,
-                collections,
                 trash_root,
                 cancel.clone(),
                 |message| match message {
@@ -116,7 +113,7 @@ impl EguiController {
             let (tx, rx) = channel();
             self.runtime.jobs.start_trash_move(rx, cancel.clone());
             std::thread::spawn(move || {
-                let _ = run_trash_move_task(sources, collections, trash_root, cancel, Some(&tx));
+                let _ = run_trash_move_task(sources, trash_root, cancel, Some(&tx));
             });
         }
     }
@@ -195,12 +192,6 @@ impl EguiController {
     }
 
     pub(crate) fn apply_trash_move_finished(&mut self, result: TrashMoveFinished) {
-        if result.collections_changed {
-            self.library.collections = result.collections;
-            self.refresh_collections_ui();
-            let _ = self.persist_config("Failed to save collections after trash move");
-        }
-
         let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new_from_state(
             &mut self.cache,
             &mut self.ui_cache,

@@ -78,19 +78,6 @@ impl EguiController {
         Ok(())
     }
 
-    pub(crate) fn load_collection_waveform(
-        &mut self,
-        source: &SampleSource,
-        relative_path: &Path,
-    ) -> Result<(), String> {
-        self.queue_audio_load_for(
-            source,
-            relative_path,
-            AudioLoadIntent::CollectionPreview,
-            None,
-        )
-    }
-
     pub(crate) fn finish_waveform_load(
         &mut self,
         source: &SampleSource,
@@ -113,16 +100,8 @@ impl EguiController {
         self.ui.waveform.loading = None;
         self.clear_waveform_slices();
         self.runtime.jobs.set_pending_audio(None);
-        match intent {
-            AudioLoadIntent::Selection => {
-                self.sample_view.wav.loaded_wav = Some(relative_path.to_path_buf());
-                self.ui.loaded_wav = Some(relative_path.to_path_buf());
-            }
-            AudioLoadIntent::CollectionPreview => {
-                self.sample_view.wav.loaded_wav = None;
-                self.ui.loaded_wav = None;
-            }
-        }
+        self.sample_view.wav.loaded_wav = Some(relative_path.to_path_buf());
+        self.ui.loaded_wav = Some(relative_path.to_path_buf());
         self.sync_loaded_audio(
             source,
             relative_path,

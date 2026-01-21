@@ -25,10 +25,6 @@ impl EguiApp {
         if self.controller.ui.hotkeys.suppress_for_bpm_input {
             return;
         }
-        let collection_rename_active = matches!(
-            self.controller.ui.collections.pending_action,
-            Some(crate::egui_app::state::CollectionActionPrompt::Rename { .. })
-        );
         let folder_rename_active = matches!(
             self.controller.ui.sources.folders.pending_action,
             Some(crate::egui_app::state::FolderActionPrompt::Rename { .. })
@@ -38,8 +34,7 @@ impl EguiApp {
             self.controller.ui.browser.pending_action,
             Some(crate::egui_app::state::SampleBrowserActionPrompt::Rename { .. })
         );
-        if collection_rename_active
-            || folder_rename_active
+        if folder_rename_active
             || folder_create_active
             || browser_rename_active
         {

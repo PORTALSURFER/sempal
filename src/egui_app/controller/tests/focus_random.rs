@@ -4,8 +4,6 @@ use super::common::{prepare_browser_sample, visible_indices};
 use crate::egui_app::controller::ui::hotkeys;
 use crate::egui_app::state::FocusContext;
 use crate::egui_app::state::SampleBrowserTab;
-use crate::sample_sources::Collection;
-use crate::sample_sources::collections::CollectionMember;
 use egui::Key;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -83,23 +81,6 @@ fn hotkey_focus_waveform_sets_context() {
         .expect("focus-waveform hotkey");
     controller.handle_hotkey(action, FocusContext::None);
     assert_eq!(controller.ui.focus.context, FocusContext::Waveform);
-}
-
-#[test]
-fn selecting_collection_sample_updates_focus_context() {
-    let (mut controller, source) = dummy_controller();
-    prepare_browser_sample(&mut controller, &source, "col.wav");
-    let mut collection = Collection::new("Test");
-    collection.members.push(CollectionMember {
-        source_id: source.id.clone(),
-        relative_path: PathBuf::from("col.wav"),
-        clip_root: None,
-    });
-    controller.library.collections.push(collection.clone());
-    controller.selection_state.ctx.selected_collection = Some(collection.id.clone());
-    controller.refresh_collections_ui();
-    controller.select_collection_sample(0);
-    assert_eq!(controller.ui.focus.context, FocusContext::CollectionSample);
 }
 
 #[test]
@@ -296,56 +277,6 @@ fn quote_hotkey_tags_selected_sample_neutral() {
     controller.handle_hotkey(action, FocusContext::None);
 
     assert_eq!(controller.wav_entry(0).unwrap().tag, crate::sample_sources::Rating::NEUTRAL);
-}
-
-#[test]
-fn tag_hotkeys_apply_to_collection_focus() {
-    let (mut controller, source) = dummy_controller();
-    controller.cache_db(&source).unwrap();
-    controller.library.sources.push(source.clone());
-    controller.selection_state.ctx.selected_source = Some(source.id.clone());
-    write_test_wav(&source.root.join("col.wav"), &[0.1, 0.2]);
-
-    let collection = Collection::new("Test");
-    let collection_id = collection.id.clone();
-    controller.library.collections.push(collection);
-    controller.selection_state.ctx.selected_collection = Some(collection_id.clone());
-    controller
-        .add_sample_to_collection(&collection_id, Path::new("col.wav"))
-        .unwrap();
-    controller.refresh_collections_ui();
-    controller.select_collection_sample(0);
-    assert_eq!(controller.ui.focus.context, FocusContext::CollectionSample);
-
-    let keep = hotkeys::iter_actions()
-        .find(|a| a.id == "tag-keep")
-        .unwrap();
-    controller.handle_hotkey(keep, FocusContext::CollectionSample);
-    assert_eq!(
-        controller.ui.collections.samples[0].tag,
-        crate::sample_sources::Rating::KEEP_1,
-        "keep hotkey"
-    );
-
-    let neutral = hotkeys::iter_actions()
-        .find(|a| a.id == "tag-neutral")
-        .unwrap();
-    controller.handle_hotkey(neutral, FocusContext::CollectionSample);
-    assert_eq!(
-        controller.ui.collections.samples[0].tag,
-        crate::sample_sources::Rating::NEUTRAL,
-        "neutral hotkey"
-    );
-
-    let trash = hotkeys::iter_actions()
-        .find(|a| a.id == "tag-trash")
-        .unwrap();
-    controller.handle_hotkey(trash, FocusContext::CollectionSample);
-    assert_eq!(
-        controller.ui.collections.samples[0].tag,
-        crate::sample_sources::Rating::TRASH_3,
-        "trash hotkey"
-    );
 }
 
 #[test]

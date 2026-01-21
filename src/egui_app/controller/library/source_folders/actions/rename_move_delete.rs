@@ -67,8 +67,6 @@ impl EguiController {
         let entries = self.folder_entries(target);
         let staging_root = source.root.join(".sempal_delete_staging");
         let staged = Self::stage_folder_for_delete(&absolute, &staging_root, target)?;
-        let mut collections_changed = false;
-        let mut collections_snapshot = None;
         if !entries.is_empty() {
             #[cfg(test)]
             if self.runtime.fail_next_folder_delete_db {
@@ -98,22 +96,6 @@ impl EguiController {
                 Ok(())
             })();
             if let Err(err) = db_result {
-                return Self::rollback_staged_folder(&staged, &absolute, &staging_root, &err);
-            }
-            collections_snapshot = Some(self.library.collections.clone());
-        }
-        for entry in &entries {
-            if self.remove_sample_from_collections(&source.id, &entry.relative_path) {
-                collections_changed = true;
-            }
-        }
-        if collections_changed {
-            if let Err(err) = self.persist_config("Failed to save collection after delete") {
-                if let Some(snapshot) = collections_snapshot {
-                    self.library.collections = snapshot;
-                    self.refresh_collections_ui();
-                }
-                let _ = self.restore_db_entries(&source, target, &entries);
                 return Self::rollback_staged_folder(&staged, &absolute, &staging_root, &err);
             }
         }

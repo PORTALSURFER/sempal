@@ -3,7 +3,6 @@
 
 mod audio;
 mod browser;
-mod collections;
 mod controls;
 mod drag;
 mod feedback_issue;
@@ -19,7 +18,6 @@ mod waveform;
 
 pub use audio::*;
 pub use browser::*;
-pub use collections::*;
 pub use controls::*;
 pub use drag::*;
 pub use feedback_issue::*;
@@ -48,8 +46,6 @@ pub struct UiState {
     pub waveform: WaveformState,
     /// Drag-and-drop state.
     pub drag: DragState,
-    /// Collections panel state.
-    pub collections: CollectionsState,
     /// Overlay for long-running tasks.
     pub progress: ProgressOverlayState,
     /// Tracks which UI region currently owns keyboard focus.
@@ -74,8 +70,6 @@ pub struct UiState {
     pub loaded_wav: Option<PathBuf>,
     /// Optional trash folder path configured by the user.
     pub trash_folder: Option<PathBuf>,
-    /// Optional global export root used for automatic collection exports.
-    pub collection_export_root: Option<PathBuf>,
 }
 
 impl Default for UiState {
@@ -86,7 +80,6 @@ impl Default for UiState {
             browser: SampleBrowserState::default(),
             waveform: WaveformState::default(),
             drag: DragState::default(),
-            collections: CollectionsState::default(),
             progress: ProgressOverlayState::default(),
             focus: UiFocusState::default(),
             hotkeys: HotkeyUiState::default(),
@@ -99,7 +92,6 @@ impl Default for UiState {
             update: UpdateUiState::default(),
             loaded_wav: None,
             trash_folder: None,
-            collection_export_root: None,
         }
     }
 }

@@ -1,5 +1,5 @@
 use super::super::DragDropController;
-use crate::egui_app::controller::library::collection_items_helpers::file_metadata;
+use crate::egui_app::controller::library::wav_io::file_metadata;
 use crate::egui_app::controller::jobs::{FileOpMessage, FileOpResult, SourceMoveRequest, SourceMoveResult, SourceMoveSuccess};
 use crate::egui_app::state::DragSample;
 use crate::egui_app::ui::style::StatusTone;
@@ -141,7 +141,6 @@ impl DragDropController<'_> {
             return;
         };
         let mut moved_sources = HashSet::new();
-        let mut collections_changed = false;
         for entry in &result.moved {
             let Some(source) = self
                 .library
@@ -168,17 +167,6 @@ impl DragDropController<'_> {
             );
             moved_sources.insert(source.id.clone());
             moved_sources.insert(target_source.id.clone());
-            if self.update_collections_for_source_move(
-                &source.id,
-                &target_source.id,
-                &entry.relative_path,
-                &entry.target_relative,
-            ) {
-                collections_changed = true;
-            }
-        }
-        if collections_changed {
-            let _ = self.persist_config("Failed to save collections after move");
         }
         for source_id in moved_sources {
             let Some(source) = self
@@ -262,42 +250,6 @@ impl DragDropController<'_> {
             .map_err(|err| format!("Failed to drop database row: {err}"))
     }
 
-    pub(super) fn update_collections_for_source_move(
-        &mut self,
-        from: &SourceId,
-        to: &SourceId,
-        old_relative: &Path,
-        new_relative: &Path,
-    ) -> bool {
-        let new_path = new_relative.to_path_buf();
-        let mut changed = false;
-        for collection in &mut self.library.collections {
-            if collection.contains(to, &new_path) {
-                let before = collection.members.len();
-                collection.members.retain(|member| {
-                    if member.clip_root.is_some() {
-                        return true;
-                    }
-                    &member.source_id != from || member.relative_path.as_path() != old_relative
-                });
-                if before != collection.members.len() {
-                    changed = true;
-                }
-                continue;
-            }
-            for member in &mut collection.members {
-                if member.clip_root.is_some() {
-                    continue;
-                }
-                if &member.source_id == from && member.relative_path == old_relative {
-                    member.source_id = to.clone();
-                    member.relative_path = new_path.clone();
-                    changed = true;
-                }
-            }
-        }
-        changed
-    }
 }
 
 fn unique_destination_path(root: &Path, relative: &Path) -> Result<PathBuf, String> {

@@ -4,7 +4,6 @@ use super::common::visible_indices;
 use crate::egui_app::state::{
     DragPayload, DragSource, DragTarget, TriageFlagColumn, TriageFlagFilter,
 };
-use crate::sample_sources::Collection;
 use std::path::{Path, PathBuf};
 use tempfile::tempdir;
 
@@ -97,98 +96,6 @@ fn sample_browser_indices_track_tags() {
     let loaded = controller.ui.browser.loaded.unwrap();
     assert_eq!(loaded.column, TriageFlagColumn::Keep);
     assert_eq!(controller.ui.browser.loaded_visible, Some(2));
-}
-
-#[test]
-fn dropping_sample_moves_to_collection_export() {
-    let temp = tempdir().unwrap();
-    let root = temp.path().join("source");
-    let export_root = temp.path().join("exports");
-    std::fs::create_dir_all(&root).unwrap();
-    let renderer = WaveformRenderer::new(10, 10);
-    let mut controller = EguiController::new(renderer, None);
-    let source = SampleSource::new(root.clone());
-    controller.selection_state.ctx.selected_source = Some(source.id.clone());
-    controller.library.sources.push(source.clone());
-    controller.settings.collection_export_root = Some(export_root.clone());
-
-    let file_path = root.join("sample.wav");
-    std::fs::write(&file_path, b"data").unwrap();
-
-    let collection = Collection::new("Test");
-    let collection_id = collection.id.clone();
-    controller.library.collections.push(collection);
-    controller.selection_state.ctx.selected_collection = Some(collection_id.clone());
-
-    controller.ui.drag.payload = Some(DragPayload::Sample {
-        source_id: source.id.clone(),
-        relative_path: PathBuf::from("sample.wav"),
-    });
-    controller.ui.drag.set_target(
-        DragSource::Collections,
-        DragTarget::CollectionsRow(collection_id.clone()),
-    );
-
-    controller.finish_active_drag();
-
-    let collection = controller
-        .library
-        .collections
-        .iter()
-        .find(|c| c.id == collection_id)
-        .unwrap();
-    assert_eq!(collection.members.len(), 1);
-    let member = &collection.members[0];
-    let expected_root = export_root.join(collection.export_folder_name());
-    assert_eq!(member.clip_root.as_ref(), Some(&expected_root));
-    assert!(expected_root.join(&member.relative_path).exists());
-    assert!(!file_path.exists());
-}
-
-#[test]
-fn deleting_collection_removes_and_selects_next() {
-    let (mut controller, source) = dummy_controller();
-    controller.library.sources.push(source);
-
-    let first = Collection::new("First");
-    let second = Collection::new("Second");
-    let first_id = first.id.clone();
-    let second_id = second.id.clone();
-    controller.library.collections.push(first);
-    controller.library.collections.push(second);
-    controller.selection_state.ctx.selected_collection = Some(first_id.clone());
-    controller.refresh_collections_ui();
-
-    controller.delete_collection(&first_id).unwrap();
-
-    assert_eq!(controller.library.collections.len(), 1);
-    assert_eq!(controller.library.collections[0].id, second_id.clone());
-    assert_eq!(
-        controller.selection_state.ctx.selected_collection,
-        Some(second_id.clone())
-    );
-    assert!(controller.ui.collections.selected_sample.is_none());
-    assert!(
-        controller
-            .ui
-            .collections
-            .rows
-            .iter()
-            .any(|row| row.id == second_id)
-    );
-}
-
-#[test]
-fn browser_autoscroll_disabled_when_collection_selected() {
-    let (mut controller, source) = dummy_controller();
-    controller.library.sources.push(source);
-    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL)]);
-    controller.sample_view.wav.selected_wav = Some(PathBuf::from("one.wav"));
-    controller.rebuild_wav_lookup();
-    controller.rebuild_browser_lists();
-    controller.ui.collections.selected_sample = Some(0);
-    controller.rebuild_browser_lists();
-    assert!(!controller.ui.browser.autoscroll);
 }
 
 #[test]

@@ -10,8 +10,6 @@ pub(super) struct FocusFlags {
     pub(super) folder: bool,
     pub(super) waveform: bool,
     pub(super) sources: bool,
-    pub(super) collection_sample: bool,
-    pub(super) collections_list: bool,
 }
 
 impl FocusFlags {
@@ -21,8 +19,6 @@ impl FocusFlags {
             folder: matches!(context, FocusContext::SourceFolders),
             waveform: matches!(context, FocusContext::Waveform),
             sources: matches!(context, FocusContext::SourcesList),
-            collection_sample: matches!(context, FocusContext::CollectionSample),
-            collections_list: matches!(context, FocusContext::CollectionsList),
         }
     }
 }
@@ -31,9 +27,6 @@ impl EguiApp {
     pub(super) fn handle_focus_side_effects(&mut self, focus: &FocusFlags) {
         if !focus.browser && !focus.waveform {
             self.controller.blur_browser_focus();
-        }
-        if focus.collection_sample {
-            self.controller.ui.browser.autoscroll = false;
         }
     }
 

@@ -13,7 +13,6 @@ pub(crate) struct AppSettingsState {
     pub(crate) audio_input: AudioInputConfig,
     pub(crate) controls: crate::sample_sources::config::InteractionOptions,
     pub(crate) trash_folder: Option<PathBuf>,
-    pub(crate) collection_export_root: Option<PathBuf>,
     pub(crate) drop_targets: Vec<DropTargetConfig>,
 }
 
@@ -28,7 +27,6 @@ impl AppSettingsState {
             audio_input: AudioInputConfig::default(),
             controls: crate::sample_sources::config::InteractionOptions::default(),
             trash_folder: None,
-            collection_export_root: None,
             drop_targets: Vec::new(),
         }
     }

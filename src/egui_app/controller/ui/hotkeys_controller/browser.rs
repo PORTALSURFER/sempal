@@ -51,10 +51,6 @@ pub(crate) fn handle_browser_command(
             }
             true
         }
-        HotkeyCommand::AddFocusedToCollection => {
-            controller.add_focused_sample_to_collection();
-            true
-        }
         HotkeyCommand::SelectAllBrowser => {
             controller.select_all_browser_rows();
             true
@@ -102,19 +98,4 @@ impl HotkeysController<'_> {
         rows.dedup();
         let _ = self.delete_browser_samples(&rows);
     }
-
-    fn add_focused_sample_to_collection(&mut self) {
-        let Some(collection_id) = self.current_collection_id() else {
-            self.set_status("Select a collection first", StatusTone::Warning);
-            return;
-        };
-        let Some(path) = self.focused_browser_path() else {
-            self.set_status("Focus a sample to add it to a collection", StatusTone::Info);
-            return;
-        };
-        if let Err(err) = self.add_sample_to_collection(&collection_id, path.as_path()) {
-            self.set_status(err, StatusTone::Error);
-        }
-    }
 }
-

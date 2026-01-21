@@ -84,7 +84,6 @@ pub(crate) struct PendingPlayback {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AudioLoadIntent {
     Selection,
-    CollectionPreview,
 }
 
 #[derive(Clone)]

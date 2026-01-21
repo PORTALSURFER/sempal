@@ -1,4 +1,4 @@
-use crate::egui_app::controller::library::collection_items_helpers::read_samples_for_normalization;
+use crate::egui_app::controller::library::wav_io::read_samples_for_normalization;
 use super::super::*;
 use std::path::{Path, PathBuf};
 

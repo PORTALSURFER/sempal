@@ -1,7 +1,7 @@
 use super::super::DragDropController;
 use crate::egui_app::state::TriageFlagColumn;
 use crate::egui_app::ui::style::StatusTone;
-use crate::sample_sources::{CollectionId, Rating, SourceId};
+use crate::sample_sources::{Rating, SourceId};
 use crate::selection::SelectionRange;
 use std::path::{Path, PathBuf};
 
@@ -11,14 +11,13 @@ impl DragDropController<'_> {
         source_id: SourceId,
         relative_path: PathBuf,
         bounds: SelectionRange,
-        collection_target: Option<CollectionId>,
         triage_target: Option<TriageFlagColumn>,
         folder_target: Option<PathBuf>,
         keep_source_focused: bool,
     ) {
-        if collection_target.is_none() && triage_target.is_none() && folder_target.is_none() {
+        if triage_target.is_none() && folder_target.is_none() {
             self.set_status(
-                "Drag the selection onto Samples or a collection to save it",
+                "Drag the selection onto Samples or a folder to save it",
                 StatusTone::Warning,
             );
             return;
@@ -49,15 +48,6 @@ impl DragDropController<'_> {
                 keep_source_focused,
             );
             return;
-        }
-        if let Some(collection_id) = collection_target {
-            self.handle_selection_drop_to_collection(
-                &source_id,
-                &relative_path,
-                bounds,
-                target_tag,
-                &collection_id,
-            );
         }
     }
 
@@ -180,53 +170,4 @@ impl DragDropController<'_> {
         }
     }
 
-    fn handle_selection_drop_to_collection(
-        &mut self,
-        source_id: &SourceId,
-        relative_path: &Path,
-        bounds: SelectionRange,
-        target_tag: Option<Rating>,
-        collection_id: &CollectionId,
-    ) {
-        let clip_root = match self.selection_clip_root_for_collection(collection_id) {
-            Ok(root) => root,
-            Err(err) => {
-                self.set_status(err, StatusTone::Error);
-                return;
-            }
-        };
-        let clip_name_hint = relative_path
-            .file_name()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("selection.wav"));
-        match self.export_selection_clip_to_root(
-            source_id,
-            relative_path,
-            bounds,
-            target_tag,
-            &clip_root,
-            &clip_name_hint,
-        ) {
-            Ok(entry) => {
-                self.selection_state.ctx.selected_collection = Some(collection_id.clone());
-                let clip_relative = entry.relative_path.clone();
-                if let Err(err) =
-                    self.add_clip_to_collection(collection_id, clip_root, clip_relative)
-                {
-                    self.set_status(err, StatusTone::Error);
-                    return;
-                }
-                let name = self
-                    .library
-                    .collections
-                    .iter()
-                    .find(|c| c.id == *collection_id)
-                    .map(|c| c.name.as_str())
-                    .unwrap_or("collection");
-                let status = format!("Saved clip {} to {}", entry.relative_path.display(), name);
-                self.set_status(status, StatusTone::Info);
-            }
-            Err(err) => self.set_status(err, StatusTone::Error),
-        }
-    }
 }

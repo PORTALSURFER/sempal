@@ -6,7 +6,7 @@ use super::load::config_path;
 
 /// Persist configuration to disk, overwriting any previous contents.
 ///
-/// Settings are written to TOML while sources/collections are stored in SQLite.
+/// Settings are written to TOML while sources are stored in SQLite.
 pub fn save(config: &AppConfig) -> Result<(), ConfigError> {
     let path = config_path()?;
     save_to_path(config, &path)
@@ -24,7 +24,6 @@ pub fn save_to_path(config: &AppConfig, path: &Path) -> Result<(), ConfigError> 
     save_settings_to_path(&settings, path)?;
     crate::sample_sources::library::save(&crate::sample_sources::library::LibraryState {
         sources: config.sources.clone(),
-        collections: config.collections.clone(),
     })?;
     Ok(())
 }

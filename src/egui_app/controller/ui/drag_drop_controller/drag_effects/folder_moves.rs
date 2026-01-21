@@ -182,7 +182,6 @@ impl DragDropController<'_> {
             return;
         };
         let mut updates = Vec::new();
-        let mut collections_changed = false;
         for entry in &result.moved {
             let old_entry = WavEntry {
                 relative_path: entry.old_relative.clone(),
@@ -205,19 +204,9 @@ impl DragDropController<'_> {
                 last_played_at: entry.last_played_at,
             };
             updates.push((old_entry, new_entry));
-            if self.update_collections_for_rename(
-                &source.id,
-                &entry.old_relative,
-                &entry.new_relative,
-            ) {
-                collections_changed = true;
-            }
         }
         if !updates.is_empty() {
             self.apply_folder_entry_updates(&source, &updates);
-        }
-        if collections_changed {
-            let _ = self.persist_config("Failed to save collections after move");
         }
         let moved = result.moved.len();
         if moved == 0 && result.errors.is_empty() {
@@ -370,7 +359,6 @@ impl DragDropController<'_> {
             return;
         }
         let mut updates = Vec::new();
-        let mut collections_changed = false;
         for entry in &result.moved {
             let old_entry = WavEntry {
                 relative_path: entry.old_relative.clone(),
@@ -393,19 +381,9 @@ impl DragDropController<'_> {
                 last_played_at: entry.last_played_at,
             };
             updates.push((old_entry, new_entry));
-            if self.update_collections_for_rename(
-                &source.id,
-                &entry.old_relative,
-                &entry.new_relative,
-            ) {
-                collections_changed = true;
-            }
         }
         if !updates.is_empty() {
             self.apply_folder_entry_updates(&source, &updates);
-        }
-        if collections_changed {
-            let _ = self.persist_config("Failed to save collection after folder move");
         }
         self.remap_folder_state(&result.old_folder, &result.new_folder);
         self.remap_manual_folders(&result.old_folder, &result.new_folder);

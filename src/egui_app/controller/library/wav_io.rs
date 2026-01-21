@@ -1,11 +1,13 @@
+//! File I/O helpers for waveform operations.
+
 use hound::SampleFormat;
 use std::path::Path;
 
+/// Read WAV samples for normalization workflows.
 pub(crate) fn read_samples_for_normalization(
     path: &Path,
 ) -> Result<(Vec<f32>, hound::WavSpec), String> {
     let reader_source = crate::wav_sanitize::open_sanitized_wav(path)?;
-    // Use a large buffer (1MB) to minimize syscalls during reading
     let buf_reader = std::io::BufReader::with_capacity(1024 * 1024, reader_source);
     let mut reader = hound::WavReader::new(buf_reader)
         .map_err(|err| format!("Invalid wav: {err}"))?;
@@ -29,6 +31,7 @@ pub(crate) fn read_samples_for_normalization(
     Ok((samples, spec))
 }
 
+/// Write normalized WAV samples back to disk.
 pub(crate) fn write_normalized_wav(
     path: &Path,
     samples: &[f32],
@@ -36,7 +39,6 @@ pub(crate) fn write_normalized_wav(
 ) -> Result<(), String> {
     let file = std::fs::File::create(path)
         .map_err(|err| format!("Failed to create file: {err}"))?;
-    // Use a large buffer (1MB) to minimize syscalls during writing
     let buf_writer = std::io::BufWriter::with_capacity(1024 * 1024, file);
     let mut writer = hound::WavWriter::new(buf_writer, spec)
         .map_err(|err| format!("Failed to write wav: {err}"))?;
@@ -50,6 +52,7 @@ pub(crate) fn write_normalized_wav(
         .map_err(|err| format!("Failed to finalize wav: {err}"))
 }
 
+/// Fetch file size and last-modified time (epoch nanoseconds) for a path.
 pub(crate) fn file_metadata(path: &Path) -> Result<(u64, i64), String> {
     let metadata = std::fs::metadata(path)
         .map_err(|err| format!("Failed to read {}: {err}", path.display()))?;

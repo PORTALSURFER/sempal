@@ -158,14 +158,6 @@ impl DragDropController<'_> {
             last_played_at,
         };
         self.insert_cached_entry(&target.source, new_entry);
-        if self.update_collections_for_source_move(
-            &source.id,
-            &target.source.id,
-            &relative_path,
-            &destination_relative,
-        ) {
-            let _ = self.persist_config("Failed to save collections after move");
-        }
         self.set_status(
             format!("Moved to {}", target_dir.display()),
             StatusTone::Info,

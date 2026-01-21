@@ -181,7 +181,7 @@ impl EguiController {
             id: SourceId::new(),
             root: clip_root.to_path_buf(),
         };
-        // Collection-owned clips are not inserted into browser or source DB.
+        // Clips saved outside sources are not inserted into browser or source DB.
         let (looped, bpm) = self.selection_export_metadata();
         self.record_selection_entry(
             &source,

@@ -211,9 +211,6 @@ impl EguiController {
                 .map_err(|err| format!("Failed to drop database row: {err}"))?;
             self.prune_cached_sample(source, path);
         }
-        if self.remove_samples_from_collections(&source.id, &missing_paths) {
-            self.persist_config("Failed to save collection after removing dead links")?;
-        }
         Ok(missing_paths.len())
     }
 }

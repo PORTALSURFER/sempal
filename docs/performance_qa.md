@@ -20,7 +20,7 @@ description: Checklist for keeping huge sample libraries responsive in Sempal.
 - Status should read `Loaded/Cached <count> wav files in <ms>`; note the timing.
 - Scroll the triage columns quickly; verify no stutter and no duplicate-ID warnings.
 - Select random rows; ensure waveform updates and status remains responsive.
-- Drag a few rows to collections; confirm hover highlight and drop works without lag.
+- Drag a few rows onto folders or triage columns; confirm hover highlight and drop works without lag.
 - Switch between sources and back; large source should reuse cached labels and load instantly.
 - Trigger manual scan and confirm UI stays responsive and reload status updates with new timing.
 

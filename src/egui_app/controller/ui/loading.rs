@@ -128,7 +128,6 @@ impl EguiController {
         }
         if !pending_applied
             && self.sample_view.wav.selected_wav.is_none()
-            && self.ui.collections.selected_sample.is_none()
             && self.wav_entries.total > 0
         {
             self.selection_state.suppress_autoplay_once = true;

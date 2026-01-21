@@ -1,6 +1,6 @@
 # GitHub Pages configuration for Sempal documentation site
 # Uses custom layout and styling to match the app's dark theme.
 title: Sempal
-description: Audio sample triage and collection builder
+description: Audio sample triage
 markdown: kramdown
 theme: null

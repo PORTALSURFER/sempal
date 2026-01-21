@@ -80,57 +80,6 @@ impl EguiController {
         self.set_focus_context(FocusContext::Waveform);
     }
 
-    /// Mark the collections sample list as the active focus surface.
-    pub(crate) fn focus_collection_context(&mut self) {
-        self.set_focus_context(FocusContext::CollectionSample);
-    }
-
-    /// Focus the collection samples list, selecting the current row or first row.
-    pub(crate) fn focus_collection_samples_list(&mut self) {
-        let Some(collection) = self.current_collection() else {
-            self.focus_collection_context();
-            self.set_status_message(StatusMessage::SelectCollectionFirst {
-                tone: StatusTone::Info,
-            });
-            return;
-        };
-        if collection.members.is_empty() {
-            self.ui.collections.selected_sample = None;
-            self.ui.collections.scroll_to_sample = None;
-            self.focus_collection_context();
-            self.set_status_message(StatusMessage::CollectionEmpty);
-            return;
-        }
-        let last_focused = self
-            .ui
-            .collections
-            .last_focused_collection
-            .as_ref()
-            .and_then(|id| {
-                if id == &collection.id {
-                    self.ui
-                        .collections
-                        .last_focused_path
-                        .as_ref()
-                        .and_then(|path| {
-                            self.ui
-                                .collections
-                                .samples
-                                .iter()
-                                .position(|sample| &sample.path == path)
-                        })
-                } else {
-                    None
-                }
-            });
-        let target = last_focused
-            .or(self.ui.collections.selected_sample)
-            .unwrap_or(0)
-            .min(collection.members.len().saturating_sub(1));
-        self.selection_state.suppress_autoplay_once = true;
-        self.select_collection_sample(target);
-    }
-
     /// Mark the sources list as the active focus surface.
     pub(crate) fn focus_sources_context(&mut self) {
         self.set_focus_context(FocusContext::SourcesList);
@@ -159,37 +108,9 @@ impl EguiController {
         self.focus_sources_context();
     }
 
-    /// Mark the collections list as the active focus surface.
-    pub(crate) fn focus_collections_list_context(&mut self) {
-        self.set_focus_context(FocusContext::CollectionsList);
-    }
-
-    /// Focus the collections list, selecting the active row or the first entry.
-    pub(crate) fn focus_collections_list(&mut self) {
-        if self.library.collections.is_empty() {
-            self.set_status_message(StatusMessage::CreateCollectionFirst);
-            return;
-        }
-        let target = self
-            .ui
-            .collections
-            .selected
-            .unwrap_or(0)
-            .min(self.library.collections.len() - 1);
-        self.select_collection_by_index(Some(target));
-        self.focus_collections_list_context();
-    }
-
     /// Clear focus when no interactive surface should process shortcuts.
     pub(crate) fn clear_focus_context(&mut self) {
         self.set_focus_context(FocusContext::None);
-    }
-
-    /// Clear focus when it currently belongs to the collections list.
-    pub(crate) fn clear_collection_focus_context(&mut self) {
-        if matches!(self.ui.focus.context, FocusContext::CollectionSample) {
-            self.clear_focus_context();
-        }
     }
 
     /// Focus a UI surface from UI-driven navigation.
@@ -219,14 +140,7 @@ impl EguiController {
                 }
                 self.focus_folder_context();
             }
-            FocusContext::CollectionSample => {
-                if self.current_collection().is_none() && !self.library.collections.is_empty() {
-                    self.select_collection_by_index(Some(0));
-                }
-                self.focus_collection_samples_list();
-            }
             FocusContext::SourcesList => self.focus_sources_list(),
-            FocusContext::CollectionsList => self.focus_collections_list(),
             FocusContext::None => self.clear_focus_context(),
         }
     }

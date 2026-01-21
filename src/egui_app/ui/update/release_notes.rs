@@ -32,9 +32,7 @@ impl EguiApp {
         if !input.arrow_down {
             return;
         }
-        if focus.collection_sample {
-            self.controller.nudge_collection_sample(1);
-        } else if focus.browser {
+        if focus.browser {
             if self.controller.random_navigation_mode_enabled() {
                 self.controller.play_random_visible_sample();
             } else if input.shift {
@@ -54,8 +52,6 @@ impl EguiApp {
             }
         } else if focus.sources {
             self.controller.nudge_source_selection(1);
-        } else if focus.collections_list {
-            self.controller.nudge_collection_row(1);
         }
         consume_keypress(ctx, input, egui::Key::ArrowDown);
     }
@@ -64,9 +60,7 @@ impl EguiApp {
         if !input.arrow_up {
             return;
         }
-        if focus.collection_sample {
-            self.controller.nudge_collection_sample(-1);
-        } else if focus.browser {
+        if focus.browser {
             if self.controller.random_navigation_mode_enabled() {
                 self.controller.play_previous_random_sample();
             } else if input.shift {
@@ -86,8 +80,6 @@ impl EguiApp {
             }
         } else if focus.sources {
             self.controller.nudge_source_selection(-1);
-        } else if focus.collections_list {
-            self.controller.nudge_collection_row(-1);
         }
         consume_keypress(ctx, input, egui::Key::ArrowUp);
     }

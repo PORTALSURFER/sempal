@@ -114,7 +114,6 @@ impl BrowserController<'_> {
             self.rebuild_browser_lists();
         }
         self.refresh_waveform_for_sample(&ctx.source, &ctx.entry.relative_path);
-        self.reexport_collections_for_sample(&ctx.source.id, &ctx.entry.relative_path);
         self.set_status(
             format!("Normalized {}", ctx.entry.relative_path.display()),
             StatusTone::Info,
@@ -156,11 +155,6 @@ impl BrowserController<'_> {
         db.remove_file(&ctx.entry.relative_path)
             .map_err(|err| format!("Failed to drop database row: {err}"))?;
         self.prune_cached_sample(&ctx.source, &ctx.entry.relative_path);
-        let collections_changed =
-            self.remove_sample_from_collections(&ctx.source.id, &ctx.entry.relative_path);
-        if collections_changed {
-            self.persist_config("Failed to save collection after delete")?;
-        }
         self.set_status(
             format!("Deleted {}", ctx.entry.relative_path.display()),
             StatusTone::Info,
@@ -178,11 +172,6 @@ impl BrowserController<'_> {
         db.remove_file(&ctx.entry.relative_path)
             .map_err(|err| format!("Failed to drop database row: {err}"))?;
         self.prune_cached_sample(&ctx.source, &ctx.entry.relative_path);
-        let collections_changed =
-            self.remove_sample_from_collections(&ctx.source.id, &ctx.entry.relative_path);
-        if collections_changed {
-            self.persist_config("Failed to save collection after removing dead link")?;
-        }
         self.set_status(
             format!("Removed dead link {}", ctx.entry.relative_path.display()),
             StatusTone::Info,
@@ -203,10 +192,7 @@ impl BrowserController<'_> {
             &ctx.source.root,
             &full_name,
         )?;
-        let collections_changed = self.commit_browser_rename(&ctx, &new_relative, tag)?;
-        if collections_changed {
-            self.persist_config("Failed to save collection after rename")?;
-        }
+        self.commit_browser_rename(&ctx, &new_relative, tag)?;
         self.set_status(
             format!(
                 "Renamed {} to {}",
@@ -223,7 +209,7 @@ impl BrowserController<'_> {
         ctx: &TriageSampleContext,
         new_relative: &Path,
         tag: crate::sample_sources::Rating,
-    ) -> Result<bool, String> {
+    ) -> Result<(), String> {
         let (file_size, modified_ns) = self.apply_triage_rename(ctx, new_relative, tag)?;
         let updated_path = new_relative.to_path_buf();
         self.update_cached_entry(
@@ -263,12 +249,7 @@ impl BrowserController<'_> {
         }
 
         self.refresh_waveform_for_sample(&ctx.source, new_relative);
-        let collections_changed = self.update_collections_for_rename(
-            &ctx.source.id,
-            &ctx.entry.relative_path,
-            new_relative,
-        );
-        Ok(collections_changed)
+        Ok(())
     }
 
     fn apply_triage_rename(

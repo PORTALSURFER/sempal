@@ -1,5 +1,5 @@
 use super::browser::TriageFlagColumn;
-use crate::sample_sources::{CollectionId, SourceId};
+use crate::sample_sources::SourceId;
 use crate::selection::SelectionRange;
 use egui::Pos2;
 use std::collections::HashMap;
@@ -58,8 +58,6 @@ pub enum DragPayload {
 /// Panel-originating drag target.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum DragSource {
-    /// Drag originating from collections panel.
-    Collections,
     /// Drag originating from the browser.
     Browser,
     /// Drag originating from sources list.
@@ -79,13 +77,6 @@ pub enum DragSource {
 pub enum DragTarget {
     /// No active target.
     None,
-    /// A specific collections row.
-    CollectionsRow(CollectionId),
-    /// Collections drop zone target.
-    CollectionsDropZone {
-        /// Optional collection id for the drop zone.
-        collection_id: Option<CollectionId>,
-    },
     /// Browser triage column target.
     BrowserTriage(TriageFlagColumn),
     /// Sources row target.
@@ -110,8 +101,6 @@ impl DragTarget {
     fn priority(&self) -> u8 {
         match self {
             DragTarget::External => 6,
-            DragTarget::CollectionsDropZone { .. } => 5,
-            DragTarget::CollectionsRow(_) => 4,
             DragTarget::SourcesRow(_) => 3,
             DragTarget::FolderPanel { .. } => 2,
             DragTarget::DropTarget { .. } => 2,
@@ -143,7 +132,7 @@ impl DragTargetSnapshot {
     }
 }
 
-/// Drag/hover state shared between the sample browser and collections.
+/// Drag/hover state shared between panels.
 #[derive(Clone, Debug)]
 pub struct DragState {
     /// Current drag payload, if any.

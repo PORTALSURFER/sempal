@@ -31,7 +31,6 @@ pub(crate) enum JobMessage {
     Scan(ScanJobMessage),
     SourceWatch(SourceWatchEvent),
     TrashMove(trash_move::TrashMoveMessage),
-    CollectionMove(CollectionMoveResult),
     FileOps(FileOpMessage),
     Analysis(AnalysisJobMessage),
     AnalysisFailuresLoaded(AnalysisFailuresResult),
@@ -230,21 +229,6 @@ pub(crate) struct SimilarityPrepResult {
 }
 
 #[derive(Debug)]
-pub(crate) struct CollectionMoveSuccess {
-    pub(crate) source_id: SourceId,
-    pub(crate) relative_path: PathBuf,
-    pub(crate) clip_root: PathBuf,
-    pub(crate) clip_relative: PathBuf,
-}
-
-#[derive(Debug)]
-pub(crate) struct CollectionMoveResult {
-    pub(crate) collection_id: crate::sample_sources::CollectionId,
-    pub(crate) moved: Vec<CollectionMoveSuccess>,
-    pub(crate) errors: Vec<String>,
-}
-
-#[derive(Debug)]
 pub(crate) struct AnalysisFailuresResult {
     pub(crate) source_id: SourceId,
     pub(crate) result: Result<std::collections::HashMap<PathBuf, String>, String>,
@@ -330,15 +314,6 @@ pub(crate) enum ClipboardPasteOutcome {
         source_id: crate::sample_sources::SourceId,
         /// Added samples with metadata.
         added: Vec<SourcePasteAdded>,
-    },
-    /// Paste into a collection clip root.
-    Collection {
-        /// Collection receiving the clips.
-        collection_id: crate::sample_sources::CollectionId,
-        /// Clip root used for storage.
-        clip_root: PathBuf,
-        /// Relative paths of added clip files.
-        added: Vec<PathBuf>,
     },
 }
 
@@ -578,7 +553,6 @@ pub(crate) struct ControllerJobs {
     pub(super) scan_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
     pub(super) trash_move_in_progress: bool,
     pub(super) trash_move_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
-    pub(super) collection_move_in_progress: bool,
     pub(super) file_ops_in_progress: bool,
     pub(super) file_ops_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
     pub(super) umap_build_in_progress: bool,
@@ -627,7 +601,6 @@ impl ControllerJobs {
             scan_cancel: None,
             trash_move_in_progress: false,
             trash_move_cancel: None,
-            collection_move_in_progress: false,
             file_ops_in_progress: false,
             file_ops_cancel: None,
             umap_build_in_progress: false,
@@ -895,31 +868,6 @@ impl ControllerJobs {
     pub(super) fn clear_trash_move(&mut self) {
         self.trash_move_in_progress = false;
         self.trash_move_cancel = None;
-    }
-
-    pub(super) fn collection_move_in_progress(&self) -> bool {
-        self.collection_move_in_progress
-    }
-
-    pub(super) fn start_collection_move(&mut self, rx: Receiver<CollectionMoveResult>) {
-        self.collection_move_in_progress = true;
-        let tx = self.message_tx.clone();
-        let signal = self.repaint_signal.clone();
-        thread::spawn(move || {
-            while let Ok(message) = rx.recv() {
-                let _ = tx.send(JobMessage::CollectionMove(message));
-                if let Ok(lock) = signal.lock() {
-                    if let Some(ctx) = lock.as_ref() {
-                        ctx.request_repaint();
-                    }
-                }
-                break;
-            }
-        });
-    }
-
-    pub(super) fn clear_collection_move(&mut self) {
-        self.collection_move_in_progress = false;
     }
 
     /// Return whether a background file operation is currently running.
@@ -1196,13 +1144,12 @@ impl ControllerJobs {
             // We need a way to call the normalization logic without the EguiController instance
             // since that's not thread-safe. The core logic is in analysis::audio.
             // But we also need database access for tags.
-            // I'll refer to the implementation in collection_items_helpers/normalize.rs
-            
             let source_id = job.source.id.clone();
             let relative_path = job.relative_path.clone();
             
             let result = (|| {
-                let (mut samples, spec) = super::library::collection_items_helpers::io::read_samples_for_normalization(&job.absolute_path)?;
+                let (mut samples, spec) =
+                    super::library::wav_io::read_samples_for_normalization(&job.absolute_path)?;
                 if samples.is_empty() {
                     return Err("No audio data to normalize".to_string());
                 }
@@ -1215,9 +1162,14 @@ impl ControllerJobs {
                     bits_per_sample: 32,
                     sample_format: hound::SampleFormat::Float,
                 };
-                super::library::collection_items_helpers::io::write_normalized_wav(&job.absolute_path, &samples, target_spec)?;
+                super::library::wav_io::write_normalized_wav(
+                    &job.absolute_path,
+                    &samples,
+                    target_spec,
+                )?;
 
-                let (file_size, modified_ns) = super::library::collection_items_helpers::io::file_metadata(&job.absolute_path)?;
+                let (file_size, modified_ns) =
+                    super::library::wav_io::file_metadata(&job.absolute_path)?;
                 
                 // For the tag, we'll need to open the DB again since we don't have EguiController.
                 let db = job.source.open_db()

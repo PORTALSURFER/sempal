@@ -204,10 +204,6 @@ impl EguiController {
                         self.apply_trash_move_finished(result);
                     }
                 },
-                JobMessage::CollectionMove(message) => {
-                    self.runtime.jobs.clear_collection_move();
-                    self.apply_collection_move_result(message);
-                }
                 JobMessage::FileOps(message) => match message {
                     crate::egui_app::controller::jobs::FileOpMessage::Progress { completed, detail } => {
                         progress::update_progress_detail(
@@ -398,7 +394,6 @@ impl EguiController {
                                     self.rebuild_browser_lists();
                                 }
                                 self.refresh_waveform_for_sample(source, &message.relative_path);
-                                self.reexport_collections_for_sample(&source.id, &message.relative_path);
                                 
                                 self.set_status(
                                     format!("Normalized {}", message.relative_path.display()),

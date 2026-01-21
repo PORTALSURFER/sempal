@@ -20,7 +20,7 @@ use crate::{
     egui_app::state::UiState,
     egui_app::{ui::style, view_model},
     sample_sources::{
-        Collection, SampleSource, SourceDatabase, SourceDbError, SourceId,
+        SampleSource, SourceDatabase, SourceDbError, SourceId,
         WavEntry,
     },
     selection::SelectionRange,
@@ -207,7 +207,6 @@ impl EguiController {
     pub(crate) fn has_active_background_jobs(&self) -> bool {
         self.runtime.jobs.scan_in_progress()
             || self.runtime.jobs.trash_move_in_progress()
-            || self.runtime.jobs.collection_move_in_progress()
             || self.runtime.jobs.file_ops_in_progress()
             || self.runtime.jobs.umap_build_in_progress()
             || self.runtime.jobs.umap_cluster_build_in_progress()
@@ -342,10 +341,6 @@ impl EguiController {
 
     pub(crate) fn drag_drop(&mut self) -> ui::drag_drop_controller::DragDropController<'_> {
         ui::drag_drop_controller::DragDropController::new(self)
-    }
-
-    pub(crate) fn collections_ctrl(&mut self) -> library::collections_controller::CollectionsController<'_> {
-        library::collections_controller::CollectionsController::new(self)
     }
 
     pub(crate) fn hotkeys_ctrl(&mut self) -> ui::hotkeys_controller::HotkeysController<'_> {

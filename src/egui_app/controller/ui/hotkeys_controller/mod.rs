@@ -3,7 +3,6 @@ use crate::egui_app::controller::ui::hotkeys::{HotkeyAction, HotkeyCommand};
 use crate::egui_app::state::FocusContext;
 
 mod browser;
-mod collections;
 mod waveform;
 
 pub(crate) trait HotkeysActions {
@@ -49,9 +48,6 @@ impl HotkeysActions for HotkeysController<'_> {
             }
             FocusContext::Waveform => {
                 let _ = waveform::handle_waveform_command(self, command);
-            }
-            FocusContext::CollectionsList | FocusContext::CollectionSample => {
-                let _ = collections::handle_collections_command(self, command, focus);
             }
             FocusContext::SourceFolders => {
                 let _ = self.handle_folders_command(command);
@@ -106,20 +102,12 @@ impl HotkeysController<'_> {
                 self.focus_loaded_sample_in_browser();
                 true
             }
-            HotkeyCommand::FocusCollectionSamples => {
-                self.focus_collection_samples_list();
-                true
-            }
             HotkeyCommand::FocusFolderTree => {
                 self.focus_context_from_ui(FocusContext::SourceFolders);
                 true
             }
             HotkeyCommand::FocusSourcesList => {
                 self.focus_sources_list();
-                true
-            }
-            HotkeyCommand::FocusCollectionsList => {
-                self.focus_collections_list();
                 true
             }
             HotkeyCommand::PlayRandomSample => {
@@ -171,55 +159,23 @@ impl HotkeysController<'_> {
     fn handle_tagging_command(&mut self, command: HotkeyCommand, focus: FocusContext) -> bool {
         match command {
             HotkeyCommand::TagNeutralSelected => {
-                if matches!(focus, FocusContext::CollectionSample) {
-                    self.tag_selected_collection_sample(Rating::NEUTRAL);
-                } else {
-                    self.tag_selected(Rating::NEUTRAL);
-                }
+                self.tag_selected(Rating::NEUTRAL);
                 true
             }
             HotkeyCommand::TagKeepSelected => {
-                if matches!(focus, FocusContext::CollectionSample) {
-                    self.tag_selected_collection_sample(Rating::KEEP_1);
-                } else {
-                    self.tag_selected(Rating::KEEP_1);
-                }
+                self.tag_selected(Rating::KEEP_1);
                 true
             }
             HotkeyCommand::TagTrashSelected => {
-                if matches!(focus, FocusContext::CollectionSample) {
-                    self.tag_selected_collection_sample(Rating::TRASH_3);
-                } else {
-                    self.tag_selected(Rating::TRASH_3);
-                }
+                self.tag_selected(Rating::TRASH_3);
                 true
             }
             HotkeyCommand::IncrementRatingSelected => {
-                if matches!(focus, FocusContext::CollectionSample) {
-                    // Collections don't support rating adjustments yet or verify if tag_selected_collection_sample supports it.
-                    // The user prompt specifically mentions "selected sample(s)" which usually implies the main browser.
-                    // For now, I will assume it applies to the main selection context or if extended to collections, similar logic is needed.
-                    // EguiController::adjust_selected_rating uses selected_row_index which is likely browser specific.
-                    // Checking implementation of tag_selected_collection_sample might be useful.
-                    // For now, we'll only support browser context similar to tag_selected logic if generic or specific.
-                    // Correction: adjust_selected_rating implementation uses `controller.selected_row_index()` which looks at `self.ui.browser.selected`, so it's browser-specific.
-                    // Collections use `self.ui.collections.selected_sample`.
-                    // So `adjust_selected_rating` currently only supports browser.
-                    // I'll stick to browser for now as per "selected sample(s)" usually implying the main list, but user might want collection items too.
-                    // However, `adjust_selected_rating` implementation I added is browser-centric.
-                    self.adjust_selected_rating(1);
-                } else {
-                    self.adjust_selected_rating(1);
-                }
+                self.adjust_selected_rating(1);
                 true
             }
             HotkeyCommand::DecrementRatingSelected => {
-                 if matches!(focus, FocusContext::CollectionSample) {
-                    // Same as above
-                    self.adjust_selected_rating(-1);
-                } else {
-                    self.adjust_selected_rating(-1);
-                }
+                self.adjust_selected_rating(-1);
                 true
             }
             _ => false,
@@ -240,7 +196,7 @@ mod tests {
     use crate::egui_app::controller::test_support::{
         load_waveform_selection, prepare_with_source_and_wav_entries, sample_entry,
     };
-    use crate::egui_app::state::{CollectionActionPrompt, FocusContext};
+    use crate::egui_app::state::FocusContext;
     use crate::sample_sources::Rating;
     use crate::selection::SelectionRange;
 
@@ -285,24 +241,4 @@ mod tests {
         assert!(!controller.ui.browser.search_focus_requested);
     }
 
-    #[test]
-    fn collections_hotkey_respects_focus() {
-        let renderer = crate::waveform::WaveformRenderer::new(4, 4);
-        let mut controller = EguiController::new(renderer, None);
-        let collection = crate::sample_sources::Collection::new("Test");
-        let id = collection.id.clone();
-        controller.library.collections.push(collection);
-        controller.selection_state.ctx.selected_collection = Some(id);
-        let action = action_for(HotkeyCommand::RenameFocusedCollection);
-
-        controller.handle_hotkey(action, FocusContext::CollectionsList);
-        assert!(matches!(
-            controller.ui.collections.pending_action,
-            Some(CollectionActionPrompt::Rename { .. })
-        ));
-
-        controller.ui.collections.pending_action = None;
-        controller.handle_hotkey(action, FocusContext::SampleBrowser);
-        assert!(controller.ui.collections.pending_action.is_none());
-    }
 }

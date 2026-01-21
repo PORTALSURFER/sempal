@@ -81,20 +81,6 @@ pub(crate) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         command: HotkeyCommand::RenameFocusedSample,
     },
     HotkeyAction {
-        id: "rename-collection",
-        label: "Rename collection",
-        gesture: HotkeyGesture::new(Key::R),
-        scope: HotkeyScope::Focus(FocusContext::CollectionsList),
-        command: HotkeyCommand::RenameFocusedCollection,
-    },
-    HotkeyAction {
-        id: "rename-collection-from-samples",
-        label: "Rename collection",
-        gesture: HotkeyGesture::new(Key::R),
-        scope: HotkeyScope::Focus(FocusContext::CollectionSample),
-        command: HotkeyCommand::RenameFocusedCollection,
-    },
-    HotkeyAction {
         id: "new-folder",
         label: "New folder",
         gesture: HotkeyGesture::new(Key::N),
@@ -144,13 +130,6 @@ pub(crate) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         command: HotkeyCommand::NormalizeFocusedSample,
     },
     HotkeyAction {
-        id: "normalize-collection",
-        label: "Normalize sample",
-        gesture: HotkeyGesture::new(Key::N),
-        scope: HotkeyScope::Focus(FocusContext::CollectionSample),
-        command: HotkeyCommand::NormalizeFocusedSample,
-    },
-    HotkeyAction {
         id: "normalize-waveform",
         label: "Normalize selection/sample",
         gesture: HotkeyGesture::new(Key::N),
@@ -170,20 +149,6 @@ pub(crate) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         gesture: HotkeyGesture::new(Key::D),
         scope: HotkeyScope::Focus(FocusContext::SampleBrowser),
         command: HotkeyCommand::DeleteFocusedSample,
-    },
-    HotkeyAction {
-        id: "delete-collection",
-        label: "Delete sample",
-        gesture: HotkeyGesture::new(Key::D),
-        scope: HotkeyScope::Focus(FocusContext::CollectionSample),
-        command: HotkeyCommand::DeleteFocusedSample,
-    },
-    HotkeyAction {
-        id: "add-to-collection",
-        label: "Add to collection",
-        gesture: HotkeyGesture::new(Key::C),
-        scope: HotkeyScope::Focus(FocusContext::SampleBrowser),
-        command: HotkeyCommand::AddFocusedToCollection,
     },
     HotkeyAction {
         id: "crop-selection",
@@ -271,25 +236,11 @@ pub(crate) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         command: HotkeyCommand::FocusFolderTree,
     },
     HotkeyAction {
-        id: "focus-collection-samples",
-        label: "Focus collection samples",
-        gesture: HotkeyGesture::with_chord(KeyPress::new(Key::G), KeyPress::new(Key::C)),
-        scope: HotkeyScope::Global,
-        command: HotkeyCommand::FocusCollectionSamples,
-    },
-    HotkeyAction {
         id: "focus-sources-list",
         label: "Focus sources list",
         gesture: HotkeyGesture::with_chord(KeyPress::new(Key::G), KeyPress::new(Key::S)),
         scope: HotkeyScope::Global,
         command: HotkeyCommand::FocusSourcesList,
-    },
-    HotkeyAction {
-        id: "focus-collections-list",
-        label: "Focus collections list",
-        gesture: HotkeyGesture::with_chord(KeyPress::new(Key::G), KeyPress::with_shift(Key::C)),
-        scope: HotkeyScope::Global,
-        command: HotkeyCommand::FocusCollectionsList,
     },
     HotkeyAction {
         id: "play-random-sample",

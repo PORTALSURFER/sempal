@@ -237,11 +237,6 @@ impl EguiController {
                 entry.last_played_at = Some(played_at);
             }
         }
-        for sample in &mut self.ui.collections.samples {
-            if sample.source_id == source_id && sample.path == relative_path {
-                sample.last_played_at = Some(played_at);
-            }
-        }
     }
 
     /// Commit any pending playback age update to the database and refresh the UI.

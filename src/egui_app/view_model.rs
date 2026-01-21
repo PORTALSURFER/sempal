@@ -1,13 +1,10 @@
 //! Helpers to convert domain data into egui-facing view structs.
 // Transitional helpers; wiring into the egui renderer will consume these.
 
-use crate::egui_app::state::{
-    CollectionRowView, CollectionSampleView, DropTargetRowView, SourceRowView,
-};
+use crate::egui_app::state::{DropTargetRowView, SourceRowView};
 use crate::sample_sources::config::DropTargetColor;
-use crate::sample_sources::collections::{CollectionMember, collection_folder_name_from_str};
-use crate::sample_sources::{Collection, CollectionId, Rating, SampleSource};
-use std::path::{Path, PathBuf};
+use crate::sample_sources::{Rating, SampleSource};
+use std::path::Path;
 
 /// Convert a sample source into a UI row.
 pub fn source_row(source: &SampleSource, missing: bool) -> SourceRowView {
@@ -44,78 +41,6 @@ pub fn drop_target_row(
     }
 }
 
-/// Build display rows for the collection list.
-pub fn collection_rows(
-    collections: &[Collection],
-    selected: Option<&CollectionId>,
-    missing_flags: &[bool],
-    export_root: Option<&Path>,
-) -> Vec<CollectionRowView> {
-    collections
-        .iter()
-        .enumerate()
-        .map(|(index, collection)| CollectionRowView {
-            id: collection.id.clone(),
-            name: collection.name.clone(),
-            selected: selected.is_some_and(|id| id == &collection.id),
-            count: collection.members.len(),
-            export_path: collection
-                .export_path
-                .clone()
-                .or_else(|| export_root.map(|root| export_path_for(root, collection))),
-            hotkey: collection.hotkey,
-            missing: missing_flags.get(index).copied().unwrap_or(false),
-        })
-        .collect()
-}
-
-/// Convert collection members into UI rows with source labels.
-pub fn collection_samples(
-    collection: Option<&Collection>,
-    sources: &[SampleSource],
-    missing_flags: Option<&[bool]>,
-    mut tag_lookup: impl FnMut(&CollectionMember) -> Rating,
-) -> Vec<CollectionSampleView> {
-    let Some(collection) = collection else {
-        return Vec::new();
-    };
-    collection
-        .members
-        .iter()
-        .enumerate()
-        .map(|(index, member)| CollectionSampleView {
-            source_id: member.source_id.clone(),
-            source: if member.clip_root.is_some() {
-                "Collection clip".to_string()
-            } else {
-                source_label(sources, member.source_id.as_str())
-            },
-            path: member.relative_path.clone(),
-            label: sample_display_label(&member.relative_path),
-            tag: tag_lookup(member),
-            missing: missing_flags
-                .and_then(|flags| flags.get(index))
-                .copied()
-                .unwrap_or(false),
-            last_played_at: None,
-        })
-        .collect()
-}
-
-fn source_label(sources: &[SampleSource], id: &str) -> String {
-    sources
-        .iter()
-        .find(|s| s.id.as_str() == id)
-        .and_then(|source| {
-            source
-                .root
-                .file_name()
-                .and_then(|n| n.to_str())
-                .map(|n| n.to_string())
-        })
-        .unwrap_or_else(|| "Unknown source".to_string())
-}
-
 /// Helper to derive a browser index from a tag and absolute row position.
 pub fn sample_browser_index_for(
     tag: Rating,
@@ -143,10 +68,6 @@ pub fn sample_display_label(path: &Path) -> String {
                 .map(|name| name.to_string())
         })
         .unwrap_or_else(|| path.to_string_lossy().to_string())
-}
-
-fn export_path_for(root: &Path, collection: &Collection) -> PathBuf {
-    root.join(collection_folder_name_from_str(&collection.name))
 }
 
 #[cfg(test)]

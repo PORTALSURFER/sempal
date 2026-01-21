@@ -1,7 +1,7 @@
 //! Selection and waveform view state for the controller.
 
 use crate::egui_app::controller::library::wavs;
-use crate::sample_sources::{CollectionId, SampleSource, SourceId};
+use crate::sample_sources::{SampleSource, SourceId};
 use crate::selection::SelectionRange;
 use crate::waveform::{DecodedWaveform, WaveformRenderer};
 use super::audio::LoadedAudio;
@@ -73,7 +73,6 @@ pub(crate) struct WaveformSlidePreview {
 pub(crate) struct SelectionContextState {
     pub(crate) selected_source: Option<SourceId>,
     pub(crate) last_selected_browsable_source: Option<SourceId>,
-    pub(crate) selected_collection: Option<CollectionId>,
 }
 
 impl SelectionContextState {
@@ -81,7 +80,6 @@ impl SelectionContextState {
         Self {
             selected_source: None,
             last_selected_browsable_source: None,
-            selected_collection: None,
         }
     }
 }

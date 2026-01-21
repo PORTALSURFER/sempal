@@ -9,12 +9,8 @@ pub enum FocusContext {
     SampleBrowser,
     /// The source folder browser handles navigation/shortcuts.
     SourceFolders,
-    /// The collections sample list handles navigation/shortcuts.
-    CollectionSample,
     /// The sources list handles navigation/shortcuts.
     SourcesList,
-    /// The collections list handles navigation/shortcuts.
-    CollectionsList,
 }
 
 /// Focus metadata shared between the controller and egui renderer.

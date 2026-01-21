@@ -1,7 +1,7 @@
 //! Background job helpers for undo/redo file operations.
 
 use crate::egui_app::controller::jobs::{FileOpMessage, UndoFileJob, UndoFileOpResult, UndoFileOutcome};
-use crate::egui_app::controller::library::collection_items_helpers::file_metadata;
+use crate::egui_app::controller::library::wav_io::file_metadata;
 use crate::sample_sources::SourceDatabase;
 use std::sync::{
     Arc,

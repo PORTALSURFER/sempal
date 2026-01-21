@@ -1,5 +1,7 @@
 use crate::egui_app::controller::jobs::UndoFileJob;
-use crate::egui_app::controller::library::collection_items_helpers::{file_metadata, read_samples_for_normalization};
+use crate::egui_app::controller::library::wav_io::{
+    file_metadata, read_samples_for_normalization,
+};
 use crate::egui_app::controller::undo;
 use super::*;
 use crate::egui_app::state::{LoopCrossfadePrompt, LoopCrossfadeSettings, LoopCrossfadeUnit};

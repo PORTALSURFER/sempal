@@ -218,74 +218,6 @@ impl DragDropActions for DragDropController<'_> {
             return;
         }
 
-        let current_collection_id = self.current_collection_id();
-
-        if matches!(
-            payload,
-            DragPayload::Sample { .. } | DragPayload::Samples { .. }
-        ) && matches!(active_target, DragTarget::CollectionsDropZone { .. })
-            && current_collection_id.is_none()
-        {
-            self.reset_drag();
-            self.set_status(
-                "Create or select a collection before dropping samples",
-                StatusTone::Warning,
-            );
-            return;
-        }
-
-        let collection_target = match (&payload, &active_target) {
-            (_, DragTarget::CollectionsRow(id)) => Some(id.clone()),
-            (_, DragTarget::CollectionsDropZone { collection_id }) => collection_id
-                .clone()
-                .or_else(|| current_collection_id.clone()),
-            _ => None,
-        };
-
-        let drop_in_collections_panel = source_target.is_none()
-            && (matches!(active_target, DragTarget::CollectionsDropZone { .. })
-                || matches!(active_target, DragTarget::CollectionsRow(_))
-                || (self.library.collections.is_empty()
-                    && triage_target.is_none()
-                    && folder_target.is_none()
-                    && drop_target_path.is_none()));
-
-        debug!(
-            "Collection drop context: drop_in_panel={} current_collection_id={:?} collection_target={:?} folder_target={:?} triage_target={:?} pointer_at={:?}",
-            drop_in_collections_panel,
-            current_collection_id,
-            collection_target,
-            folder_target,
-            triage_target,
-            self.ui.drag.position,
-        );
-
-        if matches!(
-            payload,
-            DragPayload::Sample { .. } | DragPayload::Samples { .. }
-        ) && drop_in_collections_panel
-            && current_collection_id.is_none()
-            && collection_target.is_none()
-            && folder_target.is_none()
-            && triage_target.is_none()
-        {
-            debug!(
-                "Blocked collection drop (no active collection): target={:?} collections_empty={} payload={:?}",
-                active_target,
-                self.library.collections.is_empty(),
-                payload,
-            );
-
-            self.reset_drag();
-
-            self.set_status(
-                "Create or select a collection before dropping samples",
-                StatusTone::Warning,
-            );
-
-            return;
-        }
-
         self.reset_drag();
 
         match payload {
@@ -293,8 +225,6 @@ impl DragDropActions for DragDropController<'_> {
                 source_id,
                 relative_path,
             } => {
-                let move_to_collection =
-                    collection_target.is_some() && origin_source != Some(DragSource::Collections);
                 if origin_source == Some(DragSource::Waveform)
                     && matches!(active_target, DragTarget::BrowserTriage(_))
                 {
@@ -310,19 +240,16 @@ impl DragDropActions for DragDropController<'_> {
                     );
                 } else if let Some(folder) = folder_target {
                     self.handle_sample_drop_to_folder(source_id, relative_path, &folder);
+                } else if triage_target.is_some() {
+                    self.handle_sample_drop(source_id, relative_path, triage_target);
                 } else {
-                    self.handle_sample_drop(
-                        source_id,
-                        relative_path,
-                        collection_target,
-                        triage_target,
-                        move_to_collection,
+                    self.set_status(
+                        "Drop onto a triage column or folder to move the sample",
+                        StatusTone::Warning,
                     );
                 }
             }
             DragPayload::Samples { samples } => {
-                let move_to_collection =
-                    collection_target.is_some() && origin_source != Some(DragSource::Collections);
                 if let Some(target) = source_target {
                     self.handle_samples_drop_to_source(&samples, target);
                 } else if let Some(target_path) = drop_target_path.clone() {
@@ -333,12 +260,12 @@ impl DragDropActions for DragDropController<'_> {
                     );
                 } else if let Some(folder) = folder_target {
                     self.handle_samples_drop_to_folder(&samples, &folder);
+                } else if triage_target.is_some() {
+                    self.handle_samples_drop(&samples, triage_target);
                 } else {
-                    self.handle_samples_drop(
-                        &samples,
-                        collection_target,
-                        triage_target,
-                        move_to_collection,
+                    self.set_status(
+                        "Drop onto a triage column or folder to move samples",
+                        StatusTone::Warning,
                     );
                 }
             }
@@ -379,15 +306,13 @@ impl DragDropActions for DragDropController<'_> {
                     );
                     return;
                 }
-                if collection_target.is_none() && triage_target.is_none() && folder_target.is_none()
-                {
+                if triage_target.is_none() && folder_target.is_none() {
                     return;
                 }
                 self.handle_selection_drop(
                     source_id,
                     relative_path,
                     bounds,
-                    collection_target,
                     triage_target,
                     folder_target,
                     keep_source_focused,

@@ -29,11 +29,6 @@ pub(crate) enum StatusMessage {
     RandomHistoryStart,
     RandomNavOff,
     NoSamplesToRandomize,
-    SelectCollectionFirst {
-        tone: StatusTone,
-    },
-    CollectionEmpty,
-    CreateCollectionFirst,
     AddSourceFirst {
         tone: StatusTone,
     },
@@ -109,16 +104,6 @@ impl StatusMessage {
             StatusMessage::RandomNavOff => ("Random navigation off".into(), StatusTone::Info),
             StatusMessage::NoSamplesToRandomize => {
                 ("No samples available to randomize".into(), StatusTone::Info)
-            }
-            StatusMessage::SelectCollectionFirst { tone } => {
-                ("Select a collection first".into(), tone)
-            }
-            StatusMessage::CollectionEmpty => (
-                "This collection has no samples yet".into(),
-                StatusTone::Info,
-            ),
-            StatusMessage::CreateCollectionFirst => {
-                ("Create a collection to focus it".into(), StatusTone::Info)
             }
             StatusMessage::AddSourceFirst { tone } => ("Add a source first".into(), tone),
             StatusMessage::AddSourceWithSamplesFirst => {

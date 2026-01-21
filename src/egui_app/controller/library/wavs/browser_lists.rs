@@ -3,15 +3,12 @@ use crate::egui_app::state::FocusContext;
 
 impl EguiController {
     pub(crate) fn rebuild_browser_lists(&mut self) {
-        if self.ui.collections.selected_sample.is_some() {
-            self.ui.browser.autoscroll = false;
-        }
         self.prune_browser_selection();
         let allow_highlight = matches!(
             self.ui.focus.context,
             FocusContext::SampleBrowser | FocusContext::Waveform | FocusContext::None
         );
-        let highlight_selection = self.ui.collections.selected_sample.is_none() && allow_highlight;
+        let highlight_selection = allow_highlight;
         let focused_index = highlight_selection
             .then_some(self.selected_row_index())
             .flatten();
@@ -88,19 +85,16 @@ impl EguiController {
 
     fn reset_browser_ui(&mut self) {
         let autoscroll = self.ui.browser.autoscroll;
-        let collections_selected = self.ui.collections.selected_sample.is_some();
         self.ui.browser.trash.clear();
         self.ui.browser.neutral.clear();
         self.ui.browser.keep.clear();
         self.ui.browser.visible.clear_to_list();
         self.ui.browser.selected_visible = None;
         self.ui.browser.search_busy = false;
-        if collections_selected {
-            self.ui.browser.selected = None;
-        }
+        self.ui.browser.selected = None;
         self.ui.browser.loaded = None;
         self.ui.browser.loaded_visible = None;
-        self.ui.browser.autoscroll = autoscroll && !collections_selected;
+        self.ui.browser.autoscroll = autoscroll;
         self.ui.loaded_wav = None;
     }
 

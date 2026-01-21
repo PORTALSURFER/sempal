@@ -23,22 +23,18 @@ pub(crate) struct TrashMoveFinished {
     pub(crate) moved: usize,
     pub(crate) cancelled: bool,
     pub(crate) errors: Vec<String>,
-    pub(crate) collections_changed: bool,
-    pub(crate) collections: Vec<Collection>,
     pub(crate) affected_sources: Vec<SourceId>,
 }
 
 #[cfg(not(test))]
 pub(crate) fn run_trash_move_task(
     sources: Vec<SampleSource>,
-    collections: Vec<Collection>,
     trash_root: PathBuf,
     cancel: Arc<AtomicBool>,
     sender: Option<&Sender<TrashMoveMessage>>,
 ) -> TrashMoveFinished {
     run_trash_move_task_with_progress(
         sources,
-        collections,
         trash_root,
         cancel,
         |message| {
@@ -52,7 +48,6 @@ pub(crate) fn run_trash_move_task(
 
 pub(crate) fn run_trash_move_task_with_progress<F, M>(
     sources: Vec<SampleSource>,
-    mut collections: Vec<Collection>,
     trash_root: PathBuf,
     cancel: Arc<AtomicBool>,
     mut on_message: F,
@@ -99,23 +94,14 @@ where
             moved: 0,
             cancelled: cancel.load(Ordering::Relaxed),
             errors,
-            collections_changed: false,
-            collections,
             affected_sources: Vec::new(),
         };
         on_message(TrashMoveMessage::Finished(finished.clone()));
         return finished;
     }
 
-    #[derive(Hash, PartialEq, Eq)]
-    struct MovedKey {
-        source_id: SourceId,
-        relative_path: PathBuf,
-    }
-
     let mut moved = 0usize;
     let mut completed = 0usize;
-    let mut moved_keys: std::collections::HashSet<MovedKey> = std::collections::HashSet::new();
     let mut affected_sources: std::collections::HashSet<SourceId> =
         std::collections::HashSet::new();
 
@@ -164,10 +150,6 @@ where
                         // Even if drop fails, the file is moved and marked missing, so it's safer.
                     } else {
                         moved += 1;
-                        moved_keys.insert(MovedKey {
-                            source_id: source.id.clone(),
-                            relative_path: entry.relative_path.clone(),
-                        });
                         affected_sources.insert(source.id.clone());
                     }
                 }
@@ -191,27 +173,11 @@ where
         }
     }
 
-    let mut collections_changed = false;
-    if !moved_keys.is_empty() {
-        for collection in &mut collections {
-            let before = collection.members.len();
-            collection.members.retain(|member| {
-                !moved_keys.contains(&MovedKey {
-                    source_id: member.source_id.clone(),
-                    relative_path: member.relative_path.clone(),
-                })
-            });
-            collections_changed |= before != collection.members.len();
-        }
-    }
-
     let finished = TrashMoveFinished {
         total,
         moved,
         cancelled: cancel.load(Ordering::Relaxed),
         errors,
-        collections_changed,
-        collections,
         affected_sources: affected_sources.into_iter().collect(),
     };
     on_message(TrashMoveMessage::Finished(finished.clone()));

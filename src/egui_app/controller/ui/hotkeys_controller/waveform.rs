@@ -217,7 +217,6 @@ impl HotkeysController<'_> {
             self.rebuild_browser_lists();
         }
         self.refresh_waveform_for_sample(&source, &relative_path);
-        self.reexport_collections_for_sample(&source.id, &relative_path);
         self.ui.waveform.view = preserved_view.clamp();
         self.ui.waveform.cursor = preserved_cursor;
         self.selection_state.range.set_range(preserved_selection);

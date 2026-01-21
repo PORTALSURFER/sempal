@@ -31,22 +31,6 @@ impl LibraryDatabase {
                     root TEXT NOT NULL,
                     sort_order INTEGER NOT NULL
                 );
-                 CREATE TABLE IF NOT EXISTS collections (
-                    id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    export_path TEXT,
-                    hotkey INTEGER,
-                    sort_order INTEGER NOT NULL
-                );
-                 CREATE TABLE IF NOT EXISTS collection_members (
-                    collection_id TEXT NOT NULL,
-                    source_id TEXT NOT NULL,
-                    relative_path TEXT NOT NULL,
-                    clip_root TEXT,
-                    sort_order INTEGER NOT NULL,
-                    PRIMARY KEY (collection_id, source_id, relative_path),
-                    FOREIGN KEY(collection_id) REFERENCES collections(id) ON DELETE CASCADE
-                );
                  CREATE TABLE IF NOT EXISTS analysis_jobs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     sample_id TEXT NOT NULL,

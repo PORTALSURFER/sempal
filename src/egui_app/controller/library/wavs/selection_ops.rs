@@ -23,7 +23,6 @@ pub(crate) fn select_wav_by_path_with_rebuild(
     let Some(index) = controller.wav_index_for_path(path) else {
         return;
     };
-    controller.ui.collections.selected_sample = None;
     if controller.current_source().is_none() {
         if let Some(source_id) = controller
             .selection_state
@@ -135,7 +134,6 @@ pub(crate) fn select_wav_by_index(controller: &mut EguiController, index: usize)
 }
 
 pub(crate) fn select_from_browser(controller: &mut EguiController, path: &Path) {
-    controller.ui.collections.selected_sample = None;
     controller.focus_browser_context();
     select_wav_by_path(controller, path);
 }

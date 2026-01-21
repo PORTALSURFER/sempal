@@ -7,7 +7,7 @@ use super::super::load::load_or_default;
 use super::TestConfigEnv;
 use crate::audio::{AudioInputConfig, AudioOutputConfig};
 use crate::sample_sources::config::AppConfig;
-use crate::sample_sources::{Collection, SampleSource};
+use crate::sample_sources::SampleSource;
 
 #[test]
 fn migrates_from_legacy_json() {
@@ -15,14 +15,12 @@ fn migrates_from_legacy_json() {
     let legacy_path = env.ensure_app_dir().join(LEGACY_CONFIG_FILE_NAME);
     let legacy = AppConfig {
         sources: vec![SampleSource::new(std::path::PathBuf::from("old_source"))],
-        collections: vec![Collection::new("Old Collection")],
         core: AppSettingsCore {
             feature_flags: FeatureFlags::default(),
             analysis: AnalysisSettings::default(),
             updates: UpdateSettings::default(),
             app_data_dir: None,
             trash_folder: Some(std::path::PathBuf::from("trash_here")),
-            collection_export_root: None,
             drop_targets: vec![DropTargetConfig::new(std::path::PathBuf::from(
                 "legacy_drop",
             ))],
@@ -44,7 +42,6 @@ fn migrates_from_legacy_json() {
 
     let loaded = load_or_default().unwrap();
     assert_eq!(loaded.sources.len(), 1);
-    assert_eq!(loaded.collections.len(), 1);
     assert_eq!(
         loaded.core.trash_folder,
         Some(std::path::PathBuf::from("trash_here"))

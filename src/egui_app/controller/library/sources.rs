@@ -1,4 +1,3 @@
-use super::collection_export;
 use super::*;
 use std::fs;
 use std::path::Path;
@@ -117,16 +116,6 @@ impl EguiController {
             &mut self.library.missing,
         );
         invalidator.invalidate_all(&removed.id);
-        for collection in self.library.collections.iter_mut() {
-            let export_dir = collection_export::resolved_export_dir(
-                collection,
-                self.settings.collection_export_root.as_deref(),
-            );
-            let removed_members = collection.prune_source(&removed.id);
-            for member in removed_members {
-                collection_export::delete_exported_file(export_dir.clone(), &member);
-            }
-        }
         if self
             .selection_state
             .ctx
@@ -143,7 +132,6 @@ impl EguiController {
         self.refresh_source_watcher();
         self.refresh_sources_ui();
         let _ = self.refresh_wavs();
-        self.refresh_collections_ui();
         self.select_first_source();
         self.set_status("Source removed", StatusTone::Info);
     }
@@ -279,9 +267,6 @@ impl EguiController {
                 }
             }
             return;
-        }
-        if pending_path.is_none() {
-            self.ui.collections.selected_sample = None;
         }
         if let Some(ref source_id) = id
             && self.library.sources.iter().any(|s| &s.id == source_id)
