@@ -27,7 +27,7 @@ pub struct LoadedWaveform {
 }
 
 /// Raw audio data decoded from a wav file, ready to render or play.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct DecodedWaveform {
     /// Cache token that uniquely identifies this decoded sample payload for render caching.
     ///
@@ -68,7 +68,7 @@ pub fn next_cache_token() -> u64 {
 }
 
 /// Decimated min/max envelope of a waveform, used when retaining full samples is too expensive.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct WaveformPeaks {
     /// Total number of audio frames represented.
     pub total_frames: usize,
