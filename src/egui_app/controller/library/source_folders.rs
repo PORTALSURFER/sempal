@@ -8,6 +8,7 @@ mod tree;
 
 pub(crate) use selection::{folder_filter_accepts, folder_filters_active};
 pub(crate) use tree::FolderBrowserModel;
+pub(crate) use tree::scan_disk_folders;
 
 // Folder entry/db/cache update helpers moved to `entry_updates` submodule.
 

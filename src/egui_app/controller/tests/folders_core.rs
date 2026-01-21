@@ -14,7 +14,7 @@ fn visible_paths(controller: &mut EguiController) -> Vec<PathBuf> {
 fn creating_folder_tracks_manual_entry() -> Result<(), String> {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
-    controller.refresh_folder_browser();
+    controller.refresh_folder_browser_for_tests();
     assert!(controller.ui.sources.folders.rows[0].is_root);
 
     controller.create_folder(Path::new(""), "NewFolder")?;
@@ -37,7 +37,7 @@ fn folder_browser_includes_root_entry() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
-    controller.refresh_folder_browser();
+    controller.refresh_folder_browser_for_tests();
 
     let rows = &controller.ui.sources.folders.rows;
     assert!(
@@ -53,7 +53,7 @@ fn folder_browser_lists_empty_folders() {
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     let empty = source.root.join("empty");
     std::fs::create_dir_all(&empty).unwrap();
-    controller.refresh_folder_browser();
+    controller.refresh_folder_browser_for_tests();
 
     assert!(
         controller
@@ -77,7 +77,7 @@ fn root_entry_stays_above_real_folders() {
     controller.set_wav_entries_for_tests(vec![sample_entry("rooted/clip.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
-    controller.refresh_folder_browser();
+    controller.refresh_folder_browser_for_tests();
 
     let rows = &controller.ui.sources.folders.rows;
     assert!(rows.first().is_some_and(|row| row.is_root));
@@ -92,7 +92,7 @@ fn start_new_folder_at_root_sets_root_parent() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
-    controller.refresh_folder_browser();
+    controller.refresh_folder_browser_for_tests();
 
     controller.start_new_folder_at_root();
 
@@ -111,7 +111,7 @@ fn start_new_folder_uses_focused_parent() {
     controller.set_wav_entries_for_tests(vec![sample_entry("clips/clip.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
-    controller.refresh_folder_browser();
+    controller.refresh_folder_browser_for_tests();
     let folder_index = controller
         .ui
         .sources
@@ -134,7 +134,7 @@ fn start_new_folder_clears_search_query() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
-    controller.refresh_folder_browser();
+    controller.refresh_folder_browser_for_tests();
     controller.set_folder_search("kick".to_string());
     assert_eq!(controller.ui.sources.folders.search_query, "kick");
 
@@ -173,7 +173,7 @@ fn selecting_root_filters_to_root_files() -> Result<(), String> {
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
-    controller.refresh_folder_browser();
+    controller.refresh_folder_browser_for_tests();
     let folder_index = controller
         .ui
         .sources
@@ -220,7 +220,7 @@ fn renaming_folder_updates_entries_and_tree() -> Result<(), String> {
     controller.set_wav_entries_for_tests(vec![sample_entry("old/clip.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
-    controller.refresh_folder_browser();
+    controller.refresh_folder_browser_for_tests();
 
     controller.rename_folder(Path::new("old"), "new")?;
 
@@ -269,7 +269,7 @@ fn deleting_folder_removes_wavs() -> Result<(), String> {
     controller.set_wav_entries_for_tests(vec![sample_entry("gone/sample.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
-    controller.refresh_folder_browser();
+    controller.refresh_folder_browser_for_tests();
     if let Some(index) = controller
         .ui
         .sources
@@ -308,7 +308,7 @@ fn deleting_folder_rolls_back_on_db_failure() -> Result<(), String> {
     controller.set_wav_entries_for_tests(vec![sample_entry("gone/sample.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
-    controller.refresh_folder_browser();
+    controller.refresh_folder_browser_for_tests();
     if let Some(index) = controller
         .ui
         .sources
@@ -356,7 +356,7 @@ fn deleting_folder_moves_focus_to_next_available() -> Result<(), String> {
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
-    controller.refresh_folder_browser();
+    controller.refresh_folder_browser_for_tests();
     let focus_row = controller
         .ui
         .sources
@@ -396,7 +396,7 @@ fn folder_focus_clears_when_context_changes() -> Result<(), String> {
     controller.set_wav_entries_for_tests(vec![sample_entry("one/sample.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
-    controller.refresh_folder_browser();
+    controller.refresh_folder_browser_for_tests();
     let row_index = controller
         .ui
         .sources
@@ -412,7 +412,7 @@ fn folder_focus_clears_when_context_changes() -> Result<(), String> {
     controller.focus_browser_context();
 
     assert!(controller.ui.sources.folders.focused.is_none());
-    controller.refresh_folder_browser();
+    controller.refresh_folder_browser_for_tests();
     assert!(controller.ui.sources.folders.focused.is_none());
     assert_eq!(
         controller.selected_folder_paths(),
@@ -434,7 +434,7 @@ fn clearing_folder_selection_shows_all_samples() -> Result<(), String> {
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
-    controller.refresh_folder_browser();
+    controller.refresh_folder_browser_for_tests();
 
     let folder_a = controller
         .ui
@@ -469,7 +469,7 @@ fn negated_folder_hides_samples() -> Result<(), String> {
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
-    controller.refresh_folder_browser();
+    controller.refresh_folder_browser_for_tests();
 
     let folder_a = controller
         .ui
@@ -500,7 +500,7 @@ fn negated_root_hides_only_root_samples() -> Result<(), String> {
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
-    controller.refresh_folder_browser();
+    controller.refresh_folder_browser_for_tests();
 
     controller.toggle_folder_row_negation(0);
 
@@ -520,7 +520,7 @@ fn escape_does_not_clear_folder_filter_without_folder_focus() -> Result<(), Stri
     controller.set_wav_entries_for_tests(vec![sample_entry("a/one.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
-    controller.refresh_folder_browser();
+    controller.refresh_folder_browser_for_tests();
 
     let folder_a = controller
         .ui

@@ -111,7 +111,7 @@ fn folder_drop_to_folder_moves_tree() {
     controller.set_wav_entries_for_tests(vec![sample_entry("one/clip.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
-    controller.refresh_folder_browser();
+    controller.refresh_folder_browser_for_tests();
 
     controller.ui.drag.payload = Some(DragPayload::Folder {
         source_id: source.id.clone(),

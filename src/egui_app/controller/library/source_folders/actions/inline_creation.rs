@@ -87,6 +87,9 @@ impl EguiController {
         self.update_manual_folders(|set| {
             set.insert(relative.clone());
         });
+        self.update_disk_folders(|set| {
+            set.insert(relative.clone());
+        });
         self.refresh_folder_browser();
         self.focus_folder_by_path(&relative);
         self.set_status(

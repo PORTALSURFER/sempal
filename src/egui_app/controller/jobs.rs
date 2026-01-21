@@ -14,7 +14,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc, Mutex,
-        atomic::AtomicBool,
+        atomic::{AtomicBool, Ordering},
         mpsc::{Receiver, Sender},
     },
     thread,
@@ -29,6 +29,7 @@ pub(crate) enum JobMessage {
     AudioLoaded(AudioLoadResult),
     RecordingWaveformLoaded(RecordingWaveformLoadResult),
     Scan(ScanJobMessage),
+    FolderScanFinished(FolderScanResult),
     SourceWatch(SourceWatchEvent),
     TrashMove(trash_move::TrashMoveMessage),
     FileOps(FileOpMessage),
@@ -71,6 +72,19 @@ pub(crate) struct SearchResult {
     pub(crate) neutral: Vec<usize>,
     pub(crate) keep: Vec<usize>,
     pub(crate) scores: Vec<Option<i64>>,
+}
+
+/// Result of a background folder scan for a source root.
+#[derive(Debug)]
+pub(crate) struct FolderScanResult {
+    /// Request identifier for this scan.
+    pub(crate) request_id: u64,
+    /// Source identifier associated with the scan.
+    pub(crate) source_id: SourceId,
+    /// Relative folder paths discovered on disk.
+    pub(crate) folders: BTreeSet<PathBuf>,
+    /// Duration of the scan.
+    pub(crate) elapsed: Duration,
 }
 
 #[derive(Debug)]
@@ -551,8 +565,11 @@ pub(crate) struct ControllerJobs {
     pub(super) pending_recording_waveform: Option<PendingRecordingWaveform>,
     pub(super) next_audio_request_id: u64,
     pub(super) next_recording_waveform_request_id: u64,
+    pub(super) next_folder_scan_request_id: u64,
     pub(super) scan_in_progress: bool,
     pub(super) scan_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
+    pub(super) folder_scan_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
+    pub(super) pending_folder_scan: Option<PendingFolderScan>,
     pub(super) trash_move_in_progress: bool,
     pub(super) trash_move_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
     pub(super) file_ops_in_progress: bool,
@@ -568,6 +585,12 @@ pub(crate) struct ControllerJobs {
     pub(super) issue_token_save_in_progress: bool,
     pub(super) issue_token_delete_in_progress: bool,
     pub(super) repaint_signal: Arc<Mutex<Option<egui::Context>>>,
+}
+
+#[derive(Clone, Debug)]
+struct PendingFolderScan {
+    request_id: u64,
+    source_id: SourceId,
 }
 
 impl ControllerJobs {
@@ -599,8 +622,11 @@ impl ControllerJobs {
             pending_recording_waveform: None,
             next_audio_request_id: 1,
             next_recording_waveform_request_id: 1,
+            next_folder_scan_request_id: 1,
             scan_in_progress: false,
             scan_cancel: None,
+            folder_scan_cancel: None,
+            pending_folder_scan: None,
             trash_move_in_progress: false,
             trash_move_cancel: None,
             file_ops_in_progress: false,
@@ -793,6 +819,69 @@ impl ControllerJobs {
 
     pub(super) fn scan_in_progress(&self) -> bool {
         self.scan_in_progress
+    }
+
+    /// Return the source id currently being scanned for folders, if any.
+    pub(super) fn pending_folder_scan_source(&self) -> Option<SourceId> {
+        self.pending_folder_scan
+            .as_ref()
+            .map(|pending| pending.source_id.clone())
+    }
+
+    /// Start a background scan for folders under `root`, canceling any in-flight scan.
+    pub(super) fn request_folder_scan(&mut self, source_id: SourceId, root: PathBuf) -> u64 {
+        if let Some(cancel) = self.folder_scan_cancel.as_ref() {
+            cancel.store(true, Ordering::Relaxed);
+        }
+        let request_id = self.next_folder_scan_request_id;
+        self.next_folder_scan_request_id = self
+            .next_folder_scan_request_id
+            .wrapping_add(1)
+            .max(1);
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.folder_scan_cancel = Some(cancel.clone());
+        self.pending_folder_scan = Some(PendingFolderScan {
+            request_id,
+            source_id: source_id.clone(),
+        });
+        let tx = self.message_tx.clone();
+        let signal = self.repaint_signal.clone();
+        thread::spawn(move || {
+            let started_at = Instant::now();
+            let folders =
+                super::library::source_folders::scan_disk_folders(&root, cancel.as_ref());
+            if cancel.load(Ordering::Relaxed) {
+                return;
+            }
+            let elapsed = started_at.elapsed();
+            let _ = tx.send(JobMessage::FolderScanFinished(FolderScanResult {
+                request_id,
+                source_id,
+                folders,
+                elapsed,
+            }));
+            if let Ok(lock) = signal.lock() {
+                if let Some(ctx) = lock.as_ref() {
+                    ctx.request_repaint();
+                }
+            }
+        });
+        request_id
+    }
+
+    /// Clear folder scan tracking state after a scan completes.
+    pub(super) fn clear_folder_scan(&mut self) {
+        self.folder_scan_cancel = None;
+        self.pending_folder_scan = None;
+    }
+
+    /// Return whether a folder scan result matches the latest request.
+    pub(super) fn folder_scan_matches(&self, request_id: u64, source_id: &SourceId) -> bool {
+        self.pending_folder_scan
+            .as_ref()
+            .is_some_and(|pending| {
+                pending.request_id == request_id && &pending.source_id == source_id
+            })
     }
 
     pub(super) fn start_scan(&mut self, rx: Receiver<ScanJobMessage>, cancel: Arc<AtomicBool>) {

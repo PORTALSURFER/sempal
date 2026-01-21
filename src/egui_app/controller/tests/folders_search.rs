@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 fn creating_folder_tracks_manual_entry() -> Result<(), String> {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
-    controller.refresh_folder_browser();
+    controller.refresh_folder_browser_for_tests();
     assert!(controller.ui.sources.folders.rows[0].is_root);
 
     controller.create_folder(Path::new(""), "NewFolder")?;
@@ -37,7 +37,7 @@ fn fuzzy_search_filters_folders() {
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
-    controller.refresh_folder_browser();
+    controller.refresh_folder_browser_for_tests();
 
     controller.set_folder_search("snr".to_string());
 

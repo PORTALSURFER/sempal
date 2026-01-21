@@ -184,6 +184,17 @@ impl EguiController {
                         scan::handle_scan_finished(self, result);
                     }
                 },
+                JobMessage::FolderScanFinished(message) => {
+                    if !self
+                        .runtime
+                        .jobs
+                        .folder_scan_matches(message.request_id, &message.source_id)
+                    {
+                        continue;
+                    }
+                    self.runtime.jobs.clear_folder_scan();
+                    self.apply_folder_scan_result(message);
+                }
                 JobMessage::SourceWatch(message) => {
                     self.handle_source_watch_event(&message.source_id);
                 }

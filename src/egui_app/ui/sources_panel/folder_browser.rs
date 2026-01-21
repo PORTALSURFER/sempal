@@ -54,6 +54,13 @@ impl EguiApp {
         let palette = style::palette();
         let header_response = ui.horizontal(|ui| {
             ui.label(RichText::new("Folders").color(palette.text_primary));
+            let refreshing = self
+                .controller
+                .current_folder_model()
+                .is_some_and(|model| model.disk_refresh_in_progress);
+            if refreshing {
+                ui.label(RichText::new("Refreshing...").small().color(palette.text_muted));
+            }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let mut query = self.controller.ui.sources.folders.search_query.clone();
                 let search_hint = format!(

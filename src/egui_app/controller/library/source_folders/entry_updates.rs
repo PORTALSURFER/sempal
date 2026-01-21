@@ -117,6 +117,17 @@ impl EguiController {
         update(&mut model.manual_folders);
     }
 
+    /// Update cached disk folders for the current source.
+    pub(crate) fn update_disk_folders<F>(&mut self, mut update: F)
+    where
+        F: FnMut(&mut BTreeSet<PathBuf>),
+    {
+        let Some(model) = self.current_folder_model_mut() else {
+            return;
+        };
+        update(&mut model.disk_folders);
+    }
+
     pub(crate) fn remap_manual_folders(&mut self, old: &Path, new: &Path) {
         self.update_manual_folders(|set| {
             let descendants: Vec<PathBuf> = set

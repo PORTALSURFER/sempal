@@ -223,6 +223,7 @@ impl EguiController {
         ops::remap_path_set(&mut model.negated, old, new);
         ops::remap_path_set(&mut model.expanded, old, new);
         ops::remap_path_set(&mut model.available, old, new);
+        ops::remap_path_set(&mut model.disk_folders, old, new);
         ops::remap_path_map(&mut model.hotkeys, old, new);
         model.focused = ops::remap_path_option(model.focused.take(), old, new);
         model.selection_anchor = ops::remap_path_option(model.selection_anchor.take(), old, new);
@@ -238,6 +239,7 @@ impl EguiController {
         model.negated.retain(|path| !path.starts_with(target));
         model.expanded.retain(|path| !path.starts_with(target));
         model.available.retain(|path| !path.starts_with(target));
+        model.disk_folders.retain(|path| !path.starts_with(target));
         model.hotkeys.retain(|_, path| !path.starts_with(target));
         if model
             .focused
