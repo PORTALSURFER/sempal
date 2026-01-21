@@ -18,7 +18,14 @@ impl EguiApp {
                 palette.text_muted
             };
             let clear_icon = RichText::new("⦸").color(clear_color);
-            if ui.add(egui::Button::new(clear_icon)).clicked() {
+            let clear_response = ui.add(egui::Button::new(clear_icon));
+            let clear_response = helpers::tooltip(
+                clear_response,
+                "Clear filters",
+                "Clear rating filters.",
+                tooltip_mode,
+            );
+            if clear_response.clicked() {
                 let needs_clear = rating_filter_active
                     || self.controller.ui.browser.filter != TriageFlagFilter::All;
                 if needs_clear {
@@ -66,6 +73,7 @@ impl EguiApp {
                     egui::vec2(square_size, square_size),
                     egui::Sense::click(),
                 );
+                let response = response.on_hover_text("Rating filter");
                 ui.painter().rect_filled(rect, square_rounding, fill);
                 ui.painter()
                     .rect_stroke(rect, square_rounding, stroke, egui::StrokeKind::Inside);
