@@ -1,6 +1,7 @@
 use super::enqueue_helpers::now_epoch_seconds;
 use super::{invalidate, persist, scan};
 use crate::egui_app::controller::library::analysis_jobs::db;
+use crate::egui_app::controller::library::analysis_jobs::wakeup;
 use crate::egui_app::controller::library::analysis_jobs::types::AnalysisProgress;
 use rusqlite::params;
 use tracing::{info, warn};
@@ -68,7 +69,7 @@ fn enqueue_samples(
         created_at,
     )?;
     if inserted > 0 {
-        super::wakeup::notify_claim_wakeup();
+        wakeup::notify_claim_wakeup();
     }
     if let Err(err) =
         update_missing_sample_durations(&mut conn, request.source, &sample_metadata)
@@ -230,7 +231,7 @@ fn enqueue_from_staged_samples(
         created_at,
     )?;
     if inserted > 0 {
-        super::wakeup::notify_claim_wakeup();
+        wakeup::notify_claim_wakeup();
     }
     if let Err(err) = update_missing_sample_durations(conn, source, &plan.sample_metadata) {
         warn!(

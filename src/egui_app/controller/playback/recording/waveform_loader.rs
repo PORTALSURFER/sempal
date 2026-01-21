@@ -257,7 +257,8 @@ impl RecordingWaveformState {
                     ..
                 } = &mut self.mode
                 {
-                    let bucket = frame_index / bucket_size_frames;
+                    let bucket_size = *bucket_size_frames;
+                    let bucket = frame_index / bucket_size;
                     if ch == 0 {
                         if let Some(left_peaks) = left.as_mut() {
                             if bucket >= left_peaks.len() {
@@ -288,7 +289,8 @@ impl RecordingWaveformState {
                 ..
             } = &mut self.mode
             {
-                let bucket = frame_index / bucket_size_frames;
+                let bucket_size = *bucket_size_frames;
+                let bucket = frame_index / bucket_size;
                 if bucket >= mono.len() {
                     mono.resize(bucket + 1, (1.0, -1.0));
                 }
@@ -706,6 +708,33 @@ fn decode_recording_waveform(
         state.convert_full_to_peaks();
     }
     Some(state.to_decoded())
+}
+
+fn find_wav_data_chunk(bytes: &[u8]) -> Option<usize> {
+    if bytes.len() < 12 {
+        return None;
+    }
+    if &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
+        return None;
+    }
+    let mut offset = 12usize;
+    while offset + 8 <= bytes.len() {
+        let id = &bytes[offset..offset + 4];
+        let chunk_size = u32::from_le_bytes(bytes[offset + 4..offset + 8].try_into().ok()?);
+        let data_start = offset + 8;
+        if id == b"data" {
+            return Some(data_start);
+        }
+        let mut next = data_start.saturating_add(chunk_size as usize);
+        if chunk_size % 2 == 1 {
+            next = next.saturating_add(1);
+        }
+        if next <= offset {
+            break;
+        }
+        offset = next;
+    }
+    None
 }
 
 fn read_wav_data_offset_from_file(file: &mut File, file_len: u64) -> Option<usize> {

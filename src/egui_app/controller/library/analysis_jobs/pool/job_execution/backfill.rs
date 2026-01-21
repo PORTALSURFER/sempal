@@ -539,8 +539,9 @@ where
 
 fn ann_update_backoff(base_delay: Duration, attempt: usize) -> Duration {
     let shift = attempt.min(15) as u32;
+    let factor = 1u32.checked_shl(shift).unwrap_or(u32::MAX);
     base_delay
-        .checked_mul(1u32.saturating_shl(shift))
+        .checked_mul(factor)
         .unwrap_or(base_delay)
 }
 

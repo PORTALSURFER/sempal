@@ -1,5 +1,6 @@
 use super::enqueue_helpers::now_epoch_seconds;
 use crate::egui_app::controller::library::analysis_jobs::db;
+use crate::egui_app::controller::library::analysis_jobs::wakeup;
 use crate::egui_app::controller::library::analysis_jobs::types::AnalysisProgress;
 use rusqlite::params;
 use tracing::info;
@@ -46,7 +47,7 @@ pub(crate) fn enqueue_jobs_for_embedding_samples(
         source.id.as_str(),
     )?;
     if inserted > 0 {
-        super::wakeup::notify_claim_wakeup();
+        wakeup::notify_claim_wakeup();
     }
     let progress = db::current_progress(&conn)?;
     info!(
@@ -134,7 +135,7 @@ fn enqueue_embedding_backfill(
         request.source.id.as_str(),
     )?;
     if inserted > 0 {
-        super::wakeup::notify_claim_wakeup();
+        wakeup::notify_claim_wakeup();
     }
     let progress = db::current_progress(&conn)?;
     info!(
