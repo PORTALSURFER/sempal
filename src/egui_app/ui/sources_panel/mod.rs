@@ -113,77 +113,24 @@ impl EguiApp {
                 Sources,
                 DropTargets,
             }
-            let clamp_sections =
-                |mut sources_total: f32, mut drop_total: f32, resize_mode: ResizeMode| {
-                let clamp_range = |value: f32, min: f32, max: f32| {
-                    if max < min {
-                        max
-                    } else {
-                        value.clamp(min, max)
-                    }
-                };
-                sources_total = clamp_range(sources_total, min_sources_total, component_budget);
-                drop_total = clamp_range(drop_total, min_drop_total, component_budget);
-                let mut folder_total = component_budget - sources_total - drop_total;
-                if folder_total < min_folder_total {
-                    let mut deficit = min_folder_total - folder_total;
-                    match resize_mode {
-                        ResizeMode::Sources => {
-                            let drop_reduction =
-                                deficit.min((drop_total - min_drop_total).max(0.0));
-                            drop_total -= drop_reduction;
-                            deficit -= drop_reduction;
-                            if deficit > 0.0 {
-                                let sources_reduction = deficit
-                                    .min((sources_total - min_sources_total).max(0.0));
-                                sources_total -= sources_reduction;
-                            }
-                        }
-                        ResizeMode::DropTargets => {
-                            let sources_reduction =
-                                deficit.min((sources_total - min_sources_total).max(0.0));
-                            sources_total -= sources_reduction;
-                            deficit -= sources_reduction;
-                            if deficit > 0.0 {
-                                let drop_reduction =
-                                    deficit.min((drop_total - min_drop_total).max(0.0));
-                                drop_total -= drop_reduction;
-                            }
-                        }
-                        ResizeMode::None => {
-                            let sources_slack = (sources_total - min_sources_total).max(0.0);
-                            let drop_slack = (drop_total - min_drop_total).max(0.0);
-                            if sources_slack >= drop_slack {
-                                let sources_reduction =
-                                    deficit.min((sources_total - min_sources_total).max(0.0));
-                                sources_total -= sources_reduction;
-                                deficit -= sources_reduction;
-                                if deficit > 0.0 {
-                                    let drop_reduction =
-                                        deficit.min((drop_total - min_drop_total).max(0.0));
-                                    drop_total -= drop_reduction;
-                                }
-                            } else {
-                                let drop_reduction =
-                                    deficit.min((drop_total - min_drop_total).max(0.0));
-                                drop_total -= drop_reduction;
-                                deficit -= drop_reduction;
-                                if deficit > 0.0 {
-                                    let sources_reduction =
-                                        deficit.min((sources_total - min_sources_total).max(0.0));
-                                    sources_total -= sources_reduction;
-                                }
-                            }
-                        }
-                    }
-                    folder_total = (component_budget - sources_total - drop_total).max(0.0);
+            let clamp_range = |value: f32, min: f32, max: f32| {
+                if max < min {
+                    max
+                } else {
+                    value.clamp(min, max)
                 }
-                (sources_total, folder_total, drop_total)
             };
             let sources_list_height = sources_height_override.unwrap_or(default_sources_total);
             let drop_total = height_override.unwrap_or(default_drop_total);
-            let (mut sources_list_height, mut folder_total, mut drop_total) =
-                clamp_sections(sources_list_height, drop_total, ResizeMode::None);
+            let max_sources =
+                (component_budget - min_folder_total - min_drop_total).max(0.0);
+            let mut sources_list_height =
+                clamp_range(sources_list_height, min_sources_total, max_sources);
+            let max_drop =
+                (component_budget - min_folder_total - sources_list_height).max(0.0);
+            let mut drop_total = clamp_range(drop_total, min_drop_total, max_drop);
+            let mut folder_total =
+                (component_budget - sources_list_height - drop_total).max(0.0);
             if let Some(current) = sources_height_override {
                 if (current - sources_list_height).abs() > f32::EPSILON {
                     sources_height_override = Some(sources_list_height);
@@ -198,13 +145,11 @@ impl EguiApp {
                 .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
                 .or(self.controller.ui.drag.position);
             let available_rect = ui.available_rect_before_wrap();
+            let layout_rect = egui::Rect::from_min_size(
+                available_rect.min,
+                egui::vec2(available_rect.width(), total_available),
+            );
             let build_layout = |sources_list_height: f32, folder_total: f32, drop_total: f32| {
-                let total_height = sources_list_height + handle_height + folder_total
-                    + handle_height + drop_total;
-                let layout_rect = egui::Rect::from_min_size(
-                    available_rect.min,
-                    egui::vec2(available_rect.width(), total_height),
-                );
                 let sources_list_rect = egui::Rect::from_min_size(
                     layout_rect.min,
                     egui::vec2(layout_rect.width(), sources_list_height),
@@ -249,6 +194,13 @@ impl EguiApp {
                 ui.id().with("drop_targets_handle"),
                 egui::Sense::drag(),
             );
+            let resize_mode = if sources_handle_response.dragged() {
+                ResizeMode::Sources
+            } else if drop_handle_response.dragged() {
+                ResizeMode::DropTargets
+            } else {
+                ResizeMode::None
+            };
             if sources_handle_response.hovered()
                 || sources_handle_response.dragged()
                 || drop_handle_response.hovered()
@@ -260,9 +212,29 @@ impl EguiApp {
                 sources_resize_origin = Some(sources_list_height);
             }
             if sources_handle_response.dragged() {
-                let origin = sources_resize_origin.unwrap_or(sources_list_height);
-                sources_list_height = origin + sources_handle_response.drag_delta().y;
+                let pointer = sources_handle_response
+                    .interact_pointer_pos()
+                    .or(pointer_pos);
+                let max_sources =
+                    (component_budget - drop_total - min_folder_total).max(0.0);
+                sources_list_height = if let Some(pointer) = pointer {
+                    let desired = pointer.y - layout_rect.top();
+                    clamp_range(desired, min_sources_total, max_sources)
+                } else {
+                    let origin = sources_resize_origin.unwrap_or(sources_list_height);
+                    clamp_range(
+                        origin + sources_handle_response.drag_delta().y,
+                        min_sources_total,
+                        max_sources,
+                    )
+                };
+                let max_drop =
+                    (component_budget - sources_list_height - min_folder_total).max(0.0);
+                drop_total = clamp_range(drop_total, min_drop_total, max_drop);
                 sources_height_override = Some(sources_list_height);
+                if height_override.is_some() {
+                    height_override = Some(drop_total);
+                }
             }
             if sources_handle_response.drag_stopped() {
                 sources_resize_origin = None;
@@ -271,33 +243,44 @@ impl EguiApp {
                 resize_origin = Some(drop_total);
             }
             if drop_handle_response.dragged() {
-                let origin = resize_origin.unwrap_or(drop_total);
-                drop_total = origin - drop_handle_response.drag_delta().y;
+                let pointer = drop_handle_response
+                    .interact_pointer_pos()
+                    .or(pointer_pos);
+                let max_drop =
+                    (component_budget - sources_list_height - min_folder_total).max(0.0);
+                drop_total = if let Some(pointer) = pointer {
+                    let desired = layout_rect.bottom() - pointer.y;
+                    clamp_range(desired, min_drop_total, max_drop)
+                } else {
+                    let origin = resize_origin.unwrap_or(drop_total);
+                    clamp_range(
+                        origin - drop_handle_response.drag_delta().y,
+                        min_drop_total,
+                        max_drop,
+                    )
+                };
+                let max_sources =
+                    (component_budget - drop_total - min_folder_total).max(0.0);
+                sources_list_height =
+                    clamp_range(sources_list_height, min_sources_total, max_sources);
                 height_override = Some(drop_total);
+                if sources_height_override.is_some() {
+                    sources_height_override = Some(sources_list_height);
+                }
             }
             if drop_handle_response.drag_stopped() {
                 resize_origin = None;
             }
-            if sources_height_override.is_some() || height_override.is_some() {
-                let resize_mode = if sources_handle_response.dragged() {
-                    ResizeMode::Sources
-                } else if drop_handle_response.dragged() {
-                    ResizeMode::DropTargets
-                } else {
-                    ResizeMode::None
-                };
-                let (clamped_sources_total, clamped_folder_total, clamped_drop_total) =
-                    clamp_sections(sources_list_height, drop_total, resize_mode);
-                sources_list_height = clamped_sources_total;
-                folder_total = clamped_folder_total;
-                drop_total = clamped_drop_total;
-                if sources_height_override.is_some() {
-                    sources_height_override = Some(sources_list_height);
-                }
-                if height_override.is_some() {
-                    height_override = Some(drop_total);
-                }
+            if matches!(resize_mode, ResizeMode::None) {
+                let max_sources =
+                    (component_budget - min_folder_total - min_drop_total).max(0.0);
+                sources_list_height =
+                    clamp_range(sources_list_height, min_sources_total, max_sources);
+                let max_drop =
+                    (component_budget - min_folder_total - sources_list_height).max(0.0);
+                drop_total = clamp_range(drop_total, min_drop_total, max_drop);
             }
+            folder_total = (component_budget - sources_list_height - drop_total).max(0.0);
             if sources_handle_response.dragged() && height_override.is_none() {
                 if (drop_total - default_drop_total).abs() > f32::EPSILON {
                     height_override = Some(drop_total);
