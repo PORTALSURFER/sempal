@@ -21,7 +21,7 @@ impl EguiApp {
         }
         let palette = style::palette();
         ui.vertical(|ui| {
-            let header_response = ui.horizontal(|ui| {
+            let _header_response = ui.horizontal(|ui| {
                 ui.label(RichText::new("Sources").color(palette.text_primary));
                 if ui
                     .button(RichText::new("+").color(palette.text_primary))
