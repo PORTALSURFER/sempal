@@ -19,12 +19,12 @@ impl EguiApp {
             drag_payload,
             Some(DragPayload::Sample { .. } | DragPayload::Samples { .. })
         );
+        let mut rows = std::mem::take(&mut self.controller.ui.sources.rows);
         let output = egui::ScrollArea::vertical()
             .id_salt("sources_scroll")
             .min_scrolled_height(height)
             .max_height(height)
             .show(ui, |ui| {
-                let rows = self.controller.ui.sources.rows.clone();
                 let selected = self.controller.ui.sources.selected;
                 let row_height = list_row_height(ui);
                 let tooltip_mode = self.controller.ui.controls.tooltip_mode;
@@ -91,6 +91,7 @@ impl EguiApp {
                     });
                 }
             });
+        self.controller.ui.sources.rows = rows;
         let min_focus_height = list_row_height(ui);
         let focus_height = output
             .content_size

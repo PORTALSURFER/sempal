@@ -59,7 +59,7 @@ impl EguiApp {
         } else {
             Some(external_drop_paths)
         };
-        let rows = self.controller.ui.sources.drop_targets.rows.clone();
+        let mut rows = std::mem::take(&mut self.controller.ui.sources.drop_targets.rows);
         let selected = self.controller.ui.sources.drop_targets.selected;
         let frame = style::section_frame();
         let frame_response = frame.show(ui, |ui| {
@@ -86,12 +86,6 @@ impl EguiApp {
                     }
                     for (index, row) in rows.iter().enumerate() {
                         let is_selected = Some(index) == selected;
-                        let drag_path = row.path.clone();
-                        let target_path = drag_path.clone();
-                        let pending_path = drag_path.clone();
-                        let match_path = drag_path.clone();
-                        let drag_label = format!("Drop target: {}", row.name);
-                        let pending_label = drag_label.clone();
                         let row_width = ui.available_width();
                         let padding = ui.spacing().button_padding.x * 2.0;
                         let base_label = clamp_label_for_width(&row.name, row_width - padding);
@@ -134,7 +128,7 @@ impl EguiApp {
                         );
                         let response = helpers::tooltip(
                             response,
-                            &row.path.display().to_string(),
+                            &row.tooltip_path,
                             "Dragging samples onto this target will move or copy them to this specific folder location. Right-click to change the marker color or remove the target.",
                             tooltip_mode,
                         );
@@ -153,22 +147,26 @@ impl EguiApp {
                             &mut self.controller,
                             DragSource::DropTargets,
                             DragTarget::DropTarget {
-                                path: target_path,
+                                path: row.path.clone(),
                             },
                             move |pos, controller| {
-                                controller.start_drop_target_drag(drag_path, drag_label, pos);
+                                controller.start_drop_target_drag(
+                                    row.path.clone(),
+                                    row.drag_label.clone(),
+                                    pos,
+                                );
                             },
                             move |pos, _controller| {
                                 Some(crate::egui_app::state::PendingOsDragStart {
                                     payload: DragPayload::DropTargetReorder {
-                                        path: pending_path.clone(),
+                                        path: row.path.clone(),
                                     },
-                                    label: pending_label.clone(),
+                                    label: row.drag_label.clone(),
                                     origin: pos,
                                 })
                             },
                             move |pending| match &pending.payload {
-                                DragPayload::DropTargetReorder { path } => *path == match_path,
+                                DragPayload::DropTargetReorder { path } => *path == row.path,
                                 DragPayload::Sample { .. } => false,
                                 DragPayload::Samples { .. } => false,
                                 DragPayload::Folder { .. } => false,
@@ -178,32 +176,35 @@ impl EguiApp {
                         if response.clicked() {
                             self.controller.select_drop_target_by_index(index);
                         }
-                        handle_drop_zone(
-                            ui,
-                            &mut self.controller,
-                            sample_drag_active,
-                            pointer_pos,
-                            response.rect,
-                            DragSource::DropTargets,
-                            DragTarget::DropTarget {
-                                path: row.path.clone(),
-                            },
-                            style::drag_target_stroke(),
-                            egui::StrokeKind::Inside,
-                        );
-                        handle_drop_zone(
-                            ui,
-                            &mut self.controller,
-                            drop_target_drag_active,
-                            pointer_pos,
-                            response.rect,
-                            DragSource::DropTargets,
-                            DragTarget::DropTarget {
-                                path: row.path.clone(),
-                            },
-                            style::drag_target_stroke(),
-                            egui::StrokeKind::Inside,
-                        );
+                        let drop_target = DragTarget::DropTarget {
+                            path: row.path.clone(),
+                        };
+                        if sample_drag_active {
+                            handle_drop_zone(
+                                ui,
+                                &mut self.controller,
+                                sample_drag_active,
+                                pointer_pos,
+                                response.rect,
+                                DragSource::DropTargets,
+                                drop_target.clone(),
+                                style::drag_target_stroke(),
+                                egui::StrokeKind::Inside,
+                            );
+                        }
+                        if drop_target_drag_active {
+                            handle_drop_zone(
+                                ui,
+                                &mut self.controller,
+                                drop_target_drag_active,
+                                pointer_pos,
+                                response.rect,
+                                DragSource::DropTargets,
+                                drop_target,
+                                style::drag_target_stroke(),
+                                egui::StrokeKind::Inside,
+                            );
+                        }
                         if external_drop_ready
                             && external_pointer_pos
                                 .is_some_and(|pos| response.rect.contains(pos))
@@ -285,6 +286,7 @@ impl EguiApp {
             );
         }
         style::paint_section_border(ui, frame_response.response.rect, false);
+        self.controller.ui.sources.drop_targets.rows = rows;
     }
 
     fn drop_target_row_menu(

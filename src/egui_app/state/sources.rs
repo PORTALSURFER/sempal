@@ -154,6 +154,10 @@ pub struct DropTargetRowView {
     pub path: PathBuf,
     /// Display name.
     pub name: String,
+    /// Cached label used for drag payloads.
+    pub drag_label: String,
+    /// Cached display path used in tooltips.
+    pub tooltip_path: String,
     /// Whether the drop target path is missing.
     pub missing: bool,
     /// Optional drop target color.

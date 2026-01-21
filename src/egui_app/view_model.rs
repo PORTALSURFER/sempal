@@ -33,9 +33,13 @@ pub fn drop_target_row(
         .and_then(|name| name.to_str())
         .map(|name| name.to_string())
         .unwrap_or_else(|| path.to_string_lossy().to_string());
+    let drag_label = format!("Drop target: {name}");
+    let tooltip_path = path.display().to_string();
     DropTargetRowView {
         path: path.to_path_buf(),
         name,
+        drag_label,
+        tooltip_path,
         missing,
         color,
     }
