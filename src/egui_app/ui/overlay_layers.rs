@@ -3,8 +3,6 @@ use eframe::egui::{self, Color32, Id, LayerId, Order};
 /// Overlay ordering tiers for consistent stacking across the UI.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum OverlayLayer {
-    /// Tooltip-level overlays that should remain above base panels.
-    Tooltip,
     /// Non-modal overlays like drag previews and status popups.
     Overlay,
     /// Modal overlays that must remain on top and block input.
@@ -15,7 +13,7 @@ impl OverlayLayer {
     /// Return the egui order used for the overlay tier.
     pub(super) fn order(self) -> Order {
         match self {
-            Self::Tooltip | Self::Overlay => Order::Foreground,
+            Self::Overlay => Order::Foreground,
             Self::Modal => Order::Tooltip,
         }
     }
