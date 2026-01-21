@@ -19,6 +19,7 @@ fn migrates_from_legacy_json() {
             feature_flags: FeatureFlags::default(),
             analysis: AnalysisSettings::default(),
             updates: UpdateSettings::default(),
+            job_message_queue_capacity: AppSettingsCore::default().job_message_queue_capacity,
             app_data_dir: None,
             trash_folder: Some(std::path::PathBuf::from("trash_here")),
             drop_targets: vec![DropTargetConfig::new(std::path::PathBuf::from(

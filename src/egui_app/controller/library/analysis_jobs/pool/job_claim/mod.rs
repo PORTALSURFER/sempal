@@ -1,6 +1,6 @@
 use super::job_execution::{run_analysis_jobs_with_decoded_batch, run_job};
 use crate::egui_app::controller::library::analysis_jobs::db as analysis_db;
-use crate::egui_app::controller::jobs::{JobMessage, JobMessageSender};
+use crate::egui_app::controller::jobs::JobMessageSender;
 use rusqlite::Connection;
 use std::collections::{HashMap, HashSet};
 use std::panic::{AssertUnwindSafe, catch_unwind};

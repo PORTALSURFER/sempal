@@ -8,6 +8,7 @@ pub(crate) struct AppSettingsState {
     pub(crate) feature_flags: crate::sample_sources::config::FeatureFlags,
     pub(crate) analysis: crate::sample_sources::config::AnalysisSettings,
     pub(crate) updates: crate::sample_sources::config::UpdateSettings,
+    /// Maximum number of pending controller job messages.
     pub(crate) job_message_queue_capacity: u32,
     pub(crate) app_data_dir: Option<PathBuf>,
     pub(crate) audio_output: AudioOutputConfig,

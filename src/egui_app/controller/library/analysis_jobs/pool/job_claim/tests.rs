@@ -1,6 +1,7 @@
 use super::*;
 use super::super::job_progress::ProgressPollerWakeup;
 use crate::egui_app::controller::library::analysis_jobs::db as analysis_db;
+use crate::egui_app::controller::jobs::{JobMessage, JobMessageSender};
 use crate::sample_sources::SampleSource;
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
@@ -85,7 +86,8 @@ fn clears_inflight_when_db_open_fails() {
     };
     let queue = DecodedQueue::new(4);
     assert!(queue.try_mark_inflight(job.id));
-    let (tx, _rx) = mpsc::channel::<JobMessage>();
+    let (tx, _rx) = mpsc::sync_channel::<JobMessage>(1);
+    let tx = JobMessageSender::new(tx);
     let mut connections = HashMap::new();
     let progress_cache = Arc::new(RwLock::new(ProgressCache::default()));
     let progress_wakeup = ProgressPollerWakeup::new();
@@ -194,7 +196,8 @@ fn mid_loop_db_open_failure_clears_inflight_and_marks_failed() {
     };
     let queue = DecodedQueue::new(4);
     assert!(queue.try_mark_inflight(job.id));
-    let (tx, _rx) = mpsc::channel::<JobMessage>();
+    let (tx, _rx) = mpsc::sync_channel::<JobMessage>(1);
+    let tx = JobMessageSender::new(tx);
     let progress_cache = Arc::new(RwLock::new(ProgressCache::default()));
     let progress_wakeup = ProgressPollerWakeup::new();
     let mut connections = HashMap::new();

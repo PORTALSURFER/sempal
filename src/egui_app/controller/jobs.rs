@@ -27,6 +27,7 @@ use std::{
 
 type TryRecvError = std::sync::mpsc::TryRecvError;
 
+#[derive(Debug)]
 #[cfg_attr(test, allow(dead_code))]
 pub(crate) enum JobMessage {
     WavLoaded(WavLoadResult),
@@ -59,7 +60,7 @@ pub(crate) struct JobMessageSender {
 }
 
 impl JobMessageSender {
-    fn new(inner: SyncSender<JobMessage>) -> Self {
+    pub(crate) fn new(inner: SyncSender<JobMessage>) -> Self {
         Self { inner }
     }
 

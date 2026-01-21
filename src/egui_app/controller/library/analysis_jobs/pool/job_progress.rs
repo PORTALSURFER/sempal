@@ -332,7 +332,8 @@ mod tests {
             conn,
         }];
         let cache = Arc::new(RwLock::new(ProgressCache::default()));
-        let (tx, _rx) = std::sync::mpsc::channel();
+        let (tx, _rx) = std::sync::mpsc::sync_channel(1);
+        let tx = JobMessageSender::new(tx);
         let stale_before = now - 10;
         let signal = Arc::new(Mutex::new(None));
 
@@ -379,7 +380,8 @@ mod tests {
             conn,
         }];
         let cache = Arc::new(RwLock::new(ProgressCache::default()));
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        let tx = JobMessageSender::new(tx);
         let stale_before = now - 10;
         let signal = Arc::new(Mutex::new(None));
 

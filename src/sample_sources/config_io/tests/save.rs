@@ -150,6 +150,7 @@ fn settings_round_trip_preserves_fields() {
                 check_on_startup: false,
                 last_seen_nightly_published_at: Some("2024-01-01".into()),
             },
+            job_message_queue_capacity: 512,
             app_data_dir: Some(std::path::PathBuf::from("data_root")),
             trash_folder: Some(std::path::PathBuf::from("trash_bin")),
             drop_targets: vec![
@@ -233,6 +234,10 @@ fn settings_round_trip_preserves_fields() {
     assert_eq!(
         round_trip.core.analysis.fast_similarity_prep_sample_rate,
         cfg.core.analysis.fast_similarity_prep_sample_rate
+    );
+    assert_eq!(
+        round_trip.core.job_message_queue_capacity,
+        cfg.core.job_message_queue_capacity
     );
     assert_eq!(
         round_trip.core.analysis.wgpu_power_preference,
