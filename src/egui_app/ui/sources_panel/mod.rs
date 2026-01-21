@@ -124,7 +124,7 @@ impl EguiApp {
                         value.clamp(min, max)
                     }
                 };
-                let mut folder_total = component_budget - sources_total - drop_total;
+                let mut folder_total;
                 match resize_mode {
                     ResizeMode::Sources => {
                         let max_sources_total =
