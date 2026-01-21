@@ -6,7 +6,7 @@ use crate::egui_app::state::FocusContext;
 use crate::egui_app::ui::{EguiApp, helpers};
 use crate::egui_app::ui::style;
 use eframe::egui;
-use eframe::egui::{TopBottomPanel, Ui, UiBuilder};
+use eframe::egui::{TopBottomPanel, Ui};
 
 impl EguiApp {
     pub(super) fn apply_visuals(&mut self, ctx: &egui::Context) {
@@ -39,14 +39,14 @@ impl EguiApp {
             ui.add_space(8.0);
             let browser_rect = ui.available_rect_before_wrap();
             if browser_rect.height() > 0.0 {
-                let mut browser_ui = ui.new_child(
-                    UiBuilder::new()
-                        .id_salt("sample_browser_area")
-                        .max_rect(browser_rect)
-                        .layout(egui::Layout::top_down(egui::Align::Min)),
-                );
-                browser_ui.set_min_height(browser_ui.available_height());
-                self.render_sample_browser(&mut browser_ui);
+                ui.allocate_ui_at_rect(browser_rect, |ui| {
+                    ui.push_id("sample_browser_area", |ui| {
+                        ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                            ui.set_min_height(ui.available_height());
+                            self.render_sample_browser(ui);
+                        });
+                    });
+                });
             }
         });
     }
