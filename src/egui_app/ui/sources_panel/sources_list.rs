@@ -8,6 +8,7 @@ use eframe::egui::{self, RichText, Ui};
 
 impl EguiApp {
     pub(super) fn render_sources_list(&mut self, ui: &mut Ui, height: f32) -> egui::Rect {
+        let height = height.max(0.0);
         let drag_payload = self.controller.ui.drag.payload.clone();
         let drag_active = matches!(
             drag_payload,
@@ -16,6 +17,7 @@ impl EguiApp {
         let pointer_pos = pointer_pos_for_drag(ui, self.controller.ui.drag.position);
         let output = egui::ScrollArea::vertical()
             .id_salt("sources_scroll")
+            .min_scrolled_height(height)
             .max_height(height)
             .show(ui, |ui| {
                 let rows = self.controller.ui.sources.rows.clone();

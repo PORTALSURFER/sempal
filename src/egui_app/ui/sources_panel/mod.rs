@@ -31,10 +31,14 @@ impl EguiApp {
                 }
             });
             ui.add_space(6.0);
-            let source_list_height = (ui.available_height() * 0.25).max(140.0);
+            let layout_budget = ui.available_height();
+            let source_list_height = (layout_budget * 0.25)
+                .max(140.0)
+                .min(layout_budget.max(0.0));
             let sources_rect = self.render_sources_list(ui, source_list_height);
-            ui.add_space(8.0);
-            let remaining = ui.available_height();
+            let list_spacing = 8.0;
+            ui.add_space(list_spacing);
+            let remaining = (layout_budget - source_list_height - list_spacing).max(0.0);
             let drag_payload = self.controller.ui.drag.payload.clone();
             let folder_drop_active = matches!(
                 drag_payload,
