@@ -35,7 +35,8 @@ impl EguiController {
         Option<usize>,
     ) {
         let filter = self.ui.browser.filter;
-        let rating_filter = &self.ui.browser.rating_filter;
+        let rating_filter = self.ui.browser.rating_filter.clone();
+        let rating_filter_empty = rating_filter.is_empty();
         let filter_accepts = |tag: crate::sample_sources::Rating| {
             let triage_ok = match filter {
                 TriageFlagFilter::All => true,
@@ -43,7 +44,7 @@ impl EguiController {
                 TriageFlagFilter::Trash => tag.is_trash(),
                 TriageFlagFilter::Untagged => tag.is_neutral(),
             };
-            let rating_ok = rating_filter.is_empty() || rating_filter.contains(&tag.val());
+            let rating_ok = rating_filter_empty || rating_filter.contains(&tag.val());
             triage_ok && rating_ok
         };
         let folder_selection = self.folder_selection_for_filter().cloned();
@@ -131,7 +132,7 @@ impl EguiController {
         let Some(query) = self.active_search_query().map(str::to_string) else {
             if !has_folder_filters
                 && self.ui.browser.filter == TriageFlagFilter::All
-                && self.ui.browser.rating_filter.is_empty()
+                && rating_filter_empty
                 && self.ui.browser.similar_query.is_none()
                 && sort_mode == SampleBrowserSort::ListOrder
             {

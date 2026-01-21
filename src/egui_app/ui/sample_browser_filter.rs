@@ -55,7 +55,8 @@ impl EguiApp {
                     egui::Sense::click(),
                 );
                 ui.painter().rect_filled(rect, square_rounding, fill);
-                ui.painter().rect_stroke(rect, square_rounding, stroke);
+                ui.painter()
+                    .rect_stroke(rect, square_rounding, stroke, egui::StrokeKind::Inside);
                 if response.clicked() {
                     let modifiers = ui.input(|i| i.modifiers);
                     let additive = modifiers.command || modifiers.ctrl;
