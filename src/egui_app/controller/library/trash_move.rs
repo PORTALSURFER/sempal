@@ -8,6 +8,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+#[derive(Debug)]
 pub(crate) enum TrashMoveMessage {
     SetTotal(usize),
     Progress {

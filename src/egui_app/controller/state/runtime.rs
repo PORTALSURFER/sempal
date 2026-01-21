@@ -89,6 +89,7 @@ pub(crate) struct WavLoadJob {
     pub(crate) page_size: usize,
 }
 
+#[derive(Debug)]
 pub(crate) struct WavLoadResult {
     pub(crate) source_id: SourceId,
     pub(crate) result: Result<Vec<WavEntry>, LoadEntriesError>,
@@ -114,6 +115,7 @@ pub(crate) enum ScanKind {
     Auto,
 }
 
+#[derive(Debug)]
 pub(crate) enum ScanJobMessage {
     Progress {
         completed: usize,
@@ -123,6 +125,7 @@ pub(crate) enum ScanJobMessage {
 }
 
 #[derive(Clone)]
+#[derive(Debug)]
 pub(crate) struct UpdateCheckResult {
     pub(crate) result: Result<crate::updater::UpdateCheckOutcome, String>,
 }

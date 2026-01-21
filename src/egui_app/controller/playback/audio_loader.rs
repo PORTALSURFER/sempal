@@ -37,6 +37,7 @@ pub(crate) enum AudioLoadError {
     Failed(String),
 }
 
+#[derive(Debug)]
 pub(crate) struct AudioLoadResult {
     pub request_id: u64,
     pub source_id: SourceId,
