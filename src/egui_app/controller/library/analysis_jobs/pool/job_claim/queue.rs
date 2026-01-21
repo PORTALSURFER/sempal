@@ -19,6 +19,7 @@ pub(crate) struct DecodedQueue {
 
 impl DecodedQueue {
     /// Creates a decoded queue with a fixed maximum size for backpressure.
+    #[cfg(test)]
     pub(crate) fn new(max_size: usize) -> Self {
         Self::new_with_wakeup(max_size, None)
     }

@@ -688,6 +688,7 @@ fn load_recording_waveform(job: RecordingWaveformJob) -> RecordingWaveformLoadRe
     }
 }
 
+#[cfg(test)]
 fn decode_recording_waveform(
     bytes: &[u8],
     sample_rate: u32,

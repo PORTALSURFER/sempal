@@ -48,6 +48,7 @@ impl ClaimWakeup {
     }
 
     /// Return the current notification counter.
+    #[cfg(test)]
     pub(crate) fn snapshot(&self) -> u64 {
         self.state
             .lock()
