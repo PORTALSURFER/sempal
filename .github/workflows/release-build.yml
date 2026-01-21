@@ -159,7 +159,7 @@ jobs:
             -out "dist/release/${CHECKSUMS_NAME}.sig.bin"
           base64 -w 0 "dist/release/${CHECKSUMS_NAME}.sig.bin" \
             > "dist/release/${CHECKSUMS_NAME}.sig"
-          rm -f "$key_path" "dist/release/${CHECKSUMS_NAME}.sig.bin"
+          rm -f "$key_path"
       - name: Verify checksums signature
         env:
           CHECKSUMS_SIGNING_KEY: ${{ secrets.SEMPAL_CHECKSUMS_ED25519_KEY }}
@@ -183,7 +183,8 @@ jobs:
             echo "Public key mismatch: $actual_pubkey" >&2
             exit 1
           fi
-          rm -f "$key_path" "$pub_der" "dist/release/checksums-pubkey.txt"
+          rm -f "$key_path" "$pub_der" "dist/release/checksums-pubkey.txt" \
+            "$sig_bin"
       - name: Upload release assets
         uses: softprops/action-gh-release@v1
         with:
