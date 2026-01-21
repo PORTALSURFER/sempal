@@ -4,8 +4,9 @@
 //! If `SEMPAL_SQLITE_EXT` points at a loadable extension, Sempal will attempt
 //! to load it and continue with a safe fallback if loading fails. Loading is
 //! gated by `SEMPAL_SQLITE_EXT_ENABLE` and restricted to app-owned directories
-//! unless `SEMPAL_SQLITE_EXT_UNSAFE` is explicitly set.
-//! The allowlisted directory lives at `<app_root>/sqlite_extensions`.
+//! unless `SEMPAL_SQLITE_EXT_UNSAFE` is explicitly set and the build enables
+//! the `sqlite-ext-unsafe` feature. The allowlisted directory lives at
+//! `<app_root>/sqlite_extensions`.
 
 use std::{
     fs,
@@ -123,7 +124,8 @@ pub const SQLITE_EXT_ENV: &str = "SEMPAL_SQLITE_EXT";
 pub const SQLITE_EXT_ENABLE_ENV: &str = "SEMPAL_SQLITE_EXT_ENABLE";
 
 /// Environment variable that bypasses extension safety checks and allowlist
-/// enforcement when set.
+/// enforcement when set. This is ignored unless the `sqlite-ext-unsafe` cargo
+/// feature is enabled at build time.
 pub const SQLITE_EXT_UNSAFE_ENV: &str = "SEMPAL_SQLITE_EXT_UNSAFE";
 
 const SQLITE_EXT_DIR_NAME: &str = "sqlite_extensions";
@@ -152,7 +154,16 @@ pub fn try_load_optional_extension(conn: &Connection) -> Result<(), rusqlite::Er
         );
         return Ok(());
     }
-    let unsafe_mode = env_flag_set(SQLITE_EXT_UNSAFE_ENV);
+    let unsafe_mode_requested = env_flag_set(SQLITE_EXT_UNSAFE_ENV);
+    let unsafe_mode = unsafe_mode_enabled();
+    if unsafe_mode_requested && !unsafe_mode {
+        warn!(
+            path = %path,
+            "{SQLITE_EXT_UNSAFE_ENV} ignored because unsafe SQLite extension loading \
+             is disabled at compile time. Rebuild with the `sqlite-ext-unsafe` \
+             cargo feature to allow it."
+        );
+    }
     let allowlist_dir = if unsafe_mode {
         None
     } else {
@@ -205,6 +216,14 @@ fn env_flag_set(name: &str) -> bool {
         "1" | "true" | "yes" | "on" => true,
         _ => false,
     }
+}
+
+fn unsafe_mode_allowed() -> bool {
+    cfg!(feature = "sqlite-ext-unsafe")
+}
+
+fn unsafe_mode_enabled() -> bool {
+    env_flag_set(SQLITE_EXT_UNSAFE_ENV) && unsafe_mode_allowed()
 }
 
 fn allowlisted_extension_dir() -> Result<PathBuf, String> {
@@ -341,6 +360,7 @@ mod tests {
         assert!(err.contains("SQLite extension must live under"));
     }
 
+    #[cfg(feature = "sqlite-ext-unsafe")]
     #[test]
     fn unsafe_mode_allows_extension_outside_allowlist() {
         let allowlist = tempdir().unwrap();
@@ -354,6 +374,7 @@ mod tests {
         assert_eq!(resolved, ext_path.canonicalize().unwrap());
     }
 
+    #[cfg(feature = "sqlite-ext-unsafe")]
     #[test]
     fn unsafe_mode_uses_cwd_for_relative_paths() {
         let _guard = CWD_LOCK.lock().unwrap();
@@ -367,5 +388,17 @@ mod tests {
         std::env::set_current_dir(original_dir).unwrap();
 
         assert_eq!(resolved, ext_path.canonicalize().unwrap());
+    }
+
+    #[cfg(not(feature = "sqlite-ext-unsafe"))]
+    #[test]
+    fn unsafe_env_is_ignored_without_feature() {
+        unsafe {
+            std::env::set_var(SQLITE_EXT_UNSAFE_ENV, "1");
+        }
+        assert!(!unsafe_mode_enabled());
+        unsafe {
+            std::env::remove_var(SQLITE_EXT_UNSAFE_ENV);
+        }
     }
 }

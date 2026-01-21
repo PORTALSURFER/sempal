@@ -10,6 +10,7 @@ missing_docs = "deny"
 
 [features]
 default = []
+sqlite-ext-unsafe = []
 
 [dependencies]
 hound = "3.5.1"

@@ -59,6 +59,13 @@ Audio sample triage tool built with Rust and egui.
   - Windows: `%APPDATA%\\.sempal\\config.toml`
   - macOS: `~/Library/Application Support/.sempal/config.toml`
 
+## SQLite extensions (optional)
+
+- Sempal can load a SQLite extension for faster vector operations via `SEMPAL_SQLITE_EXT`.
+- Loading is opt-in with `SEMPAL_SQLITE_EXT_ENABLE=1` and restricted to `<app_root>/sqlite_extensions`.
+- Unsafe mode (`SEMPAL_SQLITE_EXT_UNSAFE=1`) bypasses the allowlist, but it is ignored unless the build enables the `sqlite-ext-unsafe` cargo feature.
+- If you need unsafe mode, rebuild with `cargo build --release --features sqlite-ext-unsafe` and supply a fully trusted extension path.
+
 ## Logging
 
 - Startup initializes console logging and a per-launch log file under the same `.sempal` folder:
