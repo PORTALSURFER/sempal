@@ -70,6 +70,27 @@ CI signs the checksums file using OpenSSL and uploads the signature as
 stored in the `SEMPAL_CHECKSUMS_ED25519_KEY` GitHub Actions secret, and the app
 embeds the corresponding public key for verification.
 
+Binary-safe key extraction (PowerShell):
+
+```
+$derPath = "checksums-ed25519.pub.der"
+& openssl pkey -in checksums-ed25519.pub.pem -pubin -outform DER -out $derPath
+$bytes = [System.IO.File]::ReadAllBytes($derPath)
+$pub = $bytes[-32..-1]
+[Convert]::ToBase64String($pub)
+```
+
+OpenSSL signature verification (CI):
+
+```
+openssl pkeyutl -sign -inkey checksums-ed25519.pem -rawin \
+  -in checksums-vX.Y.Z.txt -out checksums.sig.bin
+base64 -w 0 checksums.sig.bin > checksums-vX.Y.Z.txt.sig
+openssl pkey -in checksums-ed25519.pem -pubout -outform DER -out checksums.pub.der
+openssl pkeyutl -verify -pubin -inkey checksums.pub.der -rawin \
+  -in checksums-vX.Y.Z.txt -sigfile checksums.sig.bin
+```
+
 ## Zip layout
 
 The zip expands to exactly one root folder:

@@ -160,6 +160,30 @@ jobs:
           base64 -w 0 "dist/release/${CHECKSUMS_NAME}.sig.bin" \
             > "dist/release/${CHECKSUMS_NAME}.sig"
           rm -f "$key_path" "dist/release/${CHECKSUMS_NAME}.sig.bin"
+      - name: Verify checksums signature
+        env:
+          CHECKSUMS_SIGNING_KEY: ${{ secrets.SEMPAL_CHECKSUMS_ED25519_KEY }}
+        run: |
+          if [[ -z "${CHECKSUMS_SIGNING_KEY}" ]]; then
+            echo "Missing SEMPAL_CHECKSUMS_ED25519_KEY secret." >&2
+            exit 1
+          fi
+          key_path="dist/release/checksums-signing-key.pem"
+          pub_der="dist/release/checksums-signing-key.pub.der"
+          sig_bin="dist/release/${CHECKSUMS_NAME}.sig.bin"
+          printf "%s" "$CHECKSUMS_SIGNING_KEY" > "$key_path"
+          openssl pkey -in "$key_path" -pubout -outform DER -out "$pub_der"
+          tail -c 32 "$pub_der" | base64 -w 0 > "dist/release/checksums-pubkey.txt"
+          openssl pkeyutl -verify -pubin -inkey "$pub_der" -rawin \
+            -in "dist/release/${CHECKSUMS_NAME}" \
+            -sigfile "$sig_bin"
+          expected_pubkey="8Z7dQJBRMbxCFkFMeBYa1FMSWOUm6nePFgoK5c43jT4="
+          actual_pubkey="$(cat "dist/release/checksums-pubkey.txt")"
+          if [[ "$actual_pubkey" != "$expected_pubkey" ]]; then
+            echo "Public key mismatch: $actual_pubkey" >&2
+            exit 1
+          fi
+          rm -f "$key_path" "$pub_der" "dist/release/checksums-pubkey.txt"
       - name: Upload release assets
         uses: softprops/action-gh-release@v1
         with:
