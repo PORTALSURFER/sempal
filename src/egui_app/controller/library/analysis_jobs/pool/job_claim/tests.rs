@@ -86,6 +86,7 @@ fn clears_inflight_when_db_open_fails() {
     let (tx, _rx) = mpsc::channel::<JobMessage>();
     let mut connections = HashMap::new();
     let progress_cache = Arc::new(RwLock::new(ProgressCache::default()));
+    let progress_wakeup = super::job_progress::ProgressPollerWakeup::new();
 
     let deferred = db::finalize_immediate_job(
         &mut connections,
@@ -95,6 +96,7 @@ fn clears_inflight_when_db_open_fails() {
         Err("failed".to_string()),
         false,
         &progress_cache,
+        &progress_wakeup,
     );
 
     assert!(deferred.is_some());
@@ -192,6 +194,7 @@ fn mid_loop_db_open_failure_clears_inflight_and_marks_failed() {
     assert!(queue.try_mark_inflight(job.id));
     let (tx, _rx) = mpsc::channel::<JobMessage>();
     let progress_cache = Arc::new(RwLock::new(ProgressCache::default()));
+    let progress_wakeup = super::job_progress::ProgressPollerWakeup::new();
     let mut connections = HashMap::new();
 
     let backup_root = dir.path().join("source_backup");
@@ -204,6 +207,7 @@ fn mid_loop_db_open_failure_clears_inflight_and_marks_failed() {
         Err("Failed to open source DB".to_string()),
         false,
         &progress_cache,
+        &progress_wakeup,
     );
     assert!(queue.try_mark_inflight(job.id));
     assert!(deferred.is_some());
@@ -215,6 +219,7 @@ fn mid_loop_db_open_failure_clears_inflight_and_marks_failed() {
         &queue,
         &tx,
         &progress_cache,
+        &progress_wakeup,
         &mut deferred_updates,
         false,
     );

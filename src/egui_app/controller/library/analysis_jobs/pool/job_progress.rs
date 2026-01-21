@@ -3,11 +3,11 @@ use crate::egui_app::controller::library::analysis_jobs::types::{AnalysisJobMess
 use crate::egui_app::controller::jobs::JobMessage;
 use rusqlite::Connection;
 use std::sync::{
-    Arc, Mutex, RwLock,
+    Arc, Condvar, Mutex, RwLock,
     atomic::{AtomicBool, Ordering},
     mpsc::Sender,
 };
-use std::thread::{JoinHandle, sleep};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::progress_cache::ProgressCache;
@@ -18,6 +18,57 @@ const SOURCE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(2);
 const STALE_CLEANUP_INTERVAL: Duration = Duration::from_secs(10);
 const DB_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
+
+struct ProgressPollerWakeupState {
+    counter: u64,
+}
+
+/// Condvar-backed wakeup used to nudge the progress poller on job updates.
+pub(crate) struct ProgressPollerWakeup {
+    state: Mutex<ProgressPollerWakeupState>,
+    ready: Condvar,
+}
+
+impl ProgressPollerWakeup {
+    /// Create a new progress poller wakeup handle.
+    pub(crate) fn new() -> Self {
+        Self {
+            state: Mutex::new(ProgressPollerWakeupState { counter: 0 }),
+            ready: Condvar::new(),
+        }
+    }
+
+    /// Notify the poller that progress state has changed.
+    pub(crate) fn notify(&self) {
+        let mut state = self
+            .state
+            .lock()
+            .expect("progress poller wakeup poisoned");
+        state.counter = state.counter.wrapping_add(1);
+        self.ready.notify_one();
+    }
+
+    /// Wait until notified or until the timeout elapses.
+    pub(crate) fn wait_for(&self, seen: &mut u64, timeout: Duration) -> bool {
+        let mut state = self
+            .state
+            .lock()
+            .expect("progress poller wakeup poisoned");
+        if state.counter != *seen {
+            *seen = state.counter;
+            return true;
+        }
+        let (state, _timeout) = self
+            .ready
+            .wait_timeout(state, timeout)
+            .expect("progress poller wakeup poisoned");
+        if state.counter != *seen {
+            *seen = state.counter;
+            return true;
+        }
+        false
+    }
+}
 
 struct ProgressSourceDb {
     source_id: crate::sample_sources::SourceId,
@@ -161,6 +212,7 @@ pub(crate) fn spawn_progress_poller(
         RwLock<Option<std::collections::HashSet<crate::sample_sources::SourceId>>>,
     >,
     progress_cache: Arc<RwLock<ProgressCache>>,
+    progress_wakeup: Arc<ProgressPollerWakeup>,
 ) -> JoinHandle<()> {
     std::thread::spawn(move || {
         let mut sources = Vec::new();
@@ -171,6 +223,7 @@ pub(crate) fn spawn_progress_poller(
         let mut last_cleanup = Instant::now() - STALE_CLEANUP_INTERVAL;
         let mut idle_polls = 0u32;
         let mut last_sources_empty = None;
+        let mut wake_counter = 0u64;
         loop {
             if shutdown.load(Ordering::Relaxed) {
                 break;
@@ -188,7 +241,7 @@ pub(crate) fn spawn_progress_poller(
                 let _ = cleanup_stale_jobs(&mut sources, stale_before, &progress_cache, &tx, &signal);
             }
             if cancel.load(Ordering::Relaxed) {
-                sleep(POLL_INTERVAL_IDLE);
+                let _ = progress_wakeup.wait_for(&mut wake_counter, POLL_INTERVAL_IDLE);
                 continue;
             }
             let sources_empty = sources.is_empty();
@@ -236,7 +289,7 @@ pub(crate) fn spawn_progress_poller(
             } else {
                 POLL_INTERVAL_ACTIVE
             };
-            sleep(interval);
+            let _ = progress_wakeup.wait_for(&mut wake_counter, interval);
         }
     })
 }
@@ -362,5 +415,16 @@ mod tests {
             Instant::now() - DB_REFRESH_INTERVAL - Duration::from_millis(1),
             &cache
         ));
+    }
+
+    #[test]
+    fn wakeup_returns_when_notified() {
+        let wakeup = ProgressPollerWakeup::new();
+        let mut seen = 0;
+
+        wakeup.notify();
+
+        assert!(wakeup.wait_for(&mut seen, Duration::from_millis(1)));
+        assert!(!wakeup.wait_for(&mut seen, Duration::from_millis(1)));
     }
 }

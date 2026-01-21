@@ -169,6 +169,7 @@ pub(crate) fn spawn_compute_worker(
     analysis_sample_rate: Arc<AtomicU32>,
     analysis_version_override: Arc<std::sync::RwLock<Option<String>>>,
     progress_cache: Arc<RwLock<ProgressCache>>,
+    progress_wakeup: Arc<super::job_progress::ProgressPollerWakeup>,
 ) -> JoinHandle<()> {
     std::thread::spawn(move || {
         lower_worker_priority();
@@ -193,6 +194,7 @@ pub(crate) fn spawn_compute_worker(
                     &decode_queue,
                     &tx,
                     &progress_cache,
+                    &progress_wakeup,
                     &mut deferred_updates,
                     log_jobs,
                 );
@@ -379,6 +381,7 @@ pub(crate) fn spawn_compute_worker(
                     outcome,
                     log_jobs,
                     &progress_cache,
+                    &progress_wakeup,
                 ) {
                     deferred_updates.push(deferred);
                 }
@@ -388,6 +391,7 @@ pub(crate) fn spawn_compute_worker(
                 &decode_queue,
                 &tx,
                 &progress_cache,
+                &progress_wakeup,
                 &mut deferred_updates,
                 log_jobs,
             );

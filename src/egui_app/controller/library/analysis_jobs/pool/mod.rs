@@ -31,6 +31,7 @@ pub(crate) struct AnalysisWorkerPool {
     #[cfg_attr(test, allow(dead_code))]
     decode_worker_count_override: Arc<AtomicU32>,
     _progress_cache: Arc<RwLock<ProgressCache>>,
+    progress_wakeup: Arc<job_progress::ProgressPollerWakeup>,
     repaint_signal: Arc<Mutex<Option<egui::Context>>>,
     threads: Vec<JoinHandle<()>>,
 }
@@ -51,6 +52,7 @@ impl AnalysisWorkerPool {
             worker_count_override: Arc::new(AtomicU32::new(0)),
             decode_worker_count_override: Arc::new(AtomicU32::new(0)),
             _progress_cache: Arc::new(RwLock::new(ProgressCache::default())),
+            progress_wakeup: Arc::new(job_progress::ProgressPollerWakeup::new()),
             repaint_signal: Arc::new(Mutex::new(None)),
             threads: Vec::new(),
         }
@@ -186,6 +188,7 @@ impl AnalysisWorkerPool {
                     self.analysis_sample_rate.clone(),
                     self.analysis_version_override.clone(),
                     self._progress_cache.clone(),
+                    self.progress_wakeup.clone(),
                 ));
             }
             self.threads.push(job_progress::spawn_progress_poller(
@@ -195,6 +198,7 @@ impl AnalysisWorkerPool {
                 self.shutdown.clone(),
                 self.allowed_source_ids.clone(),
                 self._progress_cache.clone(),
+                self.progress_wakeup.clone(),
             ));
         }
     }

@@ -1,6 +1,7 @@
 use super::super::job_execution::update_job_status_with_retry;
 use super::super::progress_cache::ProgressCache;
 use super::analysis_db;
+use super::super::job_progress::ProgressPollerWakeup;
 use super::queue::DecodedQueue;
 use crate::egui_app::controller::library::analysis_jobs::types::AnalysisJobMessage;
 use crate::egui_app::controller::jobs::JobMessage;
@@ -24,6 +25,7 @@ pub(crate) fn finalize_immediate_job(
     outcome: Result<(), String>,
     log_jobs: bool,
     progress_cache: &Arc<RwLock<ProgressCache>>,
+    progress_wakeup: &ProgressPollerWakeup,
 ) -> Option<DeferredJobUpdate> {
     if log_jobs {
         match &outcome {
@@ -75,6 +77,7 @@ pub(crate) fn finalize_immediate_job(
             source_id,
             progress,
         }));
+        progress_wakeup.notify();
     }
     None
 }
@@ -108,6 +111,7 @@ pub(crate) fn flush_deferred_updates(
     decode_queue: &DecodedQueue,
     tx: &Sender<JobMessage>,
     progress_cache: &Arc<RwLock<ProgressCache>>,
+    progress_wakeup: &ProgressPollerWakeup,
     deferred_updates: &mut Vec<DeferredJobUpdate>,
     log_jobs: bool,
 ) {
@@ -124,6 +128,7 @@ pub(crate) fn flush_deferred_updates(
             Err(deferred.error),
             log_jobs,
             progress_cache,
+            progress_wakeup,
         ) {
             remaining.push(next);
         }
