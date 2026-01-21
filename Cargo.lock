@@ -4772,7 +4772,7 @@ dependencies = [
 
 [[package]]
 name = "sempal"
-version = "17.0.0"
+version = "18.3.0"
 dependencies = [
  "base64",
  "blake3",
