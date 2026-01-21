@@ -50,7 +50,7 @@ impl ProgressPollerWakeup {
 
     /// Wait until notified or until the timeout elapses.
     pub(crate) fn wait_for(&self, seen: &mut u64, timeout: Duration) -> bool {
-        let mut state = self
+        let state = self
             .state
             .lock()
             .expect("progress poller wakeup poisoned");

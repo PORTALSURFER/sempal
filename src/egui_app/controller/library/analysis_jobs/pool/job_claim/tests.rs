@@ -1,5 +1,6 @@
 use super::*;
 use crate::egui_app::controller::library::analysis_jobs::db as analysis_db;
+use crate::egui_app::controller::library::analysis_jobs::pool::job_progress::ProgressPollerWakeup;
 use crate::sample_sources::SampleSource;
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
@@ -86,7 +87,7 @@ fn clears_inflight_when_db_open_fails() {
     let (tx, _rx) = mpsc::channel::<JobMessage>();
     let mut connections = HashMap::new();
     let progress_cache = Arc::new(RwLock::new(ProgressCache::default()));
-    let progress_wakeup = super::job_progress::ProgressPollerWakeup::new();
+    let progress_wakeup = ProgressPollerWakeup::new();
 
     let deferred = db::finalize_immediate_job(
         &mut connections,
@@ -194,7 +195,7 @@ fn mid_loop_db_open_failure_clears_inflight_and_marks_failed() {
     assert!(queue.try_mark_inflight(job.id));
     let (tx, _rx) = mpsc::channel::<JobMessage>();
     let progress_cache = Arc::new(RwLock::new(ProgressCache::default()));
-    let progress_wakeup = super::job_progress::ProgressPollerWakeup::new();
+    let progress_wakeup = ProgressPollerWakeup::new();
     let mut connections = HashMap::new();
 
     let backup_root = dir.path().join("source_backup");
