@@ -105,8 +105,8 @@ impl AudioRecorder {
             stats.frames as f32 / self.resolved.sample_rate.max(1) as f32
         };
         Ok(RecordingOutcome {
-            path: self.path,
-            resolved: self.resolved,
+            path: self.path.clone(),
+            resolved: self.resolved.clone(),
             frames: stats.frames,
             duration_seconds,
         })
