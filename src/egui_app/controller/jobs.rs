@@ -83,8 +83,6 @@ pub(crate) struct FolderScanResult {
     pub(crate) source_id: SourceId,
     /// Relative folder paths discovered on disk.
     pub(crate) folders: BTreeSet<PathBuf>,
-    /// Duration of the scan.
-    pub(crate) elapsed: Duration,
 }
 
 #[derive(Debug)]
@@ -588,7 +586,7 @@ pub(crate) struct ControllerJobs {
 }
 
 #[derive(Clone, Debug)]
-struct PendingFolderScan {
+pub(super) struct PendingFolderScan {
     request_id: u64,
     source_id: SourceId,
 }
@@ -853,12 +851,10 @@ impl ControllerJobs {
             if cancel.load(Ordering::Relaxed) {
                 return;
             }
-            let elapsed = started_at.elapsed();
             let _ = tx.send(JobMessage::FolderScanFinished(FolderScanResult {
                 request_id,
                 source_id,
                 folders,
-                elapsed,
             }));
             if let Ok(lock) = signal.lock() {
                 if let Some(ctx) = lock.as_ref() {
