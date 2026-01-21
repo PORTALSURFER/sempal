@@ -845,7 +845,6 @@ impl ControllerJobs {
         let tx = self.message_tx.clone();
         let signal = self.repaint_signal.clone();
         thread::spawn(move || {
-            let started_at = Instant::now();
             let folders =
                 super::library::source_folders::scan_disk_folders(&root, cancel.as_ref());
             if cancel.load(Ordering::Relaxed) {
