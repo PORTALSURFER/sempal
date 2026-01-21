@@ -45,7 +45,16 @@ impl EguiApp {
             } else {
                 0.0
             };
-            let desired = egui::vec2(ui.available_width(), 260.0 + scrollbar_height);
+            let available_height = ui.available_height().max(0.0);
+            let fixed_total_height = WAVEFORM_FIXED_HEIGHT + scrollbar_height;
+            let responsive_height = (available_height * WAVEFORM_RESPONSIVE_FRACTION)
+                .clamp(WAVEFORM_MIN_HEIGHT, WAVEFORM_MAX_HEIGHT);
+            let total_height = if available_height >= fixed_total_height {
+                fixed_total_height
+            } else {
+                (responsive_height + scrollbar_height).min(available_height)
+            };
+            let desired = egui::vec2(ui.available_width(), total_height);
             let (rect, _) = ui.allocate_exact_size(desired, egui::Sense::hover());
             let waveform_rect = egui::Rect::from_min_size(
                 rect.min,
@@ -198,6 +207,10 @@ impl EguiApp {
 const WAVEFORM_DRAG_HANDLE_SIZE: f32 = 16.0;
 const WAVEFORM_DRAG_HANDLE_MARGIN: f32 = 8.0;
 const WAVEFORM_SCROLLBAR_HEIGHT: f32 = 6.0;
+const WAVEFORM_FIXED_HEIGHT: f32 = 260.0;
+const WAVEFORM_RESPONSIVE_FRACTION: f32 = 0.4;
+const WAVEFORM_MIN_HEIGHT: f32 = 160.0;
+const WAVEFORM_MAX_HEIGHT: f32 = 320.0;
 
 fn render_waveform_drag_handle(
     app: &mut EguiApp,
