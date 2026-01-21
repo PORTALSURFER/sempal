@@ -168,7 +168,7 @@ impl EguiController {
             return;
         };
         let cancel = AtomicBool::new(false);
-        let disk_folders = Self::scan_disk_folders(&source.root, &cancel);
+        let disk_folders = scan_disk_folders(&source.root, &cancel);
         {
             let model = self
                 .ui_cache
@@ -313,7 +313,7 @@ impl EguiController {
         }
         if include_disk {
             let cancel = AtomicBool::new(false);
-            folders.extend(Self::scan_disk_folders(source_root, &cancel));
+            folders.extend(scan_disk_folders(source_root, &cancel));
         }
         folders
     }
@@ -388,46 +388,47 @@ impl EguiController {
         }
     }
 
-    /// Scan disk folders under `root`, honoring a cancellation signal.
-    pub(crate) fn scan_disk_folders(root: &Path, cancel: &AtomicBool) -> BTreeSet<PathBuf> {
-        let mut folders = BTreeSet::new();
-        Self::collect_disk_folders(root, PathBuf::new(), &mut folders, cancel);
-        folders
-    }
+}
 
-    fn collect_disk_folders(
-        root: &Path,
-        parent: PathBuf,
-        folders: &mut BTreeSet<PathBuf>,
-        cancel: &AtomicBool,
-    ) {
+/// Scan disk folders under `root`, honoring a cancellation signal.
+pub(crate) fn scan_disk_folders(root: &Path, cancel: &AtomicBool) -> BTreeSet<PathBuf> {
+    let mut folders = BTreeSet::new();
+    collect_disk_folders(root, PathBuf::new(), &mut folders, cancel);
+    folders
+}
+
+fn collect_disk_folders(
+    root: &Path,
+    parent: PathBuf,
+    folders: &mut BTreeSet<PathBuf>,
+    cancel: &AtomicBool,
+) {
+    if cancel.load(Ordering::Relaxed) {
+        return;
+    }
+    let Ok(entries) = fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries {
         if cancel.load(Ordering::Relaxed) {
             return;
         }
-        let Ok(entries) = fs::read_dir(root) else {
-            return;
+        let Ok(entry) = entry else {
+            continue;
         };
-        for entry in entries {
-            if cancel.load(Ordering::Relaxed) {
-                return;
-            }
-            let Ok(entry) = entry else {
-                continue;
-            };
-            let Ok(file_type) = entry.file_type() else {
-                continue;
-            };
-            if !file_type.is_dir() {
-                continue;
-            }
-            let name = entry.file_name();
-            let relative = if parent.as_os_str().is_empty() {
-                PathBuf::from(name)
-            } else {
-                parent.join(&name)
-            };
-            folders.insert(relative.clone());
-            Self::collect_disk_folders(&entry.path(), relative, folders, cancel);
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if !file_type.is_dir() {
+            continue;
         }
+        let name = entry.file_name();
+        let relative = if parent.as_os_str().is_empty() {
+            PathBuf::from(name)
+        } else {
+            parent.join(&name)
+        };
+        folders.insert(relative.clone());
+        collect_disk_folders(&entry.path(), relative, folders, cancel);
     }
 }
