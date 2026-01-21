@@ -204,11 +204,16 @@ fn process_search_job(
 
     let entries = cache.entries.as_ref().unwrap();
 
-    let filter_accepts = |tag: Rating| match job.filter {
-        TriageFlagFilter::All => true,
-        TriageFlagFilter::Keep => tag.is_keep(),
-        TriageFlagFilter::Trash => tag.is_trash(),
-        TriageFlagFilter::Untagged => tag.is_neutral(),
+    let filter_accepts = |tag: Rating| {
+        let triage_ok = match job.filter {
+            TriageFlagFilter::All => true,
+            TriageFlagFilter::Keep => tag.is_keep(),
+            TriageFlagFilter::Trash => tag.is_trash(),
+            TriageFlagFilter::Untagged => tag.is_neutral(),
+        };
+        let rating_ok = job.rating_filter.is_empty()
+            || job.rating_filter.contains(&tag.val());
+        triage_ok && rating_ok
     };
 
     let folder_accepts = |entry: &CompactSearchEntry| {
@@ -328,6 +333,7 @@ fn process_search_job(
         && job.filter == TriageFlagFilter::All
         && job.similar_query.is_none()
         && job.sort == SampleBrowserSort::ListOrder
+        && job.rating_filter.is_empty()
     {
         return SearchResult {
             source_id: job.source_id,
@@ -405,6 +411,7 @@ mod tests {
     use super::*;
     use crate::sample_sources::WavEntry;
     use crate::sample_sources::SourceId;
+    use std::collections::BTreeSet;
 
     #[test]
     fn test_compact_search_entry() {
@@ -463,6 +470,7 @@ mod tests {
             source_root: std::path::PathBuf::from("one"),
             query: "first".to_string(),
             filter: TriageFlagFilter::All,
+            rating_filter: BTreeSet::new(),
             sort: SampleBrowserSort::ListOrder,
             similar_query: None,
             folder_selection: None,
@@ -474,6 +482,7 @@ mod tests {
             source_root: std::path::PathBuf::from("two"),
             query: "second".to_string(),
             filter: TriageFlagFilter::All,
+            rating_filter: BTreeSet::new(),
             sort: SampleBrowserSort::ListOrder,
             similar_query: None,
             folder_selection: None,

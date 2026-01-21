@@ -35,11 +35,16 @@ impl EguiController {
         Option<usize>,
     ) {
         let filter = self.ui.browser.filter;
-        let filter_accepts = |tag: crate::sample_sources::Rating| match filter {
-            TriageFlagFilter::All => true,
-            TriageFlagFilter::Keep => tag.is_keep(),
-            TriageFlagFilter::Trash => tag.is_trash(),
-            TriageFlagFilter::Untagged => tag.is_neutral(),
+        let rating_filter = &self.ui.browser.rating_filter;
+        let filter_accepts = |tag: crate::sample_sources::Rating| {
+            let triage_ok = match filter {
+                TriageFlagFilter::All => true,
+                TriageFlagFilter::Keep => tag.is_keep(),
+                TriageFlagFilter::Trash => tag.is_trash(),
+                TriageFlagFilter::Untagged => tag.is_neutral(),
+            };
+            let rating_ok = rating_filter.is_empty() || rating_filter.contains(&tag.val());
+            triage_ok && rating_ok
         };
         let folder_selection = self.folder_selection_for_filter().cloned();
         let folder_negated = self.folder_negation_for_filter().cloned();
@@ -126,6 +131,7 @@ impl EguiController {
         let Some(query) = self.active_search_query().map(str::to_string) else {
             if !has_folder_filters
                 && self.ui.browser.filter == TriageFlagFilter::All
+                && self.ui.browser.rating_filter.is_empty()
                 && self.ui.browser.similar_query.is_none()
                 && sort_mode == SampleBrowserSort::ListOrder
             {
@@ -222,12 +228,15 @@ impl EguiController {
 
     #[allow(dead_code)]
     fn browser_filter_accepts(&self, tag: crate::sample_sources::Rating) -> bool {
-        match self.ui.browser.filter {
+        let triage_ok = match self.ui.browser.filter {
             TriageFlagFilter::All => true,
             TriageFlagFilter::Keep => tag.is_keep(),
             TriageFlagFilter::Trash => tag.is_trash(),
             TriageFlagFilter::Untagged => tag.is_neutral(),
-        }
+        };
+        let rating_ok = self.ui.browser.rating_filter.is_empty()
+            || self.ui.browser.rating_filter.contains(&tag.val());
+        triage_ok && rating_ok
     }
 
     fn active_search_query(&self) -> Option<&str> {
@@ -331,6 +340,7 @@ impl EguiController {
         };
         let query = self.ui.browser.search_query.clone();
         let filter = self.ui.browser.filter;
+        let rating_filter = self.ui.browser.rating_filter.clone();
         let sort = self.ui.browser.sort;
         let similar_query = self.ui.browser.similar_query.clone();
         let folder_selection = self.folder_selection_for_filter().cloned();
@@ -345,6 +355,7 @@ impl EguiController {
             source_root: source.root.clone(),
             query,
             filter,
+            rating_filter,
             sort,
             similar_query,
             folder_selection,
@@ -359,6 +370,44 @@ pub(crate) fn set_browser_filter(controller: &mut EguiController, filter: Triage
         controller.ui.browser.filter = filter;
         controller.rebuild_browser_lists();
     }
+}
+
+/// Update the browser rating filter selection.
+pub(crate) fn set_browser_rating_filter(
+    controller: &mut EguiController,
+    level: i8,
+    additive: bool,
+) {
+    if !(-3..=3).contains(&level) {
+        return;
+    }
+    let mut changed = false;
+    if additive {
+        if controller.ui.browser.rating_filter.contains(&level) {
+            controller.ui.browser.rating_filter.remove(&level);
+        } else {
+            controller.ui.browser.rating_filter.insert(level);
+        }
+        changed = true;
+    } else if controller.ui.browser.rating_filter.len() != 1
+        || !controller.ui.browser.rating_filter.contains(&level)
+    {
+        controller.ui.browser.rating_filter.clear();
+        controller.ui.browser.rating_filter.insert(level);
+        changed = true;
+    }
+    if changed {
+        controller.rebuild_browser_lists();
+    }
+}
+
+/// Clear all browser rating filters.
+pub(crate) fn clear_browser_rating_filter(controller: &mut EguiController) {
+    if controller.ui.browser.rating_filter.is_empty() {
+        return;
+    }
+    controller.ui.browser.rating_filter.clear();
+    controller.rebuild_browser_lists();
 }
 
 pub(crate) fn set_browser_sort(controller: &mut EguiController, sort: SampleBrowserSort) {

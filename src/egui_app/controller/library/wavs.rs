@@ -607,6 +607,16 @@ impl EguiController {
         browser_search::set_browser_filter(self, filter);
     }
 
+    /// Apply a rating-level filter to the browser list (-3..=3).
+    pub fn set_browser_rating_filter(&mut self, level: i8, additive: bool) {
+        browser_search::set_browser_rating_filter(self, level, additive);
+    }
+
+    /// Clear any active rating-level filters in the browser list.
+    pub fn clear_browser_rating_filter(&mut self) {
+        browser_search::clear_browser_rating_filter(self);
+    }
+
     /// Apply a new sample browser sort mode and refresh visible rows.
     pub fn set_browser_sort(&mut self, sort: SampleBrowserSort) {
         browser_search::set_browser_sort(self, sort);

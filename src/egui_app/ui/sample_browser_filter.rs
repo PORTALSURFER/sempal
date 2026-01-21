@@ -7,25 +7,62 @@ use eframe::egui::{self, RichText, Ui};
 impl EguiApp {
     pub(super) fn render_sample_browser_filter(&mut self, ui: &mut Ui) {
         let palette = style::palette();
+        let semantic = style::semantic_palette();
         let tooltip_mode = self.controller.ui.controls.tooltip_mode;
         let visible_count = self.controller.visible_browser_len();
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Filter").color(palette.text_primary));
-            for filter in [
-                TriageFlagFilter::All,
-                TriageFlagFilter::Keep,
-                TriageFlagFilter::Trash,
-                TriageFlagFilter::Untagged,
-            ] {
-                let selected = self.controller.ui.browser.filter == filter;
-                let label = match filter {
-                    TriageFlagFilter::All => "All",
-                    TriageFlagFilter::Keep => "Keep",
-                    TriageFlagFilter::Trash => "Trash",
-                    TriageFlagFilter::Untagged => "Untagged",
+            let rating_filter_active = !self.controller.ui.browser.rating_filter.is_empty();
+            let clear_color = if rating_filter_active {
+                palette.text_primary
+            } else {
+                palette.text_muted
+            };
+            let clear_icon = RichText::new("⦸").color(clear_color);
+            if ui.add(egui::Button::new(clear_icon)).clicked() {
+                let needs_clear = rating_filter_active
+                    || self.controller.ui.browser.filter != TriageFlagFilter::All;
+                if needs_clear {
+                    self.controller.ui.browser.rating_filter.clear();
+                    self.controller.ui.browser.filter = TriageFlagFilter::All;
+                    self.controller.rebuild_browser_lists();
+                }
+            }
+            ui.add_space(ui.spacing().item_spacing.x * 0.6);
+            let square_size = 12.0;
+            let square_rounding = 1.5;
+            let square_gap = ui.spacing().item_spacing.x * 0.4;
+            let levels = [-3, -2, -1, 0, 1, 2, 3];
+            for (idx, level) in levels.iter().enumerate() {
+                let selected = self.controller.ui.browser.rating_filter.contains(level);
+                let base_color = match level {
+                    -3..=-1 => semantic.triage_trash,
+                    0 => palette.text_primary,
+                    1..=3 => semantic.triage_keep,
+                    _ => palette.text_primary,
                 };
-                if ui.selectable_label(selected, label).clicked() {
-                    self.controller.set_browser_filter(filter);
+                let fill = if selected {
+                    base_color
+                } else {
+                    style::with_alpha(base_color, 80)
+                };
+                let stroke = if selected {
+                    egui::Stroke::new(1.0, palette.text_primary)
+                } else {
+                    egui::Stroke::new(1.0, palette.panel_outline)
+                };
+                let (rect, response) = ui.allocate_exact_size(
+                    egui::vec2(square_size, square_size),
+                    egui::Sense::click(),
+                );
+                ui.painter().rect_filled(rect, square_rounding, fill);
+                ui.painter().rect_stroke(rect, square_rounding, stroke);
+                if response.clicked() {
+                    let modifiers = ui.input(|i| i.modifiers);
+                    let additive = modifiers.command || modifiers.ctrl;
+                    self.controller.set_browser_rating_filter(*level, additive);
+                }
+                if idx + 1 < levels.len() {
+                    ui.add_space(square_gap);
                 }
             }
             ui.add_space(ui.spacing().item_spacing.x);

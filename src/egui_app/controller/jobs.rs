@@ -53,6 +53,8 @@ pub(crate) struct SearchJob {
     pub(super) source_root: PathBuf,
     pub(super) query: String,
     pub(super) filter: crate::egui_app::state::TriageFlagFilter,
+    /// Rating levels selected for filtering (-3..=3). Empty means no rating filter.
+    pub(super) rating_filter: BTreeSet<i8>,
     pub(super) sort: crate::egui_app::state::SampleBrowserSort,
     pub(super) similar_query: Option<crate::egui_app::state::SimilarQuery>,
     pub(super) folder_selection: Option<BTreeSet<PathBuf>>,

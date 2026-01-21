@@ -3,6 +3,7 @@ use super::common::visible_indices;
 use crate::egui_app::state::{
     TriageFlagColumn, TriageFlagFilter,
 };
+use crate::sample_sources::Rating;
 use std::path::{Path, PathBuf};
 
 #[test]
@@ -116,6 +117,32 @@ fn browser_filter_limits_visible_rows() {
     assert_eq!(visible_indices(&controller), vec![1]);
     controller.set_browser_filter(TriageFlagFilter::All);
     assert_eq!(visible_indices(&controller), vec![0, 1, 2]);
+}
+
+#[test]
+fn browser_rating_filter_limits_visible_rows() {
+    let (mut controller, source) = dummy_controller();
+    controller.library.sources.push(source);
+    controller.set_wav_entries_for_tests(vec![
+        sample_entry("trash3.wav", Rating::TRASH_3),
+        sample_entry("trash2.wav", Rating::new(-2)),
+        sample_entry("trash1.wav", Rating::TRASH_1),
+        sample_entry("neutral.wav", Rating::NEUTRAL),
+        sample_entry("keep1.wav", Rating::KEEP_1),
+        sample_entry("keep2.wav", Rating::new(2)),
+        sample_entry("keep3.wav", Rating::KEEP_3),
+    ]);
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    controller.set_browser_rating_filter(-2, false);
+    assert_eq!(visible_indices(&controller), vec![1]);
+
+    controller.set_browser_rating_filter(2, true);
+    assert_eq!(visible_indices(&controller), vec![1, 5]);
+
+    controller.clear_browser_rating_filter();
+    assert_eq!(visible_indices(&controller), vec![0, 1, 2, 3, 4, 5, 6]);
 }
 
 #[test]

@@ -179,7 +179,9 @@ impl EguiController {
         &mut self,
         primary_visible_row: usize,
     ) {
-        if matches!(self.ui.browser.filter, TriageFlagFilter::All) {
+        if matches!(self.ui.browser.filter, TriageFlagFilter::All)
+            && self.ui.browser.rating_filter.is_empty()
+        {
             return;
         }
         if self.ui.browser.visible.len() == 0 || self.ui.browser.selected_visible.is_some() {

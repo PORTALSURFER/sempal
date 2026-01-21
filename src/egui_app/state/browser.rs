@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -30,6 +31,8 @@ pub struct SampleBrowserState {
     pub autoscroll: bool,
     /// Active triage filter.
     pub filter: TriageFlagFilter,
+    /// Rating levels selected for filtering (-3..=3). Empty means no rating filter.
+    pub rating_filter: BTreeSet<i8>,
     /// Text query applied to visible rows via fuzzy search.
     pub search_query: String,
     /// Flag to request focus for the search field in the UI.
@@ -74,6 +77,7 @@ impl Default for SampleBrowserState {
             last_focused_path: None,
             autoscroll: false,
             filter: TriageFlagFilter::All,
+            rating_filter: BTreeSet::new(),
             search_query: String::new(),
             search_focus_requested: false,
             random_navigation_mode: false,
