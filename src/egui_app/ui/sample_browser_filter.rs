@@ -34,16 +34,28 @@ impl EguiApp {
             let levels = [-3, -2, -1, 0, 1, 2, 3];
             for (idx, level) in levels.iter().enumerate() {
                 let selected = self.controller.ui.browser.rating_filter.contains(level);
-                let base_color = match level {
-                    -3..=-1 => semantic.triage_trash,
-                    0 => palette.text_primary,
-                    1..=3 => semantic.triage_keep,
-                    _ => palette.text_primary,
+                let (base_color, level_strength) = match level {
+                    -3..=-1 => (
+                        semantic.triage_trash,
+                        (*level).abs() as f32 / 3.0,
+                    ),
+                    0 => (palette.text_primary, 0.0),
+                    1..=3 => (
+                        semantic.triage_keep,
+                        (*level).abs() as f32 / 3.0,
+                    ),
+                    _ => (palette.text_primary, 0.0),
                 };
-                let fill = if selected {
-                    base_color
+                let neutral_alpha = if selected { 220 } else { 90 };
+                let level_alpha = if selected {
+                    220
                 } else {
-                    style::with_alpha(base_color, 80)
+                    (70.0 + (120.0 * level_strength)).round() as u8
+                };
+                let fill = if *level == 0 {
+                    style::with_alpha(base_color, neutral_alpha)
+                } else {
+                    style::with_alpha(base_color, level_alpha)
                 };
                 let stroke = if selected {
                     egui::Stroke::new(1.0, palette.text_primary)
