@@ -4,9 +4,16 @@ use crate::waveform::{DecodedWaveform, WaveformRenderer};
 use std::{
     fs,
     path::{Component, Path, PathBuf},
-    sync::mpsc::{Receiver, Sender},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc::{Receiver, Sender},
+        Arc,
+    },
     thread,
+    time::Duration,
 };
+
+const AUDIO_LOADER_POLL_INTERVAL: Duration = Duration::from_millis(200);
 
 pub(crate) struct AudioLoadJob {
     pub request_id: u64,
@@ -37,23 +44,55 @@ pub(crate) struct AudioLoadResult {
     pub result: Result<AudioLoadOutcome, AudioLoadError>,
 }
 
+/// Join handle and shutdown signal for the audio loader thread.
+pub(crate) struct AudioLoaderHandle {
+    shutdown: Arc<AtomicBool>,
+    join_handle: Option<thread::JoinHandle<()>>,
+}
+
+impl AudioLoaderHandle {
+    /// Signal the loader thread to exit and wait for it to finish.
+    pub(crate) fn shutdown(&mut self) {
+        self.shutdown.store(true, Ordering::Relaxed);
+        if let Some(handle) = self.join_handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+/// Spawn the audio loader worker and return its job channel plus shutdown handle.
 pub(crate) fn spawn_audio_loader(
     renderer: WaveformRenderer,
-) -> (Sender<AudioLoadJob>, Receiver<AudioLoadResult>) {
+) -> (Sender<AudioLoadJob>, Receiver<AudioLoadResult>, AudioLoaderHandle) {
     let (tx, rx) = std::sync::mpsc::channel::<AudioLoadJob>();
     let (result_tx, result_rx) = std::sync::mpsc::channel::<AudioLoadResult>();
-    thread::spawn(move || {
-        while let Ok(job) = rx.recv() {
-            let outcome = load_audio(&renderer, &job);
-            let _ = result_tx.send(AudioLoadResult {
-                request_id: job.request_id,
-                source_id: job.source_id.clone(),
-                relative_path: job.relative_path.clone(),
-                result: outcome,
-            });
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let shutdown_worker = Arc::clone(&shutdown);
+    let handle = thread::spawn(move || {
+        while !shutdown_worker.load(Ordering::Relaxed) {
+            match rx.recv_timeout(AUDIO_LOADER_POLL_INTERVAL) {
+                Ok(job) => {
+                    let outcome = load_audio(&renderer, &job);
+                    let _ = result_tx.send(AudioLoadResult {
+                        request_id: job.request_id,
+                        source_id: job.source_id.clone(),
+                        relative_path: job.relative_path.clone(),
+                        result: outcome,
+                    });
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            }
         }
     });
-    (tx, result_rx)
+    (
+        tx,
+        result_rx,
+        AudioLoaderHandle {
+            shutdown,
+            join_handle: Some(handle),
+        },
+    )
 }
 
 fn load_audio(

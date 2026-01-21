@@ -32,6 +32,7 @@ impl eframe::App for EguiApp {
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.controller.commit_pending_age_update();
+        self.controller.shutdown();
     }
 }
 

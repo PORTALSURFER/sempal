@@ -1,11 +1,15 @@
 use super::ScanJobMessage;
 use super::library::analysis_jobs::AnalysisJobMessage;
 use super::library::trash_move;
-use super::playback::audio_loader::{AudioLoadJob, AudioLoadResult};
+use super::library::wav_entries_loader::WavLoaderHandle;
+use super::playback::audio_loader::{AudioLoadJob, AudioLoadResult, AudioLoaderHandle};
 use super::playback::recording::waveform_loader::{
     RecordingWaveformJob, RecordingWaveformJobSender, RecordingWaveformLoadResult,
+    RecordingWaveformWorkerHandle,
 };
-use super::source_watcher::{SourceWatchCommand, SourceWatchEntry, SourceWatchEvent};
+use super::source_watcher::{
+    SourceWatchCommand, SourceWatchEntry, SourceWatchEvent, SourceWatcherHandle,
+};
 use super::state::audio::{PendingAudio, PendingPlayback, PendingRecordingWaveform};
 use super::state::runtime::{UpdateCheckResult, WavLoadJob, WavLoadResult};
 use crate::sample_sources::SourceId;
@@ -548,12 +552,18 @@ pub(crate) enum UndoFileOutcome {
     },
 }
 
+/// Coordinator for controller job channels, worker handles, and job state.
 pub(crate) struct ControllerJobs {
     pub(crate) wav_job_tx: Sender<WavLoadJob>,
     pub(crate) audio_job_tx: Sender<AudioLoadJob>,
     recording_waveform_job_tx: RecordingWaveformJobSender,
     pub(crate) search_job_tx: crate::egui_app::controller::library::wavs::browser_search_worker::SearchJobSender,
-    source_watch_tx: Sender<SourceWatchCommand>,
+    wav_loader: WavLoaderHandle,
+    audio_loader: AudioLoaderHandle,
+    recording_waveform_loader: RecordingWaveformWorkerHandle,
+    search_worker: crate::egui_app::controller::library::wavs::browser_search_worker::SearchWorkerHandle,
+    source_watcher: SourceWatcherHandle,
+    forwarders: Option<JobForwarderHandles>,
     message_tx: Sender<JobMessage>,
     message_rx: Receiver<JobMessage>,
     pub(super) pending_source: Option<SourceId>,
@@ -591,26 +601,118 @@ pub(super) struct PendingFolderScan {
     source_id: SourceId,
 }
 
+/// Join handles for job result forwarding threads to shut them down deterministically.
+pub(crate) struct JobForwarderHandles {
+    wav: thread::JoinHandle<()>,
+    audio: thread::JoinHandle<()>,
+    recording_waveform: thread::JoinHandle<()>,
+    search: thread::JoinHandle<()>,
+}
+
+impl JobForwarderHandles {
+    fn spawn(
+        message_tx: &Sender<JobMessage>,
+        repaint_signal: &Arc<Mutex<Option<egui::Context>>>,
+        wav_job_rx: Receiver<WavLoadResult>,
+        audio_job_rx: Receiver<AudioLoadResult>,
+        recording_waveform_job_rx: Receiver<RecordingWaveformLoadResult>,
+        search_job_rx: Receiver<SearchResult>,
+    ) -> Self {
+        let wav = spawn_forwarder(
+            message_tx.clone(),
+            repaint_signal.clone(),
+            wav_job_rx,
+            JobMessage::WavLoaded,
+        );
+        let audio = spawn_forwarder(
+            message_tx.clone(),
+            repaint_signal.clone(),
+            audio_job_rx,
+            JobMessage::AudioLoaded,
+        );
+        let recording_waveform = spawn_forwarder(
+            message_tx.clone(),
+            repaint_signal.clone(),
+            recording_waveform_job_rx,
+            JobMessage::RecordingWaveformLoaded,
+        );
+        let search = spawn_forwarder(
+            message_tx.clone(),
+            repaint_signal.clone(),
+            search_job_rx,
+            JobMessage::BrowserSearchFinished,
+        );
+        Self {
+            wav,
+            audio,
+            recording_waveform,
+            search,
+        }
+    }
+
+    fn join(mut self) {
+        let _ = self.wav.join();
+        let _ = self.audio.join();
+        let _ = self.recording_waveform.join();
+        let _ = self.search.join();
+    }
+}
+
+fn spawn_forwarder<T: Send + 'static>(
+    message_tx: Sender<JobMessage>,
+    repaint_signal: Arc<Mutex<Option<egui::Context>>>,
+    rx: Receiver<T>,
+    wrap: fn(T) -> JobMessage,
+) -> thread::JoinHandle<()> {
+    thread::spawn(move || {
+        while let Ok(message) = rx.recv() {
+            let _ = message_tx.send(wrap(message));
+            if let Ok(lock) = repaint_signal.lock() {
+                if let Some(ctx) = lock.as_ref() {
+                    ctx.request_repaint();
+                }
+            }
+        }
+    })
+}
+
 impl ControllerJobs {
     pub(super) fn new(
         wav_job_tx: Sender<WavLoadJob>,
         wav_job_rx: Receiver<WavLoadResult>,
+        wav_loader: WavLoaderHandle,
         audio_job_tx: Sender<AudioLoadJob>,
         audio_job_rx: Receiver<AudioLoadResult>,
+        audio_loader: AudioLoaderHandle,
         recording_waveform_job_tx: RecordingWaveformJobSender,
         recording_waveform_job_rx: Receiver<RecordingWaveformLoadResult>,
+        recording_waveform_loader: RecordingWaveformWorkerHandle,
         search_job_tx: crate::egui_app::controller::library::wavs::browser_search_worker::SearchJobSender,
         search_job_rx: Receiver<SearchResult>,
+        search_worker: crate::egui_app::controller::library::wavs::browser_search_worker::SearchWorkerHandle,
     ) -> Self {
         let (message_tx, message_rx) = std::sync::mpsc::channel::<JobMessage>();
-        let source_watch_tx =
-            super::source_watcher::spawn_source_watcher(message_tx.clone());
+        let source_watcher = super::source_watcher::spawn_source_watcher(message_tx.clone());
+        let repaint_signal = Arc::new(Mutex::new(None));
+        let forwarders = JobForwarderHandles::spawn(
+            &message_tx,
+            &repaint_signal,
+            wav_job_rx,
+            audio_job_rx,
+            recording_waveform_job_rx,
+            search_job_rx,
+        );
         let jobs = Self {
             wav_job_tx,
             audio_job_tx,
             recording_waveform_job_tx,
             search_job_tx,
-            source_watch_tx,
+            wav_loader,
+            audio_loader,
+            recording_waveform_loader,
+            search_worker,
+            source_watcher,
+            forwarders: Some(forwarders),
             message_tx,
             message_rx,
             pending_source: None,
@@ -639,12 +741,8 @@ impl ControllerJobs {
             issue_token_load_in_progress: false,
             issue_token_save_in_progress: false,
             issue_token_delete_in_progress: false,
-            repaint_signal: Arc::new(Mutex::new(None)),
+            repaint_signal,
         };
-        jobs.forward_wav_results(wav_job_rx);
-        jobs.forward_audio_results(audio_job_rx);
-        jobs.forward_recording_waveform_results(recording_waveform_job_rx);
-        jobs.forward_search_results(search_job_rx);
         jobs
     }
 
@@ -662,75 +760,37 @@ impl ControllerJobs {
         }
     }
 
+    /// Shut down background workers owned by the controller to avoid leaking threads on exit.
+    pub(crate) fn shutdown(&mut self) {
+        if let Some(cancel) = self.scan_cancel.as_ref() {
+            cancel.store(true, Ordering::Relaxed);
+        }
+        if let Some(cancel) = self.folder_scan_cancel.as_ref() {
+            cancel.store(true, Ordering::Relaxed);
+        }
+        if let Some(cancel) = self.trash_move_cancel.as_ref() {
+            cancel.store(true, Ordering::Relaxed);
+        }
+        if let Some(cancel) = self.file_ops_cancel.as_ref() {
+            cancel.store(true, Ordering::Relaxed);
+        }
+        if let Some(cancel) = self.issue_gateway_poll_cancel.as_ref() {
+            cancel.store(true, Ordering::Relaxed);
+        }
+        self.source_watcher.shutdown();
+        self.search_worker.shutdown();
+        self.recording_waveform_loader.shutdown();
+        self.audio_loader.shutdown();
+        self.wav_loader.shutdown();
+        if let Some(forwarders) = self.forwarders.take() {
+            forwarders.join();
+        }
+    }
 
     /// Update the source roots watched for on-disk changes.
     pub(crate) fn update_source_watcher(&self, sources: Vec<SourceWatchEntry>) {
-        let _ = self
-            .source_watch_tx
+        self.source_watcher
             .send(SourceWatchCommand::ReplaceSources(sources));
-    }
-
-    pub(super) fn forward_wav_results(&self, rx: Receiver<WavLoadResult>) {
-        let tx = self.message_tx.clone();
-        let signal = self.repaint_signal.clone();
-        thread::spawn(move || {
-            while let Ok(message) = rx.recv() {
-                let _ = tx.send(JobMessage::WavLoaded(message));
-                if let Ok(lock) = signal.lock() {
-                    if let Some(ctx) = lock.as_ref() {
-                        ctx.request_repaint();
-                    }
-                }
-            }
-        });
-    }
-
-    pub(super) fn forward_audio_results(&self, rx: Receiver<AudioLoadResult>) {
-        let tx = self.message_tx.clone();
-        let signal = self.repaint_signal.clone();
-        thread::spawn(move || {
-            while let Ok(message) = rx.recv() {
-                let _ = tx.send(JobMessage::AudioLoaded(message));
-                if let Ok(lock) = signal.lock() {
-                    if let Some(ctx) = lock.as_ref() {
-                        ctx.request_repaint();
-                    }
-                }
-            }
-        });
-    }
-
-    pub(super) fn forward_recording_waveform_results(
-        &self,
-        rx: Receiver<RecordingWaveformLoadResult>,
-    ) {
-        let tx = self.message_tx.clone();
-        let signal = self.repaint_signal.clone();
-        thread::spawn(move || {
-            while let Ok(message) = rx.recv() {
-                let _ = tx.send(JobMessage::RecordingWaveformLoaded(message));
-                if let Ok(lock) = signal.lock() {
-                    if let Some(ctx) = lock.as_ref() {
-                        ctx.request_repaint();
-                    }
-                }
-            }
-        });
-    }
-
-    pub(super) fn forward_search_results(&self, rx: Receiver<SearchResult>) {
-        let tx = self.message_tx.clone();
-        let signal = self.repaint_signal.clone();
-        thread::spawn(move || {
-            while let Ok(message) = rx.recv() {
-                let _ = tx.send(JobMessage::BrowserSearchFinished(message));
-                if let Ok(lock) = signal.lock() {
-                    if let Some(ctx) = lock.as_ref() {
-                        ctx.request_repaint();
-                    }
-                }
-            }
-        });
     }
 
     pub(super) fn wav_load_pending_for(&self, source_id: &SourceId) -> bool {
@@ -912,8 +972,7 @@ impl ControllerJobs {
     }
 
     fn send_source_watch_scan_state(&self, in_progress: bool) {
-        let _ = self
-            .source_watch_tx
+        self.source_watcher
             .send(SourceWatchCommand::SetScanInProgress { in_progress });
     }
 

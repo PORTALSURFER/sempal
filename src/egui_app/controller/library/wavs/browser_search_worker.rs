@@ -61,6 +61,7 @@ impl Default for SearchWorkerCache {
 struct SearchJobQueueState {
     pending: Option<SearchJob>,
     poisoned_recovered: bool,
+    shutdown: bool,
 }
 
 /// Latest-only queue for browser search jobs.
@@ -79,15 +80,28 @@ impl SearchJobQueue {
 
     fn send(&self, job: SearchJob) {
         let mut state = self.lock_state();
+        if state.shutdown {
+            return;
+        }
         state.pending = Some(job);
         self.ready.notify_one();
     }
 
-    fn take_blocking(&self) -> SearchJob {
+    fn shutdown(&self) {
+        let mut state = self.lock_state();
+        state.shutdown = true;
+        state.pending = None;
+        self.ready.notify_all();
+    }
+
+    fn take_blocking(&self) -> Option<SearchJob> {
         let mut state = self.lock_state();
         loop {
+            if state.shutdown {
+                return None;
+            }
             if let Some(job) = state.pending.take() {
-                return job;
+                return Some(job);
             }
             state = self.wait_ready(state);
         }
@@ -145,23 +159,48 @@ impl SearchJobSender {
     }
 }
 
+/// Join handle and shutdown signal for the browser search worker thread.
+pub(crate) struct SearchWorkerHandle {
+    queue: Arc<SearchJobQueue>,
+    join_handle: Option<thread::JoinHandle<()>>,
+}
+
+impl SearchWorkerHandle {
+    /// Signal the worker thread to exit and wait for it to finish.
+    pub(crate) fn shutdown(&mut self) {
+        self.queue.shutdown();
+        if let Some(handle) = self.join_handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
 /// Spawn a background worker that processes the latest pending search job.
-pub(crate) fn spawn_search_worker() -> (SearchJobSender, Receiver<SearchResult>) {
+/// Returns the sender, result channel, and a shutdown handle.
+pub(crate) fn spawn_search_worker(
+) -> (SearchJobSender, Receiver<SearchResult>, SearchWorkerHandle) {
     let queue = Arc::new(SearchJobQueue::new());
     let sender = SearchJobSender {
         queue: Arc::clone(&queue),
     };
     let (result_tx, result_rx) = std::sync::mpsc::channel::<SearchResult>();
-    thread::spawn(move || {
+    let queue_worker = Arc::clone(&queue);
+    let handle = thread::spawn(move || {
         let matcher = SkimMatcherV2::default();
         let mut cache = SearchWorkerCache::default();
-        loop {
-            let job = queue.take_blocking();
+        while let Some(job) = queue_worker.take_blocking() {
             let result = process_search_job(job, &matcher, &mut cache);
             let _ = result_tx.send(result);
         }
     });
-    (sender, result_rx)
+    (
+        sender,
+        result_rx,
+        SearchWorkerHandle {
+            queue,
+            join_handle: Some(handle),
+        },
+    )
 }
 
 fn process_search_job(
@@ -524,7 +563,9 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         let queue_for_worker = Arc::clone(&queue);
         let handle = thread::spawn(move || {
-            let job = queue_for_worker.take_blocking();
+            let job = queue_for_worker
+                .take_blocking()
+                .expect("expected job after recovery");
             tx.send(job.query).expect("send result");
         });
 
@@ -534,6 +575,23 @@ mod tests {
             .recv_timeout(Duration::from_secs(1))
             .expect("search job never received");
         assert_eq!(received, "recovered");
+        handle.join().expect("worker thread panicked");
+    }
+
+    #[test]
+    fn search_queue_shutdown_unblocks() {
+        let queue = Arc::new(SearchJobQueue::new());
+        let (tx, rx) = mpsc::channel();
+        let queue_for_worker = Arc::clone(&queue);
+        let handle = thread::spawn(move || {
+            let result = queue_for_worker.take_blocking();
+            tx.send(result.is_none()).expect("send shutdown");
+        });
+        queue.shutdown();
+        let shutdown = rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("shutdown result");
+        assert!(shutdown);
         handle.join().expect("worker thread panicked");
     }
 

@@ -59,6 +59,7 @@ pub(crate) struct RecordingWaveformLoadResult {
 #[derive(Default)]
 struct RecordingWaveformJobQueueState {
     pending: Option<RecordingWaveformJob>,
+    shutdown: bool,
 }
 
 #[derive(Clone, Hash, PartialEq, Eq)]
@@ -385,15 +386,28 @@ impl RecordingWaveformJobQueue {
 
     fn send(&self, job: RecordingWaveformJob) {
         let mut state = self.lock_state();
+        if state.shutdown {
+            return;
+        }
         state.pending = Some(job);
         self.ready.notify_one();
     }
 
-    fn take_blocking(&self) -> RecordingWaveformJob {
+    fn shutdown(&self) {
+        let mut state = self.lock_state();
+        state.shutdown = true;
+        state.pending = None;
+        self.ready.notify_all();
+    }
+
+    fn take_blocking(&self) -> Option<RecordingWaveformJob> {
         let mut state = self.lock_state();
         loop {
+            if state.shutdown {
+                return None;
+            }
             if let Some(job) = state.pending.take() {
-                return job;
+                return Some(job);
             }
             state = self.wait_ready(state);
         }
@@ -439,20 +453,50 @@ impl RecordingWaveformJobSender {
     }
 }
 
+/// Join handle and shutdown signal for the recording waveform worker thread.
+pub(crate) struct RecordingWaveformWorkerHandle {
+    queue: Arc<RecordingWaveformJobQueue>,
+    join_handle: Option<thread::JoinHandle<()>>,
+}
+
+impl RecordingWaveformWorkerHandle {
+    /// Signal the worker thread to exit and wait for it to finish.
+    pub(crate) fn shutdown(&mut self) {
+        self.queue.shutdown();
+        if let Some(handle) = self.join_handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
 /// Spawn a background worker that processes the latest pending recording waveform job.
+/// Returns the sender, result channel, and a shutdown handle.
 pub(crate) fn spawn_recording_waveform_loader(
-) -> (RecordingWaveformJobSender, Receiver<RecordingWaveformLoadResult>) {
+) -> (
+    RecordingWaveformJobSender,
+    Receiver<RecordingWaveformLoadResult>,
+    RecordingWaveformWorkerHandle,
+) {
     let queue = Arc::new(RecordingWaveformJobQueue::new());
     let sender = RecordingWaveformJobSender {
         queue: Arc::clone(&queue),
     };
     let (result_tx, result_rx) = std::sync::mpsc::channel::<RecordingWaveformLoadResult>();
-    thread::spawn(move || loop {
-        let job = queue.take_blocking();
-        let result = load_recording_waveform(job);
-        let _ = result_tx.send(result);
+    let queue_worker = Arc::clone(&queue);
+    let handle = thread::spawn(move || {
+        while let Some(job) = queue_worker.take_blocking() {
+            let result = load_recording_waveform(job);
+            let _ = result_tx.send(result);
+        }
     });
-    (sender, result_rx)
+    (
+        sender,
+        result_rx,
+        RecordingWaveformWorkerHandle {
+            queue,
+            join_handle: Some(handle),
+        },
+    )
 }
 
 fn load_recording_waveform(job: RecordingWaveformJob) -> RecordingWaveformLoadResult {
@@ -836,8 +880,9 @@ fn next_recording_cache_token() -> u64 {
 mod tests {
     use super::*;
     use std::io::Write;
+    use std::sync::{Arc, Mutex};
+    use std::thread;
     use tempfile::NamedTempFile;
-    use std::sync::Mutex;
 
     static RECORDING_STATE_LOCK: Mutex<()> = Mutex::new(());
 
@@ -909,6 +954,23 @@ mod tests {
         let pending = queue.try_take().expect("expected pending job");
         assert_eq!(pending.request_id, newer.request_id);
         assert_eq!(pending.relative_path, newer.relative_path);
+    }
+
+    #[test]
+    fn recording_waveform_queue_shutdown_unblocks() {
+        let queue = Arc::new(RecordingWaveformJobQueue::new());
+        let (tx, rx) = std::sync::mpsc::channel();
+        let queue_worker = Arc::clone(&queue);
+        let handle = thread::spawn(move || {
+            let result = queue_worker.take_blocking();
+            tx.send(result.is_none()).expect("send result");
+        });
+        queue.shutdown();
+        let shutdown = rx
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("shutdown signal");
+        assert!(shutdown);
+        handle.join().expect("worker thread panicked");
     }
 
     #[test]

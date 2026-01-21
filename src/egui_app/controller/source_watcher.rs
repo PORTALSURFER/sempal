@@ -33,6 +33,8 @@ pub(crate) enum SourceWatchCommand {
     ReplaceSources(Vec<SourceWatchEntry>),
     /// Tell the watcher whether a scan job is currently running.
     SetScanInProgress { in_progress: bool },
+    /// Signal the watcher thread to exit.
+    Shutdown,
 }
 
 /// Event emitted when a watched source sees an on-disk change worth syncing.
@@ -41,13 +43,35 @@ pub(crate) struct SourceWatchEvent {
     pub(crate) source_id: SourceId,
 }
 
-/// Spawn the watcher thread and return a sender used to update watched sources.
-pub(crate) fn spawn_source_watcher(
-    message_tx: Sender<JobMessage>,
-) -> Sender<SourceWatchCommand> {
+/// Join handle and command sender for the source watcher thread.
+pub(crate) struct SourceWatcherHandle {
+    command_tx: Sender<SourceWatchCommand>,
+    join_handle: Option<thread::JoinHandle<()>>,
+}
+
+impl SourceWatcherHandle {
+    /// Send a command to the watcher thread.
+    pub(crate) fn send(&self, command: SourceWatchCommand) {
+        let _ = self.command_tx.send(command);
+    }
+
+    /// Signal the watcher thread to exit and wait for it to finish.
+    pub(crate) fn shutdown(&mut self) {
+        let _ = self.command_tx.send(SourceWatchCommand::Shutdown);
+        if let Some(handle) = self.join_handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+/// Spawn the watcher thread and return a handle used to update watched sources.
+pub(crate) fn spawn_source_watcher(message_tx: Sender<JobMessage>) -> SourceWatcherHandle {
     let (command_tx, command_rx) = std::sync::mpsc::channel();
-    thread::spawn(move || run_source_watcher(command_rx, message_tx));
-    command_tx
+    let handle = thread::spawn(move || run_source_watcher(command_rx, message_tx));
+    SourceWatcherHandle {
+        command_tx,
+        join_handle: Some(handle),
+    }
 }
 
 fn run_source_watcher(command_rx: Receiver<SourceWatchCommand>, message_tx: Sender<JobMessage>) {
@@ -77,6 +101,7 @@ fn run_source_watcher(command_rx: Receiver<SourceWatchCommand>, message_tx: Send
                 SourceWatchCommand::SetScanInProgress { in_progress } => {
                     scan_in_progress = in_progress;
                 }
+                SourceWatchCommand::Shutdown => break,
             },
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,

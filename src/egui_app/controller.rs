@@ -73,20 +73,26 @@ pub struct EguiController {
 impl EguiController {
     /// Create a controller with shared renderer and optional audio player.
     pub fn new(renderer: WaveformRenderer, player: Option<Rc<RefCell<AudioPlayer>>>) -> Self {
-        let (wav_job_tx, wav_job_rx) = library::wav_entries_loader::spawn_wav_loader();
-        let (audio_job_tx, audio_job_rx) = playback::audio_loader::spawn_audio_loader(renderer.clone());
-        let (recording_waveform_job_tx, recording_waveform_job_rx) =
+        let (wav_job_tx, wav_job_rx, wav_loader) = library::wav_entries_loader::spawn_wav_loader();
+        let (audio_job_tx, audio_job_rx, audio_loader) =
+            playback::audio_loader::spawn_audio_loader(renderer.clone());
+        let (recording_waveform_job_tx, recording_waveform_job_rx, recording_waveform_loader) =
             playback::recording::waveform_loader::spawn_recording_waveform_loader();
-        let (search_job_tx, search_job_rx) = library::wavs::browser_search_worker::spawn_search_worker();
+        let (search_job_tx, search_job_rx, search_worker) =
+            library::wavs::browser_search_worker::spawn_search_worker();
         let jobs = jobs::ControllerJobs::new(
             wav_job_tx,
             wav_job_rx,
+            wav_loader,
             audio_job_tx,
             audio_job_rx,
+            audio_loader,
             recording_waveform_job_tx,
             recording_waveform_job_rx,
+            recording_waveform_loader,
             search_job_tx,
             search_job_rx,
+            search_worker,
         );
         let analysis = AnalysisWorkerPool::new();
         Self {
@@ -219,6 +225,12 @@ impl EguiController {
     pub(crate) fn set_repaint_signal(&mut self, ctx: egui::Context) {
         self.runtime.jobs.set_repaint_signal(ctx.clone());
         self.runtime.analysis.set_repaint_signal(ctx);
+    }
+
+    /// Shut down background workers owned by the controller.
+    pub(crate) fn shutdown(&mut self) {
+        self.runtime.jobs.shutdown();
+        self.runtime.analysis.shutdown();
     }
 
     pub(crate) fn undo(&mut self) {
