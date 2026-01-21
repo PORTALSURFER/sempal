@@ -331,6 +331,7 @@ mod tests {
     use std::sync::Mutex;
     use tempfile::tempdir;
 
+    #[cfg(feature = "sqlite-ext-unsafe")]
     static CWD_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
