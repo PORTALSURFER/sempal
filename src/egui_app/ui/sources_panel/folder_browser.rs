@@ -85,7 +85,7 @@ impl EguiApp {
         );
         let scroll_to = self.controller.ui.sources.folders.scroll_to;
         let mut hovered_folder = None;
-        let mut rows = std::mem::take(&mut self.controller.ui.sources.folders.rows);
+        let rows = std::mem::take(&mut self.controller.ui.sources.folders.rows);
         let root_row = rows.first().filter(|row| row.is_root);
         let has_folder_rows = rows.iter().any(|row| !row.is_root);
         let show_hotkey_column = rows.iter().any(|row| row.hotkey.is_some());

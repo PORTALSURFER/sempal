@@ -59,7 +59,7 @@ impl EguiApp {
         } else {
             Some(external_drop_paths)
         };
-        let mut rows = std::mem::take(&mut self.controller.ui.sources.drop_targets.rows);
+        let rows = std::mem::take(&mut self.controller.ui.sources.drop_targets.rows);
         let selected = self.controller.ui.sources.drop_targets.selected;
         let frame = style::section_frame();
         let frame_response = frame.show(ui, |ui| {

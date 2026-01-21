@@ -19,7 +19,7 @@ impl EguiApp {
             drag_payload,
             Some(DragPayload::Sample { .. } | DragPayload::Samples { .. })
         );
-        let mut rows = std::mem::take(&mut self.controller.ui.sources.rows);
+        let rows = std::mem::take(&mut self.controller.ui.sources.rows);
         let output = egui::ScrollArea::vertical()
             .id_salt("sources_scroll")
             .min_scrolled_height(height)
