@@ -9,8 +9,9 @@ use crate::{
 };
 
 use super::super::config_defaults::{
-    clamp_analysis_worker_count, clamp_volume, default_audio_input, default_audio_output,
-    default_true, default_volume,
+    clamp_analysis_worker_count, clamp_job_message_queue_capacity, clamp_volume,
+    default_audio_input, default_audio_output, default_job_message_queue_capacity, default_true,
+    default_volume,
 };
 use super::{AnalysisSettings, InteractionOptions, UpdateSettings};
 
@@ -18,7 +19,7 @@ use super::{AnalysisSettings, InteractionOptions, UpdateSettings};
 ///
 /// Config keys (TOML): `feature_flags`, `analysis`, `updates`, `app_data_dir`,
 /// `trash_folder`, `drop_targets`, `last_selected_source`,
-/// `volume`, `audio_output`, `audio_input`, `controls`.
+/// `volume`, `audio_output`, `audio_input`, `controls`, `job_message_queue_capacity`.
 ///
 /// `sources` are stored in the library database.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,6 +75,9 @@ pub struct AppSettingsCore {
     #[serde(default)]
     /// Update check settings.
     pub updates: UpdateSettings,
+    #[serde(default = "default_job_message_queue_capacity")]
+    /// Maximum number of pending controller job messages.
+    pub job_message_queue_capacity: u32,
     /// Optional override for the `.sempal` data folder.
     #[serde(default)]
     pub app_data_dir: Option<PathBuf>,
@@ -106,6 +110,8 @@ impl AppSettingsCore {
         self.volume = clamp_volume(self.volume);
         self.analysis.analysis_worker_count =
             clamp_analysis_worker_count(self.analysis.analysis_worker_count);
+        self.job_message_queue_capacity =
+            clamp_job_message_queue_capacity(self.job_message_queue_capacity);
         self
     }
 }
@@ -190,6 +196,7 @@ impl Default for AppSettingsCore {
             feature_flags: FeatureFlags::default(),
             analysis: AnalysisSettings::default(),
             updates: UpdateSettings::default(),
+            job_message_queue_capacity: default_job_message_queue_capacity(),
             app_data_dir: None,
             trash_folder: None,
             drop_targets: Vec::new(),

@@ -4,6 +4,7 @@ mod job_execution;
 mod job_progress;
 mod progress_cache;
 
+use crate::egui_app::controller::jobs::JobMessageSender;
 use crate::sample_sources::SourceId;
 use super::wakeup;
 use progress_cache::ProgressCache;
@@ -13,7 +14,6 @@ use std::sync::{
     Arc, Mutex, RwLock,
     atomic::AtomicU32,
     atomic::{AtomicBool, Ordering},
-    mpsc::Sender,
 };
 use std::thread::JoinHandle;
 use tracing::info;
@@ -137,7 +137,7 @@ impl AnalysisWorkerPool {
 
     pub(crate) fn start(
         &mut self,
-        message_tx: Sender<crate::egui_app::controller::jobs::JobMessage>,
+        message_tx: JobMessageSender,
     ) {
         let _ = &message_tx;
         if !self.threads.is_empty() {

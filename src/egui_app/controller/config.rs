@@ -5,6 +5,14 @@ impl EguiController {
     /// Load persisted configuration and populate initial UI state.
     pub fn load_configuration(&mut self) -> Result<(), crate::sample_sources::config::ConfigError> {
         let cfg = crate::sample_sources::config::load_or_default()?;
+        self.apply_configuration(cfg)
+    }
+
+    /// Apply a preloaded configuration snapshot to the controller state.
+    pub fn apply_configuration(
+        &mut self,
+        cfg: crate::sample_sources::config::AppConfig,
+    ) -> Result<(), crate::sample_sources::config::ConfigError> {
         self.settings.feature_flags = cfg.core.feature_flags;
         self.settings.analysis = cfg.core.analysis;
         self.settings.analysis.max_analysis_duration_seconds =
@@ -16,6 +24,7 @@ impl EguiController {
                 self.settings.analysis.long_sample_threshold_seconds,
             );
         self.settings.updates = cfg.core.updates.clone();
+        self.settings.job_message_queue_capacity = cfg.core.job_message_queue_capacity;
         self.settings.app_data_dir = cfg.core.app_data_dir.clone();
         self.settings.trash_folder = cfg.core.trash_folder.clone();
         self.settings.drop_targets = cfg.core.drop_targets.clone();
@@ -142,6 +151,7 @@ impl EguiController {
                 feature_flags: self.settings.feature_flags.clone(),
                 analysis: self.settings.analysis.clone(),
                 updates: self.settings.updates.clone(),
+                job_message_queue_capacity: self.settings.job_message_queue_capacity,
                 app_data_dir: self.settings.app_data_dir.clone(),
                 trash_folder: self.settings.trash_folder.clone(),
                 drop_targets: self.settings.drop_targets.clone(),

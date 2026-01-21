@@ -1,6 +1,6 @@
 use super::job_execution::{run_analysis_jobs_with_decoded_batch, run_job};
 use crate::egui_app::controller::library::analysis_jobs::db as analysis_db;
-use crate::egui_app::controller::jobs::JobMessage;
+use crate::egui_app::controller::jobs::{JobMessage, JobMessageSender};
 use rusqlite::Connection;
 use std::collections::{HashMap, HashSet};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -8,7 +8,6 @@ use std::sync::{
     Arc, Mutex, RwLock,
     atomic::AtomicU32,
     atomic::{AtomicBool, Ordering},
-    mpsc::Sender,
 };
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -164,7 +163,7 @@ pub(crate) fn spawn_decoder_worker(
 #[cfg_attr(test, allow(dead_code))]
 pub(crate) fn spawn_compute_worker(
     _worker_index: usize,
-    tx: Sender<JobMessage>,
+    tx: JobMessageSender,
     signal: Arc<Mutex<Option<egui::Context>>>,
     decode_queue: Arc<DecodedQueue>,
     cancel: Arc<AtomicBool>,

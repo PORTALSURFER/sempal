@@ -4,11 +4,11 @@ use super::analysis_db;
 use super::super::job_progress::ProgressPollerWakeup;
 use super::queue::DecodedQueue;
 use crate::egui_app::controller::library::analysis_jobs::types::AnalysisJobMessage;
-use crate::egui_app::controller::jobs::JobMessage;
+use crate::egui_app::controller::jobs::{JobMessage, JobMessageSender};
 use rusqlite::Connection;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use std::sync::{atomic::AtomicBool, mpsc::Sender};
+use std::sync::atomic::AtomicBool;
 use std::thread::{JoinHandle, sleep};
 use std::time::{Duration, Instant};
 
@@ -20,7 +20,7 @@ pub(crate) struct DeferredJobUpdate {
 pub(crate) fn finalize_immediate_job(
     connections: &mut HashMap<std::path::PathBuf, Connection>,
     decode_queue: &DecodedQueue,
-    tx: &Sender<JobMessage>,
+    tx: &JobMessageSender,
     job: analysis_db::ClaimedJob,
     outcome: Result<(), String>,
     log_jobs: bool,
@@ -109,7 +109,7 @@ pub(crate) fn open_connection_with_retry<'a>(
 pub(crate) fn flush_deferred_updates(
     connections: &mut HashMap<std::path::PathBuf, Connection>,
     decode_queue: &DecodedQueue,
-    tx: &Sender<JobMessage>,
+    tx: &JobMessageSender,
     progress_cache: &Arc<RwLock<ProgressCache>>,
     progress_wakeup: &ProgressPollerWakeup,
     deferred_updates: &mut Vec<DeferredJobUpdate>,

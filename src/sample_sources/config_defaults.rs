@@ -1,6 +1,8 @@
 use crate::audio::{AudioInputConfig, AudioOutputConfig};
 
 pub(super) const MAX_ANALYSIS_WORKER_COUNT: u32 = 64;
+pub(super) const MIN_JOB_MESSAGE_QUEUE_CAPACITY: u32 = 32;
+pub(super) const MAX_JOB_MESSAGE_QUEUE_CAPACITY: u32 = 4096;
 
 pub(super) fn clamp_volume(volume: f32) -> f32 {
     volume.clamp(0.0, 1.0)
@@ -8,6 +10,10 @@ pub(super) fn clamp_volume(volume: f32) -> f32 {
 
 pub(super) fn clamp_analysis_worker_count(value: u32) -> u32 {
     value.min(MAX_ANALYSIS_WORKER_COUNT)
+}
+
+pub(super) fn clamp_job_message_queue_capacity(value: u32) -> u32 {
+    value.clamp(MIN_JOB_MESSAGE_QUEUE_CAPACITY, MAX_JOB_MESSAGE_QUEUE_CAPACITY)
 }
 
 pub(super) fn default_true() -> bool {
@@ -32,6 +38,10 @@ pub(super) fn default_long_sample_threshold_seconds() -> f32 {
 
 pub(super) fn default_analysis_worker_count() -> u32 {
     0
+}
+
+pub(super) fn default_job_message_queue_capacity() -> u32 {
+    256
 }
 
 pub(super) fn default_false() -> bool {

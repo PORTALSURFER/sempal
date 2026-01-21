@@ -19,7 +19,7 @@ use std::{
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
-        mpsc::{Receiver, Sender},
+        mpsc::{Receiver, SendError, Sender, SyncSender, TrySendError},
     },
     thread,
     time::{Duration, Instant},
@@ -50,6 +50,49 @@ pub(crate) enum JobMessage {
     IssueTokenDeleted(IssueTokenDeleteResult),
     BrowserSearchFinished(SearchResult),
     Normalized(NormalizationResult),
+}
+
+/// Bounded sender for job messages with best-effort delivery for low-priority updates.
+#[derive(Clone)]
+pub(crate) struct JobMessageSender {
+    inner: SyncSender<JobMessage>,
+}
+
+impl JobMessageSender {
+    fn new(inner: SyncSender<JobMessage>) -> Self {
+        Self { inner }
+    }
+
+    /// Send a job message, dropping low-priority updates if the queue is full.
+    pub(crate) fn send(&self, message: JobMessage) -> Result<(), SendError<JobMessage>> {
+        match job_message_delivery(&message) {
+            JobMessageDelivery::MustDeliver => self.inner.send(message),
+            JobMessageDelivery::DropIfFull => match self.inner.try_send(message) {
+                Ok(()) => Ok(()),
+                Err(TrySendError::Full(_)) => Ok(()),
+                Err(TrySendError::Disconnected(message)) => Err(SendError(message)),
+            },
+        }
+    }
+}
+
+enum JobMessageDelivery {
+    MustDeliver,
+    DropIfFull,
+}
+
+fn job_message_delivery(message: &JobMessage) -> JobMessageDelivery {
+    match message {
+        JobMessage::Scan(ScanJobMessage::Progress { .. }) => JobMessageDelivery::DropIfFull,
+        JobMessage::TrashMove(trash_move::TrashMoveMessage::Progress { .. }) => {
+            JobMessageDelivery::DropIfFull
+        }
+        JobMessage::FileOps(FileOpMessage::Progress { .. }) => JobMessageDelivery::DropIfFull,
+        JobMessage::Analysis(AnalysisJobMessage::Progress { .. }) => {
+            JobMessageDelivery::DropIfFull
+        }
+        _ => JobMessageDelivery::MustDeliver,
+    }
 }
 
 #[derive(Debug)]
@@ -564,7 +607,7 @@ pub(crate) struct ControllerJobs {
     search_worker: crate::egui_app::controller::library::wavs::browser_search_worker::SearchWorkerHandle,
     source_watcher: SourceWatcherHandle,
     forwarders: Option<JobForwarderHandles>,
-    message_tx: Sender<JobMessage>,
+    message_tx: JobMessageSender,
     message_rx: Receiver<JobMessage>,
     pub(super) pending_source: Option<SourceId>,
     pub(super) pending_select_path: Option<PathBuf>,
@@ -611,7 +654,7 @@ pub(crate) struct JobForwarderHandles {
 
 impl JobForwarderHandles {
     fn spawn(
-        message_tx: &Sender<JobMessage>,
+        message_tx: &JobMessageSender,
         repaint_signal: &Arc<Mutex<Option<egui::Context>>>,
         wav_job_rx: Receiver<WavLoadResult>,
         audio_job_rx: Receiver<AudioLoadResult>,
@@ -659,7 +702,7 @@ impl JobForwarderHandles {
 }
 
 fn spawn_forwarder<T: Send + 'static>(
-    message_tx: Sender<JobMessage>,
+    message_tx: JobMessageSender,
     repaint_signal: Arc<Mutex<Option<egui::Context>>>,
     rx: Receiver<T>,
     wrap: fn(T) -> JobMessage,
@@ -690,8 +733,11 @@ impl ControllerJobs {
         search_job_tx: crate::egui_app::controller::library::wavs::browser_search_worker::SearchJobSender,
         search_job_rx: Receiver<SearchResult>,
         search_worker: crate::egui_app::controller::library::wavs::browser_search_worker::SearchWorkerHandle,
+        job_message_queue_capacity: usize,
     ) -> Self {
-        let (message_tx, message_rx) = std::sync::mpsc::channel::<JobMessage>();
+        let capacity = job_message_queue_capacity.max(1);
+        let (message_tx, message_rx) = std::sync::mpsc::sync_channel::<JobMessage>(capacity);
+        let message_tx = JobMessageSender::new(message_tx);
         let source_watcher = super::source_watcher::spawn_source_watcher(message_tx.clone());
         let repaint_signal = Arc::new(Mutex::new(None));
         let forwarders = JobForwarderHandles::spawn(
@@ -750,7 +796,7 @@ impl ControllerJobs {
         self.message_rx.try_recv()
     }
 
-    pub(super) fn message_sender(&self) -> Sender<JobMessage> {
+    pub(super) fn message_sender(&self) -> JobMessageSender {
         self.message_tx.clone()
     }
 
@@ -1375,5 +1421,28 @@ mod tests {
             }
             other => panic!("expected timed out auth result, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn drops_progress_messages_when_queue_full() {
+        let (tx, rx) = std::sync::mpsc::sync_channel::<JobMessage>(1);
+        let sender = JobMessageSender::new(tx);
+        let _ = sender.send(JobMessage::Scan(ScanJobMessage::Progress {
+            completed: 1,
+            detail: None,
+        }));
+        let _ = sender.send(JobMessage::Scan(ScanJobMessage::Progress {
+            completed: 2,
+            detail: None,
+        }));
+
+        let first = rx.try_recv().expect("expected first progress message");
+        match first {
+            JobMessage::Scan(ScanJobMessage::Progress { completed, .. }) => {
+                assert_eq!(completed, 1);
+            }
+            other => panic!("expected scan progress, got {other:?}"),
+        }
+        assert!(rx.try_recv().is_err());
     }
 }

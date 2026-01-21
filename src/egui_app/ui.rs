@@ -106,9 +106,15 @@ impl EguiApp {
         renderer: WaveformRenderer,
         player: Option<std::rc::Rc<std::cell::RefCell<AudioPlayer>>>,
     ) -> Result<Self, String> {
-        let mut controller = EguiController::new(renderer, player);
+        let cfg = crate::sample_sources::config::load_or_default()
+            .map_err(|err| format!("Failed to load config: {err}"))?;
+        let mut controller = EguiController::new_with_job_message_queue_capacity(
+            renderer,
+            player,
+            cfg.core.job_message_queue_capacity as usize,
+        );
         controller
-            .load_configuration()
+            .apply_configuration(cfg)
             .map_err(|err| format!("Failed to load config: {err}"))?;
         controller.select_first_source();
         Ok(Self {

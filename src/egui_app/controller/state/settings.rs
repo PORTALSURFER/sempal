@@ -8,6 +8,7 @@ pub(crate) struct AppSettingsState {
     pub(crate) feature_flags: crate::sample_sources::config::FeatureFlags,
     pub(crate) analysis: crate::sample_sources::config::AnalysisSettings,
     pub(crate) updates: crate::sample_sources::config::UpdateSettings,
+    pub(crate) job_message_queue_capacity: u32,
     pub(crate) app_data_dir: Option<PathBuf>,
     pub(crate) audio_output: AudioOutputConfig,
     pub(crate) audio_input: AudioInputConfig,
@@ -22,6 +23,8 @@ impl AppSettingsState {
             feature_flags: crate::sample_sources::config::FeatureFlags::default(),
             analysis: crate::sample_sources::config::AnalysisSettings::default(),
             updates: crate::sample_sources::config::UpdateSettings::default(),
+            job_message_queue_capacity: crate::sample_sources::config::AppSettingsCore::default()
+                .job_message_queue_capacity,
             app_data_dir: None,
             audio_output: AudioOutputConfig::default(),
             audio_input: AudioInputConfig::default(),

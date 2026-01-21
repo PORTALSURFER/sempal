@@ -73,6 +73,17 @@ pub struct EguiController {
 impl EguiController {
     /// Create a controller with shared renderer and optional audio player.
     pub fn new(renderer: WaveformRenderer, player: Option<Rc<RefCell<AudioPlayer>>>) -> Self {
+        let default_capacity = crate::sample_sources::config::AppSettingsCore::default()
+            .job_message_queue_capacity as usize;
+        Self::new_with_job_message_queue_capacity(renderer, player, default_capacity)
+    }
+
+    /// Create a controller with a bounded job message queue capacity override.
+    pub fn new_with_job_message_queue_capacity(
+        renderer: WaveformRenderer,
+        player: Option<Rc<RefCell<AudioPlayer>>>,
+        job_message_queue_capacity: usize,
+    ) -> Self {
         let (wav_job_tx, wav_job_rx, wav_loader) = library::wav_entries_loader::spawn_wav_loader();
         let (audio_job_tx, audio_job_rx, audio_loader) =
             playback::audio_loader::spawn_audio_loader(renderer.clone());
@@ -93,6 +104,7 @@ impl EguiController {
             search_job_tx,
             search_job_rx,
             search_worker,
+            job_message_queue_capacity,
         );
         let analysis = AnalysisWorkerPool::new();
         Self {

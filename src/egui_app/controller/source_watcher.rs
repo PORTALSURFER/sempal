@@ -1,6 +1,6 @@
 //! File system watcher for source roots that reports audio-relevant changes.
 
-use crate::egui_app::controller::jobs::JobMessage;
+use crate::egui_app::controller::jobs::{JobMessage, JobMessageSender};
 use crate::sample_sources::{SourceId, db::DB_FILE_NAME, is_supported_audio};
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Result as NotifyResult, Watcher};
 use std::collections::{HashMap, HashSet};
@@ -65,7 +65,7 @@ impl SourceWatcherHandle {
 }
 
 /// Spawn the watcher thread and return a handle used to update watched sources.
-pub(crate) fn spawn_source_watcher(message_tx: Sender<JobMessage>) -> SourceWatcherHandle {
+pub(crate) fn spawn_source_watcher(message_tx: JobMessageSender) -> SourceWatcherHandle {
     let (command_tx, command_rx) = std::sync::mpsc::channel();
     let handle = thread::spawn(move || run_source_watcher(command_rx, message_tx));
     SourceWatcherHandle {
@@ -74,7 +74,7 @@ pub(crate) fn spawn_source_watcher(message_tx: Sender<JobMessage>) -> SourceWatc
     }
 }
 
-fn run_source_watcher(command_rx: Receiver<SourceWatchCommand>, message_tx: Sender<JobMessage>) {
+fn run_source_watcher(command_rx: Receiver<SourceWatchCommand>, message_tx: JobMessageSender) {
     let (event_tx, event_rx) = std::sync::mpsc::channel::<NotifyResult<Event>>();
     let mut watcher = match notify::recommended_watcher(move |event| {
         let _ = event_tx.send(event);

@@ -1,11 +1,10 @@
 use crate::egui_app::controller::library::analysis_jobs::db;
 use crate::egui_app::controller::library::analysis_jobs::types::{AnalysisJobMessage, AnalysisProgress};
-use crate::egui_app::controller::jobs::JobMessage;
+use crate::egui_app::controller::jobs::{JobMessage, JobMessageSender};
 use rusqlite::Connection;
 use std::sync::{
     Arc, Condvar, Mutex, RwLock,
     atomic::{AtomicBool, Ordering},
-    mpsc::Sender,
 };
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -148,7 +147,7 @@ fn cleanup_stale_jobs(
     sources: &mut [ProgressSourceDb],
     stale_before: i64,
     progress_cache: &Arc<RwLock<ProgressCache>>,
-    tx: &Sender<JobMessage>,
+    tx: &JobMessageSender,
     signal: &Arc<Mutex<Option<egui::Context>>>,
 ) -> usize {
     let mut changed = 0;
@@ -204,7 +203,7 @@ fn now_epoch_seconds() -> i64 {
 
 #[cfg_attr(test, allow(dead_code))]
 pub(crate) fn spawn_progress_poller(
-    tx: Sender<JobMessage>,
+    tx: JobMessageSender,
     signal: Arc<Mutex<Option<egui::Context>>>,
     cancel: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
