@@ -107,6 +107,8 @@ impl EguiApp {
     ) {
         self.external_drop_handled = false;
         self.update_external_drop_hover(ctx);
+        let modal_active = self.modal_overlay_active();
+        helpers::set_tooltips_suppressed(ctx, modal_active);
         self.controller.refresh_recording_waveform();
         self.render_panels(ctx);
         self.render_overlays(ctx, input, focus_context);
@@ -238,13 +240,18 @@ impl EguiApp {
         input: &InputSnapshot,
         focus_context: FocusContext,
     ) {
-        self.render_drag_overlay(ctx);
+        let hotkey_overlay_visible = self.controller.ui.hotkeys.overlay_visible;
+        let modal_blocking_overlays =
+            self.modal_overlay_blocks_overlays() || hotkey_overlay_visible;
+        if !modal_blocking_overlays {
+            self.render_drag_overlay(ctx);
+        }
         self.render_audio_settings_window(ctx);
         progress_overlay::render_progress_overlay(ctx, &mut self.controller.ui.progress);
         self.render_feedback_issue_prompt(ctx);
         self.render_loop_crossfade_prompt(ctx);
         self.render_map_window(ctx);
-        if self.controller.ui.hotkeys.overlay_visible {
+        if hotkey_overlay_visible && !self.modal_overlay_blocks_overlays() {
             if input.escape {
                 self.controller.ui.hotkeys.overlay_visible = false;
             }
@@ -258,6 +265,17 @@ impl EguiApp {
                 &mut self.controller.ui.hotkeys.overlay_visible,
             );
         }
+    }
+
+    fn modal_overlay_active(&self) -> bool {
+        self.modal_overlay_blocks_overlays() || self.controller.ui.hotkeys.overlay_visible
+    }
+
+    fn modal_overlay_blocks_overlays(&self) -> bool {
+        (self.controller.ui.progress.visible && self.controller.ui.progress.modal)
+            || self.controller.ui.feedback_issue.open
+            || self.controller.ui.feedback_issue.token_modal_open
+            || self.controller.ui.loop_crossfade_prompt.is_some()
     }
 
     fn update_external_drop_hover(&mut self, ctx: &egui::Context) {

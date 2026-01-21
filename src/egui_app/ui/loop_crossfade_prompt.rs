@@ -1,9 +1,11 @@
+use super::overlay_layers::{self, OverlayLayer};
 use super::style;
 use super::*;
 use crate::egui_app::state::LoopCrossfadeUnit;
 use eframe::egui::{self, Align2, RichText};
 
 impl EguiApp {
+    /// Render the modal loop crossfade prompt when requested.
     pub(super) fn render_loop_crossfade_prompt(&mut self, ctx: &egui::Context) {
         let mut open = true;
         let mut apply = false;
@@ -11,8 +13,14 @@ impl EguiApp {
         let Some(prompt) = self.controller.ui.loop_crossfade_prompt.as_mut() else {
             return;
         };
+        overlay_layers::modal_backdrop(
+            ctx,
+            egui::Id::new("loop_crossfade_prompt_backdrop"),
+            egui::Color32::from_rgba_premultiplied(0, 0, 0, 140),
+        );
         egui::Window::new("Seamless loop crossfade")
             .anchor(Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .order(OverlayLayer::Modal.order())
             .collapsible(false)
             .resizable(false)
             .auto_sized()

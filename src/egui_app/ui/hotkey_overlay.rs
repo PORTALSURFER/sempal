@@ -1,3 +1,4 @@
+use super::overlay_layers::{self, OverlayLayer};
 use super::style;
 use crate::egui_app::{
     controller::hotkeys::{self, HotkeyAction, HotkeyGesture},
@@ -5,6 +6,7 @@ use crate::egui_app::{
 };
 use eframe::egui::{self, Align, Align2, Color32, Id, Layout, RichText, Vec2};
 
+/// Render the modal overlay listing hotkeys for the current focus.
 pub(super) fn render_hotkey_overlay(
     ctx: &egui::Context,
     focus: FocusContext,
@@ -15,14 +17,18 @@ pub(super) fn render_hotkey_overlay(
     if !*visible {
         return;
     }
-    draw_backdrop(ctx);
+    overlay_layers::modal_backdrop(
+        ctx,
+        Id::new("hotkey_overlay_backdrop"),
+        Color32::from_rgba_premultiplied(0, 0, 0, 120),
+    );
     let palette = style::palette();
     let title = RichText::new("Hotkeys")
         .strong()
         .color(palette.accent_copper);
     let focus_label = focus_header(focus);
     egui::Area::new(egui::Id::new("hotkey_overlay_panel"))
-        .order(egui::Order::Tooltip)
+        .order(OverlayLayer::Modal.order())
         .constrain(true)
         .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
         .show(ctx, |ui| {
@@ -67,19 +73,6 @@ fn focus_header(focus: FocusContext) -> &'static str {
         FocusContext::SourcesList => "Sources list",
         FocusContext::None => "Focused sample",
     }
-}
-
-fn draw_backdrop(ctx: &egui::Context) {
-    let screen_rect = ctx.viewport_rect();
-    let painter = ctx.layer_painter(egui::LayerId::new(
-        egui::Order::Background,
-        Id::new("hotkey_overlay_backdrop"),
-    ));
-    painter.rect_filled(
-        screen_rect,
-        0.0,
-        Color32::from_rgba_premultiplied(0, 0, 0, 120),
-    );
 }
 
 fn gesture_label(gesture: &HotkeyGesture) -> String {

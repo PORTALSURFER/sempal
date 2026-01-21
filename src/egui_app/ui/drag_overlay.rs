@@ -1,8 +1,10 @@
 use super::style;
+use super::overlay_layers::OverlayLayer;
 use super::*;
-use eframe::egui::{self, Align2, Area, Frame, Order, RichText, Stroke, Vec2};
+use eframe::egui::{self, Align2, Area, Frame, RichText, Stroke, Vec2};
 
 impl EguiApp {
+    /// Render the drag preview overlay when a drag payload is active.
     pub(super) fn render_drag_overlay(&mut self, ctx: &egui::Context) {
         if let Some(pos) = self.controller.ui.drag.position {
             let palette = style::palette();
@@ -12,7 +14,7 @@ impl EguiApp {
                 self.controller.ui.drag.label.clone()
             };
             Area::new("drag_preview".into())
-                .order(Order::Tooltip)
+                .order(OverlayLayer::Overlay.order())
                 .pivot(Align2::CENTER_CENTER)
                 .current_pos(pos + Vec2::new(16.0, 16.0))
                 .show(ctx, |ui| {

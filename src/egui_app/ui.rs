@@ -16,6 +16,7 @@ mod map_empty;
 mod map_interactions;
 mod map_math;
 mod map_view;
+mod overlay_layers;
 mod platform;
 mod progress_overlay;
 mod sample_browser_filter;

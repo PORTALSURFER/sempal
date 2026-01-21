@@ -6,8 +6,27 @@ use crate::sample_sources::config::TooltipMode;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+const TOOLTIP_SUPPRESSION_ID: &str = "tooltips_suppressed";
+
+/// Set whether tooltips should be suppressed for the current frame.
+pub(super) fn set_tooltips_suppressed(ctx: &egui::Context, suppressed: bool) {
+    ctx.data_mut(|data| {
+        data.insert_temp(egui::Id::new(TOOLTIP_SUPPRESSION_ID), suppressed);
+    });
+}
+
+fn tooltips_suppressed(ctx: &egui::Context) -> bool {
+    ctx.data(|data| {
+        data.get_temp::<bool>(egui::Id::new(TOOLTIP_SUPPRESSION_ID))
+            .unwrap_or(false)
+    })
+}
+
 /// Display a contextual hint tooltip if hints are enabled and the last response was hovered.
 pub(super) fn show_hover_hint(ui: &mut Ui, mode: TooltipMode, hint: &str) {
+    if tooltips_suppressed(ui.ctx()) {
+        return;
+    }
     if !matches!(mode, TooltipMode::Extended) {
         return;
     }
@@ -62,6 +81,9 @@ pub(super) fn tooltip(
     extended: &str,
     mode: TooltipMode,
 ) -> egui::Response {
+    if tooltips_suppressed(&response.ctx) {
+        return response;
+    }
     match mode {
         TooltipMode::Off => response,
         TooltipMode::Regular => response.on_hover_text(short),

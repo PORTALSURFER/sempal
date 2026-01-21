@@ -1,3 +1,4 @@
+use super::overlay_layers::OverlayLayer;
 use super::EguiApp;
 use super::style;
 use eframe::egui::{self, Align2, RichText};
@@ -11,6 +12,7 @@ pub(super) enum FeedbackSubmitAction {
 }
 
 impl EguiApp {
+    /// Render the modal feedback issue prompt and any nested token modal.
     pub(super) fn render_feedback_issue_prompt(&mut self, ctx: &egui::Context) {
         if !self.controller.ui.feedback_issue.open {
             return;
@@ -23,13 +25,11 @@ impl EguiApp {
             return;
         }
 
-        self.render_feedback_issue_token_modal(ctx);
-
         let mut open = true;
         let mut action = FeedbackSubmitAction::None;
         egui::Window::new("Submit GitHub issue")
             .anchor(Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-            .order(egui::Order::Foreground)
+            .order(OverlayLayer::Modal.order())
             .collapsible(false)
             .resizable(false)
             .default_width(560.0)
@@ -42,6 +42,8 @@ impl EguiApp {
             self.controller.close_feedback_issue_prompt();
             return;
         }
+
+        self.render_feedback_issue_token_modal(ctx);
 
         match action {
             FeedbackSubmitAction::None => {}
@@ -57,8 +59,7 @@ impl EguiApp {
 
     fn render_feedback_issue_backdrop(&mut self, ctx: &egui::Context) {
         let rect = ctx.viewport_rect();
-        let painter = ctx.layer_painter(egui::LayerId::new(
-            egui::Order::Background,
+        let painter = ctx.layer_painter(OverlayLayer::Modal.layer_id(
             egui::Id::new("feedback_issue_backdrop_paint"),
         ));
         painter.rect_filled(
@@ -68,7 +69,7 @@ impl EguiApp {
         );
 
         egui::Area::new(egui::Id::new("feedback_issue_backdrop_blocker"))
-            .order(egui::Order::Middle)
+            .order(OverlayLayer::Modal.order())
             .fixed_pos(rect.min)
             .show(ctx, |ui| {
                 let response = ui.allocate_rect(rect, egui::Sense::click_and_drag());
@@ -85,7 +86,7 @@ impl EguiApp {
         let mut open = true;
         egui::Window::new("Paste GitHub token")
             .anchor(Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-            .order(egui::Order::Foreground)
+            .order(OverlayLayer::Modal.order())
             .collapsible(false)
             .resizable(false)
             .default_width(520.0)

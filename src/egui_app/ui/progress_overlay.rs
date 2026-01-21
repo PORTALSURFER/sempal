@@ -1,12 +1,18 @@
 use super::style;
+use super::overlay_layers::{self, OverlayLayer};
 use crate::egui_app::state::ProgressOverlayState;
 use eframe::egui::{self, Align2, Area, Color32, Frame, Id, ProgressBar, RichText, Stroke};
 
+/// Render the modal progress overlay for long-running tasks.
 pub(super) fn render_progress_overlay(ctx: &egui::Context, progress: &mut ProgressOverlayState) {
     if !progress.visible || !progress.modal {
         return;
     }
-    draw_backdrop(ctx);
+    overlay_layers::modal_backdrop(
+        ctx,
+        Id::new("progress_overlay_backdrop"),
+        Color32::from_rgba_premultiplied(0, 0, 0, 160),
+    );
     let palette = style::palette();
     let title = if progress.title.is_empty() {
         "Working...".to_string()
@@ -14,7 +20,7 @@ pub(super) fn render_progress_overlay(ctx: &egui::Context, progress: &mut Progre
         progress.title.clone()
     };
     Area::new(Id::new("progress_overlay_panel"))
-        .order(egui::Order::Tooltip)
+        .order(OverlayLayer::Modal.order())
         .constrain(true)
         .anchor(Align2::CENTER_CENTER, egui::Vec2::ZERO)
         .show(ctx, |ui| {
@@ -63,17 +69,4 @@ pub(super) fn render_progress_overlay(ctx: &egui::Context, progress: &mut Progre
                 });
             });
         });
-}
-
-fn draw_backdrop(ctx: &egui::Context) {
-    let screen_rect = ctx.viewport_rect();
-    let painter = ctx.layer_painter(egui::LayerId::new(
-        egui::Order::Background,
-        Id::new("progress_overlay_backdrop"),
-    ));
-    painter.rect_filled(
-        screen_rect,
-        0.0,
-        Color32::from_rgba_premultiplied(0, 0, 0, 160),
-    );
 }
