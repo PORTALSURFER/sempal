@@ -650,7 +650,7 @@ impl JobForwarderHandles {
         }
     }
 
-    fn join(mut self) {
+    fn join(self) {
         let _ = self.wav.join();
         let _ = self.audio.join();
         let _ = self.recording_waveform.join();
