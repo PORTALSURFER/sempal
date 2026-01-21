@@ -122,44 +122,61 @@ impl EguiApp {
                         value.clamp(min, max)
                     }
                 };
-                let mut folder_total;
-                match resize_mode {
-                    ResizeMode::Sources => {
-                        let max_sources_total =
-                            (component_budget - drop_total - min_folder_total).max(0.0);
-                        sources_total =
-                            clamp_range(sources_total, min_sources_total, max_sources_total);
-                        folder_total = (component_budget - sources_total - drop_total).max(0.0);
-                    }
-                    ResizeMode::DropTargets => {
-                        let max_drop_total =
-                            (component_budget - sources_total - min_folder_total).max(0.0);
-                        drop_total = clamp_range(drop_total, min_drop_total, max_drop_total);
-                        folder_total = (component_budget - sources_total - drop_total).max(0.0);
-                    }
-                    ResizeMode::None => {
-                        let max_sources_total =
-                            (component_budget - min_folder_total - min_drop_total).max(0.0);
-                        sources_total =
-                            clamp_range(sources_total, min_sources_total, max_sources_total);
-                        let max_drop_total =
-                            (component_budget - min_folder_total - sources_total).max(0.0);
-                        drop_total = clamp_range(drop_total, min_drop_total, max_drop_total);
-                        folder_total = component_budget - sources_total - drop_total;
-                        if folder_total < min_folder_total {
-                            let mut deficit = min_folder_total - folder_total;
+                sources_total = clamp_range(sources_total, min_sources_total, component_budget);
+                drop_total = clamp_range(drop_total, min_drop_total, component_budget);
+                let mut folder_total = component_budget - sources_total - drop_total;
+                if folder_total < min_folder_total {
+                    let mut deficit = min_folder_total - folder_total;
+                    match resize_mode {
+                        ResizeMode::Sources => {
                             let drop_reduction =
                                 deficit.min((drop_total - min_drop_total).max(0.0));
                             drop_total -= drop_reduction;
                             deficit -= drop_reduction;
                             if deficit > 0.0 {
+                                let sources_reduction = deficit
+                                    .min((sources_total - min_sources_total).max(0.0));
+                                sources_total -= sources_reduction;
+                            }
+                        }
+                        ResizeMode::DropTargets => {
+                            let sources_reduction =
+                                deficit.min((sources_total - min_sources_total).max(0.0));
+                            sources_total -= sources_reduction;
+                            deficit -= sources_reduction;
+                            if deficit > 0.0 {
+                                let drop_reduction =
+                                    deficit.min((drop_total - min_drop_total).max(0.0));
+                                drop_total -= drop_reduction;
+                            }
+                        }
+                        ResizeMode::None => {
+                            let sources_slack = (sources_total - min_sources_total).max(0.0);
+                            let drop_slack = (drop_total - min_drop_total).max(0.0);
+                            if sources_slack >= drop_slack {
                                 let sources_reduction =
                                     deficit.min((sources_total - min_sources_total).max(0.0));
                                 sources_total -= sources_reduction;
+                                deficit -= sources_reduction;
+                                if deficit > 0.0 {
+                                    let drop_reduction =
+                                        deficit.min((drop_total - min_drop_total).max(0.0));
+                                    drop_total -= drop_reduction;
+                                }
+                            } else {
+                                let drop_reduction =
+                                    deficit.min((drop_total - min_drop_total).max(0.0));
+                                drop_total -= drop_reduction;
+                                deficit -= drop_reduction;
+                                if deficit > 0.0 {
+                                    let sources_reduction =
+                                        deficit.min((sources_total - min_sources_total).max(0.0));
+                                    sources_total -= sources_reduction;
+                                }
                             }
-                            folder_total = (component_budget - sources_total - drop_total).max(0.0);
                         }
                     }
+                    folder_total = (component_budget - sources_total - drop_total).max(0.0);
                 }
                 (sources_total, folder_total, drop_total)
             };
@@ -279,6 +296,16 @@ impl EguiApp {
                 }
                 if height_override.is_some() {
                     height_override = Some(drop_total);
+                }
+            }
+            if sources_handle_response.dragged() && height_override.is_none() {
+                if (drop_total - default_drop_total).abs() > f32::EPSILON {
+                    height_override = Some(drop_total);
+                }
+            }
+            if drop_handle_response.dragged() && sources_height_override.is_none() {
+                if (sources_list_height - default_sources_total).abs() > f32::EPSILON {
+                    sources_height_override = Some(sources_list_height);
                 }
             }
             let handle_stroke = style::inner_border();
