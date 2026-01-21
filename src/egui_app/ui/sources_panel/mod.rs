@@ -21,7 +21,6 @@ impl EguiApp {
         }
         let palette = style::palette();
         ui.vertical(|ui| {
-            let total_available = ui.available_height();
             let header_response = ui.horizontal(|ui| {
                 ui.label(RichText::new("Sources").color(palette.text_primary));
                 if ui
@@ -31,9 +30,9 @@ impl EguiApp {
                     self.controller.add_source_via_dialog();
                 }
             });
-            let sources_header_height = header_response.response.rect.height();
             let sources_header_gap = 6.0;
             ui.add_space(sources_header_gap);
+            let total_available = ui.available_height();
             let drag_payload = self.controller.ui.drag.payload.clone();
             let folder_drop_active = matches!(
                 drag_payload,
@@ -94,12 +93,11 @@ impl EguiApp {
             let handle_height = 10.0;
             let component_budget = (total_available - handle_height * 2.0).max(0.0);
             let min_content_height = row_height * 2.0;
-            let mut min_sources_total =
-                sources_header_height + sources_header_gap + min_content_height;
+            let mut min_sources_total = min_content_height;
             let mut min_folder_total = folder_header_height + header_gap + min_content_height;
             let mut min_drop_total = drop_header_height + header_gap + min_content_height;
             if min_sources_total + min_folder_total + min_drop_total > component_budget {
-                min_sources_total = sources_header_height + sources_header_gap;
+                min_sources_total = 0.0;
                 min_folder_total = folder_header_height + header_gap;
                 min_drop_total = drop_header_height + header_gap;
             }
@@ -165,13 +163,13 @@ impl EguiApp {
                 }
                 (sources_total, folder_total, drop_total)
             };
-            let sources_total = sources_height_override.unwrap_or(default_sources_total);
+            let sources_list_height = sources_height_override.unwrap_or(default_sources_total);
             let drop_total = height_override.unwrap_or(default_drop_total);
-            let (mut sources_total, mut folder_total, mut drop_total) =
-                clamp_sections(sources_total, drop_total, ResizeMode::None);
+            let (mut sources_list_height, mut folder_total, mut drop_total) =
+                clamp_sections(sources_list_height, drop_total, ResizeMode::None);
             if let Some(current) = sources_height_override {
-                if (current - sources_total).abs() > f32::EPSILON {
-                    sources_height_override = Some(sources_total);
+                if (current - sources_list_height).abs() > f32::EPSILON {
+                    sources_height_override = Some(sources_list_height);
                 }
             }
             if let Some(current) = height_override {
@@ -183,9 +181,7 @@ impl EguiApp {
                 .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
                 .or(self.controller.ui.drag.position);
             let available_rect = ui.available_rect_before_wrap();
-            let build_layout = |sources_total: f32, folder_total: f32, drop_total: f32| {
-                let sources_list_height =
-                    (sources_total - sources_header_height - sources_header_gap).max(0.0);
+            let build_layout = |sources_list_height: f32, folder_total: f32, drop_total: f32| {
                 let total_height = sources_list_height + handle_height + folder_total
                     + handle_height + drop_total;
                 let layout_rect = egui::Rect::from_min_size(
@@ -224,7 +220,7 @@ impl EguiApp {
             };
             let (layout_rect, _sources_list_rect, sources_handle_rect, _folder_rect,
                 drop_handle_rect, _drop_rect, _sources_list_height) =
-                build_layout(sources_total, folder_total, drop_total);
+                build_layout(sources_list_height, folder_total, drop_total);
             ui.allocate_rect(layout_rect, egui::Sense::hover());
             let sources_handle_response = ui.interact(
                 sources_handle_rect,
@@ -244,12 +240,12 @@ impl EguiApp {
                 ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::ResizeVertical);
             }
             if sources_handle_response.drag_started() {
-                sources_resize_origin = Some(sources_total);
+                sources_resize_origin = Some(sources_list_height);
             }
             if sources_handle_response.dragged() {
-                let origin = sources_resize_origin.unwrap_or(sources_total);
-                sources_total = origin + sources_handle_response.drag_delta().y;
-                sources_height_override = Some(sources_total);
+                let origin = sources_resize_origin.unwrap_or(sources_list_height);
+                sources_list_height = origin + sources_handle_response.drag_delta().y;
+                sources_height_override = Some(sources_list_height);
             }
             if sources_handle_response.drag_stopped() {
                 sources_resize_origin = None;
@@ -274,12 +270,12 @@ impl EguiApp {
                     ResizeMode::None
                 };
                 let (clamped_sources_total, clamped_folder_total, clamped_drop_total) =
-                    clamp_sections(sources_total, drop_total, resize_mode);
-                sources_total = clamped_sources_total;
+                    clamp_sections(sources_list_height, drop_total, resize_mode);
+                sources_list_height = clamped_sources_total;
                 folder_total = clamped_folder_total;
                 drop_total = clamped_drop_total;
                 if sources_height_override.is_some() {
-                    sources_height_override = Some(sources_total);
+                    sources_height_override = Some(sources_list_height);
                 }
                 if height_override.is_some() {
                     height_override = Some(drop_total);
@@ -288,7 +284,7 @@ impl EguiApp {
             let handle_stroke = style::inner_border();
             let (_layout_rect, sources_list_rect, sources_handle_rect, folder_rect,
                 drop_handle_rect, drop_rect, sources_list_height) =
-                build_layout(sources_total, folder_total, drop_total);
+                build_layout(sources_list_height, folder_total, drop_total);
             let sources_rect = ui
                 .scope_builder(
                     egui::UiBuilder::new().max_rect(sources_list_rect),
