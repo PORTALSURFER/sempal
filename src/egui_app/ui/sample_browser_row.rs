@@ -1,0 +1,308 @@
+//! Sample browser row rendering helpers.
+
+use super::flat_items_list::FlatItemsListMetrics;
+use super::helpers::{
+    NumberColumn, RowBackground, RowMarker, bpm_badge_space, clamp_label_for_width,
+    format_bpm_input, long_badge_space, loop_badge_space, render_list_row,
+};
+use super::status_badges;
+use super::style;
+use super::EguiApp;
+use crate::egui_app::state::{DragSource, SampleBrowserActionPrompt, TriageFlagColumn};
+use crate::egui_app::view_model;
+use eframe::egui::{self, StrokeKind, Ui};
+use std::path::PathBuf;
+
+/// Shared state for rendering a sample browser row.
+pub(super) struct SampleBrowserRowContext<'a> {
+    pub palette: &'a style::Palette,
+    pub selected_row: Option<usize>,
+    pub loaded_row: Option<usize>,
+    pub drag_active: bool,
+    pub pointer_pos: Option<egui::Pos2>,
+    pub drop_target: TriageFlagColumn,
+    pub flash_alpha: Option<u8>,
+    pub flash_paths: &'a [PathBuf],
+    pub now_epoch: i64,
+}
+
+/// Render a single sample browser row using the provided state and metrics.
+pub(super) fn render_sample_browser_row(
+    app: &mut EguiApp,
+    ui: &mut Ui,
+    row: usize,
+    metrics: &FlatItemsListMetrics,
+    context: &SampleBrowserRowContext<'_>,
+) {
+    let entry_index = match app.controller.visible_browser_index(row) {
+        Some(index) => index,
+        None => return,
+    };
+    let (tag, path, looped, missing, last_played_at) =
+        match app.controller.wav_entry(entry_index) {
+            Some(entry) => (
+                entry.tag,
+                entry.relative_path.clone(),
+                entry.looped,
+                entry.missing,
+                entry.last_played_at,
+            ),
+            None => return,
+        };
+    let rename_match = matches!(
+        app.controller.ui.browser.pending_action,
+        Some(SampleBrowserActionPrompt::Rename { ref target, .. }) if target == &path
+    );
+    let is_focused = context.selected_row == Some(row);
+    let is_selected = app
+        .controller
+        .ui
+        .browser
+        .selected_paths
+        .iter()
+        .any(|p| p == &path);
+    let is_loaded = context.loaded_row == Some(row);
+    let bpm_label = app
+        .controller
+        .bpm_value_for_path(&path)
+        .map(|bpm| format!("{} BPM", format_bpm_input(bpm)));
+    let row_width = metrics.row_width;
+    let similar_query = app.controller.ui.browser.similar_query.as_ref();
+    let is_anchor = similar_query.and_then(|sim| sim.anchor_index) == Some(entry_index);
+    let similar_strength = similar_query.and_then(|sim| sim.display_strength_for_index(entry_index));
+    let focused_similarity_strength = if similar_query.is_none() {
+        app.controller
+            .ui
+            .browser
+            .focused_similarity
+            .as_ref()
+            .and_then(|sim| {
+                if sim.anchor_index == Some(entry_index) {
+                    None
+                } else {
+                    sim.score_for_index(entry_index)
+                }
+            })
+            .map(style::similarity_display_strength)
+    } else {
+        None
+    };
+    let marker_color = style::triage_marker_color(tag);
+    let triage_marker_width = marker_color.as_ref().map(|_| style::triage_marker_width());
+    let triage_marker = marker_color.map(|color| RowMarker {
+        width: style::triage_marker_width(),
+        color,
+    });
+    let feature_status = app.controller.cached_feature_status_for_entry(entry_index);
+    let needs_similarity_data = feature_status.is_some_and(|status| !status.has_embedding);
+    let long_sample_mark = feature_status.and_then(|status| status.long_sample_mark);
+    let long_sample = long_sample_mark.unwrap_or(false);
+    let indicator_radius = if needs_similarity_data {
+        style::similarity_missing_dot_radius()
+    } else {
+        0.0
+    };
+    let indicator_space = if needs_similarity_data {
+        indicator_radius * 2.0 + metrics.padding * 0.5
+    } else {
+        0.0
+    };
+    let loop_space = if looped && !rename_match {
+        loop_badge_space(ui)
+    } else {
+        0.0
+    };
+    let long_space = if long_sample && !rename_match {
+        long_badge_space(ui)
+    } else {
+        0.0
+    };
+    let bpm_space = if rename_match {
+        0.0
+    } else {
+        bpm_label
+            .as_deref()
+            .map(|label| bpm_badge_space(ui, label))
+            .unwrap_or(0.0)
+    };
+    let trailing_space = indicator_space
+        + triage_marker_width
+            .map(|width| width + metrics.padding * 0.5)
+            .unwrap_or(0.0)
+        + loop_space
+        + long_space
+        + bpm_space;
+
+    let mut base_label = app
+        .controller
+        .wav_label(entry_index)
+        .unwrap_or_else(|| view_model::sample_display_label(&path));
+    if is_loaded {
+        base_label.push_str(" • loaded");
+    }
+    let analysis_failure = app
+        .controller
+        .analysis_failure_for_entry(entry_index)
+        .map(str::to_string);
+    let base_color = style::playback_age_label_color(last_played_at, context.now_epoch);
+    let status_label = status_badges::apply_sample_status(
+        base_label,
+        base_color,
+        missing,
+        analysis_failure.as_deref(),
+    );
+    let display_label = status_label.label.clone();
+
+    let row_label_width = row_width - metrics.padding - metrics.number_width - metrics.number_gap
+        - trailing_space;
+    let row_label = if rename_match {
+        String::new()
+    } else {
+        clamp_label_for_width(&status_label.label, row_label_width)
+    };
+    let mut row_bg = None;
+    if context.drag_active
+        && context
+            .pointer_pos
+            .as_ref()
+            .is_some_and(|pos| ui.cursor().contains(*pos))
+        && is_selected
+    {
+        row_bg = Some(style::duplicate_hover_fill());
+    } else if is_focused {
+        row_bg = Some(style::row_primary_selection_fill());
+    } else if is_selected {
+        row_bg = Some(style::row_secondary_selection_fill());
+    }
+    let skip_hover = is_anchor;
+    if is_anchor {
+        row_bg = Some(style::similar_anchor_fill());
+    }
+    let highlight_strength = similar_strength.or(focused_similarity_strength);
+    let row_background = if let Some(strength) = highlight_strength.filter(|_| !is_anchor) {
+        RowBackground::Gradient {
+            base: row_bg.unwrap_or_else(style::compartment_fill),
+            highlight: style::similar_score_fill(strength),
+            fade_ratio: 0.33,
+        }
+    } else {
+        RowBackground::from_option(row_bg)
+    };
+    let number_text = format!("{}", row + 1);
+    let text_color = status_label.text_color;
+
+    ui.push_id(&path, |ui| {
+        let sense = if rename_match {
+            egui::Sense::hover()
+        } else {
+            egui::Sense::click_and_drag()
+        };
+        let response = render_list_row(
+            ui,
+            super::helpers::ListRow {
+                label: &row_label,
+                row_width,
+                row_height: metrics.row_height,
+                background: row_background,
+                skip_hover,
+                text_color,
+                sense,
+                number: Some(NumberColumn {
+                    text: &number_text,
+                    width: metrics.number_width,
+                    color: context.palette.text_muted,
+                }),
+                marker: triage_marker,
+                rating: if rename_match { None } else { Some(tag) },
+                looped: looped && !rename_match,
+                long_sample: long_sample && !rename_match,
+                bpm_label: if rename_match { None } else { bpm_label.as_deref() },
+            },
+        );
+        if let Some(alpha) = context.flash_alpha {
+            if context.flash_paths.iter().any(|p| p == &path) && alpha > 0 {
+                let flash_color =
+                    style::with_alpha(style::semantic_palette().drag_highlight, alpha);
+                ui.painter().rect_filled(response.rect, 0.0, flash_color);
+            }
+        }
+        let mut hover_text = status_label.hover_text.clone();
+        if long_sample && !rename_match {
+            let entry = "Long sample".to_string();
+            match hover_text.as_mut() {
+                Some(text) => {
+                    text.push('\n');
+                    text.push_str(&entry);
+                }
+                None => {
+                    hover_text = Some(entry);
+                }
+            }
+        }
+        let response = if let Some(hover) = hover_text.as_deref() {
+            response.on_hover_text(hover)
+        } else {
+            response
+        };
+
+        if is_selected {
+            let marker_width = 4.0;
+            let marker_rect = egui::Rect::from_min_max(
+                response.rect.left_top(),
+                response.rect.left_top() + egui::vec2(marker_width, metrics.row_height),
+            );
+            ui.painter()
+                .rect_filled(marker_rect, 0.0, style::selection_marker_fill());
+        }
+        if needs_similarity_data {
+            let dot_center = egui::pos2(
+                response.rect.right()
+                    - triage_marker_width.unwrap_or(0.0)
+                    - metrics.padding * 0.5
+                    - indicator_radius,
+                response.rect.center().y,
+            );
+            ui.painter().circle_filled(
+                dot_center,
+                indicator_radius,
+                style::similarity_missing_dot_fill(),
+            );
+        }
+        app.handle_browser_row_click(ui, &response, row);
+        if is_focused {
+            ui.painter().rect_stroke(
+                response.rect,
+                0.0,
+                style::focused_row_stroke(),
+                StrokeKind::Inside,
+            );
+        }
+        if rename_match {
+            app.render_browser_rename_editor(
+                ui,
+                &response,
+                metrics.padding,
+                metrics.number_width,
+                metrics.number_gap,
+                trailing_space,
+            );
+        } else {
+            app.browser_sample_menu(&response, row, &path, &display_label, missing);
+        }
+
+        let row_drag_source = app
+            .controller
+            .ui
+            .drag
+            .origin_source
+            .unwrap_or(DragSource::Browser);
+        app.handle_sample_row_drag(
+            ui,
+            &response,
+            context.drag_active,
+            crate::egui_app::state::DragTarget::BrowserTriage(context.drop_target),
+            row_drag_source,
+            &path,
+        );
+    });
+}

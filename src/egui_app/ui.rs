@@ -23,6 +23,7 @@ mod sample_browser_filter;
 mod sample_browser_interaction;
 mod sample_browser_rename;
 mod sample_browser_render;
+mod sample_browser_row;
 mod sample_menus;
 mod sources_panel;
 mod status_badges;
