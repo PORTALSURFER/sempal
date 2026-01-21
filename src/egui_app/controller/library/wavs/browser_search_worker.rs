@@ -9,6 +9,7 @@ use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::SystemTime;
+use tracing::warn;
 
 struct CompactSearchEntry {
     display_label: Box<str>,
@@ -76,25 +77,54 @@ impl SearchJobQueue {
     }
 
     fn send(&self, job: SearchJob) {
-        let mut state = self.state.lock().expect("search job queue poisoned");
+        let mut state = self.lock_state();
         state.pending = Some(job);
         self.ready.notify_one();
     }
 
     fn take_blocking(&self) -> SearchJob {
-        let mut state = self.state.lock().expect("search job queue poisoned");
+        let mut state = self.lock_state();
         loop {
             if let Some(job) = state.pending.take() {
                 return job;
             }
-            state = self.ready.wait(state).expect("search job queue poisoned");
+            state = self.wait_ready(state);
         }
     }
 
     #[cfg(test)]
     fn try_take(&self) -> Option<SearchJob> {
-        let mut state = self.state.lock().expect("search job queue poisoned");
+        let mut state = self.lock_state();
         state.pending.take()
+    }
+
+    fn lock_state(&self) -> std::sync::MutexGuard<'_, SearchJobQueueState> {
+        match self.state.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => self.recover_state("lock", poisoned),
+        }
+    }
+
+    fn wait_ready<'a>(
+        &self,
+        guard: std::sync::MutexGuard<'a, SearchJobQueueState>,
+    ) -> std::sync::MutexGuard<'a, SearchJobQueueState> {
+        self.ready
+            .wait(guard)
+            .unwrap_or_else(|poisoned| self.recover_state("condvar", poisoned))
+    }
+
+    fn recover_state<'a>(
+        &self,
+        context: &'static str,
+        poisoned: std::sync::PoisonError<std::sync::MutexGuard<'a, SearchJobQueueState>>,
+    ) -> std::sync::MutexGuard<'a, SearchJobQueueState> {
+        warn!(
+            "Search job queue {context} poisoned; recovering and clearing pending job."
+        );
+        let mut guard = poisoned.into_inner();
+        guard.pending = None;
+        guard
     }
 }
 
@@ -412,6 +442,8 @@ mod tests {
     use crate::sample_sources::WavEntry;
     use crate::sample_sources::SourceId;
     use std::collections::BTreeSet;
+    use std::sync::mpsc;
+    use std::time::Duration;
 
     #[test]
     fn test_compact_search_entry() {
@@ -465,30 +497,8 @@ mod tests {
             queue: Arc::clone(&queue),
         };
 
-        let first = SearchJob {
-            source_id: SourceId::new(),
-            source_root: std::path::PathBuf::from("one"),
-            query: "first".to_string(),
-            filter: TriageFlagFilter::All,
-            rating_filter: BTreeSet::new(),
-            sort: SampleBrowserSort::ListOrder,
-            similar_query: None,
-            folder_selection: None,
-            folder_negated: None,
-            root_mode: crate::egui_app::state::RootFolderFilterMode::AllDescendants,
-        };
-        let second = SearchJob {
-            source_id: SourceId::new(),
-            source_root: std::path::PathBuf::from("two"),
-            query: "second".to_string(),
-            filter: TriageFlagFilter::All,
-            rating_filter: BTreeSet::new(),
-            sort: SampleBrowserSort::ListOrder,
-            similar_query: None,
-            folder_selection: None,
-            folder_negated: None,
-            root_mode: crate::egui_app::state::RootFolderFilterMode::AllDescendants,
-        };
+        let first = make_search_job("first", "one");
+        let second = make_search_job("second", "two");
 
         sender.send(first);
         sender.send(second);
@@ -496,5 +506,45 @@ mod tests {
         let pending = queue.try_take().expect("expected pending search job");
         assert_eq!(pending.query, "second");
         assert!(queue.try_take().is_none());
+    }
+
+    #[test]
+    fn search_queue_recovers_from_poison() {
+        let queue = Arc::new(SearchJobQueue::new());
+        let queue_for_panic = Arc::clone(&queue);
+        let _ = std::panic::catch_unwind(move || {
+            let _guard = queue_for_panic.state.lock().expect("queue lock failed");
+            panic!("poison search job queue");
+        });
+
+        let (tx, rx) = mpsc::channel();
+        let queue_for_worker = Arc::clone(&queue);
+        let handle = thread::spawn(move || {
+            let job = queue_for_worker.take_blocking();
+            tx.send(job.query).expect("send result");
+        });
+
+        queue.send(make_search_job("recovered", "root"));
+
+        let received = rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("search job never received");
+        assert_eq!(received, "recovered");
+        handle.join().expect("worker thread panicked");
+    }
+
+    fn make_search_job(query: &str, root: &str) -> SearchJob {
+        SearchJob {
+            source_id: SourceId::new(),
+            source_root: std::path::PathBuf::from(root),
+            query: query.to_string(),
+            filter: TriageFlagFilter::All,
+            rating_filter: BTreeSet::new(),
+            sort: SampleBrowserSort::ListOrder,
+            similar_query: None,
+            folder_selection: None,
+            folder_negated: None,
+            root_mode: crate::egui_app::state::RootFolderFilterMode::AllDescendants,
+        }
     }
 }
