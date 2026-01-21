@@ -10,7 +10,9 @@ use crate::audio::Source;
 
 const DEFAULT_BUFFER_SECONDS: f32 = 1.0;
 const PRODUCER_BACKOFF: Duration = Duration::from_millis(1);
-const INITIAL_SAMPLE_WAIT: Duration = Duration::from_millis(10);
+const PREFILL_DURATION: Duration = Duration::from_millis(5);
+const PREFILL_TIMEOUT: Duration = Duration::from_millis(5);
+const PREFILL_POLL: Duration = Duration::from_millis(1);
 
 /// Streams samples from a source on a background thread into a lock-free ring buffer.
 pub(crate) struct AsyncSource<S> {
@@ -20,7 +22,6 @@ pub(crate) struct AsyncSource<S> {
     total_duration: Option<Duration>,
     done: Arc<AtomicBool>,
     stop: Arc<AtomicBool>,
-    has_produced: Arc<AtomicBool>,
     last_error: Arc<Mutex<Option<String>>>,
     _marker: PhantomData<S>,
 }
@@ -47,12 +48,9 @@ where
         let done = Arc::new(AtomicBool::new(false));
         let stop = Arc::new(AtomicBool::new(false));
         let last_error = Arc::new(Mutex::new(None));
-        let has_produced = Arc::new(AtomicBool::new(false));
-
         let thread_done = Arc::clone(&done);
         let thread_stop = Arc::clone(&stop);
         let thread_error = Arc::clone(&last_error);
-        let thread_has_produced = Arc::clone(&has_produced);
 
         let spawn_result = thread::Builder::new()
             .name("audio-decode".to_string())
@@ -71,7 +69,6 @@ where
                                 }
                                 match producer.try_push(sample) {
                                     Ok(()) => {
-                                        thread_has_produced.store(true, Ordering::Relaxed);
                                         break;
                                     }
                                     Err(returned) => {
@@ -108,9 +105,39 @@ where
             total_duration,
             done,
             stop,
-            has_produced,
             last_error,
             _marker: PhantomData,
+        }
+    }
+
+    /// Prefill the ring buffer with a short slice of audio to avoid blocking playback.
+    pub(crate) fn prefill(&mut self) -> usize {
+        self.prefill_for_duration(PREFILL_DURATION, PREFILL_TIMEOUT)
+    }
+
+    /// Prefill the ring buffer for at least `duration`, waiting up to `timeout`.
+    pub(crate) fn prefill_for_duration(&mut self, duration: Duration, timeout: Duration) -> usize {
+        let target_samples = prefill_samples(self.sample_rate, self.channels, duration);
+        self.prefill_samples(target_samples, timeout)
+    }
+
+    fn prefill_samples(&mut self, target_samples: usize, timeout: Duration) -> usize {
+        if target_samples == 0 {
+            return self.consumer.occupied_len();
+        }
+        let deadline = Instant::now() + timeout;
+        loop {
+            let available = self.consumer.occupied_len();
+            if available >= target_samples {
+                return available;
+            }
+            if self.done.load(Ordering::Relaxed) {
+                return available;
+            }
+            if Instant::now() >= deadline {
+                return available;
+            }
+            thread::sleep(PREFILL_POLL);
         }
     }
 }
@@ -127,24 +154,6 @@ where
         }
         if self.done.load(Ordering::Relaxed) {
             return None;
-        }
-        if !self.has_produced.load(Ordering::Relaxed) {
-            let deadline = Instant::now() + INITIAL_SAMPLE_WAIT;
-            while Instant::now() < deadline {
-                if let Some(sample) = self.consumer.try_pop() {
-                    return Some(sample);
-                }
-                if self.done.load(Ordering::Relaxed) {
-                    return None;
-                }
-                thread::sleep(PRODUCER_BACKOFF);
-            }
-            if let Some(sample) = self.consumer.try_pop() {
-                return Some(sample);
-            }
-            if self.done.load(Ordering::Relaxed) {
-                return None;
-            }
         }
         Some(0.0)
     }
@@ -197,6 +206,13 @@ fn buffer_samples(sample_rate: u32, channels: u16, buffer_seconds: f32) -> usize
         DEFAULT_BUFFER_SECONDS
     };
     (sample_rate * channels * buffer_seconds).ceil() as usize
+}
+
+fn prefill_samples(sample_rate: u32, channels: u16, duration: Duration) -> usize {
+    let channels = channels.max(1) as f64;
+    let sample_rate = sample_rate.max(1) as f64;
+    let seconds = duration.as_secs_f64();
+    (sample_rate * channels * seconds).ceil() as usize
 }
 
 #[cfg(test)]
@@ -309,6 +325,27 @@ mod tests {
             thread::sleep(Duration::from_millis(5));
         }
         assert_eq!(second, 0.5);
+    }
+
+    #[test]
+    fn async_source_prefill_waits_for_samples() {
+        let source = TestSource {
+            samples: vec![0.4],
+            pos: 0,
+            sample_rate: 10,
+            channels: 1,
+            delay: Duration::from_millis(5),
+            error: None,
+            start_barrier: None,
+            start_barrier_waited: false,
+        };
+        let mut async_source = AsyncSource::with_buffer_seconds(source, 0.1);
+        let available = async_source.prefill_for_duration(
+            Duration::from_millis(1),
+            Duration::from_millis(100),
+        );
+        assert!(available >= 1);
+        assert_eq!(async_source.next(), Some(0.4));
     }
 
     #[test]

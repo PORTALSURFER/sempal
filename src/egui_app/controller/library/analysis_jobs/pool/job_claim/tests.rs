@@ -1,6 +1,6 @@
 use super::*;
+use super::super::job_progress::ProgressPollerWakeup;
 use crate::egui_app::controller::library::analysis_jobs::db as analysis_db;
-use crate::egui_app::controller::library::analysis_jobs::pool::job_progress::ProgressPollerWakeup;
 use crate::sample_sources::SampleSource;
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;

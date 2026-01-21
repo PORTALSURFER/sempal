@@ -6,6 +6,7 @@ mod analysis_db;
 mod analysis_decode;
 mod backfill;
 mod errors;
+mod rebuild;
 mod status;
 mod support;
 
@@ -38,7 +39,7 @@ pub(crate) fn run_job(
             analysis_sample_rate,
             analysis_version,
         ),
-        db::REBUILD_INDEX_JOB_TYPE => Err("Rebuild index job not implemented yet".to_string()),
+        db::REBUILD_INDEX_JOB_TYPE => rebuild::run_rebuild_index_job(conn, job),
         _ => Err(format!("Unknown job type: {}", job.job_type)),
     }
 }

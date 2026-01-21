@@ -5,6 +5,7 @@ mod enqueue;
 mod failures;
 mod pool;
 mod types;
+mod wakeup;
 
 pub(crate) use db::open_source_db;
 pub(crate) use db::purge_orphaned_samples;

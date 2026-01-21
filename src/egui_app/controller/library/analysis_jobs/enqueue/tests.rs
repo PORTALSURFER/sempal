@@ -3,12 +3,14 @@ use super::enqueue_samples::{
     enqueue_jobs_for_source, enqueue_jobs_for_source_backfill,
     enqueue_jobs_for_source_backfill_full, enqueue_jobs_for_source_missing_features,
 };
+use super::super::wakeup;
 use crate::app_dirs::ConfigBaseGuard;
 use crate::egui_app::controller::library::analysis_jobs::db;
 use crate::sample_sources::scanner::ChangedSample;
 use crate::sample_sources::{SampleSource, SourceDatabase};
 use rusqlite::{Connection, params};
 use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex};
 use tempfile::{TempDir, tempdir};
 
 struct TestEnv {
@@ -17,6 +19,8 @@ struct TestEnv {
     _source_dir: TempDir,
     source: SampleSource,
 }
+
+static CLAIM_WAKEUP_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 impl TestEnv {
     fn new() -> Self {
@@ -147,6 +151,23 @@ fn backfill_enqueues_when_source_has_no_features() {
 
     let (second_inserted, _) = enqueue_jobs_for_source_backfill(&env.source).unwrap();
     assert_eq!(second_inserted, 0);
+}
+
+#[test]
+fn enqueue_notifies_claim_wakeup() {
+    let _guard = CLAIM_WAKEUP_TEST_LOCK
+        .lock()
+        .expect("claim wakeup test lock poisoned");
+    let env = TestEnv::new();
+    env.create_files(&["Pack/a.wav"]);
+    seed_source_db(&env.source, &[("Pack/a.wav", "hash")]);
+    let wakeup_handle = wakeup::claim_wakeup_handle();
+    let mut seen = wakeup_handle.snapshot();
+
+    let (inserted, _progress) = enqueue_jobs_for_source_backfill(&env.source).unwrap();
+
+    assert!(inserted > 0);
+    assert!(wakeup_handle.wait_for(&mut seen, std::time::Duration::from_millis(50)));
 }
 
 #[test]

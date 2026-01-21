@@ -45,6 +45,9 @@ pub(crate) fn enqueue_jobs_for_embedding_samples(
         created_at,
         source.id.as_str(),
     )?;
+    if inserted > 0 {
+        super::wakeup::notify_claim_wakeup();
+    }
     let progress = db::current_progress(&conn)?;
     info!(
         "Embedding backfill enqueued (inserted={}, jobs={}, source_id={})",
@@ -130,6 +133,9 @@ fn enqueue_embedding_backfill(
         created_at,
         request.source.id.as_str(),
     )?;
+    if inserted > 0 {
+        super::wakeup::notify_claim_wakeup();
+    }
     let progress = db::current_progress(&conn)?;
     info!(
         "Embedding backfill enqueued (inserted={}, jobs={}, sample_ids={}, source_id={})",

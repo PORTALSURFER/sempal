@@ -199,7 +199,8 @@ impl AudioPlayer {
             );
             Box::new(editable)
         } else {
-            let async_source = AsyncSource::new(source);
+            let mut async_source = AsyncSource::new(source);
+            async_source.prefill();
             let limited = async_source.take_duration(loop_duration).buffered();
             let editable = EditFadeSource::new(limited, self.edit_fade_handle.clone(), bounded_start);
             let faded = EdgeFade::new(editable, fade);

@@ -67,6 +67,9 @@ fn enqueue_samples(
         request.source.id.as_str(),
         created_at,
     )?;
+    if inserted > 0 {
+        super::wakeup::notify_claim_wakeup();
+    }
     if let Err(err) =
         update_missing_sample_durations(&mut conn, request.source, &sample_metadata)
     {
@@ -226,6 +229,9 @@ fn enqueue_from_staged_samples(
         source_id,
         created_at,
     )?;
+    if inserted > 0 {
+        super::wakeup::notify_claim_wakeup();
+    }
     if let Err(err) = update_missing_sample_durations(conn, source, &plan.sample_metadata) {
         warn!(
             source_id = %source.id,

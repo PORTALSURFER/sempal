@@ -1,7 +1,8 @@
 use super::dedup::DedupTracker;
 use crate::egui_app::controller::library::analysis_jobs::db;
+use crate::egui_app::controller::library::analysis_jobs::wakeup::ClaimWakeup;
 use std::collections::VecDeque;
-use std::sync::{Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::sync::{atomic::AtomicBool, atomic::AtomicUsize, atomic::Ordering};
 use std::time::Duration;
 use tracing::warn;
@@ -13,17 +14,27 @@ pub(crate) struct DecodedQueue {
     len: AtomicUsize,
     max_size: usize,
     dedup: DedupTracker,
+    claim_wakeup: Option<Arc<ClaimWakeup>>,
 }
 
 impl DecodedQueue {
     /// Creates a decoded queue with a fixed maximum size for backpressure.
     pub(crate) fn new(max_size: usize) -> Self {
+        Self::new_with_wakeup(max_size, None)
+    }
+
+    /// Creates a decoded queue with a wakeup to notify claimers when space frees.
+    pub(crate) fn new_with_wakeup(
+        max_size: usize,
+        claim_wakeup: Option<Arc<ClaimWakeup>>,
+    ) -> Self {
         Self {
             queue: Mutex::new(VecDeque::new()),
             ready: Condvar::new(),
             len: AtomicUsize::new(0),
             max_size: max_size.max(1),
             dedup: DedupTracker::new(),
+            claim_wakeup,
         }
     }
 
@@ -87,6 +98,9 @@ impl DecodedQueue {
                     self.dedup.clear_pending(work.job.id);
                 }
                 self.len.fetch_sub(1, Ordering::Relaxed);
+                if let Some(wakeup) = self.claim_wakeup.as_ref() {
+                    wakeup.notify();
+                }
                 self.ready.notify_one();
                 return Some(work);
             }
@@ -123,6 +137,9 @@ impl DecodedQueue {
                     }
                 }
                 self.ready.notify_all();
+                if let Some(wakeup) = self.claim_wakeup.as_ref() {
+                    wakeup.notify();
+                }
                 return (batch, start.elapsed().as_millis() as u64);
             }
             let (next_guard, _) = self.wait_ready(guard);

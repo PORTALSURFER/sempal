@@ -10,10 +10,11 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc::Sender,
 };
-use std::thread::{JoinHandle, sleep};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use super::progress_cache::ProgressCache;
+use crate::egui_app::controller::library::analysis_jobs::wakeup::ClaimWakeup;
 
 #[cfg(target_os = "windows")]
 use windows::Win32::System::Threading::{
@@ -50,6 +51,7 @@ pub(crate) fn spawn_decoder_worker(
     max_duration_bits: Arc<AtomicU32>,
     analysis_sample_rate: Arc<AtomicU32>,
     decode_queue_target: usize,
+    claim_wakeup: Arc<ClaimWakeup>,
     reset_done: Arc<Mutex<HashSet<std::path::PathBuf>>>,
 ) -> JoinHandle<()> {
     std::thread::spawn(move || {
@@ -58,20 +60,21 @@ pub(crate) fn spawn_decoder_worker(
         let mut selector = selection::ClaimSelector::new(reset_done);
         let decode_queue_target = decode_queue_target.max(1);
         let mut connections: HashMap<std::path::PathBuf, Connection> = HashMap::new();
+        let mut wake_counter = 0u64;
         loop {
             if shutdown.load(Ordering::Relaxed) {
                 break;
             }
             if cancel.load(Ordering::Relaxed) {
-                sleep(Duration::from_millis(50));
+                let _ = claim_wakeup.wait_for(&mut wake_counter, Duration::from_millis(200));
                 continue;
             }
             if pause_claiming.load(Ordering::Relaxed) {
-                sleep(Duration::from_millis(50));
+                let _ = claim_wakeup.wait_for(&mut wake_counter, Duration::from_millis(200));
                 continue;
             }
             if decode_queue.len() >= decode_queue_target {
-                sleep(Duration::from_millis(10));
+                let _ = claim_wakeup.wait_for(&mut wake_counter, Duration::from_millis(200));
                 continue;
             }
             let allowed = allowed_source_ids
@@ -81,11 +84,14 @@ pub(crate) fn spawn_decoder_worker(
             let job = match selector.select_next(allowed.as_ref()) {
                 selection::ClaimSelection::Job(job) => job,
                 selection::ClaimSelection::NoSources => {
-                    sleep(Duration::from_millis(200));
+                    let _ = claim_wakeup.wait_for(
+                        &mut wake_counter,
+                        claim::SOURCE_REFRESH_INTERVAL,
+                    );
                     continue;
                 }
                 selection::ClaimSelection::Idle => {
-                    sleep(Duration::from_millis(25));
+                    let _ = claim_wakeup.wait_for(&mut wake_counter, Duration::from_millis(200));
                     continue;
                 }
             };
@@ -184,7 +190,7 @@ pub(crate) fn spawn_compute_worker(
                 break;
             }
             if cancel.load(Ordering::Relaxed) {
-                sleep(Duration::from_millis(50));
+                std::thread::sleep(Duration::from_millis(50));
                 continue;
             }
             let (batch, wait_ms) = decode_queue.pop_batch(&shutdown, embedding_batch_max);

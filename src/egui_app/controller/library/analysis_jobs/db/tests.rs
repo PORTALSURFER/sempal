@@ -1,5 +1,5 @@
 use super::*;
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 fn conn_with_schema() -> Connection {
     let conn = Connection::open_in_memory().unwrap();
@@ -56,6 +56,10 @@ fn conn_with_schema() -> Connection {
             vec BLOB NOT NULL,
             created_at INTEGER NOT NULL
         ) WITHOUT ROWID;
+        CREATE TABLE metadata (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
         ",
     )
     .unwrap();
@@ -216,6 +220,47 @@ fn progress_uses_relative_path_over_sample_id() {
     let progress = current_progress(&conn).unwrap();
     assert_eq!(progress.total(), 1);
     assert_eq!(progress.pending, 1);
+}
+
+#[test]
+fn ann_index_dirty_marker_round_trips() {
+    let conn = conn_with_schema();
+    mark_ann_index_dirty(&conn, "failed").unwrap();
+    let value: String = conn
+        .query_row(
+            "SELECT value FROM metadata WHERE key = 'ann_index_dirty_v1'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(value.contains("failed"));
+    clear_ann_index_dirty(&conn).unwrap();
+    let cleared: Option<String> = conn
+        .query_row(
+            "SELECT value FROM metadata WHERE key = 'ann_index_dirty_v1'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .unwrap();
+    assert!(cleared.is_none());
+}
+
+#[test]
+fn enqueue_rebuild_job_dedupes_pending() {
+    let conn = conn_with_schema();
+    let inserted = enqueue_rebuild_ann_index_job(&conn, "s", 10).unwrap();
+    assert_eq!(inserted, 1);
+    let second = enqueue_rebuild_ann_index_job(&conn, "s", 11).unwrap();
+    assert_eq!(second, 0);
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM analysis_jobs WHERE job_type = ?1",
+            params![REBUILD_INDEX_JOB_TYPE],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 1);
 }
 
 #[test]

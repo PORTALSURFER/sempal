@@ -53,6 +53,24 @@ fn conn_with_schema() -> Connection {
             vec BLOB NOT NULL,
             created_at INTEGER NOT NULL,
             PRIMARY KEY (content_hash, analysis_version, model_id)
+        );
+        CREATE TABLE metadata (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+        CREATE TABLE analysis_jobs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sample_id TEXT NOT NULL,
+            source_id TEXT NOT NULL DEFAULT '',
+            relative_path TEXT NOT NULL DEFAULT '',
+            job_type TEXT NOT NULL,
+            content_hash TEXT,
+            status TEXT NOT NULL,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            running_at INTEGER,
+            last_error TEXT,
+            UNIQUE(sample_id, job_type)
         );",
     )
     .unwrap();
@@ -155,6 +173,39 @@ fn backfill_retry_stops_after_limit() {
     );
     assert!(result.is_err());
     assert_eq!(attempts, 3);
+}
+
+#[test]
+fn ann_update_retry_succeeds_after_failures() {
+    let mut attempts = 0;
+    let result = retry_ann_update_with(
+        || {
+            attempts += 1;
+            if attempts < 2 {
+                Err("nope".to_string())
+            } else {
+                Ok(())
+            }
+        },
+        3,
+        Duration::from_millis(0),
+    );
+    assert!(result.is_ok());
+    assert_eq!(attempts, 2);
+}
+
+#[test]
+fn ann_update_retry_returns_last_error() {
+    let mut attempts = 0;
+    let result = retry_ann_update_with(
+        || {
+            attempts += 1;
+            Err(format!("nope-{attempts}"))
+        },
+        2,
+        Duration::from_millis(0),
+    );
+    assert_eq!(result.unwrap_err(), "nope-2");
 }
 
 #[test]

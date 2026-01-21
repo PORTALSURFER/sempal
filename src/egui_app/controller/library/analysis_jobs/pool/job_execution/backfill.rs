@@ -10,6 +10,9 @@ use tracing::warn;
 use super::errors::ErrorCollector;
 use super::support::{load_embedding_vec_optional, now_epoch_seconds};
 
+const ANN_UPDATE_RETRIES: usize = 4;
+const ANN_UPDATE_BACKOFF_BASE: Duration = Duration::from_millis(50);
+
 struct EmbeddingWork {
     content_hash: String,
     absolute_path: PathBuf,
@@ -78,7 +81,7 @@ pub(crate) fn run_embedding_backfill_job(
         return Ok(());
     }
 
-    write_backfill_results(conn, &results, analysis_version)?;
+    write_backfill_results(conn, job, &results, analysis_version)?;
 
     if !errors.is_empty() {
         warn!("Embedding backfill had errors: {:?}", errors);
@@ -389,6 +392,7 @@ fn collect_results(
 
 fn write_backfill_results(
     conn: &rusqlite::Connection,
+    job: &db::ClaimedJob,
     results: &[EmbeddingResult],
     analysis_version: &str,
 ) -> Result<(), String> {
@@ -399,6 +403,10 @@ fn write_backfill_results(
             3,
             Duration::from_millis(50),
         )?;
+        if let Err(err) = update_ann_index_with_retry(conn, chunk) {
+            let rebuild_result = handle_ann_update_failure(conn, job, &err);
+            return Err(format_ann_update_error(err, rebuild_result));
+        }
     }
     Ok(())
 }
@@ -437,17 +445,53 @@ fn write_backfill_chunk(
             result.created_at,
         )?;
     }
-    if let Err(err) = crate::analysis::ann_index::upsert_embeddings_batch(
+    conn.execute_batch("COMMIT")
+        .map_err(|err| format!("Commit embedding backfill tx failed: {err}"))?;
+    Ok(())
+}
+
+fn update_ann_index_with_retry(
+    conn: &rusqlite::Connection,
+    chunk: &[EmbeddingResult],
+) -> Result<(), String> {
+    retry_ann_update_with(
+        || update_ann_index_batch(conn, chunk),
+        ANN_UPDATE_RETRIES,
+        ANN_UPDATE_BACKOFF_BASE,
+    )
+}
+
+fn update_ann_index_batch(
+    conn: &rusqlite::Connection,
+    chunk: &[EmbeddingResult],
+) -> Result<(), String> {
+    crate::analysis::ann_index::upsert_embeddings_batch(
         conn,
         chunk
             .iter()
             .map(|result| (result.sample_id.as_str(), result.embedding.as_slice())),
-    ) {
-        warn!("ANN index batch update failed: {err}");
-    }
-    conn.execute_batch("COMMIT")
-        .map_err(|err| format!("Commit embedding backfill tx failed: {err}"))?;
+    )
+    .map_err(|err| format!("ANN index batch update failed: {err}"))
+}
+
+fn handle_ann_update_failure(
+    conn: &rusqlite::Connection,
+    job: &db::ClaimedJob,
+    err: &str,
+) -> Result<(), String> {
+    let (source_id, _relative) = db::parse_sample_id(&job.sample_id)?;
+    db::mark_ann_index_dirty(conn, err)?;
+    db::enqueue_rebuild_ann_index_job(conn, &source_id, now_epoch_seconds())?;
     Ok(())
+}
+
+fn format_ann_update_error(err: String, rebuild_result: Result<(), String>) -> String {
+    match rebuild_result {
+        Ok(()) => format!("ANN index update failed; rebuild scheduled: {err}"),
+        Err(rebuild_err) => format!(
+            "ANN index update failed; rebuild scheduling failed: {rebuild_err}; original error: {err}"
+        ),
+    }
 }
 
 fn retry_backfill_write_with<F>(mut op: F, retries: usize, delay: Duration) -> Result<(), String>
@@ -466,6 +510,38 @@ where
         }
     }
     Err("Embedding backfill retries exhausted".to_string())
+}
+
+fn retry_ann_update_with<F>(
+    mut op: F,
+    retries: usize,
+    base_delay: Duration,
+) -> Result<(), String>
+where
+    F: FnMut() -> Result<(), String>,
+{
+    let mut last_err = None;
+    for attempt in 0..retries {
+        match op() {
+            Ok(()) => return Ok(()),
+            Err(err) if attempt + 1 < retries => {
+                last_err = Some(err);
+                let delay = ann_update_backoff(base_delay, attempt);
+                if !delay.is_zero() {
+                    sleep(delay);
+                }
+            }
+            Err(err) => return Err(err),
+        }
+    }
+    Err(last_err.unwrap_or_else(|| "ANN update retries exhausted".to_string()))
+}
+
+fn ann_update_backoff(base_delay: Duration, attempt: usize) -> Duration {
+    let shift = attempt.min(15) as u32;
+    base_delay
+        .checked_mul(1u32.saturating_shl(shift))
+        .unwrap_or(base_delay)
 }
 
 fn load_features_vec_optional(

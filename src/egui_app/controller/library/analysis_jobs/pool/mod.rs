@@ -5,6 +5,7 @@ mod job_progress;
 mod progress_cache;
 
 use crate::sample_sources::SourceId;
+use super::wakeup;
 use progress_cache::ProgressCache;
 #[cfg(not(test))]
 use std::collections::HashSet;
@@ -116,6 +117,7 @@ impl AnalysisWorkerPool {
                 info!("Analysis sources restricted to {} source(s)", count);
             }
         }
+        wakeup::notify_claim_wakeup();
     }
 
     pub(crate) fn pause_claiming(&self) {
@@ -130,6 +132,7 @@ impl AnalysisWorkerPool {
         if previous {
             tracing::debug!("Analysis job claiming resumed");
         }
+        wakeup::notify_claim_wakeup();
     }
 
     pub(crate) fn start(
@@ -152,7 +155,11 @@ impl AnalysisWorkerPool {
             let embedding_batch_max = crate::analysis::similarity::SIMILARITY_BATCH_MAX;
             let decode_queue_target =
                 job_claim::decode_queue_target(embedding_batch_max, worker_count);
-            let queue = std::sync::Arc::new(job_claim::DecodedQueue::new(decode_queue_target));
+            let claim_wakeup = wakeup::claim_wakeup_handle();
+            let queue = std::sync::Arc::new(job_claim::DecodedQueue::new_with_wakeup(
+                decode_queue_target,
+                Some(claim_wakeup.clone()),
+            ));
             let reset_done = Arc::new(Mutex::new(HashSet::new()));
             info!(
                 "Analysis workers starting: compute={}, decode={}, queue_target={}, queue_max={}",
@@ -172,6 +179,7 @@ impl AnalysisWorkerPool {
                     self.max_duration_bits.clone(),
                     self.analysis_sample_rate.clone(),
                     decode_queue_target,
+                    claim_wakeup.clone(),
                     reset_done.clone(),
                 ));
             }
@@ -207,16 +215,19 @@ impl AnalysisWorkerPool {
     pub(crate) fn cancel(&self) {
         self.cancel.store(true, Ordering::Relaxed);
         let _ = job_cleanup::reset_running_jobs();
+        wakeup::notify_claim_wakeup();
     }
 
     pub(crate) fn resume(&self) {
         self.cancel.store(false, Ordering::Relaxed);
+        wakeup::notify_claim_wakeup();
     }
 
     pub(crate) fn shutdown(&mut self) {
         self.shutdown.store(true, Ordering::Relaxed);
         self.cancel.store(true, Ordering::Relaxed);
         let _ = job_cleanup::reset_running_jobs();
+        wakeup::notify_claim_wakeup();
         for handle in self.threads.drain(..) {
             let _ = handle.join();
         }
