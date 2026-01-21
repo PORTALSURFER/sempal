@@ -173,58 +173,6 @@ impl EguiController {
         Err(err.to_string())
     }
 
-    fn restore_db_entries(
-        &mut self,
-        source: &SampleSource,
-        target: &Path,
-        entries: &[WavEntry],
-    ) -> Result<(), String> {
-        if entries.is_empty() {
-            return Ok(());
-        }
-        let db = self
-            .database_for(source)
-            .map_err(|err| format!("Database unavailable: {err}"))?;
-        let mut batch = db
-            .write_batch()
-            .map_err(|err| format!("Failed to start database restore: {err}"))?;
-        for entry in entries {
-            if !entry.relative_path.starts_with(target) {
-                continue;
-            }
-            match entry.content_hash.as_deref() {
-                Some(hash) => batch
-                    .upsert_file_with_hash_and_tag(
-                        &entry.relative_path,
-                        entry.file_size,
-                        entry.modified_ns,
-                        hash,
-                        entry.tag,
-                        entry.missing,
-                    )
-                    .map_err(|err| format!("Failed to restore entry: {err}"))?,
-                None => {
-                    batch
-                        .upsert_file(&entry.relative_path, entry.file_size, entry.modified_ns)
-                        .map_err(|err| format!("Failed to restore entry: {err}"))?;
-                    if entry.tag != Rating::NEUTRAL {
-                        batch
-                            .set_tag(&entry.relative_path, entry.tag)
-                            .map_err(|err| format!("Failed to restore tag: {err}"))?;
-                    }
-                    if entry.missing {
-                        batch
-                            .set_missing(&entry.relative_path, entry.missing)
-                            .map_err(|err| format!("Failed to restore missing flag: {err}"))?;
-                    }
-                }
-            }
-        }
-        batch
-            .commit()
-            .map_err(|err| format!("Failed to finalize database restore: {err}"))
-    }
-
     fn cleanup_staging_root(staging_root: &Path) {
         if let Ok(mut entries) = fs::read_dir(staging_root) {
             if entries.next().is_none() {

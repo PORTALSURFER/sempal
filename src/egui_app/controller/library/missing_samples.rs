@@ -121,48 +121,6 @@ impl EguiController {
         Ok(())
     }
 
-    pub(crate) fn sample_missing(
-        &mut self,
-        source_id: &SourceId,
-        relative_path: &Path,
-    ) -> bool {
-        if self.library.missing.sources.contains(source_id) {
-            return true;
-        }
-        if self.selection_state.ctx.selected_source.as_ref() == Some(source_id)
-            && let Some(index) = self.wav_index_for_path(relative_path)
-            && let Some(entry) = self.wav_entries.entry(index)
-        {
-            return entry.missing;
-        }
-        if let Some(cache) = self.cache.wav.entries.get(source_id) {
-            if let Some(index) = cache.lookup.get(relative_path).copied()
-                && let Some(entry) = cache.entry(index)
-            {
-                return entry.missing;
-            }
-        }
-        if let Some(set) = self.library.missing.wavs.get(source_id) {
-            return set.contains(relative_path);
-        }
-        if let Some(source) = self
-            .library
-            .sources
-            .iter()
-            .find(|s| &s.id == source_id)
-            .cloned()
-        {
-            if let Err(err) = self.ensure_missing_lookup_for_source(&source) {
-                self.set_status(err, StatusTone::Warning);
-                return true;
-            }
-            if let Some(set) = self.library.missing.wavs.get(source_id) {
-                return set.contains(relative_path);
-            }
-        }
-        false
-    }
-
     pub(crate) fn show_missing_waveform_notice(
         &mut self,
         relative_path: &Path,

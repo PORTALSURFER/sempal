@@ -102,22 +102,6 @@ impl EguiController {
         self.wav_entries.total
     }
 
-    /// Ensure the source database has a file entry for the given path.
-    pub(crate) fn ensure_sample_db_entry(
-        &mut self,
-        source: &SampleSource,
-        relative_path: &Path,
-    ) -> Result<(), String> {
-        let full_path = source.root.join(relative_path);
-        let (file_size, modified_ns) = wav_io::file_metadata(&full_path)
-            .map_err(|err| format!("Missing file for source: {err}"))?;
-        let db = self
-            .database_for(source)
-            .map_err(|err| format!("Database unavailable: {err}"))?;
-        db.upsert_file(relative_path, file_size, modified_ns)
-            .map_err(|err| format!("Failed to sync source entry: {err}"))
-    }
-
     pub(crate) fn ensure_wav_page_loaded(&mut self, index: usize) -> Result<(), String> {
         if self.wav_entries.entry(index).is_some() {
             return Ok(());
