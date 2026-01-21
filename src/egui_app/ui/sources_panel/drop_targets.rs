@@ -6,12 +6,17 @@ use super::helpers::{
 use crate::egui_app::ui::helpers;
 use super::style;
 use crate::egui_app::state::{DragPayload, DragSource, DragTarget};
-use crate::egui_app::ui::drag_targets::{handle_drop_zone, handle_sample_row_drag, pointer_pos_for_drag};
+use crate::egui_app::ui::drag_targets::{handle_drop_zone, handle_sample_row_drag};
 use crate::sample_sources::config::DropTargetColor;
 use eframe::egui::{self, Align2, RichText, StrokeKind, TextStyle, Ui};
 
 impl EguiApp {
-    pub(super) fn render_drop_targets(&mut self, ui: &mut Ui, height: f32) {
+    pub(super) fn render_drop_targets(
+        &mut self,
+        ui: &mut Ui,
+        height: f32,
+        pointer_pos: Option<egui::Pos2>,
+    ) {
         let palette = style::palette();
         let tooltip_mode = self.controller.ui.controls.tooltip_mode;
         let header_response = ui.horizontal(|ui| {
@@ -46,7 +51,6 @@ impl EguiApp {
             drag_payload,
             Some(DragPayload::DropTargetReorder { .. })
         );
-        let pointer_pos = pointer_pos_for_drag(ui, self.controller.ui.drag.position);
         let external_pointer_pos = pointer_pos.or(self.external_drop_hover_pos);
         let external_drop_ready = external_hover_has_audio(ui.ctx());
         let external_drop_paths = external_dropped_paths(ui.ctx());

@@ -510,16 +510,17 @@ impl EguiApp {
                     }
                 }
                 if folder_drop_active && hovered_folder.is_none() {
-                    let pointer = pointer_pos.unwrap_or_default();
-                    let shift_down = ui.input(|i| i.modifiers.shift);
-                    let alt_down = ui.input(|i| i.modifiers.alt);
-                    self.controller.update_active_drag(
-                        pointer,
-                        DragSource::Folders,
-                        DragTarget::FolderPanel { folder: None },
-                        shift_down,
-                        alt_down,
-                    );
+                    if let Some(pointer) = pointer_pos {
+                        let shift_down = ui.input(|i| i.modifiers.shift);
+                        let alt_down = ui.input(|i| i.modifiers.alt);
+                        self.controller.update_active_drag(
+                            pointer,
+                            DragSource::Folders,
+                            DragTarget::FolderPanel { folder: None },
+                            shift_down,
+                            alt_down,
+                        );
+                    }
                 }
                 let empty_height = ui.available_height();
                 if empty_height > 0.0 {

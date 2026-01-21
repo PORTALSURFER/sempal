@@ -141,9 +141,24 @@ impl EguiApp {
                     height_override = Some(drop_total);
                 }
             }
-            let pointer_pos = ui
-                .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
-                .or(self.controller.ui.drag.position);
+            let input_pointer_pos =
+                ui.input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()));
+            let pointer_pos = input_pointer_pos.or(self.controller.ui.drag.position);
+            let panel_pointer_pos = input_pointer_pos.filter(|pos| panel_rect.contains(*pos));
+            if drag_payload.is_some() && panel_pointer_pos.is_none() {
+                self.controller
+                    .ui
+                    .drag
+                    .clear_targets_from(DragSource::Folders);
+                self.controller
+                    .ui
+                    .drag
+                    .clear_targets_from(DragSource::Sources);
+                self.controller
+                    .ui
+                    .drag
+                    .clear_targets_from(DragSource::DropTargets);
+            }
             let available_rect = ui.available_rect_before_wrap();
             let layout_rect = egui::Rect::from_min_size(
                 available_rect.min,
@@ -298,7 +313,7 @@ impl EguiApp {
             let sources_rect = ui
                 .scope_builder(
                     egui::UiBuilder::new().max_rect(sources_list_rect),
-                    |ui| self.render_sources_list(ui, sources_list_height),
+                    |ui| self.render_sources_list(ui, sources_list_height, panel_pointer_pos),
                 )
                 .inner;
             ui.painter().line_segment(
@@ -307,9 +322,7 @@ impl EguiApp {
             );
             ui.scope_builder(
                 egui::UiBuilder::new().max_rect(folder_rect),
-                |ui| {
-                    self.render_folder_browser(ui, folder_total, folder_drop_active, pointer_pos);
-                },
+                |ui| self.render_folder_browser(ui, folder_total, folder_drop_active, panel_pointer_pos),
             );
             ui.painter().line_segment(
                 [drop_handle_rect.center_top(), drop_handle_rect.center_bottom()],
@@ -317,7 +330,7 @@ impl EguiApp {
             );
             ui.scope_builder(
                 egui::UiBuilder::new().max_rect(drop_rect),
-                |ui| self.render_drop_targets(ui, drop_total),
+                |ui| self.render_drop_targets(ui, drop_total, panel_pointer_pos),
             );
             self.controller.ui.sources.sources_height_override = sources_height_override;
             self.controller.ui.sources.sources_resize_origin_height = sources_resize_origin;

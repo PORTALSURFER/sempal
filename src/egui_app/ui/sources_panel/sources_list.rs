@@ -3,18 +3,22 @@ use super::helpers::{RowBackground, clamp_label_for_width, list_row_height, rend
 use crate::egui_app::ui::helpers;
 use super::style;
 use crate::egui_app::state::{DragPayload, DragSource, DragTarget, FocusContext};
-use crate::egui_app::ui::drag_targets::{handle_drop_zone, pointer_pos_for_drag};
+use crate::egui_app::ui::drag_targets::handle_drop_zone;
 use eframe::egui::{self, RichText, Ui};
 
 impl EguiApp {
-    pub(super) fn render_sources_list(&mut self, ui: &mut Ui, height: f32) -> egui::Rect {
+    pub(super) fn render_sources_list(
+        &mut self,
+        ui: &mut Ui,
+        height: f32,
+        pointer_pos: Option<egui::Pos2>,
+    ) -> egui::Rect {
         let height = height.max(0.0);
         let drag_payload = self.controller.ui.drag.payload.clone();
         let drag_active = matches!(
             drag_payload,
             Some(DragPayload::Sample { .. } | DragPayload::Samples { .. })
         );
-        let pointer_pos = pointer_pos_for_drag(ui, self.controller.ui.drag.position);
         let output = egui::ScrollArea::vertical()
             .id_salt("sources_scroll")
             .min_scrolled_height(height)
