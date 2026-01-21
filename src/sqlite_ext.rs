@@ -328,6 +328,7 @@ fn validate_extension_file(path: &Path) -> Result<(), String> {
 mod tests {
     use super::*;
     use std::fs;
+    #[cfg(feature = "sqlite-ext-unsafe")]
     use std::sync::Mutex;
     use tempfile::tempdir;
 
