@@ -2,6 +2,7 @@ use super::*;
 use std::path::Path;
 
 mod actions;
+pub(crate) mod delete_recovery;
 mod entry_updates;
 mod selection;
 mod tree;

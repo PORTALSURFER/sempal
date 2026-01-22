@@ -215,6 +215,9 @@ impl EguiController {
                         self.apply_trash_move_finished(result);
                     }
                 },
+                JobMessage::FolderDeleteRecoveryFinished(report) => {
+                    self.apply_folder_delete_recovery_report(report);
+                }
                 JobMessage::FileOps(message) => match message {
                     crate::egui_app::controller::jobs::FileOpMessage::Progress { completed, detail } => {
                         progress::update_progress_detail(

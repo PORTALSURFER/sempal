@@ -58,6 +58,50 @@ pub struct FolderBrowserUiState {
     pub new_folder: Option<InlineFolderCreation>,
     /// Cached header height for the folder browser section.
     pub header_height: f32,
+    /// Delete recovery queue state for staged folder deletes.
+    pub delete_recovery: FolderDeleteRecoveryUiState,
+}
+
+/// UI state for staged delete recovery.
+#[derive(Clone, Debug, Default)]
+pub struct FolderDeleteRecoveryUiState {
+    /// Whether recovery is currently running in the background.
+    pub in_progress: bool,
+    /// Entries reported by the last recovery run.
+    pub entries: Vec<FolderDeleteRecoveryEntry>,
+}
+
+/// Display entry for a recovered staged delete.
+#[derive(Clone, Debug)]
+pub struct FolderDeleteRecoveryEntry {
+    /// Display label for the source.
+    pub source_label: String,
+    /// Original folder path relative to the source root.
+    pub relative_path: PathBuf,
+    /// Action taken during recovery.
+    pub action: FolderDeleteRecoveryAction,
+    /// Outcome of the recovery attempt.
+    pub status: FolderDeleteRecoveryStatus,
+    /// Optional extra detail for the UI.
+    pub detail: Option<String>,
+}
+
+/// Recovery action taken for a staged delete.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FolderDeleteRecoveryAction {
+    /// Restore the staged folder into the source.
+    Restore,
+    /// Finalize the staged delete by removing the folder.
+    Finalize,
+}
+
+/// Recovery outcome for a staged delete.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FolderDeleteRecoveryStatus {
+    /// Recovery action succeeded.
+    Completed,
+    /// Recovery action failed.
+    Failed,
 }
 
 /// Root selection behavior for the folder browser.

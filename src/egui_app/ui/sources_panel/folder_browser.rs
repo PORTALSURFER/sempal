@@ -271,6 +271,7 @@ impl EguiApp {
                 }
                 ui.add_space(2.0);
             }
+            self.render_delete_recovery_queue(ui);
             let inline_parent = inline_parent_for_rows.clone();
             let scroll = egui::ScrollArea::vertical()
                 .id_salt("folder_browser_scroll")
@@ -577,6 +578,80 @@ impl EguiApp {
         style::paint_section_border(ui, frame_response.response.rect, focused);
         self.controller.ui.sources.folders.scroll_to = None;
         self.controller.ui.sources.folders.rows = rows;
+    }
+
+    fn render_delete_recovery_queue(&mut self, ui: &mut Ui) {
+        let recovery = &mut self.controller.ui.sources.folders.delete_recovery;
+        if !recovery.in_progress && recovery.entries.is_empty() {
+            return;
+        }
+        let palette = style::palette();
+        let count = recovery.entries.len();
+        let title = if recovery.in_progress {
+            "Delete recovery (running...)".to_string()
+        } else {
+            format!("Delete recovery ({count})")
+        };
+        egui::CollapsingHeader::new(title)
+            .id_source("delete_recovery_queue")
+            .default_open(recovery.in_progress)
+            .show(ui, |ui| {
+                if recovery.entries.is_empty() {
+                    ui.label(
+                        RichText::new("Scanning for staged deletes...")
+                            .small()
+                            .color(palette.text_muted),
+                    );
+                    return;
+                }
+                for entry in &recovery.entries {
+                    let status_label = match (entry.action, entry.status) {
+                        (
+                            crate::egui_app::state::FolderDeleteRecoveryAction::Restore,
+                            crate::egui_app::state::FolderDeleteRecoveryStatus::Completed,
+                        ) => "Restored",
+                        (
+                            crate::egui_app::state::FolderDeleteRecoveryAction::Finalize,
+                            crate::egui_app::state::FolderDeleteRecoveryStatus::Completed,
+                        ) => "Finalized",
+                        (
+                            crate::egui_app::state::FolderDeleteRecoveryAction::Restore,
+                            crate::egui_app::state::FolderDeleteRecoveryStatus::Failed,
+                        ) => "Restore failed",
+                        (
+                            crate::egui_app::state::FolderDeleteRecoveryAction::Finalize,
+                            crate::egui_app::state::FolderDeleteRecoveryStatus::Failed,
+                        ) => "Finalize failed",
+                    };
+                    let status_color = match entry.status {
+                        crate::egui_app::state::FolderDeleteRecoveryStatus::Completed => {
+                            palette.accent_mint
+                        }
+                        crate::egui_app::state::FolderDeleteRecoveryStatus::Failed => {
+                            style::destructive_text()
+                        }
+                    };
+                    let label = format!(
+                        "{} • {} / {}",
+                        status_label,
+                        entry.source_label,
+                        entry.relative_path.display()
+                    );
+                    ui.label(RichText::new(label).color(status_color));
+                    if let Some(detail) = &entry.detail {
+                        ui.label(
+                            RichText::new(detail)
+                                .small()
+                                .color(palette.text_muted),
+                        );
+                    }
+                }
+                ui.add_space(4.0);
+                if ui.button("Clear recovery log").clicked() {
+                    self.controller.clear_folder_delete_recovery_log();
+                }
+            });
+        ui.add_space(6.0);
     }
 }
 

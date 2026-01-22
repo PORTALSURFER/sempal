@@ -110,6 +110,7 @@ impl EguiApp {
         let modal_active = self.modal_overlay_active();
         helpers::set_tooltips_suppressed(ctx, modal_active);
         self.controller.refresh_recording_waveform();
+        self.controller.start_folder_delete_recovery_if_needed();
         self.render_panels(ctx);
         self.render_overlays(ctx, input, focus_context);
         

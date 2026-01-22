@@ -1,5 +1,6 @@
 use super::ScanJobMessage;
 use super::library::analysis_jobs::AnalysisJobMessage;
+use super::library::source_folders::delete_recovery::DeleteRecoveryReport;
 use super::library::trash_move;
 use super::library::wav_entries_loader::WavLoaderHandle;
 use super::playback::audio_loader::{AudioLoadJob, AudioLoadResult, AudioLoaderHandle};
@@ -37,6 +38,7 @@ pub(crate) enum JobMessage {
     FolderScanFinished(FolderScanResult),
     SourceWatch(SourceWatchEvent),
     TrashMove(trash_move::TrashMoveMessage),
+    FolderDeleteRecoveryFinished(DeleteRecoveryReport),
     FileOps(FileOpMessage),
     Analysis(AnalysisJobMessage),
     AnalysisFailuresLoaded(AnalysisFailuresResult),

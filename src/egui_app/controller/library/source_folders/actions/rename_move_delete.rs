@@ -1,5 +1,6 @@
 use super::ops;
 use super::*;
+use super::super::delete_recovery;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -65,13 +66,19 @@ impl EguiController {
             return Ok(());
         }
         let entries = self.folder_entries(target);
-        let staging_root = source.root.join(".sempal_delete_staging");
-        let staged = Self::stage_folder_for_delete(&absolute, &staging_root, target)?;
+        let staging_root = source.root.join(delete_recovery::DELETE_STAGING_DIR);
+        let staged =
+            delete_recovery::stage_folder_for_delete(&absolute, &staging_root, target)?;
+        #[cfg(test)]
+        if self.runtime.fail_after_folder_delete_stage {
+            self.runtime.fail_after_folder_delete_stage = false;
+            return Err("Simulated crash after staging".to_string());
+        }
         if !entries.is_empty() {
             #[cfg(test)]
             if self.runtime.fail_next_folder_delete_db {
                 self.runtime.fail_next_folder_delete_db = false;
-                return Self::rollback_staged_folder(
+                return delete_recovery::rollback_staged_folder(
                     &staged,
                     &absolute,
                     &staging_root,
@@ -96,8 +103,16 @@ impl EguiController {
                 Ok(())
             })();
             if let Err(err) = db_result {
-                return Self::rollback_staged_folder(&staged, &absolute, &staging_root, &err);
+                return delete_recovery::rollback_staged_folder(
+                    &staged,
+                    &absolute,
+                    &staging_root,
+                    &err,
+                );
             }
+            delete_recovery::mark_delete_db_committed(&staging_root, &staged.id)?;
+        } else {
+            delete_recovery::mark_delete_db_committed(&staging_root, &staged.id)?;
         }
         for entry in &entries {
             self.prune_cached_sample(&source, &entry.relative_path);
@@ -115,87 +130,17 @@ impl EguiController {
         }
         self.ui.sources.folders.pending_action = None;
         self.ui.sources.folders.new_folder = None;
-        fs::remove_dir_all(&staged)
+        #[cfg(test)]
+        if self.runtime.fail_after_folder_delete_db_commit {
+            self.runtime.fail_after_folder_delete_db_commit = false;
+            return Err("Simulated crash after database commit".to_string());
+        }
+        fs::remove_dir_all(&staged.staged_absolute)
             .map_err(|err| format!("Failed to finalize folder delete: {err}"))?;
-        Self::cleanup_staging_root(&staging_root);
+        delete_recovery::remove_delete_entry(&staging_root, &staged.id)?;
+        delete_recovery::cleanup_staging_root(&staging_root);
         Ok(())
     }
-
-    fn stage_folder_for_delete(
-        absolute: &Path,
-        staging_root: &Path,
-        relative: &Path,
-    ) -> Result<PathBuf, String> {
-        let staged = Self::unique_staging_path(staging_root, relative);
-        if let Some(parent) = staged.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|err| format!("Failed to prepare folder delete staging: {err}"))?;
-            Self::mark_staging_root_hidden(staging_root);
-        }
-        fs::rename(absolute, &staged)
-            .map_err(|err| format!("Failed to stage folder delete: {err}"))?;
-        Ok(staged)
-    }
-
-    fn unique_staging_path(staging_root: &Path, relative: &Path) -> PathBuf {
-        let mut candidate = staging_root.join(relative);
-        if !candidate.exists() {
-            return candidate;
-        }
-        let parent = relative.parent().unwrap_or_else(|| Path::new(""));
-        let name = relative
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("folder");
-        for idx in 1..=1000 {
-            let mut alt = PathBuf::from(parent);
-            alt.push(format!("{name}.staged-{idx}"));
-            candidate = staging_root.join(alt);
-            if !candidate.exists() {
-                return candidate;
-            }
-        }
-        candidate
-    }
-
-    fn rollback_staged_folder(
-        staged: &Path,
-        absolute: &Path,
-        staging_root: &Path,
-        err: &str,
-    ) -> Result<(), String> {
-        if let Err(restore_err) = fs::rename(staged, absolute) {
-            return Err(format!(
-                "{err} (also failed to restore folder: {restore_err})"
-            ));
-        }
-        Self::cleanup_staging_root(staging_root);
-        Err(err.to_string())
-    }
-
-    fn cleanup_staging_root(staging_root: &Path) {
-        if let Ok(mut entries) = fs::read_dir(staging_root) {
-            if entries.next().is_none() {
-                let _ = fs::remove_dir(staging_root);
-            }
-        }
-    }
-
-    #[cfg(target_os = "windows")]
-    fn mark_staging_root_hidden(staging_root: &Path) {
-        use std::os::windows::ffi::OsStrExt;
-        use windows::{
-            Win32::Storage::FileSystem::{FILE_ATTRIBUTE_HIDDEN, SetFileAttributesW},
-            core::PCWSTR,
-        };
-
-        let mut wide: Vec<u16> = staging_root.as_os_str().encode_wide().collect();
-        wide.push(0);
-        let _ = unsafe { SetFileAttributesW(PCWSTR(wide.as_ptr()), FILE_ATTRIBUTE_HIDDEN) };
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    fn mark_staging_root_hidden(_staging_root: &Path) {}
 
     fn next_folder_focus_after_delete(&self, target: &Path) -> Option<PathBuf> {
         let rows = &self.ui.sources.folders.rows;
