@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main, next]
+  pull_request:
+    branches: [main, next]
+
+jobs:
+  lint_test:
+    name: Lint and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Install Linux audio deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev pkg-config
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Lint (clippy)
+        run: cargo clippy --all-targets
+      - name: Run tests
+        run: cargo test --all-targets

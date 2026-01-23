@@ -49,7 +49,7 @@ Audio sample triage tool built with Rust and egui.
 - Format locally: `cargo fmt --all`.
 - Check formatting (same as CI): `cargo fmt --all -- --check`.
 - Lint locally (same as CI): `cargo clippy --all-targets`.
-- CI runs `rustfmt` and `clippy` on every push to `main` and all pull requests.
+- CI runs `rustfmt`, `clippy`, and `cargo test` on every push to `main`/`next` and all pull requests targeting those branches.
 
 ## Configuration and data
 
