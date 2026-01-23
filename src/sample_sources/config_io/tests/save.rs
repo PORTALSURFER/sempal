@@ -1,7 +1,6 @@
 use super::super::super::config_types::{
     AnalysisSettings, AppSettingsCore, DropTargetColor, DropTargetConfig, FeatureFlags,
     InteractionOptions, TooltipMode, UpdateChannel, UpdateSettings,
-    WgpuPowerPreference,
 };
 use super::super::load::load_settings_from;
 use super::super::save::save_to_path;
@@ -139,12 +138,10 @@ fn settings_round_trip_preserves_fields() {
                 max_analysis_duration_seconds: 12.5,
                 limit_similarity_prep_duration: false,
                 long_sample_threshold_seconds: 42.0,
-                analysis_worker_count: 2,
-                fast_similarity_prep: true,
-                fast_similarity_prep_sample_rate: 8_000,
-                wgpu_power_preference: WgpuPowerPreference::High,
-                wgpu_adapter_name: Some("adapter".into()),
-            },
+            analysis_worker_count: 2,
+            fast_similarity_prep: true,
+            fast_similarity_prep_sample_rate: 8_000,
+        },
             updates: UpdateSettings {
                 channel: UpdateChannel::Nightly,
                 check_on_startup: false,
@@ -238,14 +235,6 @@ fn settings_round_trip_preserves_fields() {
     assert_eq!(
         round_trip.core.job_message_queue_capacity,
         cfg.core.job_message_queue_capacity
-    );
-    assert_eq!(
-        round_trip.core.analysis.wgpu_power_preference,
-        cfg.core.analysis.wgpu_power_preference
-    );
-    assert_eq!(
-        round_trip.core.analysis.wgpu_adapter_name,
-        cfg.core.analysis.wgpu_adapter_name
     );
     assert_eq!(round_trip.core.updates.channel, cfg.core.updates.channel);
     assert_eq!(

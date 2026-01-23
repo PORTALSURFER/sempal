@@ -4,7 +4,7 @@ mod errors;
 mod interaction;
 mod updates;
 
-pub use analysis::{AnalysisSettings, WgpuPowerPreference};
+pub use analysis::AnalysisSettings;
 pub(crate) use app::AppSettings;
 pub use app::{
     AppConfig, AppSettingsCore, DropTargetColor, DropTargetConfig, FeatureFlags,

@@ -12,5 +12,5 @@ pub use config_io::{
 pub use config_types::{
     AnalysisSettings, AppConfig, AppSettingsCore, ConfigError, DropTargetColor, DropTargetConfig,
     FeatureFlags, InteractionOptions, TooltipMode, UpdateChannel,
-    UpdateSettings, WgpuPowerPreference,
+    UpdateSettings,
 };
