@@ -8,8 +8,7 @@ use super::super::config_defaults::{
 /// Global preferences for analysis and feature extraction.
 ///
 ///   `limit_similarity_prep_duration`, `long_sample_threshold_seconds`,
-///   `fast_similarity_prep`, `fast_similarity_prep_sample_rate`, `wgpu_power_preference`,
-///   `wgpu_adapter_name`.
+///   `fast_similarity_prep`, `fast_similarity_prep_sample_rate`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalysisSettings {
     /// Skip analysis for files longer than this many seconds.
@@ -30,12 +29,6 @@ pub struct AnalysisSettings {
     /// Sample rate used during fast similarity prep analysis.
     #[serde(default = "default_fast_similarity_prep_sample_rate")]
     pub fast_similarity_prep_sample_rate: u32,
-    /// WGPU adapter power preference when using the WGPU backend.
-    #[serde(default)]
-    pub wgpu_power_preference: WgpuPowerPreference,
-    /// Optional WGPU adapter name override (substring match).
-    #[serde(default)]
-    pub wgpu_adapter_name: Option<String>,
 }
 
 impl Default for AnalysisSettings {
@@ -47,47 +40,6 @@ impl Default for AnalysisSettings {
             analysis_worker_count: default_analysis_worker_count(),
             fast_similarity_prep: default_false(),
             fast_similarity_prep_sample_rate: default_fast_similarity_prep_sample_rate(),
-            wgpu_power_preference: WgpuPowerPreference::default(),
-            wgpu_adapter_name: None,
-        }
-    }
-}
-
-
-/// WGPU adapter power preference.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum WgpuPowerPreference {
-    /// Let the system decide the adapter power preference.
-    Default,
-    /// Prefer low-power adapters.
-    Low,
-    /// Prefer high-performance adapters.
-    High,
-}
-
-impl Default for WgpuPowerPreference {
-    fn default() -> Self {
-        Self::Default
-    }
-}
-
-impl WgpuPowerPreference {
-    /// Return the environment variable value for this preference.
-    pub fn as_env(&self) -> Option<&'static str> {
-        match self {
-            Self::Default => None,
-            Self::Low => Some("low"),
-            Self::High => Some("high"),
-        }
-    }
-
-    /// Parse a power preference from an environment variable value.
-    pub fn from_env(value: &str) -> Option<Self> {
-        match value.trim().to_ascii_lowercase().as_str() {
-            "low" | "low-power" | "lowpower" => Some(Self::Low),
-            "high" | "high-performance" | "highperformance" => Some(Self::High),
-            _ => None,
         }
     }
 }

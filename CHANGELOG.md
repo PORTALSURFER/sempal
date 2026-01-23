@@ -39,6 +39,7 @@
 - *(analysis-jobs)* Split analysis execution
 - *(scanner)* Split scan phases
 - *(audio)* Split decode io and prep
+- Remove legacy WGPU analysis settings from config
 
 ### 📚 Documentation
 

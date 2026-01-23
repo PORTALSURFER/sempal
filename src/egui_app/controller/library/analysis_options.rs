@@ -6,22 +6,6 @@ const MIN_LONG_SAMPLE_THRESHOLD_SECONDS: f32 = 1.0;
 const MAX_LONG_SAMPLE_THRESHOLD_SECONDS: f32 = 60.0 * 60.0;
 const MAX_ANALYSIS_WORKER_COUNT: u32 = 64;
 const MIN_FAST_PREP_SAMPLE_RATE: u32 = 8_000;
-const WGPU_POWER_ENV: &str = "WGPU_POWER_PREFERENCE";
-const WGPU_ADAPTER_ENV: &str = "WGPU_ADAPTER_NAME";
-
-fn set_env_var(key: &str, value: &str) {
-    // Safety: env var mutation is process-global; we keep it scoped to runtime config changes.
-    unsafe {
-        std::env::set_var(key, value);
-    }
-}
-
-fn remove_env_var(key: &str) {
-    // Safety: env var mutation is process-global; we keep it scoped to runtime config changes.
-    unsafe {
-        std::env::remove_var(key);
-    }
-}
 
 pub(crate) fn clamp_max_analysis_duration_seconds(seconds: f32) -> f32 {
     seconds.clamp(
@@ -38,38 +22,6 @@ pub(crate) fn clamp_long_sample_threshold_seconds(seconds: f32) -> f32 {
 }
 
 impl EguiController {
-    pub(crate) fn sync_analysis_backend_from_env(&mut self) {
-        if let Ok(value) = std::env::var(WGPU_POWER_ENV) {
-            if let Some(parsed) =
-                crate::sample_sources::config::WgpuPowerPreference::from_env(&value)
-            {
-                self.settings.analysis.wgpu_power_preference = parsed;
-            }
-        }
-        if let Ok(value) = std::env::var(WGPU_ADAPTER_ENV) {
-            let trimmed = value.trim();
-            if trimmed.is_empty() {
-                self.settings.analysis.wgpu_adapter_name = None;
-            } else {
-                self.settings.analysis.wgpu_adapter_name = Some(trimmed.to_string());
-            }
-        }
-    }
-
-    pub(crate) fn apply_analysis_backend_env(&mut self) {
-        match self.settings.analysis.wgpu_power_preference.as_env() {
-            Some(value) => set_env_var(WGPU_POWER_ENV, value),
-            None => remove_env_var(WGPU_POWER_ENV),
-        }
-
-        match self.settings.analysis.wgpu_adapter_name.as_ref() {
-            Some(value) if !value.trim().is_empty() => {
-                set_env_var(WGPU_ADAPTER_ENV, value);
-            }
-            _ => remove_env_var(WGPU_ADAPTER_ENV),
-        }
-    }
-
     /// Return the maximum analysis duration in seconds.
     pub fn max_analysis_duration_seconds(&self) -> f32 {
         self.settings.analysis.max_analysis_duration_seconds
@@ -190,49 +142,4 @@ impl EguiController {
         let sources = self.current_source().map(|source| vec![source.id]);
         self.set_analysis_worker_allowed_sources(sources);
     }
-
-
-    /// Return the configured WGPU power preference.
-    pub fn wgpu_power_preference(&self) -> crate::sample_sources::config::WgpuPowerPreference {
-        self.settings.analysis.wgpu_power_preference
-    }
-
-    /// Update the WGPU power preference and persist it.
-    pub fn set_wgpu_power_preference(
-        &mut self,
-        preference: crate::sample_sources::config::WgpuPowerPreference,
-    ) {
-        if self.settings.analysis.wgpu_power_preference == preference {
-            return;
-        }
-        self.settings.analysis.wgpu_power_preference = preference;
-        self.apply_analysis_backend_env();
-        if let Err(err) = self.persist_config("Failed to save options") {
-            self.set_status(err, StatusTone::Warning);
-        }
-    }
-
-    /// Return the configured WGPU adapter name, if any.
-    pub fn wgpu_adapter_name(&self) -> Option<&str> {
-        self.settings.analysis.wgpu_adapter_name.as_deref()
-    }
-
-    /// Update the WGPU adapter name and persist it.
-    pub fn set_wgpu_adapter_name(&mut self, name: String) {
-        let trimmed = name.trim();
-        let next = if trimmed.is_empty() {
-            None
-        } else {
-            Some(trimmed.to_string())
-        };
-        if self.settings.analysis.wgpu_adapter_name == next {
-            return;
-        }
-        self.settings.analysis.wgpu_adapter_name = next;
-        self.apply_analysis_backend_env();
-        if let Err(err) = self.persist_config("Failed to save options") {
-            self.set_status(err, StatusTone::Warning);
-        }
-    }
-
 }
