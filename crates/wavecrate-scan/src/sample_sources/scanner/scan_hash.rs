@@ -1025,7 +1025,9 @@ fn deep_hash_scan_with_root_hooks(
 ) -> Result<ScanStats, ScanError> {
     source_root.ensure_current_generation()?;
     let mut rename_candidates = rename_candidates.clone();
-    rename_candidates.extend(db.list_pending_rename_destinations()?);
+    if scope == DeferredHashScope::AllUnhashed {
+        rename_candidates.extend(db.list_pending_rename_destinations()?);
+    }
     let bounded_rename_scope = scope == DeferredHashScope::RenameCandidates;
     let rename_candidate_paths = rename_candidates.iter().cloned().collect::<Vec<_>>();
     let (manifest_revision, manifest_before) = if bounded_rename_scope {

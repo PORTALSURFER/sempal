@@ -516,13 +516,27 @@ pub(crate) fn reconcile_scan_renames(
         .iter()
         .cloned()
         .collect::<HashSet<_>>();
-    let persisted_candidates = if context.mode == ScanMode::Hard {
+    let persisted_candidates = if context.mode == ScanMode::Targeted {
+        let mut persisted = if db.has_pending_renames()? {
+            db.list_recent_unretained_rename_destinations()?
+                .into_iter()
+                .collect::<HashSet<_>>()
+        } else {
+            HashSet::new()
+        };
+        for path in &current_candidates {
+            persisted.extend(db.list_retained_rename_destinations_for_pending_path(path)?);
+        }
+        persisted
+    } else if context.mode == ScanMode::Hard {
         db.list_pending_rename_destinations()?
+            .into_iter()
+            .collect::<HashSet<_>>()
     } else {
         db.list_retained_rename_destinations()?
-    }
-    .into_iter()
-    .collect::<HashSet<_>>();
+            .into_iter()
+            .collect::<HashSet<_>>()
+    };
     let mut candidates = current_candidates.clone();
     candidates.extend(persisted_candidates.iter().cloned());
     let carried_candidates_need_revalidation = persisted_candidates
@@ -788,8 +802,7 @@ pub fn complete_deferred_rename_candidates_with_cancel_and_writer(
     if !db.has_pending_renames()? {
         return Ok(stats);
     }
-    let persisted_candidates = db.list_pending_rename_destinations()?;
-    if stats.rename_candidate_paths.is_empty() && persisted_candidates.is_empty() {
+    if stats.rename_candidate_paths.is_empty() {
         return Ok(stats);
     }
     let rename_candidates = stats
@@ -797,6 +810,8 @@ pub fn complete_deferred_rename_candidates_with_cancel_and_writer(
         .iter()
         .cloned()
         .collect::<HashSet<_>>();
+    let mut rename_candidates = rename_candidates;
+    extend_retained_rename_candidates(db, &mut rename_candidates)?;
     let deferred = super::super::scan_hash::deep_hash_scan_with_writer(
         db,
         cancel,
@@ -816,11 +831,7 @@ pub fn complete_deferred_hashes_with_cancel(
     mut stats: ScanStats,
     cancel: Option<&AtomicBool>,
 ) -> Result<ScanStats, ScanError> {
-    let persisted_candidates = db.list_pending_rename_destinations()?;
-    if stats.hashes_pending == 0
-        && stats.rename_candidate_paths.is_empty()
-        && persisted_candidates.is_empty()
-    {
+    if stats.hashes_pending == 0 && stats.rename_candidate_paths.is_empty() {
         return Ok(stats);
     }
     let rename_candidates = stats
@@ -828,6 +839,10 @@ pub fn complete_deferred_hashes_with_cancel(
         .iter()
         .cloned()
         .collect::<HashSet<_>>();
+    let mut rename_candidates = rename_candidates;
+    if stats.hashes_pending == 0 {
+        extend_retained_rename_candidates(db, &mut rename_candidates)?;
+    }
     let scope = if stats.hashes_pending > 0 {
         super::super::scan_hash::DeferredHashScope::AllUnhashed
     } else {
@@ -837,6 +852,20 @@ pub fn complete_deferred_hashes_with_cancel(
         super::super::scan_hash::deep_hash_scan(db, cancel, &rename_candidates, scope, None, None)?;
     stats.merge_deferred_hashes(deferred);
     Ok(stats)
+}
+
+fn extend_retained_rename_candidates(
+    db: &SourceDatabase,
+    candidates: &mut HashSet<std::path::PathBuf>,
+) -> Result<(), ScanError> {
+    if db.has_pending_renames()? {
+        candidates.extend(db.list_recent_unretained_rename_destinations()?);
+    }
+    let pending_paths = candidates.iter().cloned().collect::<Vec<_>>();
+    for path in pending_paths {
+        candidates.extend(db.list_retained_rename_destinations_for_pending_path(&path)?);
+    }
+    Ok(())
 }
 
 /// Complete a bounded batch of pending deep-content hashes without launching an unowned worker.
