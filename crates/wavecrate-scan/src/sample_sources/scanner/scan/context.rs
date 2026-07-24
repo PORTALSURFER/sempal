@@ -93,7 +93,12 @@ impl ScanContext {
         &mut self,
         paths: Vec<PathBuf>,
     ) {
-        self.targeted_manifest_scope = Some(paths);
+        self.targeted_manifest_scope = Some(
+            paths
+                .into_iter()
+                .filter(|path| path.to_str().is_some())
+                .collect(),
+        );
     }
 
     pub(in crate::sample_sources::scanner) fn refresh_targeted_manifest(
