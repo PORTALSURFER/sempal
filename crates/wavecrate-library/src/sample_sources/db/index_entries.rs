@@ -4,8 +4,8 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use super::schema;
 use super::util::{
-    EXACT_SUBTREE_PATH_PREDICATE, exact_subtree_path_bounds, map_sql_error,
-    normalize_source_index_path, parse_source_index_path_from_db,
+    EXACT_SUBTREE_PATH_PREDICATE, INDEX_PATH_ENCODING_PLAIN, exact_subtree_path_bounds,
+    map_sql_error, normalize_source_index_path, parse_source_index_path_from_db,
 };
 use super::{
     META_SOURCE_INDEX_REVISION, SourceDatabase, SourceDbError, SourceIndexClassification,
@@ -81,16 +81,19 @@ impl SourceWriteBatch<'_> {
     ) -> Result<(), SourceDbError> {
         validate_entry(entry)?;
         let (path, path_encoding) = normalize_source_index_path(&entry.relative_path)?;
-        let live_manifest_row = self
-            .tx
-            .query_row(
-                "SELECT 1 FROM wav_files WHERE path = ?1 AND missing = 0",
-                [&path],
-                |_| Ok(()),
-            )
-            .optional()
-            .map_err(map_sql_error)?
-            .is_some();
+        let live_manifest_row = if path_encoding == INDEX_PATH_ENCODING_PLAIN {
+            self.tx
+                .query_row(
+                    "SELECT 1 FROM wav_files WHERE path = ?1 AND missing = 0",
+                    [&path],
+                    |_| Ok(()),
+                )
+                .optional()
+                .map_err(map_sql_error)?
+                .is_some()
+        } else {
+            false
+        };
         if live_manifest_row {
             return Err(SourceDbError::Unexpected);
         }
@@ -324,6 +327,49 @@ mod tests {
             batch.upsert_source_index_entry(&entry),
             Err(SourceDbError::Unexpected)
         ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn lossless_index_key_can_coexist_with_an_equal_manifest_storage_key() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let directory = tempfile::tempdir().expect("source root");
+        let database =
+            SourceDatabase::open_for_source_write(directory.path()).expect("source database");
+        let raw_path = PathBuf::from_iter([
+            OsString::from_vec(b"raw-\xFF".to_vec()),
+            OsString::from("sample.wav"),
+        ]);
+        let (encoded_path, path_encoding) = normalize_source_index_path(&raw_path).unwrap();
+        assert_ne!(path_encoding, INDEX_PATH_ENCODING_PLAIN);
+        database
+            .upsert_file(Path::new(&encoded_path), 5, 10)
+            .expect("supported Unicode row with colliding storage key");
+
+        let entry = SourceIndexEntry {
+            relative_path: raw_path,
+            classification: SourceIndexClassification::Inaccessible,
+            file_size: Some(3),
+            modified_ns: Some(20),
+            file_identity: None,
+            diagnostic: Some(SourceIndexDiagnostic::NonUnicodePath),
+            format_policy_version: SOURCE_FORMAT_POLICY_VERSION,
+        };
+        let mut batch = database.write_batch().expect("index batch");
+        batch
+            .upsert_source_index_entry(&entry)
+            .expect("lossless key must not alias a plain manifest path");
+        batch.commit_auxiliary_state().expect("commit index row");
+
+        assert_eq!(database.list_source_index_entries().unwrap(), vec![entry]);
+        assert!(
+            database
+                .entry_for_path(Path::new(&encoded_path))
+                .unwrap()
+                .is_some()
+        );
     }
 
     #[test]

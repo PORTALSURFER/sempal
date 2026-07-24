@@ -166,6 +166,38 @@ fn targeted_sync_preserves_non_unicode_unsupported_classifications() {
     assert_eq!(database.list_files().unwrap().len(), 1);
 }
 
+#[cfg(all(unix, not(target_os = "macos")))]
+#[test]
+fn lossless_raw_path_key_does_not_alias_a_unicode_sample_path() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    let directory = tempdir().unwrap();
+    let raw_path = PathBuf::from_iter([
+        OsString::from_vec(b"raw-\xFF".to_vec()),
+        OsString::from("sample.wav"),
+    ]);
+    let unicode_path = PathBuf::from("~wavecrate-nu~7261772dff/sample.wav");
+    std::fs::create_dir_all(directory.path().join(&raw_path).parent().unwrap()).unwrap();
+    std::fs::create_dir_all(directory.path().join(&unicode_path).parent().unwrap()).unwrap();
+    std::fs::write(directory.path().join(&raw_path), b"raw").unwrap();
+    std::fs::write(directory.path().join(&unicode_path), b"unicode").unwrap();
+
+    let database = SourceDatabase::open_for_scan(directory.path()).unwrap();
+    scan_once(&database).unwrap();
+
+    let manifest = database.list_manifest_entries().unwrap();
+    assert_eq!(manifest.len(), 1);
+    assert_eq!(manifest[0].relative_path, unicode_path);
+    let index_entries = database.list_source_index_entries().unwrap();
+    assert_eq!(index_entries.len(), 1);
+    assert_eq!(index_entries[0].relative_path, raw_path);
+    assert_eq!(
+        index_entries[0].diagnostic,
+        Some(SourceIndexDiagnostic::NonUnicodePath)
+    );
+}
+
 #[test]
 fn full_scan_reconciles_index_only_change_move_and_delete() {
     let directory = tempdir().unwrap();

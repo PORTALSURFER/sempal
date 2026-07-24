@@ -21,7 +21,7 @@ pub(super) fn exact_subtree_path_bounds(path: &str) -> (String, String) {
     (format!("{path}/"), format!("{path}0"))
 }
 
-const INDEX_PATH_ENCODING_PLAIN: i64 = 0;
+pub(super) const INDEX_PATH_ENCODING_PLAIN: i64 = 0;
 const INDEX_PATH_ENCODING_LOSSLESS: i64 = 1;
 const INDEX_NON_UNICODE_COMPONENT_PREFIX: &str = "~wavecrate-nu~";
 const INDEX_ESCAPED_COMPONENT_PREFIX: &str = "~wavecrate-escaped~";
