@@ -632,6 +632,9 @@ fn collect_current_file(
         }
     };
     if relative_path.to_str().is_none() {
+        // This helper is reached only for entries whose policy classification
+        // indexes audio, which implies supported audio. Unsupported entries
+        // retain their classification through collect_current_index_file.
         current_index_entries.insert(
             relative_path.to_path_buf(),
             non_unicode_index_entry(
