@@ -35,7 +35,6 @@ struct HashBackfill {
 struct RetainedRenameCandidate {
     relative_path: PathBuf,
     facts: FileFacts,
-    file: std::fs::File,
 }
 
 #[derive(Debug)]
@@ -47,6 +46,28 @@ struct VerifiedContentAudit {
 }
 
 const CONTENT_AUDIT_RETRY_SECONDS: i64 = 15 * 60;
+/// Maximum number of source descriptors retained before a hash publication checkpoint.
+///
+/// This is deliberately independent from the audit's time, byte, and entry budgets. Keeping
+/// this window small makes the scanner safe on Windows and low-ulimit Unix hosts while retaining
+/// the existing resource budgets for throughput and coverage.
+const HASH_DESCRIPTOR_WINDOW: usize = 64;
+
+struct ContentAuditWindow {
+    stats: ScanStats,
+    attempted_entries: usize,
+    attempted_bytes: u64,
+    completed_rotation: bool,
+    had_content_work: bool,
+}
+
+struct DeepHashWindow {
+    stats: ScanStats,
+    retained_descriptors: usize,
+    last_examined_path: Option<PathBuf>,
+    exhausted: bool,
+    committed: bool,
+}
 
 enum PlannedContentAuditEntry {
     Forward(ContentAuditForwardCandidate),
@@ -354,6 +375,88 @@ fn verify_content_batch_with_source_root_hooks(
     precommit: &mut impl FnMut(&std::path::Path),
     elapsed: &mut impl FnMut() -> Duration,
 ) -> Result<ScanStats, ScanError> {
+    let mut combined = ScanStats::default();
+    let mut remaining_entries = budget.max_entries;
+    let mut remaining_bytes = budget.max_bytes;
+    let mut first_window = true;
+    let mut stale_replayed = false;
+    let mut content_work_seen = false;
+
+    loop {
+        let window_budget = ContentAuditBudget {
+            max_elapsed: budget.max_elapsed.saturating_sub(elapsed()),
+            max_bytes: remaining_bytes,
+            max_entries: remaining_entries.min(HASH_DESCRIPTOR_WINDOW),
+            target_coverage_age: budget.target_coverage_age,
+            retry_entries: budget
+                .retry_entries
+                .min(remaining_entries.min(HASH_DESCRIPTOR_WINDOW)),
+        };
+        let window = verify_content_batch_window_with_source_root_hooks(
+            db,
+            root,
+            source_root,
+            cancel,
+            window_budget,
+            now,
+            writer,
+            content_work_seen,
+            post_hash,
+            precommit,
+            elapsed,
+        );
+        match window {
+            Ok(window) => {
+                stale_replayed = false;
+                remaining_entries = remaining_entries.saturating_sub(window.attempted_entries);
+                remaining_bytes = remaining_bytes.saturating_sub(window.attempted_bytes);
+                content_work_seen |= window.had_content_work;
+                combined.merge_deferred_hashes(window.stats);
+                if window.attempted_entries == 0
+                    || window.completed_rotation
+                    || remaining_entries == 0
+                    || remaining_bytes == 0
+                    || elapsed() >= budget.max_elapsed
+                {
+                    return Ok(combined);
+                }
+                first_window = false;
+            }
+            Err(ScanError::Incomplete { committed, error }) => {
+                combined.merge_deferred_hashes(*committed);
+                return Err(ScanError::Incomplete {
+                    committed: Box::new(combined),
+                    error,
+                });
+            }
+            Err(ScanError::StaleRevision { .. }) if !first_window && !stale_replayed => {
+                stale_replayed = true;
+                continue;
+            }
+            Err(error) => {
+                if !first_window {
+                    tracing::debug!(%error, "Hash audit window stopped after earlier checkpoints");
+                }
+                return Err(error);
+            }
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn verify_content_batch_window_with_source_root_hooks(
+    db: &SourceDatabase,
+    root: &Path,
+    source_root: &SourceRootCapability,
+    cancel: Option<&AtomicBool>,
+    budget: ContentAuditBudget,
+    now: i64,
+    writer: &impl ScanWriter,
+    prior_content_work: bool,
+    post_hash: &mut impl FnMut(&std::path::Path),
+    precommit: &mut impl FnMut(&std::path::Path),
+    elapsed: &mut impl FnMut() -> Duration,
+) -> Result<ContentAuditWindow, ScanError> {
     let planning_started = Instant::now();
     let manifest_revision = db.get_revision()?;
     source_root.ensure_current_generation()?;
@@ -409,10 +512,12 @@ fn verify_content_batch_with_source_root_hooks(
     let mut retry_next = checkpoint.retry_next;
     let mut stale_retries = Vec::new();
     let mut cursor_only_progress = false;
+    let mut attempted_entries = 0;
     for planned in &selected {
         if cancel_requested(cancel) {
             break;
         }
+        attempted_entries += 1;
         let (entry, is_retry) = match planned {
             PlannedContentAuditEntry::Forward(candidate) => {
                 if !candidate.needs_verification || candidate.retry_pending {
@@ -434,7 +539,7 @@ fn verify_content_batch_with_source_root_hooks(
                 (entry, true)
             }
         };
-        if !verified.is_empty() || !skipped.is_empty() {
+        if prior_content_work || !verified.is_empty() || !skipped.is_empty() {
             if elapsed() >= budget.max_elapsed
                 || attempted_bytes.saturating_add(entry.file_size) > budget.max_bytes
             {
@@ -526,6 +631,7 @@ fn verify_content_batch_with_source_root_hooks(
         });
         stats.hashes_computed += 1;
     }
+    let had_content_work = !verified.is_empty() || !skipped.is_empty();
     let cancelled = cancel_requested(cancel);
     if !verified.is_empty() || !skipped.is_empty() || cursor_only_progress {
         source_root.ensure_current_generation()?;
@@ -655,7 +761,13 @@ fn verify_content_batch_with_source_root_hooks(
                     error: ScanError::Canceled.to_string(),
                 })
             } else {
-                Ok(stats)
+                Ok(ContentAuditWindow {
+                    stats,
+                    attempted_entries,
+                    attempted_bytes,
+                    completed_rotation: false,
+                    had_content_work,
+                })
             };
         }
         source_root.ensure_current_generation()?;
@@ -678,7 +790,8 @@ fn verify_content_batch_with_source_root_hooks(
         let _writer = writer.lock(ScanWritePhase::Manifest);
         db.content_audit_report(now)?
     };
-    if report.remaining_entries == 0 && report.total_entries > 0 {
+    let completed_rotation = report.remaining_entries == 0 && report.total_entries > 0;
+    if completed_rotation {
         source_root.ensure_current_generation()?;
         let _writer = writer.lock(ScanWritePhase::Manifest);
         let mut batch = db.write_batch()?;
@@ -703,7 +816,13 @@ fn verify_content_batch_with_source_root_hooks(
             error: ScanError::Canceled.to_string(),
         })
     } else {
-        Ok(stats)
+        Ok(ContentAuditWindow {
+            stats,
+            attempted_entries,
+            attempted_bytes,
+            completed_rotation,
+            had_content_work,
+        })
     }
 }
 
@@ -876,9 +995,9 @@ fn reconcile_hashed_rename_candidates_with_source_root_and_hook(
         });
     }
 
-    let candidate_paths = rename_candidates.iter().cloned().collect::<Vec<_>>();
-    let (manifest_revision, manifest_before) =
-        db.manifest_snapshot_with_revision_under_paths(&candidate_paths)?;
+    let (manifest_revision, manifest_before) = db.manifest_snapshot_with_revision_under_paths(
+        &rename_candidates.iter().cloned().collect::<Vec<_>>(),
+    )?;
     let manifest_rows_read = manifest_before.len();
     let persisted_identities = manifest_before
         .into_iter()
@@ -901,7 +1020,7 @@ fn reconcile_hashed_rename_candidates_with_source_root_and_hook(
             continue;
         };
         let absolute = root.join(&entry.relative_path);
-        let facts = read_facts_from_open_file(&root, &absolute, &file)?;
+        let facts = read_facts_from_open_file(root, &absolute, &file)?;
         if entry.file_size != facts.size
             || entry.modified_ns != facts.modified_ns
             || persisted_identities.get(&entry.relative_path) != facts.file_identity.as_ref()
@@ -912,7 +1031,6 @@ fn reconcile_hashed_rename_candidates_with_source_root_and_hook(
         retained.push(RetainedRenameCandidate {
             relative_path: facts.relative.clone(),
             facts,
-            file,
         });
     }
     if !db.has_pending_renames()? {
@@ -950,7 +1068,7 @@ fn reconcile_hashed_rename_candidates_with_source_root_and_hook(
     }
     let (renamed_samples, retained_candidates) = reconcile_indexed_rename_candidates(
         &mut batch,
-        &root,
+        root,
         &entries_by_path,
         &candidate_identities,
         &rename_candidates,
@@ -967,12 +1085,15 @@ fn reconcile_hashed_rename_candidates_with_source_root_and_hook(
         precommit(&candidate.relative_path);
     }
     let final_bindings_match = retained.iter().all(|candidate| {
+        let Ok(Some(file)) = source_root.open_regular_file(&candidate.relative_path) else {
+            return false;
+        };
         let absolute = root.join(&candidate.relative_path);
-        let descriptor_matches = read_facts_from_open_file(&root, &absolute, &candidate.file)
+        let descriptor_matches = read_facts_from_open_file(root, &absolute, &file)
             .is_ok_and(|facts| candidate.facts.same_content_snapshot(&facts));
         descriptor_matches
             && matches!(
-                source_root.path_binding(&candidate.relative_path, &candidate.file),
+                source_root.path_binding(&candidate.relative_path, &file),
                 Ok(SourcePathBinding::Matches)
             )
     });
@@ -1036,6 +1157,76 @@ fn deep_hash_scan_with_root_hooks(
     mut post_hash: impl FnMut(&std::path::Path),
     mut precommit: impl FnMut(&std::path::Path),
 ) -> Result<ScanStats, ScanError> {
+    let mut combined = ScanStats::default();
+    let mut cursor = None;
+    let mut remaining_hashes = max_hashes;
+    let mut replayed_cursor = None;
+    let mut committed_any = false;
+
+    loop {
+        let descriptor_window = remaining_hashes
+            .map(|remaining| remaining.min(HASH_DESCRIPTOR_WINDOW))
+            .unwrap_or(HASH_DESCRIPTOR_WINDOW);
+        let window = match deep_hash_scan_window_with_root_hooks(
+            db,
+            root,
+            source_root,
+            cancel,
+            rename_candidates,
+            scope,
+            remaining_hashes,
+            descriptor_window,
+            exact_path,
+            cursor.as_deref(),
+            writer,
+            &mut post_hash,
+            &mut precommit,
+        ) {
+            Err(ScanError::StaleRevision { .. })
+                if cursor.is_some() && replayed_cursor.as_deref() != cursor.as_deref() =>
+            {
+                replayed_cursor = cursor.clone();
+                continue;
+            }
+            Err(ScanError::Canceled) if committed_any => {
+                return Err(ScanError::Incomplete {
+                    committed: Box::new(combined),
+                    error: ScanError::Canceled.to_string(),
+                });
+            }
+            result => result?,
+        };
+        replayed_cursor = None;
+        let hashes_computed = window.stats.hashes_computed;
+        debug_assert!(window.retained_descriptors <= HASH_DESCRIPTOR_WINDOW);
+        committed_any |= window.committed;
+        combined.merge_deferred_hashes(window.stats);
+        if let Some(remaining) = &mut remaining_hashes {
+            *remaining = remaining.saturating_sub(hashes_computed);
+        }
+        if exact_path.is_some() || window.exhausted || window.last_examined_path.is_none() {
+            return Ok(combined);
+        }
+        cursor = window.last_examined_path;
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn deep_hash_scan_window_with_root_hooks(
+    db: &SourceDatabase,
+    root: &Path,
+    source_root: &SourceRootCapability,
+    cancel: Option<&AtomicBool>,
+    rename_candidates: &HashSet<PathBuf>,
+    scope: DeferredHashScope,
+    max_hashes: Option<usize>,
+    descriptor_window: usize,
+    exact_path: Option<&std::path::Path>,
+    cursor: Option<&Path>,
+    writer: &impl ScanWriter,
+    mut post_hash: impl FnMut(&std::path::Path),
+    mut precommit: impl FnMut(&std::path::Path),
+) -> Result<DeepHashWindow, ScanError> {
     source_root.ensure_current_generation()?;
     let mut rename_candidates = rename_candidates.clone();
     if scope == DeferredHashScope::AllUnhashed {
@@ -1048,10 +1239,13 @@ fn deep_hash_scan_with_root_hooks(
     } else {
         super::manifest::capture_manifest_with_revision(db)?
     };
-    let entries = if let Some(exact_path) = exact_path {
+    let mut entries = if let Some(exact_path) = exact_path {
         db.entry_for_path(exact_path)?.into_iter().collect()
     } else if scope == DeferredHashScope::AllUnhashed && rename_candidates.is_empty() {
-        db.list_pending_hash_files(max_hashes.unwrap_or(usize::MAX))?
+        let query_limit = max_hashes
+            .unwrap_or(descriptor_window)
+            .min(descriptor_window);
+        db.list_pending_hash_files_after(cursor, query_limit)?
     } else if bounded_rename_scope {
         rename_candidates
             .iter()
@@ -1060,6 +1254,15 @@ fn deep_hash_scan_with_root_hooks(
     } else {
         db.list_files()?
     };
+    let pending_query_limit = (scope == DeferredHashScope::AllUnhashed
+        && rename_candidates.is_empty()
+        && exact_path.is_none())
+    .then_some(
+        max_hashes
+            .unwrap_or(descriptor_window)
+            .min(descriptor_window),
+    );
+    entries.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
     let mut entries_by_path: HashMap<PathBuf, WavEntry> = entries
         .into_iter()
         .map(|entry| (entry.relative_path.clone(), entry))
@@ -1100,7 +1303,13 @@ fn deep_hash_scan_with_root_hooks(
                 committed_snapshot,
             );
         }
-        return Ok(stats);
+        return Ok(DeepHashWindow {
+            stats,
+            retained_descriptors: 0,
+            last_examined_path: None,
+            exhausted: true,
+            committed: false,
+        });
     }
     let mut stats = ScanStats::default();
     if bounded_rename_scope {
@@ -1120,7 +1329,22 @@ fn deep_hash_scan_with_root_hooks(
         })
         .collect::<HashMap<_, _>>();
 
-    for entry in entries_by_path.values_mut() {
+    let mut entry_paths = entries_by_path.keys().cloned().collect::<Vec<_>>();
+    entry_paths.sort();
+    let mut last_examined_path = None;
+    let mut exhausted = pending_query_limit.is_none_or(|limit| entries_by_path.len() < limit);
+    for path in entry_paths {
+        if cursor.is_some_and(|cursor| path <= *cursor) {
+            continue;
+        }
+        if hash_backfills.len() >= descriptor_window {
+            exhausted = false;
+            break;
+        }
+        last_examined_path = Some(path.clone());
+        let Some(entry) = entries_by_path.get_mut(&path) else {
+            continue;
+        };
         if let Some(cancel) = cancel
             && cancel.load(Ordering::Relaxed)
         {
@@ -1172,6 +1396,9 @@ fn deep_hash_scan_with_root_hooks(
             stats.hashes_computed += 1;
         }
     }
+    if hash_backfills.len() >= descriptor_window && descriptor_window > 0 {
+        exhausted = false;
+    }
 
     if let Some(cancel) = cancel
         && cancel.load(Ordering::Relaxed)
@@ -1192,7 +1419,8 @@ fn deep_hash_scan_with_root_hooks(
             actual: db.get_revision()?,
         });
     }
-    let mut accepted_backfills = Vec::with_capacity(hash_backfills.len());
+    let retained_descriptors = hash_backfills.len();
+    let mut accepted_backfills = Vec::with_capacity(retained_descriptors);
     for backfill in hash_backfills {
         let absolute = root.join(&backfill.relative_path);
         let descriptor_still_current = read_facts_from_open_file(root, &absolute, &backfill.file)
@@ -1222,11 +1450,30 @@ fn deep_hash_scan_with_root_hooks(
         }
         accepted_backfills.push(backfill);
     }
-    let admitted_rename_candidates = accepted_backfills
+    let mut admitted_rename_candidates = accepted_backfills
         .iter()
         .filter(|backfill| rename_candidates.contains(&backfill.relative_path))
         .map(|backfill| backfill.relative_path.clone())
         .collect::<HashSet<_>>();
+    for path in &rename_candidates {
+        if admitted_rename_candidates.contains(path) {
+            continue;
+        }
+        let Some(entry) = entries_by_path.get(path) else {
+            continue;
+        };
+        let Some(file) = source_root.open_regular_file(path)? else {
+            continue;
+        };
+        let absolute = root.join(path);
+        let facts = read_facts_from_open_file(root, &absolute, &file)?;
+        if entry.file_size == facts.size
+            && entry.modified_ns == facts.modified_ns
+            && candidate_identities.get(path) == facts.file_identity.as_ref()
+        {
+            admitted_rename_candidates.insert(path.clone());
+        }
+    }
     let (renamed_samples, _) = reconcile_indexed_rename_candidates(
         &mut batch,
         root,
@@ -1258,7 +1505,13 @@ fn deep_hash_scan_with_root_hooks(
         let mut stats = stats_before_staging;
         stats.committed_delta.revision = db.get_revision()?;
         stats.pending_rename_diagnostics = Some(db.pending_rename_diagnostics()?);
-        return Ok(stats);
+        return Ok(DeepHashWindow {
+            stats,
+            retained_descriptors,
+            last_examined_path,
+            exhausted,
+            committed: false,
+        });
     }
     source_root.ensure_current_generation()?;
     let committed_snapshot = if bounded_rename_scope {
@@ -1289,7 +1542,13 @@ fn deep_hash_scan_with_root_hooks(
         super::manifest::publish_committed_delta(&mut stats, manifest_before, committed_snapshot);
     }
     stats.pending_rename_diagnostics = Some(db.pending_rename_diagnostics()?);
-    Ok(stats)
+    Ok(DeepHashWindow {
+        stats,
+        retained_descriptors,
+        last_examined_path,
+        exhausted,
+        committed: true,
+    })
 }
 
 #[cfg(test)]
@@ -1482,6 +1741,12 @@ mod tests {
         committed: AtomicBool,
     }
 
+    struct WindowManifestWriter {
+        root: PathBuf,
+        lock_count: AtomicUsize,
+        on_lock: usize,
+    }
+
     struct HashedRenameFixture {
         _directory: tempfile::TempDir,
         database: SourceDatabase,
@@ -1590,6 +1855,23 @@ mod tests {
 
         fn lock(&self, _phase: ScanWritePhase) -> Self::Guard {
             if !self.committed.swap(true, Ordering::AcqRel) {
+                let database = SourceDatabase::open_for_source_write(&self.root)
+                    .expect("open concurrent source writer");
+                database
+                    .upsert_file(Path::new("unrelated.wav"), 1, 1)
+                    .expect("commit unrelated manifest revision");
+            }
+        }
+    }
+
+    impl ScanWriter for WindowManifestWriter {
+        type Guard = ();
+
+        fn lock(&self, _phase: ScanWritePhase) -> Self::Guard {
+            let lock = self.lock_count.fetch_add(1, Ordering::AcqRel) + 1;
+            if lock == self.on_lock {
+                std::fs::write(self.root.join("unrelated.wav"), [0_u8])
+                    .expect("write unrelated source file");
                 let database = SourceDatabase::open_for_source_write(&self.root)
                     .expect("open concurrent source writer");
                 database
@@ -1844,6 +2126,37 @@ mod tests {
         let report = stats.content_audit.expect("coverage");
         assert_eq!(report.verified_entries, 1);
         assert_eq!(report.bytes_read, 32);
+    }
+
+    #[test]
+    fn content_audit_byte_budget_allows_oversize_only_once_across_windows() {
+        let (directory, database) = content_fixture(HASH_DESCRIPTOR_WINDOW + 1, 1);
+        let large_relative = PathBuf::from(format!("sample-{:05}.wav", HASH_DESCRIPTOR_WINDOW));
+        let large_path = directory.path().join(&large_relative);
+        std::fs::write(&large_path, vec![7_u8; 100]).expect("write oversize file");
+        let large_facts = read_facts(directory.path(), &large_path).expect("read oversize facts");
+        database
+            .upsert_file(&large_relative, large_facts.size, large_facts.modified_ns)
+            .expect("refresh oversize manifest row");
+        let budget = ContentAuditBudget {
+            max_elapsed: Duration::MAX,
+            max_bytes: HASH_DESCRIPTOR_WINDOW as u64 + 1,
+            max_entries: HASH_DESCRIPTOR_WINDOW + 1,
+            target_coverage_age: Duration::from_secs(30 * 24 * 60 * 60),
+            retry_entries: 1,
+        };
+
+        let stats = verify_content_batch(&database, None, budget, 100).expect("byte slice");
+
+        assert_eq!(stats.hashes_computed, HASH_DESCRIPTOR_WINDOW);
+        assert!(
+            database
+                .entry_for_path(&large_relative)
+                .expect("read oversize row")
+                .expect("oversize row")
+                .content_hash
+                .is_none()
+        );
     }
 
     #[test]
@@ -2237,6 +2550,44 @@ mod tests {
     }
 
     #[test]
+    fn stale_content_audit_replays_only_the_unpublished_window() {
+        let total = HASH_DESCRIPTOR_WINDOW * 2 + 3;
+        let (directory, database) = content_fixture(total, 32);
+        let writer = WindowManifestWriter {
+            root: directory.path().to_path_buf(),
+            lock_count: AtomicUsize::new(0),
+            on_lock: 6,
+        };
+        let hashed_paths = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let observed_paths = Arc::clone(&hashed_paths);
+        let mut post_hash = move |path: &Path| {
+            observed_paths.lock().unwrap().push(path.to_path_buf());
+        };
+        let mut precommit = no_op_path_hook;
+
+        let stats = verify_content_batch_with_hooks(
+            &database,
+            None,
+            ContentAuditBudget::entry_limited(total),
+            100,
+            &writer,
+            &mut post_hash,
+            &mut precommit,
+            &mut || Duration::ZERO,
+        )
+        .expect("replay the stale content-audit window");
+
+        assert_eq!(stats.hashes_computed, total);
+        assert_eq!(
+            hashed_paths.lock().unwrap().len(),
+            total + HASH_DESCRIPTOR_WINDOW,
+            "only the stale content-audit window should have been replayed"
+        );
+    }
+
+    fn no_op_path_hook(_path: &Path) {}
+
+    #[test]
     fn deep_hash_scan_checks_cancel_before_writer_lock() {
         let dir = tempfile::tempdir().expect("temp source");
         std::fs::write(dir.path().join("pending.wav"), b"pending").expect("write wav");
@@ -2289,6 +2640,228 @@ mod tests {
                 .count(),
             8
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn content_audit_releases_descriptors_between_publication_windows() {
+        const TEST_WINDOWS: usize = 8;
+        const OBSERVED_WINDOW_SLACK: usize = 4;
+        const RUNTIME_DESCRIPTOR_OVERHEAD: usize = 32;
+        let total = HASH_DESCRIPTOR_WINDOW * TEST_WINDOWS + 3;
+        let (_directory, database) = content_fixture(total, 32);
+        let baseline_descriptors = std::fs::read_dir("/dev/fd")
+            .expect("read process descriptors")
+            .count();
+        let peak_descriptors = AtomicUsize::new(baseline_descriptors);
+        let budget = ContentAuditBudget::entry_limited(total);
+
+        let stats = verify_content_batch_with_post_hash_hook(
+            &database,
+            None,
+            budget,
+            100,
+            &UncoordinatedScanWriter,
+            |_| {
+                let descriptors = std::fs::read_dir("/dev/fd")
+                    .expect("read process descriptors")
+                    .count();
+                peak_descriptors.fetch_max(descriptors, Ordering::AcqRel);
+            },
+        )
+        .expect("complete content audit windows");
+
+        assert_eq!(stats.hashes_computed, total);
+        // The process-wide descriptor scan can observe unrelated parallel tests. Allow a
+        // bounded amount of that noise; eight windows still distinguish this from retaining
+        // the entire source until the final publication.
+        assert!(
+            peak_descriptors.load(Ordering::Acquire)
+                <= baseline_descriptors
+                    + HASH_DESCRIPTOR_WINDOW * OBSERVED_WINDOW_SLACK
+                    + RUNTIME_DESCRIPTOR_OVERHEAD,
+            "descriptor peak exceeded the publication window: peak={}, baseline={}",
+            peak_descriptors.load(Ordering::Acquire),
+            baseline_descriptors
+        );
+    }
+
+    #[test]
+    fn unbounded_deferred_hashes_checkpoint_descriptor_windows() {
+        let dir = tempfile::tempdir().expect("temp source");
+        let db = SourceDatabase::open_for_source_write(dir.path()).expect("source db");
+        let total = HASH_DESCRIPTOR_WINDOW * 2 + 3;
+        for index in 0..total {
+            let relative = PathBuf::from(format!("pending-{index:03}.wav"));
+            std::fs::write(dir.path().join(&relative), [index as u8; 32]).expect("write wav");
+            db.upsert_file(&relative, 32, index as i64)
+                .expect("insert pending row");
+        }
+
+        let stats = deep_hash_scan_with_hooks(
+            &db,
+            None,
+            &HashSet::new(),
+            DeferredHashScope::AllUnhashed,
+            None,
+            None,
+            &UncoordinatedScanWriter,
+            |_| {},
+            |_| {},
+        )
+        .expect("complete the unbounded queue");
+
+        assert_eq!(stats.hashes_computed, total);
+        assert_eq!(
+            db.list_pending_hash_files(1)
+                .expect("read remaining pending rows")
+                .len(),
+            0,
+            "unbounded deferred hashing must drain every checkpointed window"
+        );
+    }
+
+    #[test]
+    fn unbounded_deferred_hashes_advance_past_an_unavailable_window_entry() {
+        let dir = tempfile::tempdir().expect("temp source");
+        let db = SourceDatabase::open_for_source_write(dir.path()).expect("source db");
+        let total = HASH_DESCRIPTOR_WINDOW * 2 + 3;
+        for index in 0..total {
+            let relative = PathBuf::from(format!("pending-{index:03}.wav"));
+            std::fs::write(dir.path().join(&relative), [index as u8; 32]).expect("write wav");
+            db.upsert_file(&relative, 32, index as i64)
+                .expect("insert pending row");
+        }
+        std::fs::remove_file(dir.path().join("pending-000.wav")).expect("remove first file");
+        let hashed_paths = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let observed_paths = Arc::clone(&hashed_paths);
+
+        let stats = deep_hash_scan_with_hooks(
+            &db,
+            None,
+            &HashSet::new(),
+            DeferredHashScope::AllUnhashed,
+            None,
+            None,
+            &UncoordinatedScanWriter,
+            move |path: &Path| observed_paths.lock().unwrap().push(path.to_path_buf()),
+            no_op_path_hook,
+        )
+        .expect("continue past the unavailable row");
+
+        assert_eq!(stats.hashes_computed, total - 1);
+        assert!(
+            hashed_paths
+                .lock()
+                .unwrap()
+                .contains(&dir.path().join("pending-064.wav"))
+        );
+        assert!(
+            db.entry_for_path(Path::new("pending-000.wav"))
+                .expect("read removed pending row")
+                .expect("removed row")
+                .content_hash
+                .is_none()
+        );
+        assert!(
+            db.entry_for_path(Path::new("pending-130.wav"))
+                .expect("read final hashed row")
+                .expect("final row")
+                .content_hash
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn stale_deferred_hash_replays_only_the_unpublished_window() {
+        let dir = tempfile::tempdir().expect("temp source");
+        let db = SourceDatabase::open_for_source_write(dir.path()).expect("source db");
+        let total = HASH_DESCRIPTOR_WINDOW * 2 + 3;
+        for index in 0..total {
+            let relative = PathBuf::from(format!("pending-{index:03}.wav"));
+            std::fs::write(dir.path().join(&relative), [index as u8; 32]).expect("write wav");
+            db.upsert_file(&relative, 32, index as i64)
+                .expect("insert pending row");
+        }
+        let writer = WindowManifestWriter {
+            root: dir.path().to_path_buf(),
+            lock_count: AtomicUsize::new(0),
+            on_lock: 2,
+        };
+        let hashed_paths = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let observed_paths = Arc::clone(&hashed_paths);
+
+        let result = deep_hash_scan_with_hooks(
+            &db,
+            None,
+            &HashSet::new(),
+            DeferredHashScope::AllUnhashed,
+            None,
+            None,
+            &writer,
+            move |path| observed_paths.lock().unwrap().push(path.to_path_buf()),
+            |_| {},
+        );
+
+        assert!(result.is_ok(), "the stale window should replay in place");
+        assert_eq!(result.unwrap().hashes_computed, total + 1);
+        assert_eq!(
+            hashed_paths.lock().unwrap().len(),
+            total + 1 + HASH_DESCRIPTOR_WINDOW,
+            "only the stale window should have been replayed"
+        );
+        assert_eq!(
+            db.list_pending_hash_files(1)
+                .expect("read remaining pending rows")
+                .len(),
+            0
+        );
+    }
+
+    #[test]
+    fn canceled_deferred_hashing_reports_committed_window_and_resumes() {
+        let dir = tempfile::tempdir().expect("temp source");
+        let db = SourceDatabase::open_for_source_write(dir.path()).expect("source db");
+        let total = HASH_DESCRIPTOR_WINDOW * 2 + 3;
+        for index in 0..total {
+            let relative = PathBuf::from(format!("pending-{index:03}.wav"));
+            std::fs::write(dir.path().join(&relative), [index as u8; 32]).expect("write wav");
+            db.upsert_file(&relative, 32, index as i64)
+                .expect("insert pending row");
+        }
+        let cancel = Arc::new(AtomicBool::new(false));
+        let cancel_after_commit = Arc::clone(&cancel);
+
+        let result = deep_hash_scan_with_hooks(
+            &db,
+            Some(&cancel),
+            &HashSet::new(),
+            DeferredHashScope::AllUnhashed,
+            None,
+            None,
+            &UncoordinatedScanWriter,
+            |_| {},
+            move |_path: &Path| {
+                cancel_after_commit.store(true, Ordering::Release);
+            },
+        );
+
+        let Err(ScanError::Incomplete { committed, .. }) = result else {
+            panic!("cancellation after a checkpoint must retain committed stats");
+        };
+        assert_eq!(committed.hashes_computed, HASH_DESCRIPTOR_WINDOW);
+        cancel.store(false, Ordering::Release);
+        let resumed = deep_hash_scan(
+            &db,
+            Some(&cancel),
+            &HashSet::new(),
+            DeferredHashScope::AllUnhashed,
+            None,
+            None,
+        )
+        .expect("resume after the committed cancellation checkpoint");
+        assert_eq!(resumed.hashes_computed, total - HASH_DESCRIPTOR_WINDOW);
+        assert_eq!(db.list_pending_hash_files(1).unwrap().len(), 0);
     }
 
     #[test]

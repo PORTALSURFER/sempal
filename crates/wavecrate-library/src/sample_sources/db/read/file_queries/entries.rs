@@ -249,21 +249,34 @@ impl SourceDatabase {
 
     /// Fetch a bounded path-ordered batch that still needs a deep content hash.
     pub fn list_pending_hash_files(&self, limit: usize) -> Result<Vec<WavEntry>, SourceDbError> {
+        self.list_pending_hash_files_after(None, limit)
+    }
+
+    /// Fetch a bounded path-ordered batch after an optional durable in-process cursor.
+    pub fn list_pending_hash_files_after(
+        &self,
+        after: Option<&std::path::Path>,
+        limit: usize,
+    ) -> Result<Vec<WavEntry>, SourceDbError> {
         let filter = wav_file_supported_audio_filter(self)?;
         let columns = wav_file_select_columns(self)?;
+        let after = after
+            .map(super::super::super::normalize_relative_path)
+            .transpose()?;
         let sql = format!(
             "SELECT {columns}
              FROM wav_files
              WHERE {filter}
                AND missing = 0
                AND content_hash IS NULL
+               AND (?1 IS NULL OR path > ?1)
              ORDER BY path ASC
-             LIMIT ?1"
+             LIMIT ?2"
         );
         collect_wav_entries(
             self,
             &sql,
-            [i64::try_from(limit).unwrap_or(i64::MAX)],
+            rusqlite::params![after, i64::try_from(limit).unwrap_or(i64::MAX)],
             "Skipping pending hash row with invalid relative path",
         )
     }

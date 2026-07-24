@@ -244,6 +244,13 @@ impl From<wavecrate_scan::ScanError> for SourceProcessingFailure {
                     "Source changed while completing deferred deep hash (expected revision {expected}, found {actual})"
                 ),
             ),
+            wavecrate_scan::ScanError::TargetedRenameCandidateOverflow { limit } => {
+                Self::retryable_with_source_error(
+                    SourceProcessingFailureCode::ScannerIncomplete,
+                    "Targeted rename recovery requires an authoritative source rescan",
+                    format!("candidate limit {limit}"),
+                )
+            }
             wavecrate_scan::ScanError::StaleRootGeneration { root } => {
                 Self::retryable_with_source_error(
                     SourceProcessingFailureCode::ScannerIncomplete,
