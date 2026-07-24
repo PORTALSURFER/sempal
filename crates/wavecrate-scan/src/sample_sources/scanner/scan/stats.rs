@@ -208,11 +208,13 @@ pub struct ScanStats {
 }
 
 impl ScanStats {
-    pub(super) fn merge_deferred_hashes(&mut self, mut deferred: Self) {
+    pub(crate) fn merge_deferred_hashes(&mut self, mut deferred: Self) {
         self.hashes_computed += deferred.hashes_computed;
+        self.updated += deferred.updated;
+        self.content_changed += deferred.content_changed;
         self.content_audit = deferred.content_audit.take().or(self.content_audit.take());
         self.hashes_pending = self.hashes_pending.saturating_sub(deferred.hashes_computed);
-        if self.targeted_manifest_query_count > 0 {
+        if self.targeted_manifest_query_count > 0 || deferred.targeted_manifest_query_count > 0 {
             self.targeted_manifest_rows_read = self
                 .targeted_manifest_rows_read
                 .saturating_add(deferred.targeted_manifest_rows_read);
@@ -230,7 +232,24 @@ impl ScanStats {
         self.updated_samples.append(&mut deferred.updated_samples);
         self.renamed_samples.append(&mut deferred.renamed_samples);
         self.changed_samples.append(&mut deferred.changed_samples);
-        if !deferred.manifest_after.is_empty() {
+        let has_manifest_snapshot =
+            !self.manifest_before.is_empty() || !self.manifest_after.is_empty();
+        if !has_manifest_snapshot {
+            self.manifest_updates.extend(deferred.manifest_updates);
+            self.committed_delta
+                .created
+                .extend(deferred.committed_delta.created);
+            self.committed_delta
+                .changed
+                .extend(deferred.committed_delta.changed);
+            self.committed_delta
+                .moved
+                .extend(deferred.committed_delta.moved);
+            self.committed_delta
+                .deleted
+                .extend(deferred.committed_delta.deleted);
+            self.committed_delta.revision = deferred.committed_delta.revision;
+        } else if !deferred.manifest_after.is_empty() {
             self.manifest_after = deferred.manifest_after;
             self.committed_delta = super::super::manifest::build_targeted_committed_delta(
                 &self.manifest_before,
