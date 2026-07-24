@@ -65,6 +65,7 @@ struct DeepHashWindow {
     retained_descriptors: usize,
     last_examined_path: Option<PathBuf>,
     exhausted: bool,
+    committed: bool,
 }
 
 enum PlannedContentAuditEntry {
@@ -1152,6 +1153,7 @@ fn deep_hash_scan_with_root_hooks(
     let mut cursor = None;
     let mut remaining_hashes = max_hashes;
     let mut replayed_cursor = None;
+    let mut committed_any = false;
 
     loop {
         let descriptor_window = remaining_hashes
@@ -1178,11 +1180,18 @@ fn deep_hash_scan_with_root_hooks(
                 replayed_cursor = cursor.clone();
                 continue;
             }
+            Err(ScanError::Canceled) if committed_any => {
+                return Err(ScanError::Incomplete {
+                    committed: Box::new(combined),
+                    error: ScanError::Canceled.to_string(),
+                });
+            }
             result => result?,
         };
         replayed_cursor = None;
         let hashes_computed = window.stats.hashes_computed;
         debug_assert!(window.retained_descriptors <= HASH_DESCRIPTOR_WINDOW);
+        committed_any |= window.committed;
         combined.merge_deferred_hashes(window.stats);
         if let Some(remaining) = &mut remaining_hashes {
             *remaining = remaining.saturating_sub(hashes_computed);
@@ -1237,6 +1246,14 @@ fn deep_hash_scan_window_with_root_hooks(
     } else {
         db.list_files()?
     };
+    let pending_query_limit = (scope == DeferredHashScope::AllUnhashed
+        && rename_candidates.is_empty()
+        && exact_path.is_none())
+    .then_some(
+        max_hashes
+            .unwrap_or(descriptor_window)
+            .min(descriptor_window),
+    );
     entries.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
     let mut entries_by_path: HashMap<PathBuf, WavEntry> = entries
         .into_iter()
@@ -1283,6 +1300,7 @@ fn deep_hash_scan_window_with_root_hooks(
             retained_descriptors: 0,
             last_examined_path: None,
             exhausted: true,
+            committed: false,
         });
     }
     let mut stats = ScanStats::default();
@@ -1306,7 +1324,7 @@ fn deep_hash_scan_window_with_root_hooks(
     let mut entry_paths = entries_by_path.keys().cloned().collect::<Vec<_>>();
     entry_paths.sort();
     let mut last_examined_path = None;
-    let mut exhausted = true;
+    let mut exhausted = pending_query_limit.is_none_or(|limit| entries_by_path.len() < limit);
     for path in entry_paths {
         if cursor.is_some_and(|cursor| path <= *cursor) {
             continue;
@@ -1484,6 +1502,7 @@ fn deep_hash_scan_window_with_root_hooks(
             retained_descriptors,
             last_examined_path,
             exhausted,
+            committed: false,
         });
     }
     source_root.ensure_current_generation()?;
@@ -1520,6 +1539,7 @@ fn deep_hash_scan_window_with_root_hooks(
         retained_descriptors,
         last_examined_path,
         exhausted,
+        committed: true,
     })
 }
 
@@ -2657,6 +2677,57 @@ mod tests {
     }
 
     #[test]
+    fn unbounded_deferred_hashes_advance_past_an_unavailable_window_entry() {
+        let dir = tempfile::tempdir().expect("temp source");
+        let db = SourceDatabase::open_for_source_write(dir.path()).expect("source db");
+        let total = HASH_DESCRIPTOR_WINDOW * 2 + 3;
+        for index in 0..total {
+            let relative = PathBuf::from(format!("pending-{index:03}.wav"));
+            std::fs::write(dir.path().join(&relative), [index as u8; 32]).expect("write wav");
+            db.upsert_file(&relative, 32, index as i64)
+                .expect("insert pending row");
+        }
+        std::fs::remove_file(dir.path().join("pending-000.wav")).expect("remove first file");
+        let hashed_paths = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let observed_paths = Arc::clone(&hashed_paths);
+
+        let stats = deep_hash_scan_with_hooks(
+            &db,
+            None,
+            &HashSet::new(),
+            DeferredHashScope::AllUnhashed,
+            None,
+            None,
+            &UncoordinatedScanWriter,
+            move |path: &Path| observed_paths.lock().unwrap().push(path.to_path_buf()),
+            no_op_path_hook,
+        )
+        .expect("continue past the unavailable row");
+
+        assert_eq!(stats.hashes_computed, total - 1);
+        assert!(
+            hashed_paths
+                .lock()
+                .unwrap()
+                .contains(&dir.path().join("pending-064.wav"))
+        );
+        assert!(
+            db.entry_for_path(Path::new("pending-000.wav"))
+                .expect("read removed pending row")
+                .expect("removed row")
+                .content_hash
+                .is_none()
+        );
+        assert!(
+            db.entry_for_path(Path::new("pending-130.wav"))
+                .expect("read final hashed row")
+                .expect("final row")
+                .content_hash
+                .is_some()
+        );
+    }
+
+    #[test]
     fn stale_deferred_hash_replays_only_the_unpublished_window() {
         let dir = tempfile::tempdir().expect("temp source");
         let db = SourceDatabase::open_for_source_write(dir.path()).expect("source db");
@@ -2700,6 +2771,52 @@ mod tests {
                 .len(),
             0
         );
+    }
+
+    #[test]
+    fn canceled_deferred_hashing_reports_committed_window_and_resumes() {
+        let dir = tempfile::tempdir().expect("temp source");
+        let db = SourceDatabase::open_for_source_write(dir.path()).expect("source db");
+        let total = HASH_DESCRIPTOR_WINDOW * 2 + 3;
+        for index in 0..total {
+            let relative = PathBuf::from(format!("pending-{index:03}.wav"));
+            std::fs::write(dir.path().join(&relative), [index as u8; 32]).expect("write wav");
+            db.upsert_file(&relative, 32, index as i64)
+                .expect("insert pending row");
+        }
+        let cancel = Arc::new(AtomicBool::new(false));
+        let cancel_after_commit = Arc::clone(&cancel);
+
+        let result = deep_hash_scan_with_hooks(
+            &db,
+            Some(&cancel),
+            &HashSet::new(),
+            DeferredHashScope::AllUnhashed,
+            None,
+            None,
+            &UncoordinatedScanWriter,
+            |_| {},
+            move |_path: &Path| {
+                cancel_after_commit.store(true, Ordering::Release);
+            },
+        );
+
+        let Err(ScanError::Incomplete { committed, .. }) = result else {
+            panic!("cancellation after a checkpoint must retain committed stats");
+        };
+        assert_eq!(committed.hashes_computed, HASH_DESCRIPTOR_WINDOW);
+        cancel.store(false, Ordering::Release);
+        let resumed = deep_hash_scan(
+            &db,
+            Some(&cancel),
+            &HashSet::new(),
+            DeferredHashScope::AllUnhashed,
+            None,
+            None,
+        )
+        .expect("resume after the committed cancellation checkpoint");
+        assert_eq!(resumed.hashes_computed, total - HASH_DESCRIPTOR_WINDOW);
+        assert_eq!(db.list_pending_hash_files(1).unwrap().len(), 0);
     }
 
     #[test]
