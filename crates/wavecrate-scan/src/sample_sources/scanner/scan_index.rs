@@ -81,23 +81,19 @@ pub(super) fn reconcile_index_entries(
     writer: &impl ScanWriter,
 ) -> Result<(), ScanError> {
     let (existing, observed) = context.take_index_reconciliation();
-    let live_manifest_paths = database
-        .list_manifest_entries()?
-        .into_iter()
-        .map(|entry| entry.relative_path)
-        .collect::<BTreeSet<_>>();
     let unavailable_manifest_paths = observed
         .values()
         .filter(|entry| entry.classification == SourceIndexClassification::Inaccessible)
         .map(|entry| &entry.relative_path)
-        .filter(|path| live_manifest_paths.contains(*path))
+        .filter(|path| context.has_committed_manifest_path(path))
         .cloned()
         .collect::<BTreeSet<_>>();
 
     let removals = existing
         .keys()
         .filter(|path| {
-            (live_manifest_paths.contains(*path) && !unavailable_manifest_paths.contains(*path))
+            (context.has_committed_manifest_path(path)
+                && !unavailable_manifest_paths.contains(*path))
                 || (!observed.contains_key(*path) && !context.preserves_missing_row(path))
         })
         .cloned()
@@ -105,7 +101,7 @@ pub(super) fn reconcile_index_entries(
     let upserts = observed
         .into_values()
         .filter(|entry| {
-            !live_manifest_paths.contains(&entry.relative_path)
+            !context.has_committed_manifest_path(&entry.relative_path)
                 || entry.classification == SourceIndexClassification::Inaccessible
         })
         .filter(|entry| existing.get(&entry.relative_path) != Some(entry))
@@ -132,7 +128,7 @@ pub(super) fn reconcile_index_entries(
         batch.commit_auxiliary_state()?;
     } else {
         source_root.ensure_current_generation()?;
-        context.commit_batch(batch)?;
+        context.commit_batch(database, batch)?;
     }
     Ok(())
 }

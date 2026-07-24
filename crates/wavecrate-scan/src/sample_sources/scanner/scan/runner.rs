@@ -16,6 +16,8 @@ use super::super::scan_walk::walk_phase;
 use super::super::scan_writer::{ScanWriter, UncoordinatedScanWriter};
 use super::{ScanContext, ScanError, ScanStats};
 
+const TARGETED_RENAME_CANDIDATE_LIMIT: usize = 256;
+
 /// Scan strategy used when walking a source root.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScanMode {
@@ -516,13 +518,36 @@ pub(crate) fn reconcile_scan_renames(
         .iter()
         .cloned()
         .collect::<HashSet<_>>();
-    let persisted_candidates = if context.mode == ScanMode::Hard {
+    let persisted_candidates = if context.mode == ScanMode::Targeted {
+        let mut persisted = if db.has_pending_renames()? {
+            let (paths, overflow) =
+                db.list_recent_unretained_rename_destinations(TARGETED_RENAME_CANDIDATE_LIMIT)?;
+            if overflow {
+                return Err(ScanError::TargetedRenameCandidateOverflow {
+                    limit: TARGETED_RENAME_CANDIDATE_LIMIT,
+                });
+            }
+            paths.into_iter().collect::<HashSet<_>>()
+        } else {
+            HashSet::new()
+        };
+        for path in manifest_before
+            .iter()
+            .map(|entry| &entry.relative_path)
+            .chain(current_candidates.iter())
+        {
+            persisted.extend(db.list_retained_rename_destinations_for_pending_path(path)?);
+        }
+        persisted
+    } else if context.mode == ScanMode::Hard {
         db.list_pending_rename_destinations()?
+            .into_iter()
+            .collect::<HashSet<_>>()
     } else {
         db.list_retained_rename_destinations()?
-    }
-    .into_iter()
-    .collect::<HashSet<_>>();
+            .into_iter()
+            .collect::<HashSet<_>>()
+    };
     let mut candidates = current_candidates.clone();
     candidates.extend(persisted_candidates.iter().cloned());
     let carried_candidates_need_revalidation = persisted_candidates
@@ -532,29 +557,62 @@ pub(crate) fn reconcile_scan_renames(
         .stats
         .pending_renames_considered
         .saturating_add(candidates.len());
-    let renamed = if carried_candidates_need_revalidation {
-        super::super::scan_hash::deep_hash_scan_with_source_root_and_writer(
+    let (renamed, rename_revision, recovery_manifest_rows, recovery_manifest_queries) =
+        if carried_candidates_need_revalidation {
+            let deferred = super::super::scan_hash::deep_hash_scan_with_source_root_and_writer(
+                db,
+                source_root,
+                cancel,
+                &candidates,
+                super::super::scan_hash::DeferredHashScope::RenameCandidates,
+                None,
+                None,
+                writer,
+            )?;
+            (
+                deferred.renamed_samples,
+                Some(deferred.committed_delta.revision),
+                deferred.targeted_manifest_rows_read,
+                deferred.targeted_manifest_query_count,
+            )
+        } else {
+            let reconciliation = super::super::scan_hash::reconcile_hashed_rename_candidates_with_source_root_and_writer(
             db,
             source_root,
-            cancel,
-            &candidates,
-            super::super::scan_hash::DeferredHashScope::RenameCandidates,
-            None,
-            None,
-            writer,
-        )?
-        .renamed_samples
-    } else {
-        super::super::scan_hash::reconcile_hashed_rename_candidates_with_source_root_and_writer(
-            db,
-            source_root,
             &candidates,
             cancel,
             writer,
-        )?
-    };
+        )?;
+            (
+                reconciliation.renamed_samples,
+                reconciliation.committed_revision,
+                reconciliation.targeted_manifest_rows_read,
+                reconciliation.targeted_manifest_query_count,
+            )
+        };
+    if context.mode == ScanMode::Targeted {
+        context.stats.targeted_manifest_rows_read = context
+            .stats
+            .targeted_manifest_rows_read
+            .saturating_add(recovery_manifest_rows);
+        context.stats.targeted_manifest_query_count = context
+            .stats
+            .targeted_manifest_query_count
+            .saturating_add(recovery_manifest_queries);
+    }
     source_root.ensure_current_generation()?;
     if renamed.is_empty() && context.mode != ScanMode::Hard {
+        if context.mode == ScanMode::Targeted {
+            let expected = rename_revision.unwrap_or(committed_snapshot.0);
+            let actual = db.get_revision()?;
+            if actual != expected {
+                return Err(ScanError::StaleRevision { expected, actual });
+            }
+            if rename_revision.is_some() {
+                context.refresh_targeted_manifest(db, std::iter::empty(), Some(expected))?;
+                return Ok(context.latest_committed_snapshot());
+            }
+        }
         return Ok(committed_snapshot);
     }
 
@@ -582,6 +640,18 @@ pub(crate) fn reconcile_scan_renames(
     });
     context.stats.updated += renamed.len();
     context.stats.renames_reconciled += renamed.len();
+    if context.mode == ScanMode::Targeted {
+        context.refresh_targeted_manifest(
+            db,
+            renamed
+                .iter()
+                .map(|rename| rename.new_relative_path.clone()),
+            rename_revision,
+        )?;
+        let committed_snapshot = context.latest_committed_snapshot();
+        context.stats.renamed_samples.extend(renamed);
+        return Ok(committed_snapshot);
+    }
     context.stats.renamed_samples.extend(renamed);
     Ok(db.manifest_snapshot_with_revision()?)
 }
@@ -640,11 +710,19 @@ pub(crate) fn finish_scan_result(
 ) -> Result<ScanStats, ScanError> {
     match result {
         Ok(committed_snapshot) => {
-            super::super::manifest::publish_committed_delta(
-                &mut context.stats,
-                manifest_before,
-                committed_snapshot,
-            );
+            if context.mode == super::ScanMode::Targeted {
+                super::super::manifest::publish_targeted_committed_delta(
+                    &mut context.stats,
+                    manifest_before,
+                    committed_snapshot,
+                );
+            } else {
+                super::super::manifest::publish_committed_delta(
+                    &mut context.stats,
+                    manifest_before,
+                    committed_snapshot,
+                );
+            }
             if context.has_uncertain_prefixes() {
                 let error = context.uncertainty_error();
                 return Err(ScanError::Incomplete {
@@ -661,15 +739,32 @@ pub(crate) fn finish_scan_result(
             Ok(context.stats)
         }
         Err(error) => {
+            if context.mode == super::ScanMode::Targeted
+                && matches!(
+                    error,
+                    ScanError::StaleRevision { .. }
+                        | ScanError::TargetedRenameCandidateOverflow { .. }
+                )
+            {
+                return Err(error);
+            }
             let Some(committed_revision) = context.last_committed_revision else {
                 return Err(error);
             };
             let committed_snapshot = context.committed_snapshot(committed_revision);
-            super::super::manifest::publish_committed_delta(
-                &mut context.stats,
-                manifest_before,
-                committed_snapshot,
-            );
+            if context.mode == super::ScanMode::Targeted {
+                super::super::manifest::publish_targeted_committed_delta(
+                    &mut context.stats,
+                    manifest_before,
+                    committed_snapshot,
+                );
+            } else {
+                super::super::manifest::publish_committed_delta(
+                    &mut context.stats,
+                    manifest_before,
+                    committed_snapshot,
+                );
+            }
             Err(ScanError::Incomplete {
                 committed: Box::new(context.stats),
                 error: error.to_string(),
@@ -737,15 +832,20 @@ pub fn complete_deferred_rename_candidates_with_cancel_and_writer(
     if !db.has_pending_renames()? {
         return Ok(stats);
     }
-    let persisted_candidates = db.list_pending_rename_destinations()?;
-    if stats.rename_candidate_paths.is_empty() && persisted_candidates.is_empty() {
-        return Ok(stats);
-    }
     let rename_candidates = stats
         .rename_candidate_paths
         .iter()
         .cloned()
         .collect::<HashSet<_>>();
+    let mut rename_candidates = rename_candidates;
+    extend_retained_rename_candidates(
+        db,
+        &mut rename_candidates,
+        stats
+            .manifest_before
+            .iter()
+            .map(|entry| entry.relative_path.clone()),
+    )?;
     let deferred = super::super::scan_hash::deep_hash_scan_with_writer(
         db,
         cancel,
@@ -765,10 +865,9 @@ pub fn complete_deferred_hashes_with_cancel(
     mut stats: ScanStats,
     cancel: Option<&AtomicBool>,
 ) -> Result<ScanStats, ScanError> {
-    let persisted_candidates = db.list_pending_rename_destinations()?;
     if stats.hashes_pending == 0
         && stats.rename_candidate_paths.is_empty()
-        && persisted_candidates.is_empty()
+        && !db.has_pending_renames()?
     {
         return Ok(stats);
     }
@@ -777,6 +876,17 @@ pub fn complete_deferred_hashes_with_cancel(
         .iter()
         .cloned()
         .collect::<HashSet<_>>();
+    let mut rename_candidates = rename_candidates;
+    if stats.hashes_pending == 0 {
+        extend_retained_rename_candidates(
+            db,
+            &mut rename_candidates,
+            stats
+                .manifest_before
+                .iter()
+                .map(|entry| entry.relative_path.clone()),
+        )?;
+    }
     let scope = if stats.hashes_pending > 0 {
         super::super::scan_hash::DeferredHashScope::AllUnhashed
     } else {
@@ -786,6 +896,44 @@ pub fn complete_deferred_hashes_with_cancel(
         super::super::scan_hash::deep_hash_scan(db, cancel, &rename_candidates, scope, None, None)?;
     stats.merge_deferred_hashes(deferred);
     Ok(stats)
+}
+
+fn extend_retained_rename_candidates(
+    db: &SourceDatabase,
+    candidates: &mut HashSet<std::path::PathBuf>,
+    pending_paths: impl IntoIterator<Item = std::path::PathBuf>,
+) -> Result<(), ScanError> {
+    let pending_paths = pending_paths.into_iter().collect::<HashSet<_>>();
+    let has_pending_renames = db.has_pending_renames()?;
+    if has_pending_renames {
+        let (paths, overflow) =
+            db.list_recent_unretained_rename_destinations(TARGETED_RENAME_CANDIDATE_LIMIT)?;
+        if overflow {
+            return Err(ScanError::TargetedRenameCandidateOverflow {
+                limit: TARGETED_RENAME_CANDIDATE_LIMIT,
+            });
+        }
+        candidates.extend(paths);
+    }
+
+    let mut retained_match = false;
+    for path in pending_paths {
+        let retained = db.list_retained_rename_destinations_for_pending_path(&path)?;
+        retained_match |= !retained.is_empty();
+        candidates.extend(retained);
+    }
+
+    if has_pending_renames && !retained_match {
+        let (paths, overflow) =
+            db.list_retained_rename_destinations_bounded(TARGETED_RENAME_CANDIDATE_LIMIT)?;
+        if overflow {
+            return Err(ScanError::TargetedRenameCandidateOverflow {
+                limit: TARGETED_RENAME_CANDIDATE_LIMIT,
+            });
+        }
+        candidates.extend(paths);
+    }
+    Ok(())
 }
 
 /// Complete a bounded batch of pending deep-content hashes without launching an unowned worker.

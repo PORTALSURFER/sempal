@@ -197,6 +197,14 @@ pub struct ScanStats {
     pub source_tree_snapshot: Option<SourceTreeSnapshot>,
     /// Bounded diagnostics from targeted traversal, which has no full browser-layout snapshot.
     pub traversal_diagnostics: Vec<SourceTreeDiagnostic>,
+    /// Number of manifest rows materialized by a targeted scan's scoped reads.
+    pub targeted_manifest_rows_read: usize,
+    /// Number of exact-subtree manifest read statements issued by a targeted scan.
+    pub targeted_manifest_query_count: usize,
+    /// Number of canonical watcher targets after ancestor collapse.
+    pub targeted_manifest_scope_count: usize,
+    /// Wall-clock duration of targeted synchronization, in microseconds.
+    pub targeted_sync_elapsed_us: u64,
 }
 
 impl ScanStats {
@@ -204,6 +212,14 @@ impl ScanStats {
         self.hashes_computed += deferred.hashes_computed;
         self.content_audit = deferred.content_audit.take().or(self.content_audit.take());
         self.hashes_pending = self.hashes_pending.saturating_sub(deferred.hashes_computed);
+        if self.targeted_manifest_query_count > 0 {
+            self.targeted_manifest_rows_read = self
+                .targeted_manifest_rows_read
+                .saturating_add(deferred.targeted_manifest_rows_read);
+            self.targeted_manifest_query_count = self
+                .targeted_manifest_query_count
+                .saturating_add(deferred.targeted_manifest_query_count);
+        }
         self.renames_reconciled += deferred.renames_reconciled;
         self.pending_renames_considered += deferred.pending_renames_considered;
         self.pending_renames_pruned += deferred.pending_renames_pruned;
@@ -216,24 +232,31 @@ impl ScanStats {
         self.changed_samples.append(&mut deferred.changed_samples);
         if !deferred.manifest_after.is_empty() {
             self.manifest_after = deferred.manifest_after;
-            self.committed_delta = super::super::manifest::build_committed_delta(
+            self.committed_delta = super::super::manifest::build_targeted_committed_delta(
                 &self.manifest_before,
                 &self.manifest_after,
                 deferred.committed_delta.revision,
+                &self.renamed_samples,
             );
-        } else if !deferred.manifest_updates.is_empty() && !self.manifest_after.is_empty() {
+        } else if !deferred.manifest_updates.is_empty() {
             for update in deferred.manifest_updates {
                 if let Ok(index) = self
                     .manifest_after
                     .binary_search_by(|entry| entry.relative_path.cmp(&update.relative_path))
                 {
                     self.manifest_after[index] = update;
+                } else {
+                    let index = self
+                        .manifest_after
+                        .partition_point(|entry| entry.relative_path < update.relative_path);
+                    self.manifest_after.insert(index, update);
                 }
             }
-            self.committed_delta = super::super::manifest::build_committed_delta(
+            self.committed_delta = super::super::manifest::build_targeted_committed_delta(
                 &self.manifest_before,
                 &self.manifest_after,
                 deferred.committed_delta.revision,
+                &self.renamed_samples,
             );
         } else if deferred.committed_delta.revision > 0 {
             if self.committed_delta.revision == 0 {

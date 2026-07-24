@@ -20,6 +20,7 @@ pub(crate) struct ScanContext {
     committed_manifest_revision: u64,
     pub(crate) last_committed_revision: Option<u64>,
     manifest_audit: Option<ManifestAuditCheckpoint>,
+    targeted_manifest_scope: Option<Vec<PathBuf>>,
     source_tree_incomplete: bool,
     uncertain_prefixes: BTreeSet<PathBuf>,
     traversal_policy: SourceTraversalPolicy,
@@ -70,6 +71,7 @@ impl ScanContext {
             committed_manifest_revision: manifest_revision,
             last_committed_revision: None,
             manifest_audit: None,
+            targeted_manifest_scope: None,
             source_tree_incomplete: false,
             uncertain_prefixes: BTreeSet::new(),
             traversal_policy: SourceTraversalPolicy::default(),
@@ -85,6 +87,52 @@ impl ScanContext {
 
     pub(in crate::sample_sources::scanner) fn traversal_policy(&self) -> SourceTraversalPolicy {
         self.traversal_policy
+    }
+
+    pub(in crate::sample_sources::scanner) fn set_targeted_manifest_scope(
+        &mut self,
+        paths: Vec<PathBuf>,
+    ) {
+        self.targeted_manifest_scope = Some(
+            paths
+                .into_iter()
+                .filter(|path| path.to_str().is_some())
+                .collect(),
+        );
+    }
+
+    pub(in crate::sample_sources::scanner) fn refresh_targeted_manifest(
+        &mut self,
+        db: &SourceDatabase,
+        extra_paths: impl IntoIterator<Item = PathBuf>,
+        expected_revision: Option<u64>,
+    ) -> Result<(), ScanError> {
+        let Some(scope) = self.targeted_manifest_scope.as_ref() else {
+            return Ok(());
+        };
+        let mut paths = scope.clone();
+        paths.extend(extra_paths);
+        let (revision, entries) = db.manifest_snapshot_with_revision_under_paths(&paths)?;
+        if let Some(expected) = expected_revision
+            && revision != expected
+        {
+            return Err(ScanError::StaleRevision {
+                expected,
+                actual: revision,
+            });
+        }
+        self.stats.targeted_manifest_rows_read = self
+            .stats
+            .targeted_manifest_rows_read
+            .saturating_add(entries.len());
+        self.stats.targeted_manifest_query_count =
+            self.stats.targeted_manifest_query_count.saturating_add(1);
+        self.committed_manifest = entries
+            .into_iter()
+            .map(|entry| (entry.relative_path.clone(), entry))
+            .collect();
+        self.committed_manifest_revision = revision;
+        Ok(())
     }
 
     pub(in crate::sample_sources::scanner) fn set_targeted_index_entries(
@@ -324,22 +372,43 @@ impl ScanContext {
             .and_then(|entry| entry.file_identity.as_deref())
     }
 
+    pub(in crate::sample_sources::scanner) fn has_committed_manifest_path(
+        &self,
+        relative_path: &std::path::Path,
+    ) -> bool {
+        self.committed_manifest.contains_key(relative_path)
+    }
+
     pub(in crate::sample_sources::scanner) fn commit_batch(
         &mut self,
+        db: &SourceDatabase,
         batch: SourceWriteBatch<'_>,
     ) -> Result<u64, ScanError> {
-        self.commit_batch_with_post_commit_hook(batch, || {})
+        self.commit_batch_with_post_commit_hook(db, batch, || {})
     }
 
     fn commit_batch_with_post_commit_hook(
         &mut self,
+        db: &SourceDatabase,
         batch: SourceWriteBatch<'_>,
         post_commit_hook: impl FnOnce(),
     ) -> Result<u64, ScanError> {
         if !batch.matches_source_traversal_policy(self.traversal_policy)? {
             return Err(ScanError::TraversalPolicyChanged);
         }
-        let result = batch.commit_with_manifest_changes(self.committed_manifest_revision)?;
+        let expected_revision = self.committed_manifest_revision;
+        let result = if self.mode == ScanMode::Targeted {
+            if !batch.matches_revision(expected_revision)? {
+                drop(batch);
+                return Err(ScanError::StaleRevision {
+                    expected: expected_revision,
+                    actual: db.get_revision()?,
+                });
+            }
+            batch.commit_with_bounded_manifest_changes(expected_revision)?
+        } else {
+            batch.commit_with_manifest_changes(expected_revision)?
+        };
         post_commit_hook();
         if let Some(snapshot) = result.authoritative_snapshot {
             self.committed_manifest = snapshot
@@ -417,7 +486,7 @@ mod tests {
             .upsert_file_with_hash(Path::new("scan.wav"), 3, 3, "scan")
             .expect("scan row");
         let revision = context
-            .commit_batch_with_post_commit_hook(scan_batch, || {
+            .commit_batch_with_post_commit_hook(&database, scan_batch, || {
                 let mut later_batch = database.write_batch().expect("later batch");
                 later_batch
                     .upsert_file_with_hash(Path::new("later.wav"), 4, 4, "later")
@@ -440,5 +509,42 @@ mod tests {
                 PathBuf::from("scan.wav"),
             ]
         );
+    }
+
+    #[test]
+    fn targeted_commit_reports_stale_revision_after_an_interleaved_writer() {
+        let directory = tempfile::tempdir().expect("source root");
+        let database = SourceDatabase::open_for_scan(directory.path()).expect("source database");
+        let mut initial_batch = database.write_batch().expect("initial batch");
+        initial_batch
+            .upsert_file_with_hash(Path::new("initial.wav"), 1, 1, "initial")
+            .expect("initial row");
+        initial_batch.commit().expect("commit initial row");
+        let (manifest_revision, manifest) = database
+            .manifest_snapshot_with_revision_under_paths(&[PathBuf::from("initial.wav")])
+            .expect("initial manifest");
+        let existing = index_existing(&database).expect("existing rows");
+        let mut context =
+            ScanContext::from_existing(existing, ScanMode::Targeted, manifest_revision, manifest);
+
+        let mut first_batch = database.write_batch().expect("first scan batch");
+        first_batch
+            .upsert_file_with_hash(Path::new("scan.wav"), 2, 2, "scan")
+            .expect("scan row");
+        context
+            .commit_batch_with_post_commit_hook(&database, first_batch, || {
+                database
+                    .upsert_file(Path::new("external.wav"), 3, 3)
+                    .expect("interleaved writer");
+            })
+            .expect("first scan commit");
+
+        let mut second_batch = database.write_batch().expect("second scan batch");
+        second_batch
+            .upsert_file_with_hash(Path::new("later.wav"), 4, 4, "later")
+            .expect("later scan row");
+        let result = context.commit_batch(&database, second_batch);
+
+        assert!(matches!(result, Err(ScanError::StaleRevision { .. })));
     }
 }

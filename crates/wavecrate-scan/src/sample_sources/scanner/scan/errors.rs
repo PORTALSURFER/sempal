@@ -26,6 +26,15 @@ pub enum ScanError {
         /// Current manifest revision observed before commit.
         actual: u64,
     },
+    /// Targeted rename recovery exceeded its bounded carry-over candidate set.
+    #[error(
+        "Targeted rename recovery exceeded the bounded candidate limit ({limit}); \
+         authoritative recovery is required"
+    )]
+    TargetedRenameCandidateOverflow {
+        /// Maximum number of carry-over candidates admitted to targeted recovery.
+        limit: usize,
+    },
     /// The configured source path no longer names the retained root directory.
     #[error("Source root generation changed while scanning: {root}")]
     StaleRootGeneration {

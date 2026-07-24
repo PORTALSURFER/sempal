@@ -789,15 +789,25 @@ pub(super) fn reconcile_hashed_rename_candidates_with_writer(
 ) -> Result<Vec<RenamedSample>, ScanError> {
     let root = ensure_root_dir(db)?;
     let source_root = SourceRootCapability::open(&root)?;
-    reconcile_hashed_rename_candidates_with_source_root_and_hook(
-        db,
-        &root,
-        &source_root,
-        rename_candidates,
-        cancel,
-        writer,
-        |_| {},
+    Ok(
+        reconcile_hashed_rename_candidates_with_source_root_and_hook(
+            db,
+            &root,
+            &source_root,
+            rename_candidates,
+            cancel,
+            writer,
+            |_| {},
+        )?
+        .renamed_samples,
     )
+}
+
+pub(super) struct RenameReconciliation {
+    pub(super) renamed_samples: Vec<RenamedSample>,
+    pub(super) committed_revision: Option<u64>,
+    pub(super) targeted_manifest_rows_read: usize,
+    pub(super) targeted_manifest_query_count: usize,
 }
 
 pub(super) fn reconcile_hashed_rename_candidates_with_source_root_and_writer(
@@ -806,7 +816,7 @@ pub(super) fn reconcile_hashed_rename_candidates_with_source_root_and_writer(
     rename_candidates: &HashSet<PathBuf>,
     cancel: Option<&AtomicBool>,
     writer: &impl ScanWriter,
-) -> Result<Vec<RenamedSample>, ScanError> {
+) -> Result<RenameReconciliation, ScanError> {
     let root = db.root().to_path_buf();
     reconcile_hashed_rename_candidates_with_source_root_and_hook(
         db,
@@ -829,14 +839,17 @@ fn reconcile_hashed_rename_candidates_with_hook(
 ) -> Result<Vec<RenamedSample>, ScanError> {
     let root = ensure_root_dir(db)?;
     let source_root = SourceRootCapability::open(&root)?;
-    reconcile_hashed_rename_candidates_with_source_root_and_hook(
-        db,
-        &root,
-        &source_root,
-        rename_candidates,
-        cancel,
-        writer,
-        precommit,
+    Ok(
+        reconcile_hashed_rename_candidates_with_source_root_and_hook(
+            db,
+            &root,
+            &source_root,
+            rename_candidates,
+            cancel,
+            writer,
+            precommit,
+        )?
+        .renamed_samples,
     )
 }
 
@@ -848,29 +861,40 @@ fn reconcile_hashed_rename_candidates_with_source_root_and_hook(
     cancel: Option<&AtomicBool>,
     writer: &impl ScanWriter,
     mut precommit: impl FnMut(&std::path::Path),
-) -> Result<Vec<RenamedSample>, ScanError> {
+) -> Result<RenameReconciliation, ScanError> {
     if cancel_requested(cancel) {
         return Err(ScanError::Canceled);
     }
     source_root.ensure_current_generation()?;
     let rename_candidates = rename_candidates.clone();
     if rename_candidates.is_empty() {
-        return Ok(Vec::new());
+        return Ok(RenameReconciliation {
+            renamed_samples: Vec::new(),
+            committed_revision: None,
+            targeted_manifest_rows_read: 0,
+            targeted_manifest_query_count: 0,
+        });
     }
 
-    let (manifest_revision, manifest_before) = super::manifest::capture_manifest_with_revision(db)?;
+    let candidate_paths = rename_candidates.iter().cloned().collect::<Vec<_>>();
+    let (manifest_revision, manifest_before) =
+        db.manifest_snapshot_with_revision_under_paths(&candidate_paths)?;
+    let manifest_rows_read = manifest_before.len();
     let persisted_identities = manifest_before
         .into_iter()
         .filter_map(|entry| {
             entry
                 .file_identity
-                .map(|identity| (entry.relative_path, identity))
+                .map(|identity| (entry.relative_path.clone(), identity))
         })
         .collect::<HashMap<_, _>>();
     let mut entries_by_path = HashMap::new();
     let mut retained = Vec::new();
-    for entry in db.list_files()? {
-        if entry.missing || !rename_candidates.contains(&entry.relative_path) {
+    for relative_path in &rename_candidates {
+        let Some(entry) = db.entry_for_path(relative_path)? else {
+            continue;
+        };
+        if entry.missing {
             continue;
         }
         let Some(file) = source_root.open_regular_file(&entry.relative_path)? else {
@@ -892,7 +916,12 @@ fn reconcile_hashed_rename_candidates_with_source_root_and_hook(
         });
     }
     if !db.has_pending_renames()? {
-        return Ok(Vec::new());
+        return Ok(RenameReconciliation {
+            renamed_samples: Vec::new(),
+            committed_revision: None,
+            targeted_manifest_rows_read: manifest_rows_read,
+            targeted_manifest_query_count: 1,
+        });
     }
     let candidate_identities = retained
         .iter()
@@ -927,7 +956,12 @@ fn reconcile_hashed_rename_candidates_with_source_root_and_hook(
         &rename_candidates,
     )?;
     if renamed_samples.is_empty() && retained_candidates == 0 {
-        return Ok(renamed_samples);
+        return Ok(RenameReconciliation {
+            renamed_samples,
+            committed_revision: None,
+            targeted_manifest_rows_read: manifest_rows_read,
+            targeted_manifest_query_count: 1,
+        });
     }
     for candidate in &retained {
         precommit(&candidate.relative_path);
@@ -944,11 +978,21 @@ fn reconcile_hashed_rename_candidates_with_source_root_and_hook(
     });
     if !final_bindings_match {
         drop(batch);
-        return Ok(Vec::new());
+        return Ok(RenameReconciliation {
+            renamed_samples: Vec::new(),
+            committed_revision: None,
+            targeted_manifest_rows_read: manifest_rows_read,
+            targeted_manifest_query_count: 1,
+        });
     }
     source_root.ensure_current_generation()?;
-    batch.commit()?;
-    Ok(renamed_samples)
+    let result = batch.commit_with_bounded_manifest_changes(manifest_revision)?;
+    Ok(RenameReconciliation {
+        renamed_samples,
+        committed_revision: Some(result.revision),
+        targeted_manifest_rows_read: manifest_rows_read,
+        targeted_manifest_query_count: 1,
+    })
 }
 
 fn deep_hash_scan_with_post_hash_hook(
@@ -993,13 +1037,26 @@ fn deep_hash_scan_with_root_hooks(
     mut precommit: impl FnMut(&std::path::Path),
 ) -> Result<ScanStats, ScanError> {
     source_root.ensure_current_generation()?;
-    let (manifest_revision, manifest_before) = super::manifest::capture_manifest_with_revision(db)?;
     let mut rename_candidates = rename_candidates.clone();
-    rename_candidates.extend(db.list_pending_rename_destinations()?);
+    if scope == DeferredHashScope::AllUnhashed {
+        rename_candidates.extend(db.list_pending_rename_destinations()?);
+    }
+    let bounded_rename_scope = scope == DeferredHashScope::RenameCandidates;
+    let rename_candidate_paths = rename_candidates.iter().cloned().collect::<Vec<_>>();
+    let (manifest_revision, manifest_before) = if bounded_rename_scope {
+        db.manifest_snapshot_with_revision_under_paths(&rename_candidate_paths)?
+    } else {
+        super::manifest::capture_manifest_with_revision(db)?
+    };
     let entries = if let Some(exact_path) = exact_path {
         db.entry_for_path(exact_path)?.into_iter().collect()
     } else if scope == DeferredHashScope::AllUnhashed && rename_candidates.is_empty() {
         db.list_pending_hash_files(max_hashes.unwrap_or(usize::MAX))?
+    } else if bounded_rename_scope {
+        rename_candidates
+            .iter()
+            .filter_map(|path| db.entry_for_path(path).transpose())
+            .collect::<Result<Vec<_>, _>>()?
     } else {
         db.list_files()?
     };
@@ -1013,21 +1070,53 @@ fn deep_hash_scan_with_root_hooks(
             .any(|entry| !entry.missing && entry.content_hash.is_none());
     if !has_unhashed_files && rename_candidates.is_empty() {
         let mut stats = ScanStats::default();
-        let committed_snapshot = db.manifest_snapshot_with_revision()?;
-        super::manifest::publish_committed_delta(&mut stats, manifest_before, committed_snapshot);
+        if bounded_rename_scope {
+            stats.targeted_manifest_rows_read = manifest_before.len();
+            stats.targeted_manifest_query_count = 1;
+        }
+        let committed_snapshot = if bounded_rename_scope {
+            let snapshot =
+                db.manifest_snapshot_with_revision_under_paths(&rename_candidate_paths)?;
+            stats.targeted_manifest_rows_read = stats
+                .targeted_manifest_rows_read
+                .saturating_add(snapshot.1.len());
+            stats.targeted_manifest_query_count =
+                stats.targeted_manifest_query_count.saturating_add(1);
+            snapshot
+        } else {
+            db.manifest_snapshot_with_revision()?
+        };
+        if bounded_rename_scope {
+            super::manifest::publish_targeted_committed_delta(
+                &mut stats,
+                manifest_before,
+                committed_snapshot,
+            );
+            stats.manifest_updates = std::mem::take(&mut stats.manifest_after);
+        } else {
+            super::manifest::publish_committed_delta(
+                &mut stats,
+                manifest_before,
+                committed_snapshot,
+            );
+        }
         return Ok(stats);
     }
     let mut stats = ScanStats::default();
+    if bounded_rename_scope {
+        stats.targeted_manifest_rows_read = manifest_before.len();
+        stats.targeted_manifest_query_count = 1;
+    }
     stats.pending_renames_considered = rename_candidates.len();
     let mut hash_backfills = Vec::new();
-    let mut candidate_identities = db
-        .list_manifest_entries()?
-        .into_iter()
+    let mut candidate_identities = manifest_before
+        .iter()
         .filter(|entry| rename_candidates.contains(&entry.relative_path))
         .filter_map(|entry| {
             entry
                 .file_identity
-                .map(|identity| (entry.relative_path, identity))
+                .clone()
+                .map(|identity| (entry.relative_path.clone(), identity))
         })
         .collect::<HashMap<_, _>>();
 
@@ -1172,8 +1261,33 @@ fn deep_hash_scan_with_root_hooks(
         return Ok(stats);
     }
     source_root.ensure_current_generation()?;
-    let committed_snapshot = batch.commit_with_manifest_snapshot()?;
-    super::manifest::publish_committed_delta(&mut stats, manifest_before, committed_snapshot);
+    let committed_snapshot = if bounded_rename_scope {
+        let result = batch.commit_with_bounded_manifest_changes(manifest_revision)?;
+        let snapshot = db.manifest_snapshot_with_revision_under_paths(&rename_candidate_paths)?;
+        stats.targeted_manifest_rows_read = stats
+            .targeted_manifest_rows_read
+            .saturating_add(snapshot.1.len());
+        stats.targeted_manifest_query_count = stats.targeted_manifest_query_count.saturating_add(1);
+        if snapshot.0 != result.revision {
+            return Err(ScanError::StaleRevision {
+                expected: result.revision,
+                actual: snapshot.0,
+            });
+        }
+        snapshot
+    } else {
+        batch.commit_with_manifest_snapshot()?
+    };
+    if bounded_rename_scope {
+        super::manifest::publish_targeted_committed_delta(
+            &mut stats,
+            manifest_before,
+            committed_snapshot,
+        );
+        stats.manifest_updates = std::mem::take(&mut stats.manifest_after);
+    } else {
+        super::manifest::publish_committed_delta(&mut stats, manifest_before, committed_snapshot);
+    }
     stats.pending_rename_diagnostics = Some(db.pending_rename_diagnostics()?);
     Ok(stats)
 }

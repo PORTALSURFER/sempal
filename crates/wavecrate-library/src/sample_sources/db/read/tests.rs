@@ -401,6 +401,84 @@ fn subtree_file_reads_use_an_exact_binary_path_range() {
 }
 
 #[test]
+fn scoped_manifest_snapshot_reads_only_requested_exact_subtrees() {
+    let dir = tempdir().unwrap();
+    let db = SourceDatabase::open_for_source_write(dir.path()).unwrap();
+    for path in [
+        "drum_kits%_!/inside.wav",
+        "drum_kits%_!/nested/deep.wav",
+        "drum_kitsX_YX!/outside.wav",
+    ] {
+        db.upsert_file(Path::new(path), 10, 5).unwrap();
+    }
+
+    let (revision, entries) = db
+        .manifest_snapshot_with_revision_under_paths(&[PathBuf::from("drum_kits%_!")])
+        .unwrap();
+
+    assert_eq!(revision, db.get_revision().unwrap());
+    assert_eq!(
+        entries
+            .into_iter()
+            .map(|entry| entry.relative_path)
+            .collect::<Vec<_>>(),
+        vec![
+            PathBuf::from("drum_kits%_!/inside.wav"),
+            PathBuf::from("drum_kits%_!/nested/deep.wav"),
+        ]
+    );
+}
+
+#[test]
+fn recent_unretained_rename_destinations_report_bounded_overflow() {
+    let dir = tempdir().unwrap();
+    let db = SourceDatabase::open_for_source_write(dir.path()).unwrap();
+    db.connection
+        .execute(
+            "INSERT OR REPLACE INTO metadata (key, value)
+             VALUES ('targeted_scan_generation_v1', '2')",
+            [],
+        )
+        .unwrap();
+    for index in 0..3 {
+        db.connection
+            .execute(
+                "INSERT INTO pending_wav_rename_destinations
+                 (path, scan_generation, retained_hash)
+                 VALUES (?1, 1, NULL)",
+                params![format!("candidate-{index}.wav")],
+            )
+            .unwrap();
+    }
+
+    let (paths, overflow) = db.list_recent_unretained_rename_destinations(2).unwrap();
+
+    assert!(overflow);
+    assert_eq!(paths.len(), 2);
+}
+
+#[test]
+fn retained_rename_destinations_report_bounded_overflow() {
+    let dir = tempdir().unwrap();
+    let db = SourceDatabase::open_for_source_write(dir.path()).unwrap();
+    for index in 0..3 {
+        db.connection
+            .execute(
+                "INSERT INTO pending_wav_rename_destinations
+                 (path, scan_generation, retained_hash)
+                 VALUES (?1, 1, ?2)",
+                params![format!("retained-{index}.wav"), format!("hash-{index}")],
+            )
+            .unwrap();
+    }
+
+    let (paths, overflow) = db.list_retained_rename_destinations_bounded(2).unwrap();
+
+    assert!(overflow);
+    assert_eq!(paths.len(), 2);
+}
+
+#[test]
 fn legacy_read_only_database_without_pending_renames_returns_empty_list() {
     let dir = tempdir().unwrap();
     let connection = Connection::open(dir.path().join(DB_FILE_NAME)).unwrap();
