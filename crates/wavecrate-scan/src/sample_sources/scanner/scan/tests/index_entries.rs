@@ -70,11 +70,14 @@ fn non_unicode_supported_paths_are_isolated_and_converge_in_full_and_targeted_sc
     let raw_path = PathBuf::from(&raw_name);
     let renamed_path = PathBuf::from(&renamed_name);
     std::fs::write(directory.path().join("ordinary.wav"), b"ordinary").unwrap();
-    std::fs::write(directory.path().join(&raw_name), b"raw").unwrap();
 
     let database = SourceDatabase::open_for_scan(directory.path()).unwrap();
     scan_once(&database).unwrap();
     assert_eq!(database.list_files().unwrap().len(), 1);
+    assert!(database.list_source_index_entries().unwrap().is_empty());
+
+    std::fs::write(directory.path().join(&raw_name), b"raw").unwrap();
+    sync_paths(&database, std::slice::from_ref(&raw_path)).unwrap();
     let entry = database.list_source_index_entries().unwrap().remove(0);
     assert_eq!(entry.relative_path, raw_path);
     assert_eq!(

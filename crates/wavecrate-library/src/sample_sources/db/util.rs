@@ -26,6 +26,13 @@ const INDEX_PATH_ENCODING_LOSSLESS: i64 = 1;
 const INDEX_NON_UNICODE_COMPONENT_PREFIX: &str = "~wavecrate-nu~";
 const INDEX_ESCAPED_COMPONENT_PREFIX: &str = "~wavecrate-escaped~";
 
+pub(super) fn source_index_plain_path_needs_rekey(path: &str) -> bool {
+    path.split('/').any(|component| {
+        component.starts_with(INDEX_NON_UNICODE_COMPONENT_PREFIX)
+            || component.starts_with(INDEX_ESCAPED_COMPONENT_PREFIX)
+    })
+}
+
 /// Translate rusqlite errors into friendlier SourceDbError variants.
 pub(super) fn map_sql_error(err: rusqlite::Error) -> SourceDbError {
     match err {
@@ -74,33 +81,33 @@ pub(super) fn normalize_source_index_path(path: &Path) -> Result<(String, i64), 
         return normalize_relative_path(&cleaned).map(|value| (value, INDEX_PATH_ENCODING_PLAIN));
     }
 
-    #[cfg(unix)]
-    {
-        let mut components = Vec::new();
-        for component in cleaned.components() {
-            let Component::Normal(part) = component else {
-                return Err(SourceDbError::InvalidRelativePath(cleaned));
-            };
-            let bytes = part.as_bytes();
-            let encoded = match part.to_str() {
-                Some(value)
-                    if !value.starts_with(INDEX_NON_UNICODE_COMPONENT_PREFIX)
-                        && !value.starts_with(INDEX_ESCAPED_COMPONENT_PREFIX) =>
-                {
-                    value.to_owned()
-                }
-                Some(_) => format!("{INDEX_ESCAPED_COMPONENT_PREFIX}{}", encode_hex(bytes)),
-                None => format!("{INDEX_NON_UNICODE_COMPONENT_PREFIX}{}", encode_hex(bytes)),
-            };
-            components.push(encoded);
-        }
-        Ok((components.join("/"), INDEX_PATH_ENCODING_LOSSLESS))
+    let mut components = Vec::new();
+    for component in cleaned.components() {
+        let Component::Normal(part) = component else {
+            return Err(SourceDbError::InvalidRelativePath(cleaned));
+        };
+        let encoded = match part.to_str() {
+            Some(value)
+                if !value.starts_with(INDEX_NON_UNICODE_COMPONENT_PREFIX)
+                    && !value.starts_with(INDEX_ESCAPED_COMPONENT_PREFIX) =>
+            {
+                value.to_owned()
+            }
+            Some(value) => format!(
+                "{INDEX_ESCAPED_COMPONENT_PREFIX}{}",
+                encode_hex(value.as_bytes())
+            ),
+            #[cfg(unix)]
+            None => format!(
+                "{INDEX_NON_UNICODE_COMPONENT_PREFIX}{}",
+                encode_hex(part.as_bytes())
+            ),
+            #[cfg(not(unix))]
+            None => return Err(SourceDbError::NonUnicodeRelativePath(cleaned)),
+        };
+        components.push(encoded);
     }
-
-    #[cfg(not(unix))]
-    {
-        Err(SourceDbError::NonUnicodeRelativePath(cleaned))
-    }
+    Ok((components.join("/"), INDEX_PATH_ENCODING_LOSSLESS))
 }
 
 /// Parse and validate a stored relative path from the database.
@@ -150,10 +157,25 @@ fn parse_lossless_index_path(path: &str) -> Result<PathBuf, SourceDbError> {
 
 #[cfg(not(unix))]
 fn parse_lossless_index_path(path: &str) -> Result<PathBuf, SourceDbError> {
-    // A non-Unicode source key can only be authored on Unix. Keep a readable
-    // encoded projection if such a database is opened on another platform;
-    // that platform cannot reconstruct the original raw name.
-    Ok(PathBuf::from(path))
+    let mut decoded = PathBuf::new();
+    for component in path.split('/') {
+        if component.is_empty() {
+            return Err(SourceDbError::InvalidRelativePath(PathBuf::from(path)));
+        }
+        if let Some(hex) = component.strip_prefix(INDEX_ESCAPED_COMPONENT_PREFIX) {
+            let bytes = decode_hex(hex)
+                .ok_or_else(|| SourceDbError::InvalidRelativePath(PathBuf::from(path)))?;
+            let value = String::from_utf8(bytes)
+                .map_err(|_| SourceDbError::InvalidRelativePath(PathBuf::from(path)))?;
+            decoded.push(value);
+        } else {
+            // A non-Unicode source key can only be authored on Unix. Preserve
+            // that component's encoded projection on platforms that cannot
+            // reconstruct the original raw name.
+            decoded.push(component);
+        }
+    }
+    Ok(decoded)
 }
 
 fn encode_hex(bytes: &[u8]) -> String {
@@ -312,13 +334,10 @@ mod tests {
         assert!(upper.starts_with("folder/"));
     }
 
-    #[cfg(unix)]
     #[test]
     fn source_index_path_encoding_escapes_reserved_unicode_components() {
-        use std::os::unix::ffi::OsStringExt;
-
         let path = PathBuf::from_iter([
-            std::ffi::OsString::from_vec(b"raw-\xFF".to_vec()),
+            std::ffi::OsString::from("folder"),
             std::ffi::OsString::from("~wavecrate-nu~ff.wav"),
         ]);
         let (encoded, encoding) = normalize_source_index_path(&path).unwrap();

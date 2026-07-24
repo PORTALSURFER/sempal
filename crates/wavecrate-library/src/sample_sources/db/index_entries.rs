@@ -442,4 +442,70 @@ mod tests {
             vec![entry]
         );
     }
+
+    #[test]
+    fn legacy_reserved_prefix_rows_rekey_before_update_and_delete() {
+        let directory = tempfile::tempdir().expect("source root");
+        let relative_path = PathBuf::from("~wavecrate-nu~ff.wav");
+        {
+            let database =
+                SourceDatabase::open_for_source_write(directory.path()).expect("source database");
+            database
+                .connection
+                .execute(
+                    "INSERT INTO source_index_entries (
+                        path, path_encoding, classification, file_size, modified_ns,
+                        diagnostic, format_policy_version
+                     ) VALUES (?1, 0, 'unsupported_non_audio', 5, 10, NULL, ?2)",
+                    params![
+                        relative_path.to_string_lossy(),
+                        i64::from(SOURCE_FORMAT_POLICY_VERSION)
+                    ],
+                )
+                .expect("legacy index row");
+        }
+
+        let database =
+            SourceDatabase::open_for_source_write(directory.path()).expect("reopened database");
+        let updated = SourceIndexEntry {
+            relative_path: relative_path.clone(),
+            classification: SourceIndexClassification::UnsupportedNonAudio,
+            file_size: Some(8),
+            modified_ns: Some(20),
+            file_identity: None,
+            diagnostic: None,
+            format_policy_version: SOURCE_FORMAT_POLICY_VERSION,
+        };
+        assert_eq!(
+            database.list_source_index_entries().unwrap(),
+            vec![SourceIndexEntry {
+                file_size: Some(5),
+                modified_ns: Some(10),
+                ..updated.clone()
+            }]
+        );
+
+        let mut batch = database.write_batch().expect("index batch");
+        batch
+            .upsert_source_index_entry(&updated)
+            .expect("update rekeyed row");
+        batch.commit_auxiliary_state().expect("commit update");
+        assert_eq!(database.list_source_index_entries().unwrap(), vec![updated]);
+        assert_eq!(
+            database
+                .connection
+                .query_row("SELECT COUNT(*) FROM source_index_entries", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap(),
+            1
+        );
+
+        let mut batch = database.write_batch().expect("index batch");
+        batch
+            .remove_source_index_entry(&relative_path)
+            .expect("remove rekeyed row");
+        batch.commit_auxiliary_state().expect("commit removal");
+        assert!(database.list_source_index_entries().unwrap().is_empty());
+    }
 }

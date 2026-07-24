@@ -1,11 +1,14 @@
 //! Incremental schema migrations for older source database files.
 
 use std::collections::HashSet;
+use std::path::Path;
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension, params};
 
 use super::super::SourceDbError;
-use super::super::util::map_sql_error;
+use super::super::util::{
+    map_sql_error, normalize_source_index_path, source_index_plain_path_needs_rekey,
+};
 
 mod analysis_jobs;
 mod aspect_descriptors;
@@ -58,9 +61,9 @@ fn apply_structural_migrations(connection: &Connection) -> Result<(), SourceDbEr
 }
 
 fn ensure_source_index_schema(connection: &Connection) -> Result<(), SourceDbError> {
-    connection
-        .execute_batch(
-            "CREATE TABLE IF NOT EXISTS source_index_entries (
+    let tx = connection.unchecked_transaction().map_err(map_sql_error)?;
+    tx.execute_batch(
+        "CREATE TABLE IF NOT EXISTS source_index_entries (
                 path TEXT PRIMARY KEY,
                 path_encoding INTEGER NOT NULL DEFAULT 0,
                 classification TEXT NOT NULL CHECK(classification IN (
@@ -77,16 +80,83 @@ fn ensure_source_index_schema(connection: &Connection) -> Result<(), SourceDbErr
             ) WITHOUT ROWID;
             CREATE INDEX IF NOT EXISTS idx_source_index_entries_classification_path
                 ON source_index_entries(classification, path);",
+    )
+    .map_err(map_sql_error)?;
+    if !table_columns(&tx, "source_index_entries")?.contains("path_encoding") {
+        tx.execute(
+            "ALTER TABLE source_index_entries
+                 ADD COLUMN path_encoding INTEGER NOT NULL DEFAULT 0",
+            [],
         )
         .map_err(map_sql_error)?;
-    if !table_columns(connection, "source_index_entries")?.contains("path_encoding") {
-        connection
-            .execute(
-                "ALTER TABLE source_index_entries
-                 ADD COLUMN path_encoding INTEGER NOT NULL DEFAULT 0",
-                [],
+    }
+    migrate_legacy_source_index_paths(&tx)?;
+    tx.commit().map_err(map_sql_error)?;
+    Ok(())
+}
+
+fn migrate_legacy_source_index_paths(connection: &Connection) -> Result<(), SourceDbError> {
+    let legacy_paths = {
+        let mut statement = connection
+            .prepare(
+                "SELECT path
+                 FROM source_index_entries
+                 WHERE path_encoding = 0
+                 ORDER BY path",
             )
             .map_err(map_sql_error)?;
+        statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(map_sql_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(map_sql_error)?
+    };
+
+    for legacy_path in legacy_paths {
+        if !source_index_plain_path_needs_rekey(&legacy_path) {
+            continue;
+        }
+        let (canonical_path, path_encoding) =
+            match normalize_source_index_path(Path::new(&legacy_path)) {
+                Ok(normalized) => normalized,
+                Err(error) => {
+                    tracing::warn!(
+                        path = legacy_path,
+                        %error,
+                        "Skipping invalid legacy source index path during reserved-prefix migration"
+                    );
+                    continue;
+                }
+            };
+        if path_encoding == 0 || canonical_path == legacy_path {
+            continue;
+        }
+        let canonical_exists = connection
+            .query_row(
+                "SELECT 1 FROM source_index_entries WHERE path = ?1",
+                [&canonical_path],
+                |_| Ok(()),
+            )
+            .optional()
+            .map_err(map_sql_error)?
+            .is_some();
+        if canonical_exists {
+            connection
+                .execute(
+                    "DELETE FROM source_index_entries WHERE path = ?1",
+                    [&legacy_path],
+                )
+                .map_err(map_sql_error)?;
+        } else {
+            connection
+                .execute(
+                    "UPDATE source_index_entries
+                     SET path = ?1, path_encoding = ?2
+                     WHERE path = ?3",
+                    params![canonical_path, path_encoding, legacy_path],
+                )
+                .map_err(map_sql_error)?;
+        }
     }
     Ok(())
 }
