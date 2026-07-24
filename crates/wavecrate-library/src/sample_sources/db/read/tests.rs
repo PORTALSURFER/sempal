@@ -451,9 +451,7 @@ fn recent_unretained_rename_destinations_report_bounded_overflow() {
             .unwrap();
     }
 
-    let (paths, overflow) = db
-        .list_recent_unretained_rename_destinations(2)
-        .unwrap();
+    let (paths, overflow) = db.list_recent_unretained_rename_destinations(2).unwrap();
 
     assert!(overflow);
     assert_eq!(paths.len(), 2);
