@@ -230,13 +230,18 @@ impl ScanStats {
                 deferred.committed_delta.revision,
                 &self.renamed_samples,
             );
-        } else if !deferred.manifest_updates.is_empty() && !self.manifest_after.is_empty() {
+        } else if !deferred.manifest_updates.is_empty() {
             for update in deferred.manifest_updates {
                 if let Ok(index) = self
                     .manifest_after
                     .binary_search_by(|entry| entry.relative_path.cmp(&update.relative_path))
                 {
                     self.manifest_after[index] = update;
+                } else {
+                    let index = self
+                        .manifest_after
+                        .partition_point(|entry| entry.relative_path < update.relative_path);
+                    self.manifest_after.insert(index, update);
                 }
             }
             self.committed_delta = super::super::manifest::build_targeted_committed_delta(

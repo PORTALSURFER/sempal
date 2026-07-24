@@ -100,6 +100,7 @@ impl ScanContext {
         &mut self,
         db: &SourceDatabase,
         extra_paths: impl IntoIterator<Item = PathBuf>,
+        expected_revision: Option<u64>,
     ) -> Result<(), ScanError> {
         let Some(scope) = self.targeted_manifest_scope.as_ref() else {
             return Ok(());
@@ -107,6 +108,14 @@ impl ScanContext {
         let mut paths = scope.clone();
         paths.extend(extra_paths);
         let (revision, entries) = db.manifest_snapshot_with_revision_under_paths(&paths)?;
+        if let Some(expected) = expected_revision
+            && revision != expected
+        {
+            return Err(ScanError::StaleRevision {
+                expected,
+                actual: revision,
+            });
+        }
         self.stats.targeted_manifest_rows_read = self
             .stats
             .targeted_manifest_rows_read
@@ -495,5 +504,42 @@ mod tests {
                 PathBuf::from("scan.wav"),
             ]
         );
+    }
+
+    #[test]
+    fn targeted_commit_reports_stale_revision_after_an_interleaved_writer() {
+        let directory = tempfile::tempdir().expect("source root");
+        let database = SourceDatabase::open_for_scan(directory.path()).expect("source database");
+        let mut initial_batch = database.write_batch().expect("initial batch");
+        initial_batch
+            .upsert_file_with_hash(Path::new("initial.wav"), 1, 1, "initial")
+            .expect("initial row");
+        initial_batch.commit().expect("commit initial row");
+        let (manifest_revision, manifest) = database
+            .manifest_snapshot_with_revision_under_paths(&[PathBuf::from("initial.wav")])
+            .expect("initial manifest");
+        let existing = index_existing(&database).expect("existing rows");
+        let mut context =
+            ScanContext::from_existing(existing, ScanMode::Targeted, manifest_revision, manifest);
+
+        let mut first_batch = database.write_batch().expect("first scan batch");
+        first_batch
+            .upsert_file_with_hash(Path::new("scan.wav"), 2, 2, "scan")
+            .expect("scan row");
+        context
+            .commit_batch_with_post_commit_hook(&database, first_batch, || {
+                database
+                    .upsert_file(Path::new("external.wav"), 3, 3)
+                    .expect("interleaved writer");
+            })
+            .expect("first scan commit");
+
+        let mut second_batch = database.write_batch().expect("second scan batch");
+        second_batch
+            .upsert_file_with_hash(Path::new("later.wav"), 4, 4, "later")
+            .expect("later scan row");
+        let result = context.commit_batch(&database, second_batch);
+
+        assert!(matches!(result, Err(ScanError::StaleRevision { .. })));
     }
 }

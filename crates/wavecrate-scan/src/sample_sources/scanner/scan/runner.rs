@@ -532,8 +532,8 @@ pub(crate) fn reconcile_scan_renames(
         .stats
         .pending_renames_considered
         .saturating_add(candidates.len());
-    let renamed = if carried_candidates_need_revalidation {
-        super::super::scan_hash::deep_hash_scan_with_source_root_and_writer(
+    let (renamed, rename_revision) = if carried_candidates_need_revalidation {
+        let deferred = super::super::scan_hash::deep_hash_scan_with_source_root_and_writer(
             db,
             source_root,
             cancel,
@@ -542,22 +542,36 @@ pub(crate) fn reconcile_scan_renames(
             None,
             None,
             writer,
-        )?
-        .renamed_samples
+        )?;
+        (
+            deferred.renamed_samples,
+            Some(deferred.committed_delta.revision),
+        )
     } else {
-        super::super::scan_hash::reconcile_hashed_rename_candidates_with_source_root_and_writer(
+        let reconciliation = super::super::scan_hash::reconcile_hashed_rename_candidates_with_source_root_and_writer(
             db,
             source_root,
             &candidates,
             cancel,
             writer,
-        )?
+        )?;
+        (
+            reconciliation.renamed_samples,
+            reconciliation.committed_revision,
+        )
     };
     source_root.ensure_current_generation()?;
     if renamed.is_empty() && context.mode != ScanMode::Hard {
-        if context.mode == ScanMode::Targeted && db.get_revision()? != committed_snapshot.0 {
-            context.refresh_targeted_manifest(db, std::iter::empty())?;
-            return Ok(context.latest_committed_snapshot());
+        if context.mode == ScanMode::Targeted {
+            let expected = rename_revision.unwrap_or(committed_snapshot.0);
+            let actual = db.get_revision()?;
+            if actual != expected {
+                return Err(ScanError::StaleRevision { expected, actual });
+            }
+            if rename_revision.is_some() {
+                context.refresh_targeted_manifest(db, std::iter::empty(), Some(expected))?;
+                return Ok(context.latest_committed_snapshot());
+            }
         }
         return Ok(committed_snapshot);
     }
@@ -592,6 +606,7 @@ pub(crate) fn reconcile_scan_renames(
             renamed
                 .iter()
                 .map(|rename| rename.new_relative_path.clone()),
+            rename_revision,
         )?;
         let committed_snapshot = context.latest_committed_snapshot();
         context.stats.renamed_samples.extend(renamed);
@@ -684,6 +699,11 @@ pub(crate) fn finish_scan_result(
             Ok(context.stats)
         }
         Err(error) => {
+            if context.mode == super::ScanMode::Targeted
+                && matches!(error, ScanError::StaleRevision { .. })
+            {
+                return Err(error);
+            }
             let Some(committed_revision) = context.last_committed_revision else {
                 return Err(error);
             };
