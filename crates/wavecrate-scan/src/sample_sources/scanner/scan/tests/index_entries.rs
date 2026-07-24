@@ -58,6 +58,146 @@ fn full_scan_persists_typed_index_only_entries_across_restart() {
     );
 }
 
+#[cfg(all(unix, not(target_os = "macos")))]
+#[test]
+fn non_unicode_supported_paths_are_isolated_and_converge_in_full_and_targeted_scans() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    let directory = tempdir().unwrap();
+    let raw_name = OsString::from_vec(b"raw-\xFF.wav".to_vec());
+    let renamed_name = OsString::from_vec(b"renamed-\xFE.wav".to_vec());
+    let raw_path = PathBuf::from(&raw_name);
+    let renamed_path = PathBuf::from(&renamed_name);
+    std::fs::write(directory.path().join("ordinary.wav"), b"ordinary").unwrap();
+
+    let database = SourceDatabase::open_for_scan(directory.path()).unwrap();
+    scan_once(&database).unwrap();
+    assert_eq!(database.list_files().unwrap().len(), 1);
+    assert!(database.list_source_index_entries().unwrap().is_empty());
+
+    std::fs::write(directory.path().join(&raw_name), b"raw").unwrap();
+    sync_paths(&database, std::slice::from_ref(&raw_path)).unwrap();
+    let entry = database.list_source_index_entries().unwrap().remove(0);
+    assert_eq!(entry.relative_path, raw_path);
+    assert_eq!(
+        entry.classification,
+        SourceIndexClassification::Inaccessible
+    );
+    assert_eq!(
+        entry.diagnostic,
+        Some(SourceIndexDiagnostic::NonUnicodePath)
+    );
+    assert_eq!(entry.file_size, Some(3));
+
+    std::fs::write(directory.path().join(&raw_name), b"raw-modified").unwrap();
+    sync_paths(&database, std::slice::from_ref(&raw_path)).unwrap();
+    assert_eq!(
+        database.list_source_index_entries().unwrap()[0].file_size,
+        Some(12)
+    );
+    assert_eq!(database.list_files().unwrap().len(), 1);
+
+    std::fs::rename(
+        directory.path().join(&raw_name),
+        directory.path().join(&renamed_name),
+    )
+    .unwrap();
+    sync_paths(&database, &[raw_path.clone(), renamed_path.clone()]).unwrap();
+    assert_eq!(
+        database.list_source_index_entries().unwrap()[0].relative_path,
+        renamed_path
+    );
+
+    std::fs::remove_file(directory.path().join(&renamed_name)).unwrap();
+    sync_paths(&database, std::slice::from_ref(&renamed_path)).unwrap();
+    assert!(database.list_source_index_entries().unwrap().is_empty());
+    assert_eq!(database.list_files().unwrap().len(), 1);
+
+    std::fs::write(directory.path().join(&raw_name), b"raw-again").unwrap();
+    scan_once(&database).unwrap();
+    assert_eq!(database.list_files().unwrap().len(), 1);
+    assert_eq!(
+        database.list_source_index_entries().unwrap()[0].relative_path,
+        raw_path
+    );
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+#[test]
+fn targeted_sync_preserves_non_unicode_unsupported_classifications() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    let directory = tempdir().unwrap();
+    let unsupported_audio = PathBuf::from(OsString::from_vec(b"raw-\xFF.flac".to_vec()));
+    let unsupported_non_audio = PathBuf::from(OsString::from_vec(b"notes-\xFE.txt".to_vec()));
+    std::fs::write(directory.path().join("ordinary.wav"), b"ordinary").unwrap();
+
+    let database = SourceDatabase::open_for_scan(directory.path()).unwrap();
+    scan_once(&database).unwrap();
+    std::fs::write(directory.path().join(&unsupported_audio), b"audio").unwrap();
+    std::fs::write(directory.path().join(&unsupported_non_audio), b"notes").unwrap();
+    sync_paths(
+        &database,
+        &[unsupported_audio.clone(), unsupported_non_audio.clone()],
+    )
+    .unwrap();
+
+    let entries = database.list_source_index_entries().unwrap();
+    assert_eq!(entries.len(), 2);
+    for (path, expected_classification) in [
+        (
+            unsupported_audio,
+            SourceIndexClassification::UnsupportedAudio,
+        ),
+        (
+            unsupported_non_audio,
+            SourceIndexClassification::UnsupportedNonAudio,
+        ),
+    ] {
+        let entry = entries
+            .iter()
+            .find(|entry| entry.relative_path == path)
+            .expect("targeted non-Unicode index entry");
+        assert_eq!(entry.classification, expected_classification);
+        assert_eq!(entry.diagnostic, None);
+    }
+    assert_eq!(database.list_files().unwrap().len(), 1);
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+#[test]
+fn lossless_raw_path_key_does_not_alias_a_unicode_sample_path() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    let directory = tempdir().unwrap();
+    let raw_path = PathBuf::from_iter([
+        OsString::from_vec(b"raw-\xFF".to_vec()),
+        OsString::from("sample.wav"),
+    ]);
+    let unicode_path = PathBuf::from("~wavecrate-nu~7261772dff/sample.wav");
+    std::fs::create_dir_all(directory.path().join(&raw_path).parent().unwrap()).unwrap();
+    std::fs::create_dir_all(directory.path().join(&unicode_path).parent().unwrap()).unwrap();
+    std::fs::write(directory.path().join(&raw_path), b"raw").unwrap();
+    std::fs::write(directory.path().join(&unicode_path), b"unicode").unwrap();
+
+    let database = SourceDatabase::open_for_scan(directory.path()).unwrap();
+    scan_once(&database).unwrap();
+
+    let manifest = database.list_manifest_entries().unwrap();
+    assert_eq!(manifest.len(), 1);
+    assert_eq!(manifest[0].relative_path, unicode_path);
+    let index_entries = database.list_source_index_entries().unwrap();
+    assert_eq!(index_entries.len(), 1);
+    assert_eq!(index_entries[0].relative_path, raw_path);
+    assert_eq!(
+        index_entries[0].diagnostic,
+        Some(SourceIndexDiagnostic::NonUnicodePath)
+    );
+}
+
 #[test]
 fn full_scan_reconciles_index_only_change_move_and_delete() {
     let directory = tempdir().unwrap();

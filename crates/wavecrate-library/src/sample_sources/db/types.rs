@@ -357,6 +357,8 @@ pub enum SourceIndexDiagnostic {
     OpenUnavailable,
     /// An explicit practical audio constraint rejected the file.
     PracticalSupportLimit,
+    /// The file name is not Unicode and cannot become a normal sample row.
+    NonUnicodePath,
 }
 
 impl SourceIndexDiagnostic {
@@ -366,6 +368,7 @@ impl SourceIndexDiagnostic {
             Self::MetadataUnavailable => "metadata_unavailable",
             Self::OpenUnavailable => "open_unavailable",
             Self::PracticalSupportLimit => "practical_support_limit",
+            Self::NonUnicodePath => "non_unicode_path",
         }
     }
 
@@ -375,6 +378,7 @@ impl SourceIndexDiagnostic {
             "metadata_unavailable" => Some(Self::MetadataUnavailable),
             "open_unavailable" => Some(Self::OpenUnavailable),
             "practical_support_limit" => Some(Self::PracticalSupportLimit),
+            "non_unicode_path" => Some(Self::NonUnicodePath),
             _ => None,
         }
     }

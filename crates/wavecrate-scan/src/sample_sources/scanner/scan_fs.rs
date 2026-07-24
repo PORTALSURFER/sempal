@@ -27,7 +27,9 @@ use crate::sample_sources::SourceDatabase;
 use super::scan::ScanError;
 use super::scan::{DirectoryRepeatKind, SourceTreeDiagnostic, SourceTreeFile, SourceTreeSnapshot};
 use super::scan_capability::SourceRootCapability;
-use super::scan_index::{inaccessible_index_entry, index_entry_from_file_facts};
+use super::scan_index::{
+    inaccessible_index_entry, index_entry_from_file_facts, non_unicode_index_entry,
+};
 
 const MAX_LAYOUT_DIAGNOSTICS: usize = 16;
 
@@ -444,10 +446,11 @@ pub(super) fn visit_dir_with_cancel_check(
                     }
                 }
                 classification @ SourceEntryClassification::File { .. } => {
-                    if classification.indexes_audio() {
+                    if classification.indexes_audio() && relative.to_str().is_some() {
                         visitor(&path)?;
                     } else if let Some(file_classification) = classification.file_classification()
-                        && file_classification != SourceFileClassification::SupportedAudio
+                        && (file_classification != SourceFileClassification::SupportedAudio
+                            || relative.to_str().is_none())
                     {
                         match source_index_entry(
                             &dir,
@@ -527,14 +530,28 @@ fn source_index_entry(
         .unwrap_or_default()
         .as_nanos()
         .min(i64::MAX as u128) as i64;
-    index_entry_from_file_facts(
+    if let Some(entry) = index_entry_from_file_facts(
         relative_path.to_path_buf(),
         classification,
         metadata.len(),
         modified_ns,
         stable_filesystem_identity(&path, &metadata),
-    )
-    .ok_or_else(|| std::io::Error::other("supported audio is not an index-only entry"))
+    ) {
+        return Ok(entry);
+    }
+    if classification == SourceFileClassification::SupportedAudio
+        && relative_path.to_str().is_none()
+    {
+        return Ok(non_unicode_index_entry(
+            relative_path.to_path_buf(),
+            Some(metadata.len()),
+            Some(modified_ns),
+            stable_filesystem_identity(&path, &metadata),
+        ));
+    }
+    Err(std::io::Error::other(
+        "supported audio is not an index-only entry",
+    ))
 }
 
 fn record_uncertain_prefix(snapshot: &mut SourceTreeSnapshot, root: &Path, path: &Path) {

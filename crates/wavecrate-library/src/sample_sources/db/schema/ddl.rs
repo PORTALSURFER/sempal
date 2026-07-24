@@ -66,6 +66,7 @@ const BASE_SCHEMA_SQL: &str = "CREATE TABLE IF NOT EXISTS metadata (
     );
     CREATE TABLE IF NOT EXISTS source_index_entries (
         path TEXT PRIMARY KEY,
+        path_encoding INTEGER NOT NULL DEFAULT 0,
         classification TEXT NOT NULL CHECK(classification IN (
             'unsupported_audio',
             'unsupported_non_audio',

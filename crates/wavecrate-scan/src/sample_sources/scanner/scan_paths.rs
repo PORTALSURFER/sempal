@@ -21,7 +21,7 @@ use super::{
     scan_db_sync::{complete_scan_generation, db_sync_phase},
     scan_diff_phase::prepare_diff_from_facts,
     scan_fs::{DirectoryVisit, VisitedDirectories, ensure_root_dir},
-    scan_index::{inaccessible_index_entry, index_entry_from_file_facts},
+    scan_index::{inaccessible_index_entry, index_entry_from_file_facts, non_unicode_index_entry},
     scan_walk::apply_prepared_chunk,
     scan_writer::{ScanWriter, UncoordinatedScanWriter},
 };
@@ -190,7 +190,12 @@ fn collect_targets(
         {
             return Err(ScanError::Canceled);
         }
-        collect_existing_rows(db, &relative_path, &mut existing)?;
+        // A non-Unicode target cannot have a supported manifest row: normal
+        // sample paths remain deliberately UTF-8-only. Its prior state, if
+        // any, is carried by the lossless index-only lookup below.
+        if relative_path.to_str().is_some() {
+            collect_existing_rows(db, &relative_path, &mut existing)?;
+        }
         collect_existing_index_entries(db, &relative_path, &mut existing_index_entries)?;
         collect_current_files(
             &source_root_dir,
@@ -626,6 +631,21 @@ fn collect_current_file(
             return Ok(());
         }
     };
+    if relative_path.to_str().is_none() {
+        // This helper is reached only for entries whose policy classification
+        // indexes audio, which implies supported audio. Unsupported entries
+        // retain their classification through collect_current_index_file.
+        current_index_entries.insert(
+            relative_path.to_path_buf(),
+            non_unicode_index_entry(
+                relative_path.to_path_buf(),
+                Some(facts.size),
+                Some(facts.modified_ns),
+                facts.file_identity,
+            ),
+        );
+        return Ok(());
+    }
     current_files
         .entry(relative_path.to_path_buf())
         .or_insert(TargetedFile {
