@@ -2,7 +2,9 @@ use std::path::PathBuf;
 
 use rusqlite::{OptionalExtension, Params};
 
-use super::super::super::util::map_sql_error;
+use super::super::super::util::{
+    EXACT_SUBTREE_PATH_PREDICATE, exact_subtree_path_bounds, map_sql_error,
+};
 use super::super::super::{Rating, SourceDatabase, SourceDbError, SourceManifestEntry, WavEntry};
 use super::super::decode::{
     decode_path_row, decode_wav_entry_row, wav_file_has_column, wav_file_select_columns,
@@ -182,20 +184,20 @@ impl SourceDatabase {
         path: &std::path::Path,
     ) -> Result<Vec<WavEntry>, SourceDbError> {
         let path_str = super::super::super::normalize_relative_path(path)?;
-        let prefix = format!("{path_str}/%");
+        let (lower_bound, upper_bound) = exact_subtree_path_bounds(&path_str);
         let filter = wav_file_supported_audio_filter(self)?;
         let columns = wav_file_select_columns(self)?;
         let sql = format!(
             "SELECT {columns}
              FROM wav_files
              WHERE {filter}
-               AND (path = ?1 OR path LIKE ?2)
+               AND {EXACT_SUBTREE_PATH_PREDICATE}
              ORDER BY path ASC"
         );
         collect_wav_entries(
             self,
             &sql,
-            rusqlite::params![path_str, prefix],
+            rusqlite::params![path_str, lower_bound, upper_bound],
             "Skipping wav row with invalid relative path during prefix lookup",
         )
     }

@@ -5,6 +5,8 @@ use tempfile::tempdir;
 
 use super::super::{DB_FILE_NAME, Rating, SampleCollection, SampleSoundType, SourceDatabase};
 
+use super::super::util::{EXACT_SUBTREE_PATH_PREDICATE, exact_subtree_path_bounds};
+
 #[test]
 fn browser_metadata_snapshot_reads_multi_collection_rows_coherently() {
     let dir = tempdir().unwrap();
@@ -346,6 +348,55 @@ fn legacy_read_only_collection_query_falls_back_to_wav_files_column() {
     assert_eq!(
         db.collection_for_path(Path::new("one.wav")).unwrap(),
         Some(expected)
+    );
+}
+
+#[test]
+fn subtree_file_reads_use_an_exact_binary_path_range() {
+    let dir = tempdir().unwrap();
+    let db = SourceDatabase::open_for_source_write(dir.path()).unwrap();
+    for path in [
+        "drum_kits%_!/inside.wav",
+        "drum_kits%_!/nested/deep.wav",
+        "drum_kitsX_YX!/outside.wav",
+        "Drum_kits%_!/case-distinct.wav",
+    ] {
+        db.upsert_file(Path::new(path), 10, 5).unwrap();
+    }
+
+    let paths = db
+        .list_files_under_path(Path::new("drum_kits%_!"))
+        .unwrap()
+        .into_iter()
+        .map(|entry| entry.relative_path)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        paths,
+        vec![
+            PathBuf::from("drum_kits%_!/inside.wav"),
+            PathBuf::from("drum_kits%_!/nested/deep.wav"),
+        ]
+    );
+
+    let (lower_bound, upper_bound) = exact_subtree_path_bounds("drum_kits%_!");
+    let explain_sql = format!(
+        "EXPLAIN QUERY PLAN SELECT path FROM wav_files WHERE {EXACT_SUBTREE_PATH_PREDICATE}"
+    );
+    let mut statement = db.connection.prepare(&explain_sql).unwrap();
+    let details = statement
+        .query_map(
+            rusqlite::params!["drum_kits%_!", lower_bound, upper_bound],
+            |row| row.get::<_, String>(3),
+        )
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert!(
+        details
+            .iter()
+            .any(|detail| detail.contains("path>? AND path<?")),
+        "expected the exact subtree predicate to use the path index, got {details:?}"
     );
 }
 

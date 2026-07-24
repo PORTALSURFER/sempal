@@ -2,6 +2,21 @@ use std::path::{Component, Path, PathBuf};
 
 use super::SourceDbError;
 
+/// Exact subtree predicate for normalized, persisted source-relative paths.
+///
+/// The slash in the lower bound is immediately followed by `0` in the upper
+/// bound. SQLite's default BINARY collation therefore keeps every descendant
+/// of `path/` in the half-open range while excluding sibling names such as
+/// `path-other`. The equality arm includes a file or directory row targeted
+/// directly. This avoids LIKE's wildcard and ASCII case-folding semantics and
+/// remains compatible with the path primary-key indexes.
+pub(super) const EXACT_SUBTREE_PATH_PREDICATE: &str =
+    "(path = ?1 COLLATE BINARY OR (path >= ?2 COLLATE BINARY AND path < ?3 COLLATE BINARY))";
+
+pub(super) fn exact_subtree_path_bounds(path: &str) -> (String, String) {
+    (format!("{path}/"), format!("{path}0"))
+}
+
 /// Translate rusqlite errors into friendlier SourceDbError variants.
 pub(super) fn map_sql_error(err: rusqlite::Error) -> SourceDbError {
     match err {

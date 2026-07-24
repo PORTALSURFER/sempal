@@ -3,7 +3,10 @@ use std::path::Path;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use super::schema;
-use super::util::{map_sql_error, normalize_relative_path, parse_relative_path_from_db};
+use super::util::{
+    EXACT_SUBTREE_PATH_PREDICATE, exact_subtree_path_bounds, map_sql_error,
+    normalize_relative_path, parse_relative_path_from_db,
+};
 use super::{
     META_SOURCE_INDEX_REVISION, SourceDatabase, SourceDbError, SourceIndexClassification,
     SourceIndexDiagnostic, SourceIndexEntry, SourceIndexSnapshot, SourceWriteBatch,
@@ -62,15 +65,17 @@ impl SourceDatabase {
             return Ok(Vec::new());
         }
         let normalized = normalize_relative_path(relative_path)?;
-        let prefix = format!("{}/%", escape_like_pattern(&normalized));
+        let (lower_bound, upper_bound) = exact_subtree_path_bounds(&normalized);
         collect_entries(
             &self.connection,
-            "SELECT path, classification, file_size, modified_ns, file_identity,
+            &format!(
+                "SELECT path, classification, file_size, modified_ns, file_identity,
                     diagnostic, format_policy_version
              FROM source_index_entries
-             WHERE path = ?1 OR path LIKE ?2 ESCAPE '!'
-             ORDER BY path ASC",
-            params![normalized, prefix],
+             WHERE {EXACT_SUBTREE_PATH_PREDICATE}
+             ORDER BY path ASC"
+            ),
+            params![normalized, lower_bound, upper_bound],
         )
     }
 }
@@ -238,13 +243,6 @@ fn saturating_i64(value: u64) -> i64 {
     value.min(i64::MAX as u64) as i64
 }
 
-fn escape_like_pattern(value: &str) -> String {
-    value
-        .replace('!', "!!")
-        .replace('%', "!%")
-        .replace('_', "!_")
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -354,16 +352,21 @@ mod tests {
         let directory = tempfile::tempdir().expect("source root");
         let database =
             SourceDatabase::open_for_source_write(directory.path()).expect("source database");
-        let entries =
-            ["literal%/inside.txt", "literalx/outside.txt"].map(|path| SourceIndexEntry {
-                relative_path: PathBuf::from(path),
-                classification: SourceIndexClassification::UnsupportedNonAudio,
-                file_size: Some(5),
-                modified_ns: Some(10),
-                file_identity: None,
-                diagnostic: None,
-                format_policy_version: SOURCE_FORMAT_POLICY_VERSION,
-            });
+        let entries = [
+            "literal%_!/inside.txt",
+            "literal%_!/nested/deep.txt",
+            "literalx_Yx!/outside.txt",
+            "Literal%_!/case-distinct.txt",
+        ]
+        .map(|path| SourceIndexEntry {
+            relative_path: PathBuf::from(path),
+            classification: SourceIndexClassification::UnsupportedNonAudio,
+            file_size: Some(5),
+            modified_ns: Some(10),
+            file_identity: None,
+            diagnostic: None,
+            format_policy_version: SOURCE_FORMAT_POLICY_VERSION,
+        });
         let mut batch = database.write_batch().expect("index batch");
         for entry in &entries {
             batch
@@ -374,9 +377,9 @@ mod tests {
 
         assert_eq!(
             database
-                .list_source_index_entries_under_path(Path::new("literal%"))
+                .list_source_index_entries_under_path(Path::new("literal%_!"))
                 .expect("read literal subtree"),
-            vec![entries[0].clone()]
+            vec![entries[0].clone(), entries[1].clone()]
         );
     }
 }

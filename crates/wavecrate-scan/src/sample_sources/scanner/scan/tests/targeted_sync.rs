@@ -25,6 +25,31 @@ fn targeted_sync_updates_only_requested_file() {
     assert!(stats.committed_delta.revision > 0);
 }
 
+#[test]
+fn targeted_sync_does_not_reconcile_wildcard_sibling_subtrees() {
+    let dir = tempdir().unwrap();
+    let target = dir.path().join("drum_kits%_!");
+    let sibling = dir.path().join("drumXkitsX_Y!");
+    std::fs::create_dir_all(&target).unwrap();
+    std::fs::create_dir_all(&sibling).unwrap();
+    std::fs::write(target.join("removed.wav"), b"removed").unwrap();
+    std::fs::write(sibling.join("unrelated.wav"), b"unrelated").unwrap();
+
+    let db = SourceDatabase::open_for_scan(dir.path()).unwrap();
+    scan_once(&db).unwrap();
+    std::fs::remove_file(target.join("removed.wav")).unwrap();
+
+    sync_paths(&db, &[PathBuf::from("drum_kits%_!")]).unwrap();
+
+    let rows = db.list_files().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        rows[0].relative_path,
+        Path::new("drumXkitsX_Y!/unrelated.wav")
+    );
+    assert!(!rows[0].missing);
+}
+
 #[cfg(unix)]
 #[test]
 fn targeted_sync_rejects_a_root_swap_before_commit() {
