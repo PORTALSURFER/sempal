@@ -430,6 +430,36 @@ fn scoped_manifest_snapshot_reads_only_requested_exact_subtrees() {
 }
 
 #[test]
+fn recent_unretained_rename_destinations_report_bounded_overflow() {
+    let dir = tempdir().unwrap();
+    let db = SourceDatabase::open_for_source_write(dir.path()).unwrap();
+    db.connection
+        .execute(
+            "INSERT OR REPLACE INTO metadata (key, value)
+             VALUES ('targeted_scan_generation_v1', '2')",
+            [],
+        )
+        .unwrap();
+    for index in 0..3 {
+        db.connection
+            .execute(
+                "INSERT INTO pending_wav_rename_destinations
+                 (path, scan_generation, retained_hash)
+                 VALUES (?1, 1, NULL)",
+                params![format!("candidate-{index}.wav")],
+            )
+            .unwrap();
+    }
+
+    let (paths, overflow) = db
+        .list_recent_unretained_rename_destinations(2)
+        .unwrap();
+
+    assert!(overflow);
+    assert_eq!(paths.len(), 2);
+}
+
+#[test]
 fn legacy_read_only_database_without_pending_renames_returns_empty_list() {
     let dir = tempdir().unwrap();
     let connection = Connection::open(dir.path().join(DB_FILE_NAME)).unwrap();

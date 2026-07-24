@@ -16,6 +16,8 @@ use super::super::scan_walk::walk_phase;
 use super::super::scan_writer::{ScanWriter, UncoordinatedScanWriter};
 use super::{ScanContext, ScanError, ScanStats};
 
+const TARGETED_RENAME_CANDIDATE_LIMIT: usize = 256;
+
 /// Scan strategy used when walking a source root.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScanMode {
@@ -518,9 +520,14 @@ pub(crate) fn reconcile_scan_renames(
         .collect::<HashSet<_>>();
     let persisted_candidates = if context.mode == ScanMode::Targeted {
         let mut persisted = if db.has_pending_renames()? {
-            db.list_recent_unretained_rename_destinations()?
-                .into_iter()
-                .collect::<HashSet<_>>()
+            let (paths, overflow) =
+                db.list_recent_unretained_rename_destinations(TARGETED_RENAME_CANDIDATE_LIMIT)?;
+            if overflow {
+                return Err(ScanError::TargetedRenameCandidateOverflow {
+                    limit: TARGETED_RENAME_CANDIDATE_LIMIT,
+                });
+            }
+            paths.into_iter().collect::<HashSet<_>>()
         } else {
             HashSet::new()
         };
@@ -714,7 +721,11 @@ pub(crate) fn finish_scan_result(
         }
         Err(error) => {
             if context.mode == super::ScanMode::Targeted
-                && matches!(error, ScanError::StaleRevision { .. })
+                && matches!(
+                    error,
+                    ScanError::StaleRevision { .. }
+                        | ScanError::TargetedRenameCandidateOverflow { .. }
+                )
             {
                 return Err(error);
             }
@@ -859,7 +870,14 @@ fn extend_retained_rename_candidates(
     candidates: &mut HashSet<std::path::PathBuf>,
 ) -> Result<(), ScanError> {
     if db.has_pending_renames()? {
-        candidates.extend(db.list_recent_unretained_rename_destinations()?);
+        let (paths, overflow) =
+            db.list_recent_unretained_rename_destinations(TARGETED_RENAME_CANDIDATE_LIMIT)?;
+        if overflow {
+            return Err(ScanError::TargetedRenameCandidateOverflow {
+                limit: TARGETED_RENAME_CANDIDATE_LIMIT,
+            });
+        }
+        candidates.extend(paths);
     }
     let pending_paths = candidates.iter().cloned().collect::<Vec<_>>();
     for path in pending_paths {

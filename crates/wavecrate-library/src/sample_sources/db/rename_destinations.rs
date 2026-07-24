@@ -126,40 +126,49 @@ impl SourceDatabase {
     }
 
     /// List unretained destinations from the immediately preceding scan generation.
-    /// These are the bounded carry-over set needed to hash a destination after
-    /// its source disappears in the following watcher batch.
+    /// The result contains at most `limit + 1` rows so callers can route overflow
+    /// to authoritative recovery without materializing the complete carry-over set.
     pub fn list_recent_unretained_rename_destinations(
         &self,
-    ) -> Result<Vec<PathBuf>, SourceDbError> {
+        limit: usize,
+    ) -> Result<(Vec<PathBuf>, bool), SourceDbError> {
         let generation = self
             .get_metadata(TARGETED_SCAN_GENERATION_KEY)?
             .and_then(|value| value.parse::<u64>().ok())
             .unwrap_or(0);
-        let oldest = generation.saturating_sub(1);
+        let previous = generation.saturating_sub(1);
+        let query_limit = i64::try_from(limit.saturating_add(1)).unwrap_or(i64::MAX);
         let mut statement = self
             .connection
             .prepare(
                 "SELECT path
                  FROM pending_wav_rename_destinations
-                 WHERE retained_hash IS NULL AND scan_generation >= ?1
-                 ORDER BY path ASC",
+                 WHERE retained_hash IS NULL AND scan_generation = ?1
+                 ORDER BY path ASC
+                 LIMIT ?2",
             )
             .map_err(map_sql_error)?;
         let rows = statement
-            .query_map(params![oldest as i64], |row| row.get::<_, String>(0))
+            .query_map(params![previous as i64, query_limit], |row| {
+                row.get::<_, String>(0)
+            })
             .map_err(map_sql_error)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(map_sql_error)?;
-        Ok(rows
-            .into_iter()
-            .filter_map(|path| match parse_relative_path_from_db(&path) {
-                Ok(path) => Some(path),
-                Err(error) => {
-                    tracing::warn!(%error, "Skipping invalid recent rename destination path");
-                    None
-                }
-            })
-            .collect())
+        let overflow = rows.len() > limit;
+        Ok((
+            rows.into_iter()
+                .take(limit)
+                .filter_map(|path| match parse_relative_path_from_db(&path) {
+                    Ok(path) => Some(path),
+                    Err(error) => {
+                        tracing::warn!(%error, "Skipping invalid recent rename destination path");
+                        None
+                    }
+                })
+                .collect(),
+            overflow,
+        ))
     }
 }
 
