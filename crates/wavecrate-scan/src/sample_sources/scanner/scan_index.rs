@@ -57,6 +57,23 @@ pub(super) fn inaccessible_index_entry(
     }
 }
 
+pub(super) fn non_unicode_index_entry(
+    relative_path: PathBuf,
+    file_size: Option<u64>,
+    modified_ns: Option<i64>,
+    file_identity: Option<String>,
+) -> SourceIndexEntry {
+    SourceIndexEntry {
+        relative_path,
+        classification: SourceIndexClassification::Inaccessible,
+        file_size,
+        modified_ns,
+        file_identity,
+        diagnostic: Some(SourceIndexDiagnostic::NonUnicodePath),
+        format_policy_version: SOURCE_FORMAT_POLICY_VERSION,
+    }
+}
+
 pub(super) fn reconcile_index_entries(
     database: &SourceDatabase,
     source_root: &SourceRootCapability,

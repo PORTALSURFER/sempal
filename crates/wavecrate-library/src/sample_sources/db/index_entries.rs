@@ -5,7 +5,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use super::schema;
 use super::util::{
     EXACT_SUBTREE_PATH_PREDICATE, exact_subtree_path_bounds, map_sql_error,
-    normalize_relative_path, parse_relative_path_from_db,
+    normalize_source_index_path, parse_source_index_path_from_db,
 };
 use super::{
     META_SOURCE_INDEX_REVISION, SourceDatabase, SourceDbError, SourceIndexClassification,
@@ -39,12 +39,10 @@ impl SourceDatabase {
             .unchecked_transaction()
             .map_err(map_sql_error)?;
         let revision = read_index_revision(&transaction)?;
+        let path_encoding = source_index_path_encoding_available(&transaction)?;
         let entries = collect_entries(
             &transaction,
-            "SELECT path, classification, file_size, modified_ns, file_identity,
-                    diagnostic, format_policy_version
-             FROM source_index_entries
-             ORDER BY path ASC",
+            &source_index_select_sql(path_encoding, false),
             [],
         )?;
         transaction.rollback().map_err(map_sql_error)?;
@@ -64,17 +62,12 @@ impl SourceDatabase {
         if !source_index_schema_available(&self.connection)? {
             return Ok(Vec::new());
         }
-        let normalized = normalize_relative_path(relative_path)?;
+        let (normalized, _path_encoding) = normalize_source_index_path(relative_path)?;
         let (lower_bound, upper_bound) = exact_subtree_path_bounds(&normalized);
+        let path_encoding = source_index_path_encoding_available(&self.connection)?;
         collect_entries(
             &self.connection,
-            &format!(
-                "SELECT path, classification, file_size, modified_ns, file_identity,
-                    diagnostic, format_policy_version
-             FROM source_index_entries
-             WHERE {EXACT_SUBTREE_PATH_PREDICATE}
-             ORDER BY path ASC"
-            ),
+            &source_index_select_sql(path_encoding, true),
             params![normalized, lower_bound, upper_bound],
         )
     }
@@ -87,7 +80,7 @@ impl SourceWriteBatch<'_> {
         entry: &SourceIndexEntry,
     ) -> Result<(), SourceDbError> {
         validate_entry(entry)?;
-        let path = normalize_relative_path(&entry.relative_path)?;
+        let (path, path_encoding) = normalize_source_index_path(&entry.relative_path)?;
         let live_manifest_row = self
             .tx
             .query_row(
@@ -105,10 +98,11 @@ impl SourceWriteBatch<'_> {
             .tx
             .execute(
                 "INSERT INTO source_index_entries (
-                    path, classification, file_size, modified_ns, file_identity,
+                    path, path_encoding, classification, file_size, modified_ns, file_identity,
                     diagnostic, format_policy_version
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
                  ON CONFLICT(path) DO UPDATE SET
+                    path_encoding = excluded.path_encoding,
                     classification = excluded.classification,
                     file_size = excluded.file_size,
                     modified_ns = excluded.modified_ns,
@@ -123,6 +117,7 @@ impl SourceWriteBatch<'_> {
                     OR format_policy_version IS NOT excluded.format_policy_version",
                 params![
                     path,
+                    path_encoding,
                     entry.classification.token(),
                     entry.file_size.map(saturating_i64),
                     entry.modified_ns,
@@ -138,7 +133,7 @@ impl SourceWriteBatch<'_> {
 
     /// Remove one index-only row, including during promotion to the supported manifest.
     pub fn remove_source_index_entry(&mut self, relative_path: &Path) -> Result<(), SourceDbError> {
-        let path = normalize_relative_path(relative_path)?;
+        let (path, _path_encoding) = normalize_source_index_path(relative_path)?;
         let changed = self
             .tx
             .execute("DELETE FROM source_index_entries WHERE path = ?1", [path])
@@ -153,6 +148,30 @@ fn source_index_schema_available(connection: &Connection) -> Result<bool, Source
     Ok(REQUIRED_COLUMNS
         .iter()
         .all(|column| columns.contains(*column)))
+}
+
+fn source_index_path_encoding_available(connection: &Connection) -> Result<bool, SourceDbError> {
+    Ok(schema::table_columns(connection, "source_index_entries")?.contains("path_encoding"))
+}
+
+fn source_index_select_sql(path_encoding: bool, under_path: bool) -> String {
+    let encoding = if path_encoding {
+        "path_encoding"
+    } else {
+        "0 AS path_encoding"
+    };
+    let predicate = if under_path {
+        format!("WHERE {EXACT_SUBTREE_PATH_PREDICATE}")
+    } else {
+        String::new()
+    };
+    format!(
+        "SELECT path, {encoding}, classification, file_size, modified_ns, file_identity,
+                diagnostic, format_policy_version
+         FROM source_index_entries
+         {predicate}
+         ORDER BY path ASC"
+    )
 }
 
 fn read_index_revision(connection: &Connection) -> Result<u64, SourceDbError> {
@@ -178,7 +197,8 @@ fn collect_entries(
     let rows = statement
         .query_map(query_params, |row| {
             let raw_path: String = row.get(0)?;
-            let relative_path = match parse_relative_path_from_db(&raw_path) {
+            let path_encoding: i64 = row.get(1)?;
+            let relative_path = match parse_source_index_path_from_db(&raw_path, path_encoding) {
                 Ok(path) => path,
                 Err(error) => {
                     tracing::warn!(
@@ -189,7 +209,7 @@ fn collect_entries(
                     return Ok(None);
                 }
             };
-            let raw_classification: String = row.get(1)?;
+            let raw_classification: String = row.get(2)?;
             let Some(classification) = SourceIndexClassification::from_token(&raw_classification)
             else {
                 tracing::warn!(
@@ -199,19 +219,19 @@ fn collect_entries(
                 return Ok(None);
             };
             let diagnostic = row
-                .get::<_, Option<String>>(5)?
+                .get::<_, Option<String>>(6)?
                 .as_deref()
                 .and_then(SourceIndexDiagnostic::from_token);
             Ok(Some(SourceIndexEntry {
                 relative_path,
                 classification,
                 file_size: row
-                    .get::<_, Option<i64>>(2)?
+                    .get::<_, Option<i64>>(3)?
                     .map(|value| value.max(0) as u64),
-                modified_ns: row.get(3)?,
-                file_identity: row.get(4)?,
+                modified_ns: row.get(4)?,
+                file_identity: row.get(5)?,
                 diagnostic,
-                format_policy_version: row.get::<_, i64>(6)?.clamp(0, i64::from(u32::MAX)) as u32,
+                format_policy_version: row.get::<_, i64>(7)?.clamp(0, i64::from(u32::MAX)) as u32,
             }))
         })
         .map_err(map_sql_error)?
@@ -380,6 +400,46 @@ mod tests {
                 .list_source_index_entries_under_path(Path::new("literal%_!"))
                 .expect("read literal subtree"),
             vec![entries[0].clone(), entries[1].clone()]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn non_unicode_index_paths_and_diagnostics_round_trip_without_aliasing() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let directory = tempfile::tempdir().expect("source root");
+        let database =
+            SourceDatabase::open_for_source_write(directory.path()).expect("source database");
+        let path = PathBuf::from_iter([
+            OsString::from("folder"),
+            OsString::from_vec(b"raw-\xFF.wav".to_vec()),
+        ]);
+        let entry = SourceIndexEntry {
+            relative_path: path.clone(),
+            classification: SourceIndexClassification::Inaccessible,
+            file_size: Some(3),
+            modified_ns: Some(10),
+            file_identity: Some(String::from("file-raw")),
+            diagnostic: Some(SourceIndexDiagnostic::NonUnicodePath),
+            format_policy_version: SOURCE_FORMAT_POLICY_VERSION,
+        };
+        let mut batch = database.write_batch().expect("index batch");
+        batch
+            .upsert_source_index_entry(&entry)
+            .expect("upsert raw index entry");
+        batch.commit_auxiliary_state().expect("commit index row");
+
+        assert_eq!(
+            database.list_source_index_entries().unwrap(),
+            vec![entry.clone()]
+        );
+        assert_eq!(
+            database
+                .list_source_index_entries_under_path(Path::new("folder"))
+                .unwrap(),
+            vec![entry]
         );
     }
 }

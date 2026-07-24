@@ -1329,6 +1329,8 @@ Scanning should be recursive by default. Wavecrate should skip hidden or system 
 
 Every scanner content-hash path, including full scans, periodic content audits, deferred hashing, exact-path hashing, and targeted watcher reconciliation, must open through a source-root capability without following the final component or any ancestor. Filesystem facts, content reads, and post-read revalidation must use the retained descriptor for one object, and the manifest path must still bind to that object immediately before publication. A path that disappears, becomes linked, or is replaced remains retired or retryable without reading the replacement target, and content reads must remain outside source-database writer ownership.
 
+On platforms that expose raw non-Unicode filenames, scanner classification must not let one such entry abort publication for the surrounding source. Supported audio with a non-Unicode relative path remains outside the normal sample manifest and is retained as a typed, lossless index-only diagnostic; other index-only classifications use the same lossless path identity. The encoding must preserve distinct raw names, round-trip across restart, and remain consistent for full scans, targeted sync, deletion, rename, and browser/index projections. Existing Unicode source paths retain their current readable database representation.
+
 The final scanner should not silently impose arbitrary product limits on folder depth, number of child folders, or number of files per source. Any defensive scan limit used to protect responsiveness should be explicit, configurable where practical, logged, and visible as a partial-scan warning with a clear rescan or settings path.
 
 The scanner should classify discovered files as:

@@ -62,6 +62,7 @@ fn ensure_source_index_schema(connection: &Connection) -> Result<(), SourceDbErr
         .execute_batch(
             "CREATE TABLE IF NOT EXISTS source_index_entries (
                 path TEXT PRIMARY KEY,
+                path_encoding INTEGER NOT NULL DEFAULT 0,
                 classification TEXT NOT NULL CHECK(classification IN (
                     'unsupported_audio',
                     'unsupported_non_audio',
@@ -78,6 +79,15 @@ fn ensure_source_index_schema(connection: &Connection) -> Result<(), SourceDbErr
                 ON source_index_entries(classification, path);",
         )
         .map_err(map_sql_error)?;
+    if !table_columns(connection, "source_index_entries")?.contains("path_encoding") {
+        connection
+            .execute(
+                "ALTER TABLE source_index_entries
+                 ADD COLUMN path_encoding INTEGER NOT NULL DEFAULT 0",
+                [],
+            )
+            .map_err(map_sql_error)?;
+    }
     Ok(())
 }
 

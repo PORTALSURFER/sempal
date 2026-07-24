@@ -1,4 +1,8 @@
+use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
+
+#[cfg(unix)]
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
 
 use super::SourceDbError;
 
@@ -16,6 +20,11 @@ pub(super) const EXACT_SUBTREE_PATH_PREDICATE: &str =
 pub(super) fn exact_subtree_path_bounds(path: &str) -> (String, String) {
     (format!("{path}/"), format!("{path}0"))
 }
+
+const INDEX_PATH_ENCODING_PLAIN: i64 = 0;
+const INDEX_PATH_ENCODING_LOSSLESS: i64 = 1;
+const INDEX_NON_UNICODE_COMPONENT_PREFIX: &str = "~wavecrate-nu~";
+const INDEX_ESCAPED_COMPONENT_PREFIX: &str = "~wavecrate-escaped~";
 
 /// Translate rusqlite errors into friendlier SourceDbError variants.
 pub(super) fn map_sql_error(err: rusqlite::Error) -> SourceDbError {
@@ -43,11 +52,138 @@ pub fn normalize_relative_path(path: &Path) -> Result<String, SourceDbError> {
     Ok(value.replace('\\', "/"))
 }
 
+/// Normalize an index-only path while preserving non-Unicode components.
+///
+/// Supported sample rows intentionally continue to use `normalize_relative_path`:
+/// they require a normal UTF-8 database key. Index-only rows have a separate
+/// encoding bit so their SQLite key can retain the exact raw bytes without
+/// changing the representation of existing Unicode paths. Plain components
+/// stay readable and therefore retain exact-subtree prefix ordering.
+pub(super) fn normalize_source_index_path(path: &Path) -> Result<(String, i64), SourceDbError> {
+    let cleaned = sanitize_relative_path(path)?;
+    let has_reserved_component = cleaned.components().any(|component| {
+        let Component::Normal(part) = component else {
+            return false;
+        };
+        part.to_str().is_some_and(|value| {
+            value.starts_with(INDEX_NON_UNICODE_COMPONENT_PREFIX)
+                || value.starts_with(INDEX_ESCAPED_COMPONENT_PREFIX)
+        })
+    });
+    if cleaned.to_str().is_some() && !has_reserved_component {
+        return normalize_relative_path(&cleaned).map(|value| (value, INDEX_PATH_ENCODING_PLAIN));
+    }
+
+    #[cfg(unix)]
+    {
+        let mut components = Vec::new();
+        for component in cleaned.components() {
+            let Component::Normal(part) = component else {
+                return Err(SourceDbError::InvalidRelativePath(cleaned));
+            };
+            let bytes = part.as_bytes();
+            let encoded = match part.to_str() {
+                Some(value)
+                    if !value.starts_with(INDEX_NON_UNICODE_COMPONENT_PREFIX)
+                        && !value.starts_with(INDEX_ESCAPED_COMPONENT_PREFIX) =>
+                {
+                    value.to_owned()
+                }
+                Some(_) => format!("{INDEX_ESCAPED_COMPONENT_PREFIX}{}", encode_hex(bytes)),
+                None => format!("{INDEX_NON_UNICODE_COMPONENT_PREFIX}{}", encode_hex(bytes)),
+            };
+            components.push(encoded);
+        }
+        Ok((components.join("/"), INDEX_PATH_ENCODING_LOSSLESS))
+    }
+
+    #[cfg(not(unix))]
+    {
+        Err(SourceDbError::NonUnicodeRelativePath(cleaned))
+    }
+}
+
 /// Parse and validate a stored relative path from the database.
 ///
 /// Returns a normalized `PathBuf` without `.` components.
 pub(super) fn parse_relative_path_from_db(path: &str) -> Result<PathBuf, SourceDbError> {
     sanitize_relative_path(Path::new(path))
+}
+
+pub(super) fn parse_source_index_path_from_db(
+    path: &str,
+    encoding: i64,
+) -> Result<PathBuf, SourceDbError> {
+    match encoding {
+        INDEX_PATH_ENCODING_PLAIN => parse_relative_path_from_db(path),
+        INDEX_PATH_ENCODING_LOSSLESS => parse_lossless_index_path(path),
+        _ => Err(SourceDbError::Unexpected),
+    }
+}
+
+#[cfg(unix)]
+fn parse_lossless_index_path(path: &str) -> Result<PathBuf, SourceDbError> {
+    if path.is_empty() {
+        return Err(SourceDbError::InvalidRelativePath(PathBuf::from(path)));
+    }
+    let mut decoded = PathBuf::new();
+    for component in path.split('/') {
+        if component.is_empty() {
+            return Err(SourceDbError::InvalidRelativePath(PathBuf::from(path)));
+        }
+        let value = if let Some(hex) = component.strip_prefix(INDEX_NON_UNICODE_COMPONENT_PREFIX) {
+            OsString::from_vec(
+                decode_hex(hex)
+                    .ok_or_else(|| SourceDbError::InvalidRelativePath(PathBuf::from(path)))?,
+            )
+        } else if let Some(hex) = component.strip_prefix(INDEX_ESCAPED_COMPONENT_PREFIX) {
+            let bytes = decode_hex(hex)
+                .ok_or_else(|| SourceDbError::InvalidRelativePath(PathBuf::from(path)))?;
+            OsString::from_vec(bytes)
+        } else {
+            OsString::from(component)
+        };
+        decoded.push(value);
+    }
+    Ok(decoded)
+}
+
+#[cfg(not(unix))]
+fn parse_lossless_index_path(path: &str) -> Result<PathBuf, SourceDbError> {
+    // A non-Unicode source key can only be authored on Unix. Keep a readable
+    // encoded projection if such a database is opened on another platform;
+    // that platform cannot reconstruct the original raw name.
+    Ok(PathBuf::from(path))
+}
+
+fn encode_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        encoded.push(HEX[usize::from(byte >> 4)] as char);
+        encoded.push(HEX[usize::from(byte & 0x0f)] as char);
+    }
+    encoded
+}
+
+fn decode_hex(value: &str) -> Option<Vec<u8>> {
+    if value.is_empty() || !value.len().is_multiple_of(2) {
+        return None;
+    }
+    value
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|pair| Some((hex_digit(pair[0])? << 4) | hex_digit(pair[1])?))
+        .collect()
+}
+
+fn hex_digit(value: u8) -> Option<u8> {
+    match value {
+        b'0'..=b'9' => Some(value - b'0'),
+        b'a'..=b'f' => Some(value - b'a' + 10),
+        b'A'..=b'F' => Some(value - b'A' + 10),
+        _ => None,
+    }
 }
 
 /// Validate a relative path and normalize away `.` components.
@@ -154,6 +290,62 @@ mod tests {
         let path = PathBuf::from(std::ffi::OsString::from_vec(b"kick-\xFF.wav".to_vec()));
         let err = normalize_relative_path(&path).unwrap_err();
         assert!(matches!(err, SourceDbError::NonUnicodeRelativePath(_)));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn source_index_path_encoding_round_trips_raw_components_and_subtree_prefixes() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let path = PathBuf::from_iter([
+            std::ffi::OsString::from("folder"),
+            std::ffi::OsString::from_vec(b"kick-\xFF.wav".to_vec()),
+        ]);
+        let (encoded, encoding) = normalize_source_index_path(&path).unwrap();
+        assert_eq!(encoding, INDEX_PATH_ENCODING_LOSSLESS);
+        assert_eq!(
+            parse_source_index_path_from_db(&encoded, encoding).unwrap(),
+            path
+        );
+        let (lower, upper) = exact_subtree_path_bounds(&encoded);
+        assert!(lower.starts_with("folder/"));
+        assert!(upper.starts_with("folder/"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn source_index_path_encoding_escapes_reserved_unicode_components() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let path = PathBuf::from_iter([
+            std::ffi::OsString::from_vec(b"raw-\xFF".to_vec()),
+            std::ffi::OsString::from("~wavecrate-nu~ff.wav"),
+        ]);
+        let (encoded, encoding) = normalize_source_index_path(&path).unwrap();
+        assert_eq!(encoding, INDEX_PATH_ENCODING_LOSSLESS);
+        assert_eq!(
+            parse_source_index_path_from_db(&encoded, encoding).unwrap(),
+            path
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn source_index_path_encoding_does_not_alias_reserved_unicode_names() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let raw = PathBuf::from(OsString::from_vec(b"~wavecrate-nu~ff".to_vec()));
+        let invalid = PathBuf::from(OsString::from_vec(b"~wavecrate-nu~\xFF".to_vec()));
+        let (raw_key, raw_encoding) = normalize_source_index_path(&raw).unwrap();
+        let (invalid_key, invalid_encoding) = normalize_source_index_path(&invalid).unwrap();
+        assert_ne!(
+            (raw_key.clone(), raw_encoding),
+            (invalid_key, invalid_encoding)
+        );
+        assert_eq!(
+            parse_source_index_path_from_db(&raw_key, raw_encoding).unwrap(),
+            raw
+        );
     }
 
     #[test]

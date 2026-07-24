@@ -516,3 +516,40 @@ fn readiness_schema_repairs_current_stamped_analysis_storage() {
         assert!(exists, "missing readiness table {table}");
     }
 }
+
+#[test]
+fn source_index_migration_adds_lossless_path_encoding_to_legacy_tables() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute_batch(
+        "CREATE TABLE source_index_entries (
+            path TEXT PRIMARY KEY,
+            classification TEXT NOT NULL,
+            file_size INTEGER,
+            modified_ns INTEGER,
+            file_identity TEXT,
+            diagnostic TEXT,
+            format_policy_version INTEGER NOT NULL
+        ) WITHOUT ROWID;
+        INSERT INTO source_index_entries (
+            path, classification, file_size, modified_ns, format_policy_version
+        ) VALUES ('notes.txt', 'unsupported_non_audio', 5, 10, 1);",
+    )
+    .unwrap();
+
+    ensure_source_index_schema(&conn).unwrap();
+
+    assert!(
+        table_columns(&conn, "source_index_entries")
+            .unwrap()
+            .contains("path_encoding")
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT path_encoding FROM source_index_entries WHERE path = 'notes.txt'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .unwrap(),
+        0
+    );
+}

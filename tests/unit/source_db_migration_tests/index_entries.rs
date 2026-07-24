@@ -34,6 +34,7 @@ fn v10_migration_adds_index_only_schema_without_changing_sample_metadata() {
         column_names(&db.connection, "source_index_entries"),
         vec![
             "path",
+            "path_encoding",
             "classification",
             "file_size",
             "modified_ns",
