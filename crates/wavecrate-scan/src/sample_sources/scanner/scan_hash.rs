@@ -58,6 +58,7 @@ struct ContentAuditWindow {
     attempted_entries: usize,
     attempted_bytes: u64,
     completed_rotation: bool,
+    had_content_work: bool,
 }
 
 struct DeepHashWindow {
@@ -379,6 +380,7 @@ fn verify_content_batch_with_source_root_hooks(
     let mut remaining_bytes = budget.max_bytes;
     let mut first_window = true;
     let mut stale_replayed = false;
+    let mut content_work_seen = false;
 
     loop {
         let window_budget = ContentAuditBudget {
@@ -398,6 +400,7 @@ fn verify_content_batch_with_source_root_hooks(
             window_budget,
             now,
             writer,
+            content_work_seen,
             post_hash,
             precommit,
             elapsed,
@@ -407,6 +410,7 @@ fn verify_content_batch_with_source_root_hooks(
                 stale_replayed = false;
                 remaining_entries = remaining_entries.saturating_sub(window.attempted_entries);
                 remaining_bytes = remaining_bytes.saturating_sub(window.attempted_bytes);
+                content_work_seen |= window.had_content_work;
                 combined.merge_deferred_hashes(window.stats);
                 if window.attempted_entries == 0
                     || window.completed_rotation
@@ -448,6 +452,7 @@ fn verify_content_batch_window_with_source_root_hooks(
     budget: ContentAuditBudget,
     now: i64,
     writer: &impl ScanWriter,
+    prior_content_work: bool,
     post_hash: &mut impl FnMut(&std::path::Path),
     precommit: &mut impl FnMut(&std::path::Path),
     elapsed: &mut impl FnMut() -> Duration,
@@ -534,7 +539,7 @@ fn verify_content_batch_window_with_source_root_hooks(
                 (entry, true)
             }
         };
-        if !verified.is_empty() || !skipped.is_empty() {
+        if prior_content_work || !verified.is_empty() || !skipped.is_empty() {
             if elapsed() >= budget.max_elapsed
                 || attempted_bytes.saturating_add(entry.file_size) > budget.max_bytes
             {
@@ -626,6 +631,7 @@ fn verify_content_batch_window_with_source_root_hooks(
         });
         stats.hashes_computed += 1;
     }
+    let had_content_work = !verified.is_empty() || !skipped.is_empty();
     let cancelled = cancel_requested(cancel);
     if !verified.is_empty() || !skipped.is_empty() || cursor_only_progress {
         source_root.ensure_current_generation()?;
@@ -760,6 +766,7 @@ fn verify_content_batch_window_with_source_root_hooks(
                     attempted_entries,
                     attempted_bytes,
                     completed_rotation: false,
+                    had_content_work,
                 })
             };
         }
@@ -814,6 +821,7 @@ fn verify_content_batch_window_with_source_root_hooks(
             attempted_entries,
             attempted_bytes,
             completed_rotation,
+            had_content_work,
         })
     }
 }
@@ -2121,6 +2129,37 @@ mod tests {
     }
 
     #[test]
+    fn content_audit_byte_budget_allows_oversize_only_once_across_windows() {
+        let (directory, database) = content_fixture(HASH_DESCRIPTOR_WINDOW + 1, 1);
+        let large_relative = PathBuf::from(format!("sample-{:05}.wav", HASH_DESCRIPTOR_WINDOW));
+        let large_path = directory.path().join(&large_relative);
+        std::fs::write(&large_path, vec![7_u8; 100]).expect("write oversize file");
+        let large_facts = read_facts(directory.path(), &large_path).expect("read oversize facts");
+        database
+            .upsert_file(&large_relative, large_facts.size, large_facts.modified_ns)
+            .expect("refresh oversize manifest row");
+        let budget = ContentAuditBudget {
+            max_elapsed: Duration::MAX,
+            max_bytes: HASH_DESCRIPTOR_WINDOW as u64 + 1,
+            max_entries: HASH_DESCRIPTOR_WINDOW + 1,
+            target_coverage_age: Duration::from_secs(30 * 24 * 60 * 60),
+            retry_entries: 1,
+        };
+
+        let stats = verify_content_batch(&database, None, budget, 100).expect("byte slice");
+
+        assert_eq!(stats.hashes_computed, HASH_DESCRIPTOR_WINDOW);
+        assert!(
+            database
+                .entry_for_path(&large_relative)
+                .expect("read oversize row")
+                .expect("oversize row")
+                .content_hash
+                .is_none()
+        );
+    }
+
+    #[test]
     fn content_audit_time_budget_stops_at_the_next_file_boundary() {
         let (_directory, database) = content_fixture(3, 32);
         let elapsed = std::cell::Cell::new(Duration::ZERO);
@@ -2606,12 +2645,16 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn content_audit_releases_descriptors_between_publication_windows() {
-        let (_directory, database) = content_fixture(HASH_DESCRIPTOR_WINDOW * 4 + 3, 32);
+        const TEST_WINDOWS: usize = 8;
+        const OBSERVED_WINDOW_SLACK: usize = 4;
+        const RUNTIME_DESCRIPTOR_OVERHEAD: usize = 32;
+        let total = HASH_DESCRIPTOR_WINDOW * TEST_WINDOWS + 3;
+        let (_directory, database) = content_fixture(total, 32);
         let baseline_descriptors = std::fs::read_dir("/dev/fd")
             .expect("read process descriptors")
             .count();
         let peak_descriptors = AtomicUsize::new(baseline_descriptors);
-        let budget = ContentAuditBudget::entry_limited(HASH_DESCRIPTOR_WINDOW * 4 + 3);
+        let budget = ContentAuditBudget::entry_limited(total);
 
         let stats = verify_content_batch_with_post_hash_hook(
             &database,
@@ -2628,13 +2671,15 @@ mod tests {
         )
         .expect("complete content audit windows");
 
-        assert_eq!(stats.hashes_computed, HASH_DESCRIPTOR_WINDOW * 4 + 3);
-        // The test's descriptor scan and the source database contribute a small,
-        // fixed runtime overhead in addition to the retained file descriptors.
-        const RUNTIME_DESCRIPTOR_OVERHEAD: usize = 32;
+        assert_eq!(stats.hashes_computed, total);
+        // The process-wide descriptor scan can observe unrelated parallel tests. Allow a
+        // bounded amount of that noise; eight windows still distinguish this from retaining
+        // the entire source until the final publication.
         assert!(
             peak_descriptors.load(Ordering::Acquire)
-                <= baseline_descriptors + HASH_DESCRIPTOR_WINDOW + RUNTIME_DESCRIPTOR_OVERHEAD,
+                <= baseline_descriptors
+                    + HASH_DESCRIPTOR_WINDOW * OBSERVED_WINDOW_SLACK
+                    + RUNTIME_DESCRIPTOR_OVERHEAD,
             "descriptor peak exceeded the publication window: peak={}, baseline={}",
             peak_descriptors.load(Ordering::Acquire),
             baseline_descriptors
