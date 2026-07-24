@@ -85,6 +85,43 @@ impl SourceDatabase {
             .collect())
     }
 
+    /// List retained destinations with a bounded result and overflow signal.
+    pub fn list_retained_rename_destinations_bounded(
+        &self,
+        limit: usize,
+    ) -> Result<(Vec<PathBuf>, bool), SourceDbError> {
+        let query_limit = i64::try_from(limit.saturating_add(1)).unwrap_or(i64::MAX);
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT path
+                 FROM pending_wav_rename_destinations
+                 WHERE retained_hash IS NOT NULL
+                 ORDER BY path ASC
+                 LIMIT ?1",
+            )
+            .map_err(map_sql_error)?;
+        let rows = statement
+            .query_map(params![query_limit], |row| row.get::<_, String>(0))
+            .map_err(map_sql_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(map_sql_error)?;
+        let overflow = rows.len() > limit;
+        Ok((
+            rows.into_iter()
+                .take(limit)
+                .filter_map(|path| match parse_relative_path_from_db(&path) {
+                    Ok(path) => Some(path),
+                    Err(error) => {
+                        tracing::warn!(%error, "Skipping invalid bounded retained rename destination path");
+                        None
+                    }
+                })
+                .collect(),
+            overflow,
+        ))
+    }
+
     /// List up to two live retained destinations for one pending source path.
     /// Two live matches are sufficient to preserve the rename ambiguity rule;
     /// limiting the result keeps targeted recovery bounded.

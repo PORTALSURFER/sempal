@@ -458,6 +458,27 @@ fn recent_unretained_rename_destinations_report_bounded_overflow() {
 }
 
 #[test]
+fn retained_rename_destinations_report_bounded_overflow() {
+    let dir = tempdir().unwrap();
+    let db = SourceDatabase::open_for_source_write(dir.path()).unwrap();
+    for index in 0..3 {
+        db.connection
+            .execute(
+                "INSERT INTO pending_wav_rename_destinations
+                 (path, scan_generation, retained_hash)
+                 VALUES (?1, 1, ?2)",
+                params![format!("retained-{index}.wav"), format!("hash-{index}")],
+            )
+            .unwrap();
+    }
+
+    let (paths, overflow) = db.list_retained_rename_destinations_bounded(2).unwrap();
+
+    assert!(overflow);
+    assert_eq!(paths.len(), 2);
+}
+
+#[test]
 fn legacy_read_only_database_without_pending_renames_returns_empty_list() {
     let dir = tempdir().unwrap();
     let connection = Connection::open(dir.path().join(DB_FILE_NAME)).unwrap();
