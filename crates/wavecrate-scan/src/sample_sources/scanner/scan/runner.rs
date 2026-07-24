@@ -555,6 +555,10 @@ pub(crate) fn reconcile_scan_renames(
     };
     source_root.ensure_current_generation()?;
     if renamed.is_empty() && context.mode != ScanMode::Hard {
+        if context.mode == ScanMode::Targeted && db.get_revision()? != committed_snapshot.0 {
+            context.refresh_targeted_manifest(db, std::iter::empty())?;
+            return Ok(context.latest_committed_snapshot());
+        }
         return Ok(committed_snapshot);
     }
 
@@ -582,6 +586,17 @@ pub(crate) fn reconcile_scan_renames(
     });
     context.stats.updated += renamed.len();
     context.stats.renames_reconciled += renamed.len();
+    if context.mode == ScanMode::Targeted {
+        context.refresh_targeted_manifest(
+            db,
+            renamed
+                .iter()
+                .map(|rename| rename.new_relative_path.clone()),
+        )?;
+        let committed_snapshot = context.latest_committed_snapshot();
+        context.stats.renamed_samples.extend(renamed);
+        return Ok(committed_snapshot);
+    }
     context.stats.renamed_samples.extend(renamed);
     Ok(db.manifest_snapshot_with_revision()?)
 }
@@ -640,11 +655,19 @@ pub(crate) fn finish_scan_result(
 ) -> Result<ScanStats, ScanError> {
     match result {
         Ok(committed_snapshot) => {
-            super::super::manifest::publish_committed_delta(
-                &mut context.stats,
-                manifest_before,
-                committed_snapshot,
-            );
+            if context.mode == super::ScanMode::Targeted {
+                super::super::manifest::publish_targeted_committed_delta(
+                    &mut context.stats,
+                    manifest_before,
+                    committed_snapshot,
+                );
+            } else {
+                super::super::manifest::publish_committed_delta(
+                    &mut context.stats,
+                    manifest_before,
+                    committed_snapshot,
+                );
+            }
             if context.has_uncertain_prefixes() {
                 let error = context.uncertainty_error();
                 return Err(ScanError::Incomplete {
@@ -665,11 +688,19 @@ pub(crate) fn finish_scan_result(
                 return Err(error);
             };
             let committed_snapshot = context.committed_snapshot(committed_revision);
-            super::super::manifest::publish_committed_delta(
-                &mut context.stats,
-                manifest_before,
-                committed_snapshot,
-            );
+            if context.mode == super::ScanMode::Targeted {
+                super::super::manifest::publish_targeted_committed_delta(
+                    &mut context.stats,
+                    manifest_before,
+                    committed_snapshot,
+                );
+            } else {
+                super::super::manifest::publish_committed_delta(
+                    &mut context.stats,
+                    manifest_before,
+                    committed_snapshot,
+                );
+            }
             Err(ScanError::Incomplete {
                 committed: Box::new(context.stats),
                 error: error.to_string(),

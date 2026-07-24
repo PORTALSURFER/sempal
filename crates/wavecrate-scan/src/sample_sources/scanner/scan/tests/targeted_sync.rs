@@ -26,6 +26,70 @@ fn targeted_sync_updates_only_requested_file() {
 }
 
 #[test]
+fn targeted_sync_manifest_work_is_bounded_to_the_changed_subtree() {
+    let dir = tempdir().unwrap();
+    let target = dir.path().join("target");
+    std::fs::create_dir(&target).unwrap();
+    std::fs::write(target.join("changed.wav"), b"before").unwrap();
+    for index in 0..256 {
+        std::fs::write(
+            dir.path().join(format!("unrelated-{index:03}.wav")),
+            b"other",
+        )
+        .unwrap();
+    }
+    let db = SourceDatabase::open_for_scan(dir.path()).unwrap();
+    scan_once(&db).unwrap();
+
+    std::fs::write(target.join("changed.wav"), b"after").unwrap();
+    let stats = sync_paths(&db, &[PathBuf::from("target/changed.wav")]).unwrap();
+
+    assert_eq!(stats.targeted_manifest_scope_count, 1);
+    assert_eq!(stats.targeted_manifest_query_count, 1);
+    assert_eq!(stats.targeted_manifest_rows_read, 1);
+    assert!(stats.targeted_sync_elapsed_us > 0);
+    assert_eq!(
+        stats
+            .manifest_before
+            .iter()
+            .map(|entry| entry.relative_path.clone())
+            .collect::<Vec<_>>(),
+        vec![PathBuf::from("target/changed.wav")]
+    );
+    assert_eq!(
+        stats
+            .manifest_after
+            .iter()
+            .map(|entry| entry.relative_path.clone())
+            .collect::<Vec<_>>(),
+        vec![PathBuf::from("target/changed.wav")]
+    );
+}
+
+#[test]
+fn targeted_sync_collapses_parent_and_descendant_targets() {
+    let dir = tempdir().unwrap();
+    let nested = dir.path().join("nested");
+    std::fs::create_dir(&nested).unwrap();
+    std::fs::write(nested.join("one.wav"), b"one").unwrap();
+    std::fs::write(nested.join("two.wav"), b"two").unwrap();
+    let db = SourceDatabase::open_for_scan(dir.path()).unwrap();
+    scan_once(&db).unwrap();
+
+    let stats = sync_paths(
+        &db,
+        &[PathBuf::from("nested"), PathBuf::from("nested/one.wav")],
+    )
+    .unwrap();
+
+    assert_eq!(stats.targeted_manifest_scope_count, 1);
+    assert_eq!(stats.targeted_manifest_query_count, 1);
+    assert_eq!(stats.total_files, 2);
+    assert_eq!(stats.manifest_before.len(), 2);
+    assert_eq!(stats.manifest_after.len(), 2);
+}
+
+#[test]
 fn targeted_sync_does_not_reconcile_wildcard_sibling_subtrees() {
     let dir = tempdir().unwrap();
     let target = dir.path().join("drum_kits%_!");

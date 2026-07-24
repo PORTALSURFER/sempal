@@ -721,7 +721,7 @@ fn apply_batch_with_source_root_and_precommit_hook(
         return Ok(ApplyBatchOutcome::default());
     }
     source_root.ensure_current_generation()?;
-    context.commit_batch(batch)?;
+    context.commit_batch(db, batch)?;
     Ok(ApplyBatchOutcome {
         committed: true,
         audited_paths,

@@ -51,7 +51,7 @@ pub(super) fn db_sync_phase(
             return Err(ScanError::Canceled);
         }
         source_root.ensure_current_generation()?;
-        context.commit_batch(batch)?;
+        context.commit_batch(db, batch)?;
     }
 
     source_root.ensure_current_generation()?;
@@ -97,7 +97,12 @@ pub(super) fn complete_scan_generation(
         return Err(ScanError::Canceled);
     }
     source_root.ensure_current_generation()?;
-    Ok(batch.commit_with_manifest_snapshot()?)
+    if context.mode == super::scan::ScanMode::Targeted {
+        context.commit_batch(db, batch)?;
+        Ok(context.latest_committed_snapshot())
+    } else {
+        Ok(batch.commit_with_manifest_snapshot()?)
+    }
 }
 
 fn cancel_requested(cancel: Option<&AtomicBool>) -> bool {

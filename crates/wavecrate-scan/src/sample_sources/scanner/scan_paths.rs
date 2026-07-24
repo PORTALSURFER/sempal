@@ -3,6 +3,7 @@ use std::{
     io,
     path::{Component, Path, PathBuf},
     sync::atomic::{AtomicBool, Ordering},
+    time::Instant,
 };
 
 use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
@@ -55,12 +56,15 @@ pub fn sync_paths_with_progress_and_writer(
     on_progress: &mut impl FnMut(usize, &Path),
     writer: &impl ScanWriter,
 ) -> Result<ScanStats, ScanError> {
-    let (manifest_revision, manifest_before) = super::manifest::capture_manifest_with_revision(db)?;
+    let started = Instant::now();
+    let normalized_targets = normalized_targets(paths);
+    let (manifest_revision, manifest_before) =
+        super::manifest::capture_manifest_under_paths_with_revision(db, &normalized_targets)?;
     let root = ensure_root_dir(db)?;
     let source_root = SourceRootCapability::open(&root)?;
     source_root.ensure_current_generation()?;
     let policy = db.source_traversal_policy()?;
-    let targets = collect_targets(db, &root, &source_root, paths, cancel, policy)?;
+    let targets = collect_targets(db, &root, &source_root, &normalized_targets, cancel, policy)?;
     let TargetedScanTargets {
         current_files,
         existing,
@@ -68,6 +72,7 @@ pub fn sync_paths_with_progress_and_writer(
         existing_index_entries,
         uncertain_prefixes,
         diagnostics,
+        scope,
     } = targets;
     let mut context = ScanContext::from_existing(
         existing,
@@ -76,6 +81,10 @@ pub fn sync_paths_with_progress_and_writer(
         manifest_before.clone(),
     );
     context.set_traversal_policy(policy);
+    context.set_targeted_manifest_scope(scope.clone());
+    context.stats.targeted_manifest_rows_read = manifest_before.len();
+    context.stats.targeted_manifest_query_count = 1;
+    context.stats.targeted_manifest_scope_count = scope.len();
     context.set_targeted_index_entries(
         existing_index_entries.into_values(),
         current_index_entries.into_values(),
@@ -137,6 +146,8 @@ pub fn sync_paths_with_progress_and_writer(
         )?;
         complete_scan_generation(db, &source_root, &mut context, cancel, writer)
     })();
+    context.stats.targeted_sync_elapsed_us =
+        started.elapsed().as_micros().min(u64::MAX as u128) as u64;
     super::scan::finish_scan_result(manifest_before, context, result)
 }
 
@@ -147,6 +158,7 @@ struct TargetedScanTargets {
     existing_index_entries: BTreeMap<PathBuf, SourceIndexEntry>,
     uncertain_prefixes: BTreeSet<PathBuf>,
     diagnostics: Vec<super::scan::SourceTreeDiagnostic>,
+    scope: Vec<PathBuf>,
 }
 
 struct TargetedFile {
@@ -182,9 +194,10 @@ fn collect_targets(
             existing_index_entries,
             uncertain_prefixes,
             diagnostics: visited.diagnostics().to_vec(),
+            scope: paths.to_vec(),
         });
     }
-    for relative_path in normalized_targets(paths) {
+    for relative_path in paths {
         if let Some(cancel) = cancel
             && cancel.load(Ordering::Relaxed)
         {
@@ -216,11 +229,12 @@ fn collect_targets(
         existing_index_entries,
         uncertain_prefixes,
         diagnostics: visited.diagnostics().to_vec(),
+        scope: paths.to_vec(),
     })
 }
 
-fn normalized_targets(paths: &[PathBuf]) -> BTreeSet<PathBuf> {
-    paths
+fn normalized_targets(paths: &[PathBuf]) -> Vec<PathBuf> {
+    let normalized = paths
         .iter()
         .filter_map(|path| {
             (path.is_relative()
@@ -238,6 +252,16 @@ fn normalized_targets(paths: &[PathBuf]) -> BTreeSet<PathBuf> {
             })
         })
         .filter(|path| !path.as_os_str().is_empty())
+        .collect::<BTreeSet<_>>();
+    normalized
+        .iter()
+        .filter(|path| {
+            !path
+                .ancestors()
+                .skip(1)
+                .any(|ancestor| !ancestor.as_os_str().is_empty() && normalized.contains(ancestor))
+        })
+        .cloned()
         .collect()
 }
 

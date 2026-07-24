@@ -989,6 +989,17 @@ fn targeted_split_batches_preserve_large_rename_destination() {
     let completed = complete_deferred_hashes(&db, removed).unwrap();
 
     assert_eq!(completed.renames_reconciled, 1);
+    assert!(completed.committed_delta.created.is_empty());
+    assert!(completed.committed_delta.deleted.is_empty());
+    assert_eq!(completed.committed_delta.moved.len(), 1);
+    assert_eq!(
+        completed.committed_delta.moved[0].old_relative_path,
+        PathBuf::from("old.wav")
+    );
+    assert_eq!(
+        completed.committed_delta.moved[0].new_relative_path,
+        PathBuf::from("new.wav")
+    );
     assert_eq!(
         db.entry_for_path(Path::new("new.wav"))
             .unwrap()
