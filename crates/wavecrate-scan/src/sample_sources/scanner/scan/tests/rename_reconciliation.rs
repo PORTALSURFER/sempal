@@ -989,6 +989,8 @@ fn targeted_split_batches_preserve_large_rename_destination() {
     let completed = complete_deferred_hashes(&db, removed).unwrap();
 
     assert_eq!(completed.renames_reconciled, 1);
+    assert_eq!(completed.targeted_manifest_query_count, 4);
+    assert_eq!(completed.targeted_manifest_rows_read, 4);
     assert!(completed.committed_delta.created.is_empty());
     assert!(completed.committed_delta.deleted.is_empty());
     assert_eq!(completed.committed_delta.moved.len(), 1);

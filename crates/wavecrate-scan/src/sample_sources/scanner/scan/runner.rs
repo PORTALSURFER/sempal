@@ -557,34 +557,49 @@ pub(crate) fn reconcile_scan_renames(
         .stats
         .pending_renames_considered
         .saturating_add(candidates.len());
-    let (renamed, rename_revision) = if carried_candidates_need_revalidation {
-        let deferred = super::super::scan_hash::deep_hash_scan_with_source_root_and_writer(
+    let (renamed, rename_revision, recovery_manifest_rows, recovery_manifest_queries) =
+        if carried_candidates_need_revalidation {
+            let deferred = super::super::scan_hash::deep_hash_scan_with_source_root_and_writer(
+                db,
+                source_root,
+                cancel,
+                &candidates,
+                super::super::scan_hash::DeferredHashScope::RenameCandidates,
+                None,
+                None,
+                writer,
+            )?;
+            (
+                deferred.renamed_samples,
+                Some(deferred.committed_delta.revision),
+                deferred.targeted_manifest_rows_read,
+                deferred.targeted_manifest_query_count,
+            )
+        } else {
+            let reconciliation = super::super::scan_hash::reconcile_hashed_rename_candidates_with_source_root_and_writer(
             db,
             source_root,
-            cancel,
-            &candidates,
-            super::super::scan_hash::DeferredHashScope::RenameCandidates,
-            None,
-            None,
-            writer,
-        )?;
-        (
-            deferred.renamed_samples,
-            Some(deferred.committed_delta.revision),
-        )
-    } else {
-        let reconciliation = super::super::scan_hash::reconcile_hashed_rename_candidates_with_source_root_and_writer(
-            db,
-            source_root,
             &candidates,
             cancel,
             writer,
         )?;
-        (
-            reconciliation.renamed_samples,
-            reconciliation.committed_revision,
-        )
-    };
+            (
+                reconciliation.renamed_samples,
+                reconciliation.committed_revision,
+                reconciliation.targeted_manifest_rows_read,
+                reconciliation.targeted_manifest_query_count,
+            )
+        };
+    if context.mode == ScanMode::Targeted {
+        context.stats.targeted_manifest_rows_read = context
+            .stats
+            .targeted_manifest_rows_read
+            .saturating_add(recovery_manifest_rows);
+        context.stats.targeted_manifest_query_count = context
+            .stats
+            .targeted_manifest_query_count
+            .saturating_add(recovery_manifest_queries);
+    }
     source_root.ensure_current_generation()?;
     if renamed.is_empty() && context.mode != ScanMode::Hard {
         if context.mode == ScanMode::Targeted {

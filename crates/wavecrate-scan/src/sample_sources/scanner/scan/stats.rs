@@ -212,6 +212,14 @@ impl ScanStats {
         self.hashes_computed += deferred.hashes_computed;
         self.content_audit = deferred.content_audit.take().or(self.content_audit.take());
         self.hashes_pending = self.hashes_pending.saturating_sub(deferred.hashes_computed);
+        if self.targeted_manifest_query_count > 0 {
+            self.targeted_manifest_rows_read = self
+                .targeted_manifest_rows_read
+                .saturating_add(deferred.targeted_manifest_rows_read);
+            self.targeted_manifest_query_count = self
+                .targeted_manifest_query_count
+                .saturating_add(deferred.targeted_manifest_query_count);
+        }
         self.renames_reconciled += deferred.renames_reconciled;
         self.pending_renames_considered += deferred.pending_renames_considered;
         self.pending_renames_pruned += deferred.pending_renames_pruned;
