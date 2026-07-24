@@ -29,6 +29,7 @@ pub(in crate::native_app) struct SourceScanWorkflow {
     pending_targeted_syncs: BTreeMap<String, QueuedTargetedSourceSync>,
     active_targeted_syncs: BTreeMap<String, u64>,
     retry_counts: BTreeMap<String, u32>,
+    last_discovery_sequences: BTreeMap<String, (u64, u64)>,
 }
 
 pub(in crate::native_app) enum SourceFilesystemChangePlan {
@@ -95,6 +96,7 @@ impl SourceScanWorkflow {
             pending_targeted_syncs: BTreeMap::new(),
             active_targeted_syncs: BTreeMap::new(),
             retry_counts: BTreeMap::new(),
+            last_discovery_sequences: BTreeMap::new(),
         }
     }
 
@@ -245,6 +247,7 @@ impl SourceScanWorkflow {
 
     pub(in crate::native_app) fn start_scan(&mut self, request: &FolderScanRequest) {
         self.remove_pending_targeted_sync(&request.source_id);
+        self.last_discovery_sequences.remove(&request.source_id);
         let mut progress = FolderScanProgress::transition(
             request.task_id,
             request.source_id.clone(),
@@ -331,7 +334,40 @@ impl SourceScanWorkflow {
         browser: &mut FolderBrowserState,
         batch: FolderScanDiscoveryBatch,
     ) -> bool {
-        browser.apply_scan_discovered_batch(batch)
+        if batch.events.is_empty() || batch.events.len() > 64 {
+            return false;
+        }
+        let Some(progress) = self.progress.as_ref() else {
+            return false;
+        };
+        if progress.task_id != batch.task_id || progress.source_id != batch.source_id {
+            return false;
+        }
+        if progress.lifecycle_generation != batch.lifecycle_generation {
+            return false;
+        }
+        if batch.events.iter().any(|event| {
+            event.task_id != batch.task_id
+                || event.source_id != batch.source_id
+                || event.committed_revision != batch.committed_revision
+        }) {
+            return false;
+        }
+        match self.last_discovery_sequences.get(&batch.source_id) {
+            Some((task_id, sequence))
+                if *task_id != batch.task_id || batch.sequence != sequence.saturating_add(1) =>
+            {
+                return false;
+            }
+            None if batch.sequence != 0 => return false,
+            _ => {}
+        }
+        if !browser.apply_scan_discovered_batch(batch.clone()) {
+            return false;
+        }
+        self.last_discovery_sequences
+            .insert(batch.source_id, (batch.task_id, batch.sequence));
+        true
     }
 
     pub(in crate::native_app) fn plan_filesystem_change_for_generation(

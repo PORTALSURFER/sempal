@@ -297,6 +297,17 @@ pub struct BrowserMetadataSnapshot {
     pub files: Vec<BrowserFileMetadata>,
 }
 
+/// One bounded, keyset-paged browser metadata result at an exact source revision.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrowserMetadataPage {
+    /// Source metadata revision observed by the page.
+    pub revision: u64,
+    /// Metadata rows in deterministic path order, including collection memberships.
+    pub files: Vec<BrowserFileMetadata>,
+    /// Cursor to pass to the next page, or `None` when this is the final page.
+    pub next_path: Option<PathBuf>,
+}
+
 /// Authoritative identity facts for one live source-manifest row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceManifestEntry {

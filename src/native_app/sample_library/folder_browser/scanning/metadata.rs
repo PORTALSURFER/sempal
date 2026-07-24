@@ -68,16 +68,6 @@ pub(super) fn source_rating_map(
     Ok((metadata, revision))
 }
 
-pub(super) fn source_browser_snapshot(
-    root: &Path,
-    database_root: &Path,
-) -> Result<BrowserMetadataSnapshot, SourceMetadataHydrationError> {
-    let db = SourceDatabase::open_for_ui_read_with_database_root(root, database_root)
-        .map_err(|error| SourceMetadataHydrationError::Open(error.to_string()))?;
-    db.browser_metadata_snapshot()
-        .map_err(|error| SourceMetadataHydrationError::Snapshot(error.to_string()))
-}
-
 pub(in crate::native_app::sample_library::folder_browser) fn file_entry_for_source_path(
     path: &PathBuf,
     source_root: &Path,

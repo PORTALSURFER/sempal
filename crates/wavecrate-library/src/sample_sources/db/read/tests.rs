@@ -44,6 +44,36 @@ fn browser_metadata_snapshot_reads_multi_collection_rows_coherently() {
 }
 
 #[test]
+fn browser_metadata_page_is_keyset_paged_and_revision_fenced() {
+    let dir = tempdir().unwrap();
+    let db = SourceDatabase::open_for_source_write(dir.path()).unwrap();
+    for name in ["c.wav", "a.wav", "b.wav"] {
+        db.upsert_file(Path::new(name), 10, 5).unwrap();
+    }
+    let revision = db.get_revision().unwrap();
+    let first = db.browser_metadata_page(revision, None, 2).unwrap();
+    assert_eq!(
+        first
+            .files
+            .iter()
+            .map(|file| file.relative_path.clone())
+            .collect::<Vec<_>>(),
+        vec![PathBuf::from("a.wav"), PathBuf::from("b.wav")]
+    );
+    assert_eq!(first.files.len(), 2);
+    let second = db
+        .browser_metadata_page(revision, first.next_path.as_deref(), 2)
+        .unwrap();
+    assert_eq!(second.files.len(), 1);
+
+    db.set_tag(Path::new("a.wav"), Rating::KEEP_1).unwrap();
+    assert!(
+        db.browser_metadata_page(revision, second.next_path.as_deref(), 2)
+            .is_err()
+    );
+}
+
+#[test]
 fn browser_metadata_snapshot_has_constant_statement_count_for_large_sources() {
     let dir = tempdir().unwrap();
     let mut db = SourceDatabase::open_for_source_write(dir.path()).unwrap();

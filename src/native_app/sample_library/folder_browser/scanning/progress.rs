@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     sync::atomic::{AtomicBool, Ordering},
     time::Instant,
@@ -16,21 +16,35 @@ use super::{
         },
     },
     entry::{BrowserEntryKind, classify_path_without_following},
-    file_entry_metadata::file_entry_with_snapshot_metadata,
-    metadata::{SourceMetadataMap, source_browser_snapshot},
+    file_entry_metadata::{file_entry_with_metadata, file_entry_with_snapshot_metadata},
+    metadata::SourceMetadataMap,
     traversal::placeholder_folder,
 };
-use wavecrate::sample_sources::{BrowserMetadataSnapshot, Rating, SourceDatabase};
+use wavecrate::sample_sources::{Rating, SourceDatabase};
+use wavecrate_library::sample_sources::BrowserFileMetadata;
 #[cfg(test)]
 use wavecrate_scan::sample_sources::scanner::UncoordinatedScanWriter;
 use wavecrate_scan::{
     ScanStats, SourceTreeSnapshot,
-    sample_sources::scanner::{self, CommittedSourceDelta, ScanWritePhase, ScanWriter},
+    sample_sources::scanner::{
+        self, CommittedScanBatch, CommittedSourceDelta, ScanWritePhase, ScanWriter,
+    },
 };
 
 struct CommittedSourceTreeSnapshot {
     delta: CommittedSourceDelta,
     layout: SourceTreeSnapshot,
+}
+
+#[derive(Default)]
+struct ProvisionalDiscoveryState {
+    emitted_root: bool,
+}
+
+impl ProvisionalDiscoveryState {
+    fn clear(&mut self) {
+        self.emitted_root = false;
+    }
 }
 
 /// Publish at most one source-index progress update per bounded file batch.
@@ -60,13 +74,27 @@ pub(in crate::native_app) fn scan_source_with_progress_cancellable(
 ) -> FolderScanResult {
     let source_root_available =
         classify_path_without_following(&request.root) == Some(BrowserEntryKind::Directory);
+    let mut provisional = ProvisionalDiscoveryState::default();
     let (source_db_error, source_tree_snapshot) = if source_root_available {
-        sync_source_database(&request, &mut progress, cancel, writer)
+        sync_source_database(
+            &request,
+            &mut progress,
+            &mut discovered,
+            &mut provisional,
+            cancel,
+            writer,
+        )
     } else {
         (None, None)
     };
     let projection = if source_root_available && !cancel.load(Ordering::Acquire) {
-        build_committed_projection(&request, source_tree_snapshot)
+        build_committed_projection(
+            &request,
+            source_tree_snapshot,
+            &mut discovered,
+            &mut provisional,
+            cancel,
+        )
     } else {
         Err(String::from("source projection was not attempted"))
     };
@@ -79,12 +107,18 @@ pub(in crate::native_app) fn scan_source_with_progress_cancellable(
             },
             Some(committed_delta),
         ),
-        Err(error) if source_root_available && !cancel.load(Ordering::Acquire) => (
-            placeholder_folder(&request.root),
-            SourceMetadataMap::new(),
-            MetadataHydrationStatus::Failed { error },
-            None,
-        ),
+        Err(error) if source_root_available && !cancel.load(Ordering::Acquire) => {
+            if provisional.emitted_root {
+                discovered(reset_discovery(&request, None));
+                provisional.clear();
+            }
+            (
+                placeholder_folder(&request.root),
+                SourceMetadataMap::new(),
+                MetadataHydrationStatus::Failed { error },
+                None,
+            )
+        }
         Err(_) => (
             placeholder_folder(&request.root),
             SourceMetadataMap::new(),
@@ -92,7 +126,7 @@ pub(in crate::native_app) fn scan_source_with_progress_cancellable(
             None,
         ),
     };
-    let publish_discoveries = metadata_hydration.error().is_none();
+    let publish_discoveries = false;
     let mut scan = ScanProgressContext {
         request: &request,
         ratings,
@@ -105,6 +139,7 @@ pub(in crate::native_app) fn scan_source_with_progress_cancellable(
         discovered: &mut discovered,
         cancel,
         publish_discoveries,
+        committed_revision: committed_delta.as_ref().map(|delta| delta.revision),
     };
     scan.report_initial();
     publish_projection(&folder, &mut scan);
@@ -132,6 +167,8 @@ pub(in crate::native_app) fn scan_source_with_progress_cancellable(
 fn sync_source_database(
     request: &FolderScanRequest,
     progress: &mut impl FnMut(FolderScanProgress),
+    discovered: &mut impl FnMut(FolderScanDiscovery),
+    provisional: &mut ProvisionalDiscoveryState,
     cancel: &AtomicBool,
     writer: &impl ScanWriter,
 ) -> (Option<String>, Option<CommittedSourceTreeSnapshot>) {
@@ -150,6 +187,58 @@ fn sync_source_database(
         Err(err) => return (Some(format!("open source index: {err}")), None),
     };
     drop(_writer);
+    let mut publish_committed_batch = |batch: CommittedScanBatch| {
+        if cancel.load(Ordering::Acquire) {
+            return;
+        }
+        if !provisional.emitted_root {
+            discovered(reset_discovery(request, Some(batch.revision)));
+            provisional.emitted_root = true;
+        }
+        let mut folders = BTreeSet::new();
+        for path in &batch.paths {
+            let mut parent = path.parent().map(Path::to_path_buf);
+            while let Some(folder) = parent.filter(|path| !path.as_os_str().is_empty()) {
+                let next_parent = folder.parent().map(Path::to_path_buf);
+                folders.insert(folder);
+                parent = next_parent;
+            }
+        }
+        for folder in folders {
+            let absolute = request.root.join(&folder);
+            let parent = folder.parent().unwrap_or_else(|| Path::new(""));
+            let parent_absolute = if parent.as_os_str().is_empty() {
+                request.root.clone()
+            } else {
+                request.root.join(parent)
+            };
+            discovered(FolderScanDiscovery {
+                task_id: request.task_id,
+                source_id: request.source_id.clone(),
+                committed_revision: Some(batch.revision),
+                parent_id: path_id(&parent_absolute),
+                item: FolderScanItem::Folder(placeholder_folder(&absolute)),
+            });
+        }
+        for path in batch.paths {
+            let absolute = request.root.join(&path);
+            let parent = absolute.parent().unwrap_or(&request.root);
+            discovered(FolderScanDiscovery {
+                task_id: request.task_id,
+                source_id: request.source_id.clone(),
+                committed_revision: Some(batch.revision),
+                parent_id: path_id(parent),
+                item: FolderScanItem::File(file_entry_with_metadata(
+                    &absolute,
+                    Rating::NEUTRAL,
+                    false,
+                    Vec::new(),
+                    None,
+                    None,
+                )),
+            });
+        }
+    };
     let mut sync_progress = |completed: usize, path: &Path| {
         if completed != 1 && !completed.is_multiple_of(INDEX_PROGRESS_REPORT_INTERVAL) {
             return;
@@ -164,15 +253,22 @@ fn sync_source_database(
             format!("Indexing | {}", path.display()),
         ));
     };
-    let stats = match scanner::scan_with_progress_and_writer(
+    let stats = match scanner::scan_with_progress_and_writer_and_committed_batch(
         &db,
         scanner::ScanMode::Quick,
         Some(cancel),
         &mut sync_progress,
+        &mut publish_committed_batch,
         writer,
     ) {
         Ok(stats) => stats,
-        Err(err) => return (Some(format!("sync source index: {err}")), None),
+        Err(err) => {
+            if !cancel.load(Ordering::Acquire) && provisional.emitted_root {
+                discovered(reset_discovery(request, None));
+                provisional.clear();
+            }
+            return (Some(format!("sync source index: {err}")), None);
+        }
     };
     let fallback_snapshot =
         stats
@@ -206,6 +302,16 @@ fn sync_source_database(
     }
 }
 
+fn reset_discovery(request: &FolderScanRequest, revision: Option<u64>) -> FolderScanDiscovery {
+    FolderScanDiscovery {
+        task_id: request.task_id,
+        source_id: request.source_id.clone(),
+        committed_revision: revision,
+        parent_id: path_id(&request.root),
+        item: FolderScanItem::ResetFolder,
+    }
+}
+
 #[derive(Default)]
 struct ProjectionFolder {
     children: Vec<PathBuf>,
@@ -215,6 +321,9 @@ struct ProjectionFolder {
 fn build_committed_projection(
     request: &FolderScanRequest,
     source_tree_snapshot: Option<CommittedSourceTreeSnapshot>,
+    discovered: &mut impl FnMut(FolderScanDiscovery),
+    provisional: &mut ProvisionalDiscoveryState,
+    cancel: &AtomicBool,
 ) -> Result<(FolderEntry, SourceMetadataMap, CommittedSourceDelta), String> {
     let started_at = Instant::now();
     let committed = source_tree_snapshot
@@ -231,15 +340,26 @@ fn build_committed_projection(
                 .join("; ")
         ));
     }
-    let BrowserMetadataSnapshot { revision, files } =
-        source_browser_snapshot(&request.root, &request.database_root)
+    let db =
+        SourceDatabase::open_for_ui_read_with_database_root(&request.root, &request.database_root)
             .map_err(|error| error.to_string())?;
-    if revision != committed.delta.revision {
-        return Err(format!(
-            "browser snapshot revision {revision} did not match authoritative traversal revision {}",
-            committed.delta.revision
-        ));
+    let revision = committed.delta.revision;
+    let mut files = Vec::new();
+    let mut cursor = None;
+    loop {
+        if cancel.load(Ordering::Acquire) {
+            return Err(String::from("source projection canceled"));
+        }
+        let page = db
+            .browser_metadata_page(revision, cursor.as_deref(), 64)
+            .map_err(|error| error.to_string())?;
+        files.extend(page.files);
+        cursor = page.next_path;
+        if cursor.is_none() {
+            break;
+        }
     }
+    emit_authoritative_discoveries(request, &layout, &files, revision, discovered, provisional);
     let ratings = files
         .iter()
         .map(|entry| {
@@ -339,13 +459,109 @@ fn build_committed_projection(
         source_id = request.source_id,
         revision,
         filesystem_traversals = 1,
-        sqlite_snapshots = 1,
+        metadata_pages = (files.len().saturating_add(63)) / 64,
         folder_count,
         file_count,
         elapsed_ms = started_at.elapsed().as_millis(),
         "Built browser projection from committed source snapshot"
     );
     Ok((folder, ratings, committed.delta))
+}
+
+fn emit_authoritative_discoveries(
+    request: &FolderScanRequest,
+    layout: &SourceTreeSnapshot,
+    files: &[BrowserFileMetadata],
+    revision: u64,
+    discovered: &mut impl FnMut(FolderScanDiscovery),
+    provisional: &mut ProvisionalDiscoveryState,
+) {
+    if provisional.emitted_root {
+        return;
+    }
+    discovered(reset_discovery(request, Some(revision)));
+    provisional.emitted_root = true;
+    for folder in layout
+        .directories
+        .iter()
+        .filter(|path| !path.as_os_str().is_empty())
+    {
+        let absolute = request.root.join(folder);
+        let parent = folder.parent().unwrap_or_else(|| Path::new(""));
+        let parent_absolute = if parent.as_os_str().is_empty() {
+            request.root.clone()
+        } else {
+            request.root.join(parent)
+        };
+        discovered(FolderScanDiscovery {
+            task_id: request.task_id,
+            source_id: request.source_id.clone(),
+            committed_revision: Some(revision),
+            parent_id: path_id(&parent_absolute),
+            item: FolderScanItem::Folder(placeholder_folder(&absolute)),
+        });
+        discovered(FolderScanDiscovery {
+            task_id: request.task_id,
+            source_id: request.source_id.clone(),
+            committed_revision: Some(revision),
+            parent_id: path_id(&absolute),
+            item: FolderScanItem::ResetFolder,
+        });
+    }
+    for entry in files.iter().filter(|entry| !entry.missing) {
+        let absolute = request.root.join(&entry.relative_path);
+        let parent = entry
+            .relative_path
+            .parent()
+            .unwrap_or_else(|| Path::new(""));
+        let parent_absolute = if parent.as_os_str().is_empty() {
+            request.root.clone()
+        } else {
+            request.root.join(parent)
+        };
+        discovered(FolderScanDiscovery {
+            task_id: request.task_id,
+            source_id: request.source_id.clone(),
+            committed_revision: Some(revision),
+            parent_id: path_id(&parent_absolute),
+            item: FolderScanItem::File(file_entry_with_snapshot_metadata(
+                &absolute,
+                entry.file_size,
+                entry.rating,
+                entry.locked,
+                entry.collections.clone(),
+                entry.last_played_at,
+                entry.last_curated_at,
+            )),
+        });
+    }
+    for entry in &layout.other_files {
+        let absolute = request.root.join(&entry.relative_path);
+        let parent = entry
+            .relative_path
+            .parent()
+            .unwrap_or_else(|| Path::new(""));
+        let parent_absolute = if parent.as_os_str().is_empty() {
+            request.root.clone()
+        } else {
+            request.root.join(parent)
+        };
+        discovered(FolderScanDiscovery {
+            task_id: request.task_id,
+            source_id: request.source_id.clone(),
+            committed_revision: Some(revision),
+            parent_id: path_id(&parent_absolute),
+            item: FolderScanItem::File(file_entry_with_snapshot_metadata(
+                &absolute,
+                entry.file_size,
+                Rating::NEUTRAL,
+                false,
+                Vec::new(),
+                None,
+                None,
+            )),
+        });
+    }
 }
 
 fn materialize_projection_folder(
@@ -395,6 +611,7 @@ where
     discovered: &'a mut D,
     cancel: &'a AtomicBool,
     publish_discoveries: bool,
+    committed_revision: Option<u64>,
 }
 
 impl<P, D> ScanProgressContext<'_, P, D>
@@ -422,6 +639,7 @@ where
             (self.discovered)(FolderScanDiscovery {
                 task_id: self.request.task_id,
                 source_id: self.request.source_id.clone(),
+                committed_revision: self.committed_revision,
                 parent_id: parent_id.to_string(),
                 item: FolderScanItem::Folder(placeholder_folder(path)),
             });
@@ -433,6 +651,7 @@ where
             (self.discovered)(FolderScanDiscovery {
                 task_id: self.request.task_id,
                 source_id: self.request.source_id.clone(),
+                committed_revision: self.committed_revision,
                 parent_id: folder_id.to_string(),
                 item: FolderScanItem::ResetFolder,
             });
@@ -447,6 +666,7 @@ where
             (self.discovered)(FolderScanDiscovery {
                 task_id: self.request.task_id,
                 source_id: self.request.source_id.clone(),
+                committed_revision: self.committed_revision,
                 parent_id: parent_id.to_string(),
                 item: FolderScanItem::File(file),
             });

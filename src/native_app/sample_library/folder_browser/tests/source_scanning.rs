@@ -2,7 +2,7 @@ use super::*;
 use crate::native_app::app::BrowserProjectionDelta;
 use crate::native_app::sample_library::folder_browser::model::file_entry_with_snapshot_metadata;
 use crate::native_app::sample_library::folder_browser::scan_types::{
-    FolderScanItem, MetadataHydrationStatus,
+    FolderScanDiscovery, FolderScanItem, MetadataHydrationStatus,
 };
 
 #[test]
@@ -507,13 +507,32 @@ fn batched_scan_discoveries_clone_selected_tree_once_per_batch() {
         discovery_events.first().map(|event| &event.item),
         Some(FolderScanItem::ResetFolder)
     ));
-    assert!(
-        browser.apply_scan_discovered_batch(FolderScanDiscoveryBatch {
-            task_id: 88,
-            source_id: path_id(&root),
-            events: discovery_events,
-        })
-    );
+    let mut batches = Vec::<Vec<FolderScanDiscovery>>::new();
+    for event in discovery_events {
+        if batches
+            .last()
+            .and_then(|batch| batch.first())
+            .is_some_and(|first| first.committed_revision != event.committed_revision)
+        {
+            batches.push(Vec::new());
+        }
+        if batches.is_empty() {
+            batches.push(Vec::new());
+        }
+        batches.last_mut().expect("batch").push(event);
+    }
+    for (sequence, events) in batches.into_iter().enumerate() {
+        assert!(
+            browser.apply_scan_discovered_batch(FolderScanDiscoveryBatch {
+                task_id: 88,
+                source_id: path_id(&root),
+                committed_revision: events.first().and_then(|event| event.committed_revision),
+                lifecycle_generation: None,
+                sequence: sequence as u64,
+                events,
+            })
+        );
+    }
     browser.activate_folder(path_id(&drums));
     assert_eq!(browser.selected_audio_files().len(), 2);
 

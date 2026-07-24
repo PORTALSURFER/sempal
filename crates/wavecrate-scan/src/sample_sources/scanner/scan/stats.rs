@@ -3,6 +3,15 @@ use std::{fmt, path::PathBuf};
 use wavecrate_library::sample_sources::db::{ContentAuditReport, PendingRenameDiagnostics};
 use wavecrate_library::sample_sources::{SourceIndexEntry, SourceManifestEntry};
 
+/// One bounded group of source-manifest rows after its database transaction commits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommittedScanBatch {
+    /// Monotonic source-manifest revision assigned by the committed transaction.
+    pub revision: u64,
+    /// Source-relative paths changed by this transaction, in scan order.
+    pub paths: Vec<PathBuf>,
+}
+
 /// Why a directory was not fully represented by a source traversal.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SourceTreeDiagnostic {

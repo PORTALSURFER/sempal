@@ -4,8 +4,8 @@ use rusqlite::OptionalExtension;
 
 use super::super::util::map_sql_error;
 use super::super::{
-    BrowserFileMetadata, BrowserMetadataSnapshot, META_WAV_PATHS_REVISION, Rating,
-    SampleCollection, SampleSoundType, SourceDatabase, SourceDbError,
+    BrowserFileMetadata, BrowserMetadataPage, BrowserMetadataSnapshot, META_WAV_PATHS_REVISION,
+    Rating, SampleCollection, SampleSoundType, SourceDatabase, SourceDbError,
 };
 use super::decode::{
     decode_path_row, decode_relative_path, table_has_columns, wav_file_has_column,
@@ -224,6 +224,145 @@ impl SourceDatabase {
     /// of the number of tracked files.
     pub fn browser_metadata_snapshot(&self) -> Result<BrowserMetadataSnapshot, SourceDbError> {
         browser_metadata_snapshot_with_observer(self, || {})
+    }
+
+    /// Fetch one bounded browser metadata page at an exact source revision.
+    ///
+    /// `after_path` is an exclusive keyset cursor. A revision mismatch fails closed so pages
+    /// cannot be combined across committed source states.
+    pub fn browser_metadata_page(
+        &self,
+        expected_revision: u64,
+        after_path: Option<&Path>,
+        requested_limit: usize,
+    ) -> Result<BrowserMetadataPage, SourceDbError> {
+        const MAX_PAGE_SIZE: usize = 64;
+        let limit = requested_limit.clamp(1, MAX_PAGE_SIZE);
+        let transaction = self
+            .connection
+            .unchecked_transaction()
+            .map_err(map_sql_error)?;
+        let revision = transaction
+            .query_row(
+                "SELECT value FROM metadata WHERE key = 'revision'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(map_sql_error)?
+            .map(|raw| raw.parse::<u64>().map_err(|_| SourceDbError::Unexpected))
+            .transpose()?
+            .unwrap_or_default();
+        if revision != expected_revision {
+            return Err(SourceDbError::Unexpected);
+        }
+        let wav_columns = super::super::schema::table_columns(&transaction, "wav_files")?;
+        let collection_columns =
+            super::super::schema::table_columns(&transaction, "wav_file_collections")?;
+        let memberships_available =
+            collection_columns.contains("path") && collection_columns.contains("collection");
+        let supported_filter = if wav_columns.contains("extension") {
+            crate::sample_sources::supported_audio_where_clause()
+        } else {
+            String::from(
+                "lower(path) GLOB '*.wav' AND path NOT GLOB '._*' AND path NOT GLOB '*/._*'",
+            )
+        };
+        let legacy_collection =
+            optional_browser_column(&wav_columns, "collection", "NULL AS collection");
+        let cursor = after_path
+            .map(super::super::normalize_relative_path)
+            .transpose()?;
+        let sql = format!(
+            "SELECT path, {}, {}, {}, {}, {legacy_collection}, {}, {}, {}
+             FROM wav_files
+             WHERE {supported_filter} AND (?1 IS NULL OR path > ?1)
+             ORDER BY path ASC LIMIT ?2",
+            optional_browser_column(&wav_columns, "tag", "0 AS tag"),
+            optional_browser_column(&wav_columns, "locked", "0 AS locked"),
+            optional_browser_column(&wav_columns, "last_played_at", "NULL AS last_played_at"),
+            optional_browser_column(&wav_columns, "last_curated_at", "NULL AS last_curated_at"),
+            optional_browser_column(&wav_columns, "file_size", "0 AS file_size"),
+            optional_browser_column(&wav_columns, "modified_ns", "0 AS modified_ns"),
+            optional_browser_column(&wav_columns, "missing", "0 AS missing"),
+        );
+        let mut files = {
+            let mut statement = transaction.prepare(&sql).map_err(map_sql_error)?;
+            statement
+                .query_map(rusqlite::params![cursor, limit as i64], |row| {
+                    let Some(relative_path) = decode_path_row(
+                        row,
+                        "Skipping browser metadata row with invalid relative path",
+                    )?
+                    else {
+                        return Ok(None);
+                    };
+                    let legacy_collection = if memberships_available {
+                        Vec::new()
+                    } else {
+                        row.get::<_, Option<i64>>(5)?
+                            .and_then(SampleCollection::from_i64)
+                            .into_iter()
+                            .collect()
+                    };
+                    Ok(Some(BrowserFileMetadata {
+                        relative_path,
+                        file_size: u64::try_from(row.get::<_, i64>(6)?).unwrap_or_default(),
+                        modified_ns: row.get(7)?,
+                        missing: row.get::<_, i64>(8)? != 0,
+                        rating: Rating::from_i64(row.get(1)?),
+                        locked: row.get::<_, i64>(2)? != 0,
+                        collections: legacy_collection,
+                        last_played_at: row.get(3)?,
+                        last_curated_at: row.get(4)?,
+                    }))
+                })
+                .map_err(map_sql_error)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(map_sql_error)?
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+        };
+        if memberships_available && !files.is_empty() {
+            let first = super::super::normalize_relative_path(&files[0].relative_path)?;
+            let last = super::super::normalize_relative_path(
+                &files[files.len().saturating_sub(1)].relative_path,
+            )?;
+            let mut statement = transaction
+                .prepare(
+                    "SELECT path, collection FROM wav_file_collections
+                     WHERE path >= ?1 AND path <= ?2 ORDER BY path ASC, collection ASC",
+                )
+                .map_err(map_sql_error)?;
+            let memberships = statement
+                .query_map(rusqlite::params![first, last], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+                })
+                .map_err(map_sql_error)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(map_sql_error)?;
+            for (path, collection) in memberships {
+                if let (Some(file), Some(collection)) = (
+                    files.iter_mut().find(|file| {
+                        super::super::normalize_relative_path(&file.relative_path)
+                            .is_ok_and(|candidate| candidate == path)
+                    }),
+                    SampleCollection::from_i64(collection),
+                ) {
+                    file.collections.push(collection);
+                }
+            }
+        }
+        let next_path = (files.len() == limit)
+            .then(|| files.last().map(|file| file.relative_path.clone()))
+            .flatten();
+        transaction.rollback().map_err(map_sql_error)?;
+        Ok(BrowserMetadataPage {
+            revision,
+            files,
+            next_path,
+        })
     }
     /// Return the numeric metadata value for `key` (0 if missing).
     fn get_numeric_metadata(&self, key: &str) -> Result<u64, SourceDbError> {

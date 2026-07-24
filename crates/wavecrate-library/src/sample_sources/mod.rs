@@ -17,11 +17,11 @@ pub use audio_support::{
 };
 pub use db::normalize_relative_path;
 pub use db::{
-    BrowserFileMetadata, BrowserMetadataSnapshot, DB_FILE_NAME, ManifestCommitResult, Rating,
-    SampleCollection, SourceCollectionWrite, SourceContentHashWrite, SourceDatabase,
-    SourceDatabaseConnectionRole, SourceDbError, SourceFileWrite, SourceIndexClassification,
-    SourceIndexDiagnostic, SourceIndexEntry, SourceIndexSnapshot, SourceManifestEntry, SourceTag,
-    SourceTagUsage, SourceTagWrite, SourceWriteCommand, WavEntry,
+    BrowserFileMetadata, BrowserMetadataPage, BrowserMetadataSnapshot, DB_FILE_NAME,
+    ManifestCommitResult, Rating, SampleCollection, SourceCollectionWrite, SourceContentHashWrite,
+    SourceDatabase, SourceDatabaseConnectionRole, SourceDbError, SourceFileWrite,
+    SourceIndexClassification, SourceIndexDiagnostic, SourceIndexEntry, SourceIndexSnapshot,
+    SourceManifestEntry, SourceTag, SourceTagUsage, SourceTagWrite, SourceWriteCommand, WavEntry,
 };
 pub use library::{
     HarvestDerivationOperation, HarvestDerivationRecord, HarvestFileIdentity, HarvestFileKey,

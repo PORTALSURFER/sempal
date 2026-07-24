@@ -552,6 +552,11 @@ fn reselecting_loaded_source_reconciles_disk_without_clearing_cached_tree() {
         !browser.apply_scan_discovered_batch(FolderScanDiscoveryBatch {
             task_id: 95,
             source_id: source_id.clone(),
+            committed_revision: discoveries
+                .first()
+                .and_then(|event| event.committed_revision),
+            lifecycle_generation: None,
+            sequence: 0,
             events: discoveries,
         }),
         "background discoveries must not mutate a fully loaded selected tree"
