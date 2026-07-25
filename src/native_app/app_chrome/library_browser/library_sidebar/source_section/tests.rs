@@ -4,8 +4,8 @@ use super::rows::{
     SOURCE_ROW_LABEL_PADDING_X, source_acceptance_fill_for_tests, source_add_button,
     source_add_button_tooltip_for_tests, source_missing_color_for_tests,
     source_protected_error_icon_color_for_tests, source_role_icon_color_for_source_for_tests,
-    source_role_icon_color_for_tests, source_row, source_selected_fill_for_tests,
-    source_selected_marker_color_for_tests,
+    source_role_icon_color_for_tests, source_row, source_row_label_for_tests,
+    source_selected_fill_for_tests, source_selected_marker_color_for_tests,
 };
 use super::source_selector;
 use crate::native_app::app::GuiMessage;
@@ -27,6 +27,37 @@ use wavecrate::sample_sources::SourceRole;
 
 fn test_source(id: &str) -> SourceEntry {
     SourceEntry::new(id, "Source", std::path::PathBuf::from("C:/samples"))
+}
+
+fn test_source_row_with_health(
+    health_label: Option<&str>,
+    health_warning: bool,
+    scanning: bool,
+) -> SourceRowViewModel {
+    SourceRowViewModel {
+        id: String::from("source-health"),
+        label: String::from("Source"),
+        role: SourceRole::Normal,
+        selected: false,
+        focused: false,
+        focus_alpha: 0,
+        reorder_enabled: false,
+        reorder_drag_active: false,
+        reorder_drag_source: false,
+        reorder_drop_target: false,
+        reorder_drop_after: false,
+        scanning,
+        health_label: health_label.map(str::to_string),
+        health_detail: Some(String::from("Readiness: diagnostics")),
+        health_warning,
+        missing: false,
+        protected_source_error_flash: false,
+        primary_source_acceptance_flash: false,
+        drag_active: false,
+        drop_candidate: false,
+        drop_target: false,
+        drop_target_active: false,
+    }
 }
 
 macro_rules! assert_no_left_source_marker {
@@ -378,6 +409,66 @@ fn source_row_label_keeps_left_breathing_room() {
     assert!(
         label_rect.min.x >= SOURCE_ROW_LABEL_PADDING_X,
         "source label should be inset from the sidebar edge: {label_rect:?}"
+    );
+}
+
+#[test]
+fn source_row_hides_routine_processing_suffixes() {
+    let scanning = test_source_row_with_health(Some("processing"), false, true);
+    let processing = test_source_row_with_health(Some("processing"), false, false);
+
+    assert_eq!(source_row_label_for_tests(&scanning), "Source");
+    assert_eq!(source_row_label_for_tests(&processing), "Source");
+}
+
+#[test]
+fn unsupported_only_source_row_uses_base_label_and_neutral_text() {
+    let neutral = test_source_row_with_health(None, false, false);
+    let unsupported = test_source_row_with_health(Some("limited"), false, false);
+    let neutral_frame = source_row(&neutral)
+        .view_frame_at_size_with_default_theme(ui::Vector2::new(200.0, SOURCE_ROW_HEIGHT));
+    let unsupported_frame = source_row(&unsupported)
+        .view_frame_at_size_with_default_theme(ui::Vector2::new(200.0, SOURCE_ROW_HEIGHT));
+
+    assert_eq!(source_row_label_for_tests(&unsupported), "Source");
+    assert_eq!(
+        unsupported_frame.paint_plan.first_text_color("Source"),
+        neutral_frame.paint_plan.first_text_color("Source"),
+        "unsupported-only health should retain neutral source-row text"
+    );
+    assert!(!unsupported_frame.paint_plan.contains_text("(limited)"));
+}
+
+#[test]
+fn mixed_terminal_source_row_retains_limited_warning_presentation() {
+    let mixed = test_source_row_with_health(Some("limited"), true, false);
+    let frame = source_row(&mixed)
+        .view_frame_at_size_with_default_theme(ui::Vector2::new(200.0, SOURCE_ROW_HEIGHT));
+
+    assert_eq!(source_row_label_for_tests(&mixed), "Source (limited)");
+    assert_eq!(
+        frame.paint_plan.first_text_color("Source (limited)"),
+        Some(source_missing_color_for_tests()),
+        "mixed terminal health should retain warning text"
+    );
+}
+
+#[test]
+fn count_empty_terminal_source_row_retains_limited_warning_suffix() {
+    let empty = test_source_row_with_health(Some("limited"), true, false);
+
+    assert_eq!(source_row_label_for_tests(&empty), "Source (limited)");
+}
+
+#[test]
+fn source_row_retains_genuine_availability_error_suffix() {
+    let offline = test_source_row_with_health(Some("offline"), true, false);
+    let scanning_offline = test_source_row_with_health(Some("offline"), true, true);
+
+    assert_eq!(source_row_label_for_tests(&offline), "Source (offline)");
+    assert_eq!(
+        source_row_label_for_tests(&scanning_offline),
+        "Source (offline)"
     );
 }
 
