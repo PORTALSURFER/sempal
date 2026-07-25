@@ -102,6 +102,7 @@ impl NativeAppState {
             | GuiMessage::OpenSampleContextMenu { .. }
             | GuiMessage::DragSampleFile { .. }
             | GuiMessage::ExternalDragCompleted(_) => self.apply_browser_dispatch(message, context),
+            GuiMessage::BrowserScrollAccepted(_) => self.apply_browser_dispatch(message, context),
             GuiMessage::DeferredSampleLoad { .. }
             | GuiMessage::SettledSamplePromotion { .. }
             | GuiMessage::SampleLoadPathValidated { .. }
@@ -362,6 +363,8 @@ fn gui_message_profile_label(message: &GuiMessage) -> &'static str {
         GuiMessage::ActiveFolderCacheWarmProgress(_) => "ActiveFolderCacheWarmProgress",
         GuiMessage::ActiveFolderCacheWarmFinished(_) => "ActiveFolderCacheWarmFinished",
         GuiMessage::SampleBrowserWindowChanged(_) => "SampleBrowserWindowChanged",
+        GuiMessage::FolderTreeWindowChanged(_) => "FolderTreeWindowChanged",
+        GuiMessage::BrowserScrollAccepted(_) => "BrowserScrollAccepted",
         GuiMessage::FolderBrowser(message) => folder_browser_profile_label(message),
         GuiMessage::FolderScanProgress(_) => "FolderScanProgress",
         GuiMessage::FolderScanDiscoveryBatch(_) => "FolderScanDiscoveryBatch",

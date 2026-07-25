@@ -4,6 +4,7 @@ use super::rows::{
     FOLDER_LABEL_INSET_X, FOLDER_TREE_EMPTY_LABEL, folder_row, folder_tree_label_color,
     folder_tree_palette_for_tests,
 };
+use super::virtual_window_needs_materialization;
 use crate::native_app::app::GuiMessage;
 use crate::native_app::app_chrome::library_browser::library_sidebar::sidebar_row::sidebar_row_full_palette;
 use crate::native_app::app_chrome::palette::{ACCENT, selected_row_marker};
@@ -14,6 +15,40 @@ use radiant::prelude as ui;
 use radiant::prelude::IntoView;
 use radiant::runtime::{DeclarativeOwnedRuntimeBridge, SurfaceRuntime};
 use radiant::widgets::TextInputMessage;
+
+#[test]
+fn folder_tree_scroll_retains_rows_until_the_materialized_edge() {
+    let current = ui::VirtualListWindow {
+        total_items: 100,
+        viewport_start: 20,
+        viewport_end: 30,
+        window_start: 16,
+        window_end: 34,
+    };
+
+    assert!(!virtual_window_needs_materialization(
+        current,
+        ui::VirtualListWindow {
+            viewport_start: 22,
+            viewport_end: 32,
+            ..current
+        },
+        22.0 * 20.0,
+        20.0,
+        200.0,
+    ));
+    assert!(virtual_window_needs_materialization(
+        current,
+        ui::VirtualListWindow {
+            viewport_start: 25,
+            viewport_end: 35,
+            ..current
+        },
+        25.0 * 20.0,
+        20.0,
+        200.0,
+    ));
+}
 
 #[test]
 fn folder_tree_uses_shared_grey_sidebar_hover_fill() {

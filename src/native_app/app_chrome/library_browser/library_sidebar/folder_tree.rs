@@ -49,7 +49,7 @@ fn folder_tree_window(
     visible_folders: Vec<VisibleFolder>,
     window: ui::VirtualListWindow,
 ) -> ui::View<GuiMessage> {
-    radiant::application::virtual_tree_list_windowed(
+    let mut view = radiant::application::virtual_tree_list_windowed(
         window,
         TREE_ROW_HEIGHT,
         &folder_tree_guide_rows(&visible_folders),
@@ -57,10 +57,45 @@ fn folder_tree_window(
         |index| folder_row(&visible_folders[index]),
     )
     .overscan_px(TREE_ROW_HEIGHT * FOLDER_TREE_OVERSCAN_ROWS as f32)
-    .on_window_changed(GuiMessage::FolderTreeWindowChanged)
     .view()
-    .without_chrome()
-    .fill_height()
+    .without_chrome();
+    view = view.on_scroll_update(move |update| {
+        let change = ui::virtual_list_window_change_for_scroll(
+            update,
+            TREE_ROW_HEIGHT,
+            window,
+            FOLDER_TREE_OVERSCAN_ROWS,
+        );
+        let boundary = virtual_window_needs_materialization(
+            window,
+            change.window,
+            update.offset.y,
+            TREE_ROW_HEIGHT,
+            update.viewport.y,
+        );
+        GuiMessage::FolderTreeWindowChanged(boundary.then_some(change))
+    });
+    view.fill_height()
+}
+
+/// Keep scrolling inside the rows already projected by the host. The runtime
+/// owns the pixel offset; only an edge crossing needs a new application window.
+fn virtual_window_needs_materialization(
+    current: ui::VirtualListWindow,
+    next: ui::VirtualListWindow,
+    offset_y: f32,
+    row_height: f32,
+    viewport_height: f32,
+) -> bool {
+    let row_height = row_height.max(1.0);
+    let visible_end = ((offset_y.max(0.0) + viewport_height.max(0.0)) / row_height)
+        .ceil()
+        .max(0.0) as usize;
+    let visible_end = visible_end.min(next.total_items);
+    current.total_items != next.total_items
+        || current.viewport_len() != next.viewport_len()
+        || next.window_start < current.window_start
+        || visible_end > current.window_end
 }
 
 fn folder_tree_guide_rows(folders: &[VisibleFolder]) -> Vec<ui::TreeGuideRow> {

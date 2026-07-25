@@ -43,6 +43,7 @@ fn app_bridge_idle_vertical_scroll_starts_zero_entry_fade_on_paint_only_cadence(
         .into_bridge();
     let mut runtime = SurfaceRuntime::new(bridge, Vector2::new(900.0, 900.0));
     apply_strict_update_diagnostics(&mut runtime);
+    let _startup = paint_transient_overlay_at(&mut runtime, std::time::Duration::ZERO);
     let baseline_activity = runtime.host_animation_activity();
     let tree_rect = runtime
         .layout()

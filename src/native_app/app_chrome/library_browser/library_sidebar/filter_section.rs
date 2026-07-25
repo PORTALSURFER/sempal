@@ -1,6 +1,6 @@
 use radiant::prelude as ui;
 
-use crate::native_app::app::GuiMessage;
+use crate::native_app::app::{BrowserScrollSurface, GuiMessage};
 use crate::native_app::app_chrome::view_models::library_sidebar::FilterSectionViewModel;
 use crate::native_app::sample_library::folder_browser::commands::FolderBrowserMessage;
 use crate::native_app::sample_library::folder_browser::view_contract::{
@@ -62,6 +62,7 @@ fn filter_controls(model: &FilterSectionViewModel) -> ui::View<GuiMessage> {
             .spacing(FILTER_ROW_SPACING),
     )
     .id(FILTER_SECTION_SCROLL_NODE_ID)
+    .on_scroll_update(|_| GuiMessage::BrowserScrollAccepted(BrowserScrollSurface::Filter))
     .fill_width()
     .fill_height()
 }

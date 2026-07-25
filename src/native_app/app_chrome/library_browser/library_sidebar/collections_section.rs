@@ -1,6 +1,6 @@
 use radiant::prelude as ui;
 
-use crate::native_app::app::GuiMessage;
+use crate::native_app::app::{BrowserScrollSurface, GuiMessage};
 use crate::native_app::app_chrome::view_models::library_sidebar::CollectionsSectionViewModel;
 use crate::native_app::sample_library::folder_browser::commands::FolderBrowserMessage;
 use crate::native_app::sample_library::folder_browser::view_contract::{
@@ -38,6 +38,7 @@ pub(super) fn collections_section(model: &CollectionsSectionViewModel) -> ui::Vi
                 .height(model.list_height),
         )
         .id(COLLECTIONS_LIST_SCROLL_NODE_ID)
+        .on_scroll_update(|_| GuiMessage::BrowserScrollAccepted(BrowserScrollSurface::Collections))
         .fill_width()
         .fill_height(),
         model.panel_height,

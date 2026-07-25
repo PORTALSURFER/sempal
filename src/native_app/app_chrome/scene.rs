@@ -55,13 +55,6 @@ fn paint_app_transient_overlay(
     state.paint_waveform_transient_overlay(context, primitives);
     state.paint_worker_progress_indicator(context, primitives);
     state.paint_source_processing_source_pulse(context, primitives);
-    paint_library_overflow_fades(state, context, primitives);
-    library_sidebar::paint_waveform_scroll_fades(
-        context,
-        &state.waveform.current,
-        &mut state.ui.chrome.overflow_fades,
-        primitives,
-    );
     paint_starmap_active_audition_overlay(state, context, primitives);
 }
 
@@ -75,17 +68,13 @@ fn paint_overflow_fade_overlay(
         .chrome
         .overflow_fades
         .consume_pending_visibility_sample();
-    if state.should_paint_app_transient_overlay() {
-        paint_app_transient_overlay(state, context, primitives);
-    } else {
-        paint_library_overflow_fades(state, context, primitives);
-        library_sidebar::paint_waveform_scroll_fades(
-            context,
-            &state.waveform.current,
-            &mut state.ui.chrome.overflow_fades,
-            primitives,
-        );
-    }
+    paint_library_overflow_fades(state, context, primitives);
+    library_sidebar::paint_waveform_scroll_fades(
+        context,
+        &state.waveform.current,
+        &mut state.ui.chrome.overflow_fades,
+        primitives,
+    );
 }
 
 fn collection_overflow_fade_alpha(state: &NativeAppState) -> u8 {

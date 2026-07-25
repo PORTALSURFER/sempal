@@ -405,7 +405,11 @@ pub(in crate::native_app) enum GuiMessage {
     },
     FinishStarmapAuditionDrag,
     SampleBrowserWindowChanged(ui::VirtualListWindowChange),
-    FolderTreeWindowChanged(ui::VirtualListWindowChange),
+    /// A folder-tree scroll was accepted by the runtime. `Some` carries a
+    /// materialization boundary; `None` keeps the host window while the
+    /// runtime scrolls inside the already projected rows.
+    FolderTreeWindowChanged(Option<ui::VirtualListWindowChange>),
+    BrowserScrollAccepted(BrowserScrollSurface),
     CollapseSelectedFolder,
     CancelBrowserDragOnSampleList,
     DropWaveformSelectionOnSampleList,
@@ -414,6 +418,13 @@ pub(in crate::native_app) enum GuiMessage {
     WaveformDetailRefined(crate::native_app::waveform::WaveformDetailResult),
     WaveformFileDrop(NativeFileDrop),
     Frame,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::native_app) enum BrowserScrollSurface {
+    Collections,
+    Filter,
+    MetadataTags,
 }
 
 #[derive(Clone, Debug, PartialEq)]

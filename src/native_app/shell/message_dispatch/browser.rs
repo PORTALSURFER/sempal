@@ -10,6 +10,11 @@ impl NativeAppState {
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
         match message {
+            GuiMessage::BrowserScrollAccepted(surface) => {
+                let _ = surface;
+                self.ui.chrome.overflow_fades.arm();
+                context.request_paint_only();
+            }
             GuiMessage::ResizeFolder(message) => self.resize_folder_browser(message),
             GuiMessage::AddSourceDialogFinished(result) => {
                 self.finish_add_source_dialog(result, context);

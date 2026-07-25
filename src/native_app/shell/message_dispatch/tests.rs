@@ -10,6 +10,50 @@ use std::{
 };
 
 #[test]
+fn accepted_sidebar_scroll_arms_paint_only_without_projection_repaint() {
+    let mut state = NativeAppStateFixture::default().build();
+    state
+        .ui
+        .chrome
+        .overflow_fades
+        .consume_pending_visibility_sample();
+    let mut context = ui::UiUpdateContext::default();
+
+    state.apply_message(
+        GuiMessage::BrowserScrollAccepted(crate::native_app::app::BrowserScrollSurface::Filter),
+        &mut context,
+    );
+
+    assert!(state.ui.chrome.overflow_fades.frame_needed());
+    assert_eq!(
+        context.into_command().repaint_scope(),
+        Some(ui::RepaintScope::PaintOnly),
+        "accepted sidebar scrolling must stay on the paint-only path"
+    );
+}
+
+#[test]
+fn folder_tree_interior_scroll_arms_without_applying_a_window_change() {
+    let mut state = NativeAppStateFixture::default().build();
+    state
+        .ui
+        .chrome
+        .overflow_fades
+        .consume_pending_visibility_sample();
+    let before = state.library.folder_browser.tree_view_start();
+    let mut context = ui::UiUpdateContext::default();
+
+    state.apply_message(GuiMessage::FolderTreeWindowChanged(None), &mut context);
+
+    assert_eq!(state.library.folder_browser.tree_view_start(), before);
+    assert!(state.ui.chrome.overflow_fades.frame_needed());
+    assert_eq!(
+        context.into_command().repaint_scope(),
+        Some(ui::RepaintScope::PaintOnly)
+    );
+}
+
+#[test]
 fn root_dispatch_routes_metadata_messages_to_metadata_owner() {
     let mut state = NativeAppState::load_default().expect("default state loads");
 
