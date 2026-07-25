@@ -141,34 +141,36 @@ impl SourceDatabase {
             .collect::<Result<Vec<_>, _>>()?;
         normalized_paths.sort();
         normalized_paths.dedup();
-        let mut parameters = Vec::with_capacity(normalized_paths.len() * 3);
-        let predicates = normalized_paths
-            .iter()
-            .enumerate()
-            .map(|(index, path)| {
-                let first = index * 3 + 1;
-                let lower = format!("{path}/");
-                let upper = format!("{path}0");
-                parameters.push(path.clone());
-                parameters.push(lower);
-                parameters.push(upper);
-                format!(
-                    "(path = ?{first} COLLATE BINARY OR \
-                     (path >= ?{} COLLATE BINARY AND path < ?{} COLLATE BINARY))",
-                    first + 1,
-                    first + 2
-                )
-            })
-            .collect::<Vec<_>>();
         let filter = wav_file_supported_audio_filter(self)?;
-        let sql = format!(
-            "SELECT path, file_identity, content_hash, file_size, modified_ns
-             FROM wav_files
-             WHERE {filter} AND missing = 0 AND ({})
-             ORDER BY path ASC",
-            predicates.join(" OR ")
-        );
-        let entries = {
+        const PATHS_PER_QUERY: usize = 128;
+        let mut entries = Vec::new();
+        for chunk in normalized_paths.chunks(PATHS_PER_QUERY) {
+            let mut parameters = Vec::with_capacity(chunk.len() * 3);
+            let predicates = chunk
+                .iter()
+                .enumerate()
+                .map(|(index, path)| {
+                    let first = index * 3 + 1;
+                    let lower = format!("{path}/");
+                    let upper = format!("{path}0");
+                    parameters.push(path.clone());
+                    parameters.push(lower);
+                    parameters.push(upper);
+                    format!(
+                        "(path = ?{first} COLLATE BINARY OR \
+                         (path >= ?{} COLLATE BINARY AND path < ?{} COLLATE BINARY))",
+                        first + 1,
+                        first + 2
+                    )
+                })
+                .collect::<Vec<_>>();
+            let sql = format!(
+                "SELECT path, file_identity, content_hash, file_size, modified_ns
+                 FROM wav_files
+                 WHERE {filter} AND missing = 0 AND ({})
+                 ORDER BY path ASC",
+                predicates.join(" OR ")
+            );
             let mut statement = transaction.prepare(&sql).map_err(map_sql_error)?;
             let rows = statement
                 .query_map(params_from_iter(parameters.iter()), |row| {
@@ -190,8 +192,10 @@ impl SourceDatabase {
                 .map_err(map_sql_error)?
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(map_sql_error)?;
-            rows.into_iter().flatten().collect()
-        };
+            entries.extend(rows.into_iter().flatten());
+        }
+        entries.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+        entries.dedup_by(|left, right| left.relative_path == right.relative_path);
         transaction.rollback().map_err(map_sql_error)?;
         Ok((revision, entries))
     }

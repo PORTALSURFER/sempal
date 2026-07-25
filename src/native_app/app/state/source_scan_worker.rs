@@ -24,12 +24,14 @@ pub(in crate::native_app) fn run_folder_scan_worker(
     request: FolderScanRequest,
     events: ui::BusinessEventSink<FolderScanWorkerEvent>,
     cancel: Arc<AtomicBool>,
+    lifecycle_generation: Option<u64>,
     writer: &impl ScanWriter,
 ) -> PreparedFolderScanResult {
     run_folder_scan_worker_with_emit_and_cancel(
         request,
         move |event| events.emit(event),
         cancel.as_ref(),
+        lifecycle_generation,
         writer,
     )
 }
@@ -43,6 +45,7 @@ fn run_folder_scan_worker_with_emit(
         request,
         emit,
         &AtomicBool::new(false),
+        None,
         &UncoordinatedScanWriter,
     )
 }
@@ -51,6 +54,7 @@ fn run_folder_scan_worker_with_emit_and_cancel(
     request: FolderScanRequest,
     emit: impl Fn(FolderScanWorkerEvent) -> bool + Clone,
     cancel: &AtomicBool,
+    lifecycle_generation: Option<u64>,
     writer: &impl ScanWriter,
 ) -> PreparedFolderScanResult {
     let rating_decay_maintenance =
@@ -60,12 +64,19 @@ fn run_folder_scan_worker_with_emit_and_cancel(
             database_root: request.database_root.clone(),
             rating_decay_weeks: request.rating_decay_weeks,
         };
-    let mut discovery_transport =
-        FolderScanDiscoveryTransport::new(emit.clone(), request.task_id, request.source_id.clone());
+    let mut discovery_transport = FolderScanDiscoveryTransport::new(
+        emit.clone(),
+        request.task_id,
+        request.source_id.clone(),
+        lifecycle_generation,
+        cancel,
+    );
     let scan = scan::scan_source_with_progress_cancellable(
         request,
         |progress| {
-            let _ = emit(FolderScanWorkerEvent::Progress(progress));
+            if !cancel.load(Ordering::Acquire) {
+                let _ = emit(FolderScanWorkerEvent::Progress(progress));
+            }
         },
         |event| {
             discovery_transport.push(event);
@@ -88,27 +99,51 @@ fn run_folder_scan_worker_with_emit_and_cancel(
     }
 }
 
-struct FolderScanDiscoveryTransport<Emit> {
+struct FolderScanDiscoveryTransport<'cancel, Emit> {
     emit: Emit,
     task_id: u64,
     source_id: String,
+    lifecycle_generation: Option<u64>,
     pending: Vec<FolderScanDiscovery>,
+    pending_revision: Option<u64>,
+    next_sequence: u64,
+    cancel: &'cancel AtomicBool,
 }
 
-impl<Emit> FolderScanDiscoveryTransport<Emit>
+impl<'cancel, Emit> FolderScanDiscoveryTransport<'cancel, Emit>
 where
     Emit: Fn(FolderScanWorkerEvent) -> bool,
 {
-    fn new(emit: Emit, task_id: u64, source_id: String) -> Self {
+    fn new(
+        emit: Emit,
+        task_id: u64,
+        source_id: String,
+        lifecycle_generation: Option<u64>,
+        cancel: &'cancel AtomicBool,
+    ) -> Self {
         Self {
             emit,
             task_id,
             source_id,
+            lifecycle_generation,
             pending: Vec::with_capacity(DISCOVERY_BATCH_SIZE),
+            pending_revision: None,
+            next_sequence: 0,
+            cancel,
         }
     }
 
     fn push(&mut self, discovery: FolderScanDiscovery) {
+        if self.cancel.load(Ordering::Acquire) {
+            return;
+        }
+        if !self.pending.is_empty() && self.pending_revision != discovery.committed_revision {
+            self.flush();
+        }
+        if self.cancel.load(Ordering::Acquire) {
+            return;
+        }
+        self.pending_revision = discovery.committed_revision;
         self.pending.push(discovery);
         if self.pending.len() >= DISCOVERY_BATCH_SIZE {
             self.flush();
@@ -116,16 +151,21 @@ where
     }
 
     fn flush(&mut self) {
-        if self.pending.is_empty() {
+        if self.pending.is_empty() || self.cancel.load(Ordering::Acquire) {
             return;
         }
         let _ = (self.emit)(FolderScanWorkerEvent::DiscoveryBatch(
             FolderScanDiscoveryBatch {
                 task_id: self.task_id,
                 source_id: self.source_id.clone(),
+                committed_revision: self.pending_revision,
+                lifecycle_generation: self.lifecycle_generation,
+                sequence: self.next_sequence,
                 events: std::mem::take(&mut self.pending),
             },
         ));
+        self.next_sequence = self.next_sequence.saturating_add(1);
+        self.pending_revision = None;
     }
 }
 
@@ -141,7 +181,7 @@ mod tests {
     };
 
     use crate::native_app::sample_library::folder_browser::scan::{
-        FolderScanItem, FolderScanRequest, INDEX_PROGRESS_REPORT_INTERVAL,
+        FolderScanDiscovery, FolderScanItem, FolderScanRequest, INDEX_PROGRESS_REPORT_INTERVAL,
     };
     use wavecrate_scan::sample_sources::scanner::UncoordinatedScanWriter;
 
@@ -231,6 +271,21 @@ mod tests {
                 )
             })
             .count();
+        let first_discovery = events
+            .iter()
+            .position(|message| matches!(message, FolderScanWorkerEvent::DiscoveryBatch(_)))
+            .expect("large scan should publish a committed discovery batch");
+        assert!(
+            events
+                .iter()
+                .skip(first_discovery + 1)
+                .any(|message| matches!(
+                    message,
+                    FolderScanWorkerEvent::Progress(progress)
+                        if progress.detail.starts_with("Indexing | ")
+                )),
+            "committed discoveries must arrive before indexing completes"
+        );
         let batch_lengths = batches.iter().map(|batch| batch.len()).collect::<Vec<_>>();
         let published_file_count = batches
             .iter()
@@ -268,10 +323,53 @@ mod tests {
                 true
             },
             cancel.as_ref(),
+            None,
             &UncoordinatedScanWriter,
         );
 
         assert!(result.scan.cancelled);
         assert!(result.scan.file_count < file_count);
+    }
+
+    #[test]
+    fn buffered_discovery_transport_drops_events_after_cancellation() {
+        let cancel = Arc::new(AtomicBool::new(false));
+        let callback_cancel = Arc::clone(&cancel);
+        let (sender, receiver) = mpsc::channel();
+        let mut transport = super::FolderScanDiscoveryTransport::new(
+            move |event| {
+                if matches!(&event, FolderScanWorkerEvent::DiscoveryBatch(_)) {
+                    callback_cancel.store(true, Ordering::Release);
+                }
+                sender.send(event).is_ok()
+            },
+            42,
+            String::from("source"),
+            Some(7),
+            cancel.as_ref(),
+        );
+
+        for _ in 0..=DISCOVERY_BATCH_SIZE {
+            transport.push(FolderScanDiscovery {
+                task_id: 42,
+                source_id: String::from("source"),
+                committed_revision: Some(9),
+                parent_id: String::from("root"),
+                item: FolderScanItem::ResetFolder,
+            });
+        }
+        transport.flush();
+
+        let batches = receiver
+            .try_iter()
+            .filter_map(|event| match event {
+                FolderScanWorkerEvent::DiscoveryBatch(batch) => Some(batch),
+                FolderScanWorkerEvent::Progress(_) => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].events.len(), DISCOVERY_BATCH_SIZE);
+        assert_eq!(batches[0].sequence, 0);
+        assert!(cancel.load(Ordering::Acquire));
     }
 }

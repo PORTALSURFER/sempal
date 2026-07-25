@@ -112,6 +112,7 @@ mod tests {
         let event = FolderScanDiscovery {
             task_id: 1,
             source_id: String::from("source"),
+            committed_revision: None,
             parent_id: String::from("root"),
             item: FolderScanItem::ResetFolder,
         };

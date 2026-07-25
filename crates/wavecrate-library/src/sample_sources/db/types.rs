@@ -297,6 +297,32 @@ pub struct BrowserMetadataSnapshot {
     pub files: Vec<BrowserFileMetadata>,
 }
 
+/// Opaque keyset cursor retaining the exact raw SQLite path key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrowserMetadataCursor(String);
+
+impl BrowserMetadataCursor {
+    pub(crate) fn from_raw(raw: String) -> Self {
+        Self(raw)
+    }
+
+    /// Borrow the raw SQLite path key for the next page query.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// One bounded, keyset-paged browser metadata result at an exact source revision.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrowserMetadataPage {
+    /// Source metadata revision observed by the page.
+    pub revision: u64,
+    /// Metadata rows in deterministic path order, including collection memberships.
+    pub files: Vec<BrowserFileMetadata>,
+    /// Opaque cursor to pass to the next page, or `None` when this is the final page.
+    pub next_cursor: Option<BrowserMetadataCursor>,
+}
+
 /// Authoritative identity facts for one live source-manifest row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceManifestEntry {

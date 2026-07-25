@@ -171,6 +171,7 @@ pub(in crate::native_app) enum FolderScanItem {
 pub(in crate::native_app) struct FolderScanDiscovery {
     pub(in crate::native_app) task_id: u64,
     pub(in crate::native_app) source_id: String,
+    pub(in crate::native_app) committed_revision: Option<u64>,
     pub(in crate::native_app) parent_id: String,
     pub(in crate::native_app) item: FolderScanItem,
 }
@@ -179,6 +180,9 @@ pub(in crate::native_app) struct FolderScanDiscovery {
 pub(in crate::native_app) struct FolderScanDiscoveryBatch {
     pub(in crate::native_app) task_id: u64,
     pub(in crate::native_app) source_id: String,
+    pub(in crate::native_app) committed_revision: Option<u64>,
+    pub(in crate::native_app) lifecycle_generation: Option<u64>,
+    pub(in crate::native_app) sequence: u64,
     pub(in crate::native_app) events: Vec<FolderScanDiscovery>,
 }
 

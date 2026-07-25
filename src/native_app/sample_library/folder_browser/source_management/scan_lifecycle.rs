@@ -410,18 +410,29 @@ impl FolderBrowserState {
     }
 
     pub(in crate::native_app) fn cancel_scan(&mut self, source_id: &str, task_id: u64) -> bool {
-        let Some(source) = self
+        let Some(source_index) = self
             .source
             .sources
-            .iter_mut()
-            .find(|source| source.id == source_id)
+            .iter()
+            .position(|source| source.id == source_id)
         else {
             return false;
         };
-        if source.loading_task != Some(task_id) {
+        if self.source.sources[source_index].loading_task != Some(task_id) {
             return false;
         }
-        source.loading_task = None;
+        let preserve_loaded_tree = self.source.selected_tree_loaded
+            && self.source.selected_source == source_id
+            || self.source.sources[source_index].parked_tree_loaded;
+        self.source.sources[source_index].loading_task = None;
+        if !preserve_loaded_tree {
+            self.source.sources[source_index].root_folder = None;
+            self.source.sources[source_index].parked_tree_loaded = false;
+            if self.source.selected_source == source_id {
+                let root = self.source.sources[source_index].root.clone();
+                self.tree.folders = vec![placeholder_folder(&root)];
+            }
+        }
         true
     }
 
@@ -471,6 +482,9 @@ impl FolderBrowserState {
         self.apply_scan_discovered_batch(FolderScanDiscoveryBatch {
             task_id: event.task_id,
             source_id: event.source_id.clone(),
+            committed_revision: event.committed_revision,
+            lifecycle_generation: None,
+            sequence: 0,
             events: vec![event],
         })
     }
@@ -479,6 +493,9 @@ impl FolderBrowserState {
         &mut self,
         batch: FolderScanDiscoveryBatch,
     ) -> bool {
+        if batch.events.is_empty() || batch.events.len() > 64 {
+            return false;
+        }
         let selected_source = self.source.selected_source == batch.source_id;
         let preserve_selected_tree = selected_source && self.source.selected_tree_loaded;
         let Some(source) = self
@@ -490,6 +507,19 @@ impl FolderBrowserState {
             return false;
         };
         if source.loading_task != Some(batch.task_id) {
+            return false;
+        }
+        if batch.events.iter().any(|event| {
+            event.task_id != batch.task_id
+                || event.source_id != batch.source_id
+                || event.committed_revision != batch.committed_revision
+        }) {
+            return false;
+        }
+        if let (Some(current), Some(incoming)) =
+            (source.projection_revision, batch.committed_revision)
+            && incoming < current
+        {
             return false;
         }
         if preserve_selected_tree || (!selected_source && source.root_folder.is_some()) {

@@ -14,7 +14,7 @@ use super::super::scan_fs::ensure_root_dir;
 use super::super::scan_hash::ContentAuditBudget;
 use super::super::scan_walk::walk_phase;
 use super::super::scan_writer::{ScanWriter, UncoordinatedScanWriter};
-use super::{ScanContext, ScanError, ScanStats};
+use super::{CommittedScanBatch, ScanContext, ScanError, ScanStats};
 
 const TARGETED_RENAME_CANDIDATE_LIMIT: usize = 256;
 
@@ -405,6 +405,35 @@ fn scan(
     )
 }
 
+/// Scan with progress and invoke a callback after every bounded manifest transaction commits.
+///
+/// The callback receives only paths from the committed transaction and its exact committed
+/// revision. It runs on the scanning worker, before the scan continues to the next batch.
+pub fn scan_with_progress_and_writer_and_committed_batch(
+    db: &SourceDatabase,
+    mode: ScanMode,
+    cancel: Option<&AtomicBool>,
+    on_progress: &mut impl FnMut(usize, &Path),
+    on_committed_batch: &mut impl FnMut(CommittedScanBatch),
+    writer: &impl ScanWriter,
+) -> Result<ScanStats, ScanError> {
+    let root = ensure_root_dir(db)?;
+    let source_root = SourceRootCapability::open(&root)?;
+    source_root.ensure_current_generation()?;
+    scan_with_writer_using_root_and_committed_batch(
+        db,
+        &root,
+        &source_root,
+        mode,
+        cancel,
+        Some(on_progress),
+        None,
+        true,
+        on_committed_batch,
+        writer,
+    )
+}
+
 fn scan_with_writer(
     db: &SourceDatabase,
     mode: ScanMode,
@@ -436,9 +465,35 @@ fn scan_with_writer_using_root(
     source_root: &SourceRootCapability,
     mode: ScanMode,
     cancel: Option<&AtomicBool>,
+    on_progress: Option<&mut dyn FnMut(usize, &Path)>,
+    manifest_audit_started_at: Option<i64>,
+    finalize_pending_renames: bool,
+    writer: &impl ScanWriter,
+) -> Result<ScanStats, ScanError> {
+    scan_with_writer_using_root_and_committed_batch(
+        db,
+        root,
+        source_root,
+        mode,
+        cancel,
+        on_progress,
+        manifest_audit_started_at,
+        finalize_pending_renames,
+        &mut |_| {},
+        writer,
+    )
+}
+
+fn scan_with_writer_using_root_and_committed_batch(
+    db: &SourceDatabase,
+    root: &Path,
+    source_root: &SourceRootCapability,
+    mode: ScanMode,
+    cancel: Option<&AtomicBool>,
     mut on_progress: Option<&mut dyn FnMut(usize, &Path)>,
     manifest_audit_started_at: Option<i64>,
     finalize_pending_renames: bool,
+    on_committed_batch: &mut dyn FnMut(CommittedScanBatch),
     writer: &impl ScanWriter,
 ) -> Result<ScanStats, ScanError> {
     debug_assert_ne!(mode, ScanMode::Targeted);
@@ -465,6 +520,7 @@ fn scan_with_writer_using_root(
         cancel,
         &mut on_progress,
         &mut context,
+        on_committed_batch,
         writer,
     )
     .and_then(|()| db_sync_phase(db, source_root, &mut context, cancel, writer))

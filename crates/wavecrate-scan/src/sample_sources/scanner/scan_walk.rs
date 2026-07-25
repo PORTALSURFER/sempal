@@ -10,7 +10,7 @@ use std::{
 use crate::sample_sources::SourceDatabase;
 use wavecrate_library::sample_sources::{SourceIndexDiagnostic, SourceTraversalPolicy};
 
-use super::scan::{ScanContext, ScanError};
+use super::scan::{CommittedScanBatch, ScanContext, ScanError};
 use super::scan_capability::{SourcePathBinding, SourceRootCapability};
 use super::scan_diff::{PreparedFile, apply_diff};
 use super::scan_diff_phase::prepare_diff_from_facts;
@@ -31,6 +31,7 @@ pub(super) fn walk_phase(
     cancel: Option<&AtomicBool>,
     on_progress: &mut Option<&mut dyn FnMut(usize, &Path)>,
     context: &mut ScanContext,
+    on_committed_batch: &mut dyn FnMut(CommittedScanBatch),
     writer: &impl ScanWriter,
 ) -> Result<(), ScanError> {
     // Each committed batch is a valid checkpoint. Cancellation may stop the scan between batches;
@@ -125,6 +126,7 @@ pub(super) fn walk_phase(
                     context,
                     files,
                     committed.get(),
+                    on_committed_batch,
                     writer,
                 )?;
                 if outcome.committed {
@@ -162,6 +164,7 @@ pub(super) fn walk_phase(
             context,
             pending,
             committed.get(),
+            on_committed_batch,
             writer,
         )?;
         if outcome.committed {
@@ -369,6 +372,7 @@ pub(super) fn apply_prepared_chunk(
     if pending.is_empty() {
         return Ok(false);
     }
+    let mut on_committed_batch = |_| {};
     apply_batch_with_source_root(
         db,
         root,
@@ -377,6 +381,7 @@ pub(super) fn apply_prepared_chunk(
         context,
         pending,
         tolerate_file_errors,
+        &mut on_committed_batch,
         writer,
     )
     .map(|outcome| outcome.committed)
@@ -496,6 +501,7 @@ fn apply_batch(
     writer: &impl ScanWriter,
 ) -> Result<ApplyBatchOutcome, ScanError> {
     let source_root = SourceRootCapability::open(root)?;
+    let mut on_committed_batch = |_| {};
     apply_batch_with_source_root(
         db,
         root,
@@ -504,6 +510,7 @@ fn apply_batch(
         context,
         prepared,
         tolerate_file_errors,
+        &mut on_committed_batch,
         writer,
     )
 }
@@ -516,6 +523,7 @@ fn apply_batch_with_source_root(
     context: &mut ScanContext,
     prepared: Vec<PreparedFile>,
     tolerate_file_errors: bool,
+    on_committed_batch: &mut dyn FnMut(CommittedScanBatch),
     writer: &impl ScanWriter,
 ) -> Result<ApplyBatchOutcome, ScanError> {
     apply_batch_with_source_root_and_precommit_hook(
@@ -528,6 +536,7 @@ fn apply_batch_with_source_root(
         tolerate_file_errors,
         writer,
         |_| {},
+        on_committed_batch,
     )
 }
 
@@ -544,6 +553,7 @@ fn apply_batch_with_precommit_hook(
     precommit: impl FnMut(&Path),
 ) -> Result<ApplyBatchOutcome, ScanError> {
     let source_root = SourceRootCapability::open(root)?;
+    let mut on_committed_batch = |_| {};
     apply_batch_with_source_root_and_precommit_hook(
         db,
         root,
@@ -554,6 +564,7 @@ fn apply_batch_with_precommit_hook(
         tolerate_file_errors,
         writer,
         precommit,
+        &mut on_committed_batch,
     )
 }
 
@@ -568,6 +579,7 @@ fn apply_batch_with_source_root_and_precommit_hook(
     tolerate_file_errors: bool,
     writer: &impl ScanWriter,
     mut precommit: impl FnMut(&Path),
+    on_committed_batch: &mut dyn FnMut(CommittedScanBatch),
 ) -> Result<ApplyBatchOutcome, ScanError> {
     let mut ready = Vec::with_capacity(prepared.len());
     let mut post_hash = |_: &Path| {};
@@ -721,7 +733,11 @@ fn apply_batch_with_source_root_and_precommit_hook(
         return Ok(ApplyBatchOutcome::default());
     }
     source_root.ensure_current_generation()?;
-    context.commit_batch(db, batch)?;
+    let revision = context.commit_batch(db, batch)?;
+    on_committed_batch(CommittedScanBatch {
+        revision,
+        paths: audited_paths.clone(),
+    });
     Ok(ApplyBatchOutcome {
         committed: true,
         audited_paths,

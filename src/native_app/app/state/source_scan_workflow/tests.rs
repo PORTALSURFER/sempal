@@ -1294,6 +1294,9 @@ fn switching_away_parks_live_discoveries_from_an_active_scan() {
             FolderScanDiscoveryBatch {
                 task_id: event.task_id,
                 source_id: event.source_id.clone(),
+                committed_revision: event.committed_revision,
+                lifecycle_generation: None,
+                sequence: 0,
                 events: vec![event],
             },
         );

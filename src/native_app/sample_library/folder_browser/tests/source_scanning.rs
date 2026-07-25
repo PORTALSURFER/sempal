@@ -2,8 +2,42 @@ use super::*;
 use crate::native_app::app::BrowserProjectionDelta;
 use crate::native_app::sample_library::folder_browser::model::file_entry_with_snapshot_metadata;
 use crate::native_app::sample_library::folder_browser::scan_types::{
-    FolderScanItem, MetadataHydrationStatus,
+    FolderScanDiscovery, FolderScanItem, MetadataHydrationStatus,
 };
+use std::sync::atomic::{AtomicBool, Ordering};
+
+#[test]
+fn committed_discovery_emission_stops_at_the_cancellation_boundary() {
+    let root = temp_source_root("wavecrate-gui-source-cancelled-discovery");
+    for index in 0..96 {
+        fs::write(root.join(format!("sample-{index:03}.wav")), [0_u8; 8]).expect("write sample");
+    }
+    let mut browser = FolderBrowserState::load_default();
+    let request = browser
+        .begin_add_source_path(root.clone(), 89)
+        .expect("new source should request scan");
+    let cancel = AtomicBool::new(false);
+    let mut discovery_events = Vec::new();
+
+    let result = scan_source_with_progress_cancellable(
+        request,
+        |_| {},
+        |event| {
+            discovery_events.push(event);
+            cancel.store(true, Ordering::Release);
+        },
+        &cancel,
+        &wavecrate_scan::sample_sources::scanner::UncoordinatedScanWriter,
+    );
+
+    assert!(result.cancelled);
+    assert_eq!(
+        discovery_events.len(),
+        1,
+        "a cancellation raised by the first committed discovery must fence every later event"
+    );
+    let _ = fs::remove_dir_all(root);
+}
 
 #[test]
 fn switching_away_from_pending_source_does_not_cache_its_placeholder() {
@@ -507,13 +541,32 @@ fn batched_scan_discoveries_clone_selected_tree_once_per_batch() {
         discovery_events.first().map(|event| &event.item),
         Some(FolderScanItem::ResetFolder)
     ));
-    assert!(
-        browser.apply_scan_discovered_batch(FolderScanDiscoveryBatch {
-            task_id: 88,
-            source_id: path_id(&root),
-            events: discovery_events,
-        })
-    );
+    let mut batches = Vec::<Vec<FolderScanDiscovery>>::new();
+    for event in discovery_events {
+        if batches
+            .last()
+            .and_then(|batch| batch.first())
+            .is_some_and(|first| first.committed_revision != event.committed_revision)
+        {
+            batches.push(Vec::new());
+        }
+        if batches.is_empty() {
+            batches.push(Vec::new());
+        }
+        batches.last_mut().expect("batch").push(event);
+    }
+    for (sequence, events) in batches.into_iter().enumerate() {
+        assert!(
+            browser.apply_scan_discovered_batch(FolderScanDiscoveryBatch {
+                task_id: 88,
+                source_id: path_id(&root),
+                committed_revision: events.first().and_then(|event| event.committed_revision),
+                lifecycle_generation: None,
+                sequence: sequence as u64,
+                events,
+            })
+        );
+    }
     browser.activate_folder(path_id(&drums));
     assert_eq!(browser.selected_audio_files().len(), 2);
 
