@@ -277,6 +277,12 @@ impl ScanContext {
             .is_some_and(|audit| audit.pending.len() >= MANIFEST_AUDIT_CHECKPOINT_SIZE)
     }
 
+    pub(in crate::sample_sources::scanner) fn manifest_audit_checkpoint_pending(&self) -> bool {
+        self.manifest_audit
+            .as_ref()
+            .is_some_and(|audit| !audit.pending.is_empty() || !audit.revalidated_pending.is_empty())
+    }
+
     pub(in crate::sample_sources::scanner) fn discard_manifest_audit_paths(
         &mut self,
         paths: impl IntoIterator<Item = PathBuf>,
