@@ -380,6 +380,13 @@ impl NativeAppState {
                 committed_delta,
                 source_root_available,
             } => {
+                let Some(lifecycle_generation) = lifecycle_generation else {
+                    tracing::debug!(
+                        source_id,
+                        "Discarding folder scan completion without a captured source lifecycle"
+                    );
+                    return;
+                };
                 if let Some(progress) = applying_progress {
                     self.library
                         .resume_folder_scan_progress_after_projection(progress);
@@ -388,7 +395,7 @@ impl NativeAppState {
                     task_id,
                     source_id: source_id.clone(),
                     label: label.clone(),
-                    lifecycle_generation,
+                    lifecycle_generation: Some(lifecycle_generation),
                     source_root_available,
                     source_db_error: source_db_error.clone(),
                     metadata_hydration_error: metadata_hydration_error.clone(),
@@ -406,6 +413,7 @@ impl NativeAppState {
                     AppliedFolderScan {
                         source_id,
                         label,
+                        lifecycle_generation,
                         file_count,
                         folder_count,
                         source_db_error,
@@ -645,6 +653,7 @@ impl NativeAppState {
             if let Some(committed_delta) = scan.committed_delta.as_ref() {
                 self.background.source_processing.request_source_delta(
                     &scan.source_id,
+                    scan.lifecycle_generation,
                     committed_delta,
                     "foreground_scan_committed_delta",
                 );
@@ -779,6 +788,7 @@ mod lifecycle_tests {
 struct AppliedFolderScan {
     source_id: String,
     label: String,
+    lifecycle_generation: u64,
     file_count: usize,
     folder_count: usize,
     source_db_error: Option<String>,

@@ -103,6 +103,7 @@ pub(in crate::native_app) enum SourceProcessingEvent {
     ManifestAuditCommitted {
         lifecycle: SourceProcessingLifecycle,
         committed_delta: CommittedSourceDelta,
+        complete: bool,
     },
     ManifestAuditFinished {
         lifecycle: SourceProcessingLifecycle,

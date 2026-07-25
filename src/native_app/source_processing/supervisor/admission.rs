@@ -1,7 +1,7 @@
 use super::{
     Arc, AtomicBool, CommittedSourceDelta, DatabaseWriterGate, ExternalScanAdmission,
     ExternalScanRegistration, Ordering, PathBuf, ProcessingLane, SampleSource, Shared,
-    resolve_registered_source_for_scan_locked,
+    SourceDeltaQueueResult, resolve_registered_source_for_scan_locked,
 };
 
 /// The typed handoff an external scan must make before releasing its source-processing budget.
@@ -280,10 +280,14 @@ impl SourceProcessingBudgetPermit {
         if current {
             match handoff {
                 ExternalScanHandoff::CommittedDelta(delta) if !delta.is_empty() => {
-                    if !control.queue_source_delta(
-                        &source_id,
-                        &delta,
-                        "external_scan_committed_delta",
+                    if matches!(
+                        control.queue_source_delta(
+                            &source_id,
+                            self.lifecycle_generation,
+                            &delta,
+                            "external_scan_committed_delta",
+                        ),
+                        SourceDeltaQueueResult::Rejected
                     ) {
                         control.pending_readiness_deltas.remove(&source_id);
                         control.cancel_source_work(&source_id);

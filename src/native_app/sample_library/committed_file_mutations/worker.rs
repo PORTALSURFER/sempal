@@ -17,6 +17,7 @@ use crate::native_app::sample_library::folder_scan_actions::sync_source_database
 #[derive(Clone, Debug)]
 pub(super) struct SourceMutationRequest {
     pub(super) source: SampleSource,
+    pub(super) lifecycle_generation: u64,
     pub(super) operation_id: u64,
     pub(super) operation: FileMutationOperation,
     pub(super) changes: Vec<FileMutationChange>,
@@ -28,6 +29,7 @@ impl PartialEq for SourceMutationRequest {
     fn eq(&self, other: &Self) -> bool {
         self.source.id == other.source.id
             && self.source.root == other.source.root
+            && self.lifecycle_generation == other.lifecycle_generation
             && self.source.is_protected() == other.source.is_protected()
             && self.source.is_primary() == other.source.is_primary()
             && self.source.primary_import_path() == other.source.primary_import_path()
@@ -132,6 +134,7 @@ pub(super) fn build_source_requests(
                     .entry(source_id.clone())
                     .or_insert_with(|| SourceMutationRequest {
                         source: source.clone(),
+                        lifecycle_generation: 0,
                         operation_id,
                         operation,
                         changes: Vec::new(),
@@ -304,6 +307,7 @@ pub(super) fn reconcile_source_mutation(
 
     Ok(CommittedFileMutation {
         source_id: request.source.id.as_str().to_string(),
+        lifecycle_generation: request.lifecycle_generation,
         operation_id: request.operation_id,
         operation: request.operation,
         committed_source_revision,

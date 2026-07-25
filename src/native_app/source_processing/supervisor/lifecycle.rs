@@ -126,7 +126,7 @@ impl SourceProcessingSupervisor {
         }
         control.sources = sources;
         control.source_work_cancels = source_work_cancels;
-        control.source_lifecycle_generations = source_lifecycle_generations;
+        control.source_lifecycle_generations = source_lifecycle_generations.clone();
         control.quarantined_sources.clear();
         let retained_source_ids = control.sources.keys().cloned().collect::<BTreeSet<_>>();
         control
@@ -153,6 +153,14 @@ impl SourceProcessingSupervisor {
         control.pending_readiness_deltas.retain(|source_id, _| {
             retained_source_ids.contains(source_id) && !changed_source_ids.contains(source_id)
         });
+        control
+            .accepted_manifest_revisions
+            .retain(|source_id, fence| {
+                retained_source_ids.contains(source_id)
+                    && !changed_source_ids.contains(source_id)
+                    && source_lifecycle_generations.get(source_id)
+                        == Some(&fence.lifecycle_generation)
+            });
         control
             .awaiting_foreground_refresh_sources
             .retain(|source_id| {

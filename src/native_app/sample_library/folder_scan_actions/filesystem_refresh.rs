@@ -168,6 +168,7 @@ impl NativeAppState {
                 if !result.cancelled && incomplete_error.is_none() {
                     self.background.source_processing.request_source_delta(
                         &source_id,
+                        result.lifecycle_generation,
                         &delta,
                         "filesystem_sync_committed_delta",
                     );
@@ -245,6 +246,7 @@ impl NativeAppState {
         source_id: String,
         lifecycle_generation: u64,
         committed_delta: wavecrate::sample_sources::scanner::CommittedSourceDelta,
+        complete: bool,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
         if self.background.source_lifecycle_generations.get(&source_id)
@@ -254,8 +256,18 @@ impl NativeAppState {
         {
             return;
         }
+        if !complete {
+            self.background
+                .source_processing
+                .wake_source_for_full_reconciliation(
+                    &source_id,
+                    "manifest_audit_incomplete_after_commit",
+                );
+            return;
+        }
         self.background.source_processing.request_source_delta(
             &source_id,
+            lifecycle_generation,
             &committed_delta,
             "manifest_audit_committed_delta",
         );

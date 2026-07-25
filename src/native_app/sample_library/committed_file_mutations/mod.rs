@@ -307,6 +307,7 @@ impl FileMutationChange {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::native_app) struct CommittedFileMutation {
     pub(in crate::native_app) source_id: String,
+    pub(in crate::native_app) lifecycle_generation: u64,
     pub(in crate::native_app) operation_id: u64,
     pub(in crate::native_app) operation: FileMutationOperation,
     pub(in crate::native_app) committed_source_revision: u64,
@@ -387,7 +388,14 @@ impl NativeAppState {
             })
             .collect::<Vec<_>>();
         let sources = self.library.folder_browser.configured_sample_sources();
-        let requests = build_source_requests(operation_id, operation, changes, &sources);
+        let mut requests = build_source_requests(operation_id, operation, changes, &sources);
+        let lifecycle_generations = self.background.source_processing.lifecycle_generations();
+        for request in &mut requests {
+            request.lifecycle_generation = lifecycle_generations
+                .get(request.source.id.as_str())
+                .copied()
+                .unwrap_or_default();
+        }
         if requests.is_empty() {
             let mut failures = failures;
             if had_changes {
@@ -550,6 +558,7 @@ impl NativeAppState {
             );
             self.background.source_processing.request_source_delta(
                 &event.source_id,
+                event.lifecycle_generation,
                 &event.committed_delta,
                 "committed_file_mutation_delta",
             );

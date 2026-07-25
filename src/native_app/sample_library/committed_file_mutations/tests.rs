@@ -20,6 +20,7 @@ fn request(
     capture_expected_filesystem_state(&mut changes);
     SourceMutationRequest {
         source: SampleSource::new_with_id(SourceId::from_string("source-a"), root.to_path_buf()),
+        lifecycle_generation: 0,
         operation_id: 42,
         operation,
         affected_relative_paths: changes

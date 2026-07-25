@@ -548,6 +548,7 @@ fn source_completions_from_previous_readded_epoch_are_ignored() {
                 }],
                 ..Default::default()
             },
+            complete: true,
         },
         &mut context,
     );
@@ -555,6 +556,71 @@ fn source_completions_from_previous_readded_epoch_are_ignored() {
         !current_cancel.load(Ordering::Acquire),
         "an old completion must not cancel the re-added source generation"
     );
+    drop(current_permit);
+}
+
+#[test]
+fn incomplete_current_manifest_audit_delivery_requests_full_reconciliation() {
+    let directory = tempfile::tempdir().expect("completion source");
+    let mut state = NativeAppStateFixture::default().build();
+    let source_id = state
+        .library
+        .folder_browser
+        .defer_add_source_path(directory.path().to_path_buf(), false)
+        .expect("source registered");
+    state.sync_source_watcher();
+    let lifecycle_generation = state.background.source_lifecycle_generations[&source_id];
+    let current_permit = state
+        .background
+        .source_processing
+        .budget_handle()
+        .acquire_scan(&source_id)
+        .expect("current source scan permit");
+    let current_cancel = current_permit.cancel_token();
+    let identity = String::from("incomplete-file");
+    let mut context = ui::UiUpdateContext::default();
+
+    state.apply_message(
+        GuiMessage::SourceManifestAuditCommitted {
+            source_id: source_id.clone(),
+            lifecycle_generation,
+            committed_delta: wavecrate::sample_sources::scanner::CommittedSourceDelta {
+                revision: 3,
+                changed: vec![wavecrate::sample_sources::scanner::ManifestIdentityDelta {
+                    identity: identity.clone(),
+                    relative_path: std::path::PathBuf::from("incomplete.wav"),
+                    content_generation: String::from("incomplete-generation"),
+                    source_metadata_changed: true,
+                }],
+                ..Default::default()
+            },
+            complete: false,
+        },
+        &mut context,
+    );
+
+    assert!(current_cancel.load(Ordering::Acquire));
+    assert!(
+        state
+            .background
+            .source_processing
+            .source_dirty_for_tests(&source_id)
+    );
+    assert!(
+        !state
+            .background
+            .source_processing
+            .pending_source_delta_contains_identity_for_tests(&source_id, &identity)
+    );
+    assert_eq!(
+        state
+            .background
+            .source_processing
+            .accepted_manifest_revision_for_tests(&source_id),
+        None,
+        "an incomplete audit delivery must not create an accepted revision fence"
+    );
+
     drop(current_permit);
 }
 

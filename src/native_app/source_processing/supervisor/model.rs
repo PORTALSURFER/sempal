@@ -20,6 +20,13 @@ pub(super) struct PendingReadinessDelta {
     pub(super) state_machine_inputs: BTreeSet<(u64, &'static str)>,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct AcceptedManifestRevision {
+    pub(super) lifecycle_generation: u64,
+    pub(super) revision: u64,
+    pub(super) recovery_floor: Option<u64>,
+}
+
 impl PendingReadinessDelta {
     pub(super) fn merge(
         &mut self,
@@ -110,6 +117,7 @@ pub(super) struct SourceDiscoveryStats {
     pub(super) progress_total: usize,
     pub(super) cheap_noop_sweep: bool,
     pub(super) delta_reconciled: bool,
+    pub(super) reconciled_manifest_revision: Option<u64>,
 }
 
 pub(super) enum Cancellable<T> {

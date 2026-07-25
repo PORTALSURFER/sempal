@@ -47,10 +47,12 @@ fn map_event(event: SourceProcessingEvent) -> GuiMessage {
         SourceProcessingEvent::ManifestAuditCommitted {
             lifecycle,
             committed_delta,
+            complete,
         } => GuiMessage::SourceManifestAuditCommitted {
             source_id: lifecycle.source_id,
             lifecycle_generation: lifecycle.generation,
             committed_delta,
+            complete,
         },
         SourceProcessingEvent::ManifestAuditFinished {
             lifecycle,
@@ -407,6 +409,7 @@ mod tests {
                 lifecycle: SourceProcessingLifecycle::new("source", 23),
                 committed_delta: wavecrate::sample_sources::scanner::CommittedSourceDelta::default(
                 ),
+                complete: true,
             })
         );
 

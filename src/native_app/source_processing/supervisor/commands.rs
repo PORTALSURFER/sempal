@@ -1,6 +1,7 @@
 use super::{
     Arc, BTreeMap, CommittedSourceDelta, ControlState, MAX_VISIBLE_PRIORITY_PATHS, SampleSource,
-    SourceProcessingBudgetHandle, SourceProcessingSupervisor, register_source_for_scan_locked,
+    SourceDeltaQueueResult, SourceProcessingBudgetHandle, SourceProcessingSupervisor,
+    register_source_for_scan_locked,
 };
 
 /// Lifecycle hints that may require source-audit admission, but are not proof that a complete
@@ -175,6 +176,7 @@ impl SourceProcessingSupervisor {
     pub(in crate::native_app) fn request_source_delta(
         &self,
         source_id: &str,
+        lifecycle_generation: u64,
         delta: &CommittedSourceDelta,
         reason: &'static str,
     ) {
@@ -182,7 +184,10 @@ impl SourceProcessingSupervisor {
             return;
         }
         let mut control = self.shared.control();
-        if !queue_source_delta(&mut control, source_id, delta, reason) {
+        if !matches!(
+            queue_source_delta(&mut control, source_id, lifecycle_generation, delta, reason),
+            SourceDeltaQueueResult::Queued | SourceDeltaQueueResult::Fallback
+        ) {
             return;
         }
         drop(control);
@@ -200,6 +205,23 @@ impl SourceProcessingSupervisor {
             .pending_readiness_deltas
             .get(source_id)
             .is_some_and(|delta| delta.scope_ids.contains(identity))
+    }
+
+    #[cfg(test)]
+    pub(in crate::native_app) fn source_dirty_for_tests(&self, source_id: &str) -> bool {
+        self.shared.control().dirty_sources.contains(source_id)
+    }
+
+    #[cfg(test)]
+    pub(in crate::native_app) fn accepted_manifest_revision_for_tests(
+        &self,
+        source_id: &str,
+    ) -> Option<u64> {
+        self.shared
+            .control()
+            .accepted_manifest_revisions
+            .get(source_id)
+            .map(|fence| fence.revision)
     }
 
     /// Requeue exact current feature, embedding, and similarity targets after
@@ -342,8 +364,9 @@ impl SourceProcessingSupervisor {
 pub(super) fn queue_source_delta(
     control: &mut ControlState,
     source_id: &str,
+    lifecycle_generation: u64,
     delta: &CommittedSourceDelta,
     reason: &'static str,
-) -> bool {
-    control.queue_source_delta(source_id, delta, reason)
+) -> SourceDeltaQueueResult {
+    control.queue_source_delta(source_id, lifecycle_generation, delta, reason)
 }

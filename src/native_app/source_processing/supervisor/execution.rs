@@ -162,6 +162,7 @@ pub(super) fn execute_candidate(
                     lifecycle_generation,
                 ),
                 committed_delta: outcome.committed_delta,
+                complete: manifest_complete,
             });
             let foreground_refresh_owns_reconciliation =
                 browser_refresh_required && audit_published;
