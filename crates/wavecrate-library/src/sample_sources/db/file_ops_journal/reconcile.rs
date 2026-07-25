@@ -3,15 +3,19 @@ use std::path::Path;
 use super::super::SourceDatabase;
 use super::FileOpJournalEntry;
 use super::entry::{FileOpKind, FileOpStage};
+#[cfg(test)]
+use super::recovery_io::TestStagedFileFinalizer;
 use super::recovery_io::{
-    OpenedFile, RecoveryRoot, RecoverySourceDatabases, SourceDatabaseRecoveryAccess,
+    OpenedFile, PlatformStagedFileFinalizer, RecoveryRoot, RecoverySourceDatabases,
+    SourceDatabaseRecoveryAccess, StagedFileFinalizer, StagedFinalization,
 };
 use super::store::FileOpJournalStore;
 
-struct FileOpRecoveryCoordinator<'a, D> {
+struct FileOpRecoveryCoordinator<'a, D, F> {
     target_db: &'a SourceDatabase,
     journal: FileOpJournalStore<'a>,
     source_databases: D,
+    staged_finalizer: F,
 }
 
 /// Summary of reconciliation work performed for pending file ops.
@@ -31,11 +35,25 @@ pub fn reconcile_pending_ops(db: &SourceDatabase) -> Result<FileOpReconcileSumma
         target_db: db,
         journal: FileOpJournalStore::new(db),
         source_databases: SourceDatabaseRecoveryAccess,
+        staged_finalizer: PlatformStagedFileFinalizer,
     }
     .reconcile()
 }
 
-impl<D: RecoverySourceDatabases> FileOpRecoveryCoordinator<'_, D> {
+#[cfg(test)]
+pub(super) fn reconcile_pending_ops_with_test_finalizer(
+    db: &SourceDatabase,
+) -> Result<FileOpReconcileSummary, String> {
+    FileOpRecoveryCoordinator {
+        target_db: db,
+        journal: FileOpJournalStore::new(db),
+        source_databases: SourceDatabaseRecoveryAccess,
+        staged_finalizer: TestStagedFileFinalizer,
+    }
+    .reconcile()
+}
+
+impl<D: RecoverySourceDatabases, F: StagedFileFinalizer> FileOpRecoveryCoordinator<'_, D, F> {
     fn reconcile(&self) -> Result<FileOpReconcileSummary, String> {
         let listed = self.journal.list().map_err(|err| err.to_string())?;
         let mut summary = FileOpReconcileSummary {
@@ -50,7 +68,12 @@ impl<D: RecoverySourceDatabases> FileOpRecoveryCoordinator<'_, D> {
             ));
         }
         for entry in listed.entries {
-            match reconcile_entry(self.target_db, &entry, &self.source_databases) {
+            match reconcile_entry(
+                self.target_db,
+                &entry,
+                &self.source_databases,
+                &self.staged_finalizer,
+            ) {
                 Ok(()) => {
                     if let Err(err) = self.journal.remove(&entry.id) {
                         summary.errors.push(format!(
@@ -72,6 +95,7 @@ fn reconcile_entry(
     db: &SourceDatabase,
     entry: &FileOpJournalEntry,
     source_databases: &impl RecoverySourceDatabases,
+    staged_finalizer: &impl StagedFileFinalizer,
 ) -> Result<(), String> {
     let target_root = RecoveryRoot::open(db.root(), entry.target_root_identity.as_deref())?;
     let staged = match entry.staged_relative.as_deref() {
@@ -91,21 +115,24 @@ fn reconcile_entry(
         None
     };
 
-    reconcile_staged_file(
+    let staged_finalization = reconcile_staged_file(
         &target_root,
         entry.staged_relative.as_deref(),
         &entry.target_relative,
         staged.as_ref(),
         target.is_some(),
+        staged_finalizer,
     )?;
     let target = target_root.open_file(&entry.target_relative)?;
     validate_staged_file_identity(entry, staged.as_ref())?;
     validate_existing_target_identity(entry, target.as_ref(), staged.is_some())?;
     let target_exists = reconcile_target_entry(db, entry, target.as_ref())?;
-    if let (Some(staged_relative), Some(staged)) =
-        (entry.staged_relative.as_deref(), staged.as_ref())
-    {
-        target_root.remove_file_if_identity(staged_relative, &staged.identity)?;
+    if staged_finalization == StagedFinalization::NeedsCleanup {
+        if let (Some(staged_relative), Some(staged)) =
+            (entry.staged_relative.as_deref(), staged.as_ref())
+        {
+            staged_finalizer.cleanup(&target_root, staged_relative, staged)?;
+        }
     }
     if entry.kind == FileOpKind::Move {
         reconcile_source_entry(db, entry, target_exists, source_root, source_databases)?;
@@ -141,18 +168,18 @@ fn reconcile_staged_file(
     target_relative: &Path,
     staged: Option<&OpenedFile>,
     target_exists: bool,
-) -> Result<(), String> {
+    staged_finalizer: &impl StagedFileFinalizer,
+) -> Result<StagedFinalization, String> {
     let Some(staged_relative) = staged_relative else {
-        return Ok(());
+        return Ok(StagedFinalization::Published);
     };
     let Some(staged) = staged else {
-        return Ok(());
+        return Ok(StagedFinalization::Published);
     };
-    if !target_exists {
-        target_root.ensure_parent(target_relative)?;
-        target_root.hard_link_no_replace(staged_relative, &staged.identity, target_relative)?;
+    if target_exists {
+        return Ok(StagedFinalization::NeedsCleanup);
     }
-    Ok(())
+    staged_finalizer.publish(target_root, staged_relative, staged, target_relative)
 }
 
 fn validate_staged_file_identity(
@@ -211,7 +238,7 @@ fn validate_opened_file(
         && entry
             .modified_ns
             .is_none_or(|expected| expected == actual.modified_ns);
-    if expected_identity == actual.identity && facts_match {
+    if expected_identity == actual.identity && facts_match && actual.is_still_same_object() {
         return Ok(());
     }
     Err(format!(

@@ -97,12 +97,20 @@ pub const META_SOURCE_TRAVERSAL_POLICY: &str = "source_traversal_policy_v1";
 /// Env var that enables read-only source DB opening by default.
 pub const SOURCE_DB_READ_ONLY_ENV: &str = "WAVECRATE_SOURCE_DB_READ_ONLY";
 
+/// Keeps a verified database-root namespace alive for the lifetime of its connection.
+///
+/// Recovery supplies platform-specific implementations when SQLite must open through a
+/// descriptor-bound namespace. This is intentionally private to the library's database
+/// implementation; ordinary callers continue to use pathname-based opening.
+pub(crate) trait DatabaseRootBindingGuard: Send {}
+
 /// SQLite wrapper that stores wav metadata for a single source folder.
 pub struct SourceDatabase {
     connection: Connection,
     db_path: PathBuf,
     root: PathBuf,
     telemetry_label: &'static str,
+    database_root_binding: Option<Box<dyn DatabaseRootBindingGuard>>,
 }
 
 /// Owned source-database writer reservation retained across an asynchronous snapshot handoff.
@@ -301,6 +309,15 @@ impl SourceDatabase {
             open::should_open_source_db_read_only(),
             open::SourceDatabaseOpenMode::Full,
         )
+    }
+
+    /// Retain a verified database-root namespace until this connection is closed.
+    pub(crate) fn retain_database_root_binding(
+        mut self,
+        binding: Box<dyn DatabaseRootBindingGuard>,
+    ) -> Self {
+        self.database_root_binding = Some(binding);
+        self
     }
 
     /// Open a startup-friendly database for a background job.

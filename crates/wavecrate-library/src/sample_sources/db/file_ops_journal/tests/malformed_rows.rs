@@ -34,7 +34,7 @@ fn reconcile_reports_and_retains_malformed_journal_rows() {
         )
         .unwrap();
 
-    let summary = reconcile_pending_ops(&target_db).unwrap();
+    let summary = reconcile_pending_ops_for_tests(&target_db).unwrap();
     assert_eq!(summary.total, 1);
     assert_eq!(summary.completed, 0);
     assert_eq!(summary.errors.len(), 1);
