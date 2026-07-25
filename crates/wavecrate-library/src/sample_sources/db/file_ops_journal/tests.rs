@@ -1,4 +1,5 @@
 use super::*;
+use crate::timestamps::system_time_to_unix_nanos;
 use rusqlite::params;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -117,12 +118,7 @@ fn write_wav(path: &Path) {
 
 fn file_identity(path: &Path) -> (u64, i64) {
     let metadata = std::fs::metadata(path).unwrap();
-    let modified_ns = metadata
-        .modified()
-        .unwrap()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos() as i64;
+    let modified_ns = system_time_to_unix_nanos(metadata.modified().unwrap());
     (metadata.len(), modified_ns)
 }
 

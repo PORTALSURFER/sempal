@@ -9,6 +9,7 @@ use crate::selection::SelectionRange;
 use std::path::{Path, PathBuf};
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 use tracing::{info, warn};
+use wavecrate_library::timestamps::system_time_to_unix_nanos;
 
 impl AppController {
     /// Apply one completed selection clip export on the UI thread.
@@ -352,11 +353,6 @@ fn source_db_entry(source_root: &Path, relative_path: &Path) -> Option<WavEntry>
 
 fn file_metadata_identity(path: &Path) -> Option<(u64, i64)> {
     let metadata = std::fs::metadata(path).ok()?;
-    let modified_ns = metadata
-        .modified()
-        .ok()?
-        .duration_since(std::time::UNIX_EPOCH)
-        .ok()?
-        .as_nanos() as i64;
+    let modified_ns = system_time_to_unix_nanos(metadata.modified().ok()?);
     Some((metadata.len(), modified_ns))
 }

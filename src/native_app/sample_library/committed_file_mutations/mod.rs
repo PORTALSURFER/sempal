@@ -121,7 +121,7 @@ pub(super) enum ExpectedMutationPathState {
     ContentHash([u8; 32]),
     Metadata {
         len: u64,
-        modified_ns: Option<u128>,
+        modified_ns: Option<i64>,
         is_dir: bool,
     },
     Unverifiable,

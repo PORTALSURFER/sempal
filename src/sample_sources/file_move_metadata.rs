@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::sample_sources::{SampleCollection, SourceDatabase, WavEntry, db::SourceWriteBatch};
+use wavecrate_library::timestamps::system_time_to_unix_nanos;
 
 /// Metadata remap input for a file move that may cross configured sources.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -300,11 +301,10 @@ fn write_cross_source_user_metadata(
 fn file_metadata(path: &Path) -> Result<(u64, i64), String> {
     let metadata = std::fs::metadata(path)
         .map_err(|err| format!("File move metadata update failed: {err}"))?;
-    let modified_ns = metadata
-        .modified()
-        .map_err(|err| format!("File move metadata update failed: {err}"))?
-        .duration_since(std::time::SystemTime::UNIX_EPOCH)
-        .map_err(|_| String::from("File move metadata update failed: modified time before epoch"))?
-        .as_nanos() as i64;
+    let modified_ns = system_time_to_unix_nanos(
+        metadata
+            .modified()
+            .map_err(|err| format!("File move metadata update failed: {err}"))?,
+    );
     Ok((metadata.len(), modified_ns))
 }

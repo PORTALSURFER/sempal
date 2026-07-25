@@ -3,6 +3,7 @@ use std::{fs, path::Path, sync::atomic::AtomicBool};
 use wavecrate::sample_sources::scanner::ManifestIdentityDelta;
 use wavecrate::sample_sources::{SampleSource, SourceDatabase, SourceId, scanner};
 
+use super::watcher_echo::capture_expected_path_state;
 use super::watcher_echo::watcher_echoes_for_changes;
 use super::worker::{
     SourceMutationRequest, build_source_requests, capture_expected_filesystem_state,
@@ -33,6 +34,24 @@ fn request(
         watcher_echoes: watcher_echoes_for_changes(root, &changes),
         changes,
     }
+}
+
+#[test]
+fn large_file_mutation_fence_preserves_pre_epoch_modified_time() {
+    let root = tempfile::tempdir().expect("source root");
+    let path = root.path().join("large.wav");
+    fs::write(&path, vec![7_u8; 9 * 1024 * 1024]).expect("create large file");
+    filetime::set_file_mtime(&path, filetime::FileTime::from_unix_time(-1, 0))
+        .expect("set pre-epoch modified time");
+
+    let state = capture_expected_path_state(&path);
+    assert!(matches!(
+        state,
+        ExpectedMutationPathState::Metadata {
+            modified_ns: Some(-1_000_000_000),
+            ..
+        }
+    ));
 }
 
 fn reconcile_test_request(

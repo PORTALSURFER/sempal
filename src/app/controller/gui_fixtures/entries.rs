@@ -6,6 +6,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
+use wavecrate_library::timestamps::system_time_to_unix_nanos;
 
 const BROWSER_FIXTURE_ENTRY_COUNT: usize = 40;
 
@@ -142,13 +143,5 @@ fn fixture_modified_ns(path: &Path, metadata: &fs::Metadata) -> Result<i64, Stri
     let modified = metadata
         .modified()
         .map_err(|err| format!("read fixture wav modified time {}: {err}", path.display()))?;
-    let elapsed = modified
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|err| {
-            format!(
-                "fixture wav modified time before epoch {}: {err}",
-                path.display()
-            )
-        })?;
-    Ok(elapsed.as_nanos().min(i64::MAX as u128) as i64)
+    Ok(system_time_to_unix_nanos(modified))
 }

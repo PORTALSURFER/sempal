@@ -2,7 +2,6 @@ use std::ffi::OsStr;
 use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
-use std::time::UNIX_EPOCH;
 
 use cap_primitives::ambient_authority;
 #[cfg(windows)]
@@ -16,6 +15,7 @@ use cap_primitives::fs::{hard_link, remove_file};
 use crate::filesystem_identity::{
     stable_filesystem_identity, stable_filesystem_identity_from_open_file,
 };
+use crate::timestamps::system_time_to_unix_nanos;
 
 use super::super::{DatabaseRootBindingGuard, SourceDatabase};
 
@@ -385,17 +385,12 @@ impl RecoveryRoot {
                 self.path.join(relative).display()
             )
         })?;
-        let modified_ns = metadata
-            .modified()
-            .map_err(|error| {
-                format!(
-                    "missing modified time for {}: {error}",
-                    self.path.join(relative).display()
-                )
-            })?
-            .duration_since(UNIX_EPOCH)
-            .map_err(|_| "file modified time is before epoch".to_string())?
-            .as_nanos() as i64;
+        let modified_ns = system_time_to_unix_nanos(metadata.modified().map_err(|error| {
+            format!(
+                "missing modified time for {}: {error}",
+                self.path.join(relative).display()
+            )
+        })?);
         Ok(Some(OpenedFile {
             capability: file,
             identity,

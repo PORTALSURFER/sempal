@@ -24,7 +24,7 @@ pub(crate) struct SourceRemapArtifactIdentity {
     /// Artifact length from no-follow metadata.
     pub(crate) len: u64,
     /// Last-modified timestamp as nanoseconds after the Unix epoch, when available.
-    pub(crate) modified_ns: Option<u128>,
+    pub(crate) modified_ns: Option<i64>,
     /// Whether the artifact itself is a symbolic link.
     pub(crate) is_symlink: bool,
 }

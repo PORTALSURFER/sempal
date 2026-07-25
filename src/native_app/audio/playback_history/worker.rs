@@ -2,10 +2,10 @@ use std::{
     cell::RefCell,
     collections::HashMap,
     path::{Path, PathBuf},
-    time::UNIX_EPOCH,
 };
 
 use wavecrate::sample_sources::SourceDatabase;
+use wavecrate_library::timestamps::system_time_to_unix_nanos;
 
 use crate::native_app::audio::playback_history::LastPlayedPersistResult;
 
@@ -89,12 +89,11 @@ fn persist_last_played_with_db(
 fn file_metadata(path: &Path) -> Result<(u64, i64), String> {
     let metadata = std::fs::metadata(path)
         .map_err(|err| format!("Failed to read {}: {err}", path.display()))?;
-    let modified_ns = metadata
-        .modified()
-        .map_err(|err| format!("Missing modified time for {}: {err}", path.display()))?
-        .duration_since(UNIX_EPOCH)
-        .map_err(|_| String::from("File modified time is before epoch"))?
-        .as_nanos() as i64;
+    let modified_ns = system_time_to_unix_nanos(
+        metadata
+            .modified()
+            .map_err(|err| format!("Missing modified time for {}: {err}", path.display()))?,
+    );
     Ok((metadata.len(), modified_ns))
 }
 

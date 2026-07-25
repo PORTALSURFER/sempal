@@ -3,7 +3,7 @@ use super::*;
 use crate::sample_sources::Rating;
 use rusqlite::params;
 use std::fs;
-use std::time::SystemTime;
+use wavecrate_library::timestamps::system_time_to_unix_nanos;
 
 impl AppController {
     /// Register a newly exported clip in the browser and source database.
@@ -27,12 +27,11 @@ impl AppController {
         }
         let metadata = fs::metadata(source.root.join(&relative_path))
             .map_err(|err| format!("Failed to read saved clip: {err}"))?;
-        let modified_ns = metadata
-            .modified()
-            .map_err(|err| format!("Missing modified time for clip: {err}"))?
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .map_err(|_| "Clip modified time is before epoch".to_string())?
-            .as_nanos() as i64;
+        let modified_ns = system_time_to_unix_nanos(
+            metadata
+                .modified()
+                .map_err(|err| format!("Missing modified time for clip: {err}"))?,
+        );
         let entry = WavEntry {
             relative_path,
             file_size: metadata.len(),
