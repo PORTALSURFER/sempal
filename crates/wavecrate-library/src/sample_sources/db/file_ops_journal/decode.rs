@@ -87,6 +87,15 @@ pub(super) fn decode_journal_row(
     let modified_ns: Option<i64> = row
         .get(8)
         .map_err(|err| malformed_column_error(Some(id.as_str()), "modified_ns", err))?;
+    let file_identity: Option<String> = row
+        .get(15)
+        .map_err(|err| malformed_column_error(Some(id.as_str()), "file_identity", err))?;
+    let target_root_identity: Option<String> = row
+        .get(16)
+        .map_err(|err| malformed_column_error(Some(id.as_str()), "target_root_identity", err))?;
+    let source_root_identity: Option<String> = row
+        .get(17)
+        .map_err(|err| malformed_column_error(Some(id.as_str()), "source_root_identity", err))?;
     let tag = row
         .get::<_, Option<i64>>(9)
         .map_err(|err| malformed_column_error(Some(id.as_str()), "tag", err))?
@@ -118,6 +127,9 @@ pub(super) fn decode_journal_row(
         staged_relative: parse_optional_path(&id, "staged_relative", staged_relative_raw)?,
         file_size,
         modified_ns,
+        file_identity,
+        target_root_identity,
+        source_root_identity,
         tag,
         looped,
         locked,

@@ -60,7 +60,7 @@ fn reconcile_target_db_stage_defers_until_source_root_returns() {
     .unwrap();
     std::fs::rename(&source_root, &parked_root).unwrap();
 
-    let first = reconcile_pending_ops(&target_db).unwrap();
+    let first = reconcile_pending_ops_for_tests(&target_db).unwrap();
     assert_eq!(first.completed, 0);
     assert_eq!(first.errors.len(), 1);
     assert!(first.errors[0].contains("Deferred move recovery"));
@@ -78,7 +78,7 @@ fn reconcile_target_db_stage_defers_until_source_root_returns() {
         Some(Rating::KEEP_1)
     );
 
-    let second = reconcile_pending_ops(&target_db).unwrap();
+    let second = reconcile_pending_ops_for_tests(&target_db).unwrap();
     assert_eq!(second.completed, 1);
     assert!(second.errors.is_empty());
     assert!(

@@ -162,6 +162,21 @@ pub(super) fn ensure_file_ops_journal_optional_columns(
         &columns,
         OptionalColumn::new("file_ops_journal", "last_curated_at", "INTEGER"),
     )?;
+    add_column_if_missing(
+        connection,
+        &columns,
+        OptionalColumn::new("file_ops_journal", "file_identity", "TEXT"),
+    )?;
+    add_column_if_missing(
+        connection,
+        &columns,
+        OptionalColumn::new("file_ops_journal", "target_root_identity", "TEXT"),
+    )?;
+    add_column_if_missing(
+        connection,
+        &columns,
+        OptionalColumn::new("file_ops_journal", "source_root_identity", "TEXT"),
+    )?;
     Ok(())
 }
 

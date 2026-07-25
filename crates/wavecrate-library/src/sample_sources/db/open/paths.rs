@@ -1,3 +1,5 @@
+#[cfg(target_os = "macos")]
+use std::path::Component;
 use std::{
     ffi::OsString,
     fs, io,
@@ -113,7 +115,7 @@ impl SourceDbPathPolicy {
     }
 
     fn from_existing_root(database_root: &Path) -> Result<Self, SourceDbError> {
-        let canonical_root = fs::canonicalize(database_root).map_err(|source| {
+        let canonical_root = canonicalize_for_policy(database_root).map_err(|source| {
             SourceDbError::ResolveSourceDatabasePath {
                 path: database_root.to_path_buf(),
                 source,
@@ -177,7 +179,7 @@ impl SourceDbPathPolicy {
             return Ok(());
         }
         let parent = path.parent().unwrap_or_else(|| Path::new("."));
-        let canonical_parent = fs::canonicalize(parent).map_err(|source| {
+        let canonical_parent = canonicalize_for_policy(parent).map_err(|source| {
             SourceDbError::ResolveSourceDatabasePath {
                 path: parent.to_path_buf(),
                 source,
@@ -187,11 +189,12 @@ impl SourceDbPathPolicy {
     }
 
     fn validate_existing_path_contained(&self, path: &Path) -> Result<(), SourceDbError> {
-        let canonical_path =
-            fs::canonicalize(path).map_err(|source| SourceDbError::ResolveSourceDatabasePath {
+        let canonical_path = canonicalize_for_policy(path).map_err(|source| {
+            SourceDbError::ResolveSourceDatabasePath {
                 path: path.to_path_buf(),
                 source,
-            })?;
+            }
+        })?;
         self.ensure_contained(path, &canonical_path)
     }
 
@@ -207,6 +210,30 @@ impl SourceDbPathPolicy {
             path: original_path.to_path_buf(),
             reason: OUTSIDE_ROOT_REASON,
         })
+    }
+}
+
+fn canonicalize_for_policy(path: &Path) -> io::Result<PathBuf> {
+    match fs::canonicalize(path) {
+        Ok(path) => Ok(path),
+        Err(_error) if is_existing_macos_vol_namespace(path) => Ok(path.to_path_buf()),
+        Err(error) => Err(error),
+    }
+}
+
+fn is_existing_macos_vol_namespace(path: &Path) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        let mut components = path.components();
+        let is_vol = matches!(components.next(), Some(Component::RootDir))
+            && matches!(components.next(), Some(Component::Normal(name)) if name == ".vol");
+        return is_vol && fs::symlink_metadata(path).is_ok();
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = path;
+        false
     }
 }
 

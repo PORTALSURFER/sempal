@@ -284,5 +284,8 @@ mod tests {
         assert!(wav_columns.contains("collection"));
         let journal_columns = table_columns(&connection, "file_ops_journal").unwrap();
         assert!(journal_columns.contains("last_curated_at"));
+        assert!(journal_columns.contains("file_identity"));
+        assert!(journal_columns.contains("target_root_identity"));
+        assert!(journal_columns.contains("source_root_identity"));
     }
 }

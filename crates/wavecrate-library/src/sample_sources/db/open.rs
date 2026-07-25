@@ -138,6 +138,7 @@ fn open_source_database_with_flags(
         db_path: db_path.clone(),
         root: root.to_path_buf(),
         telemetry_label,
+        database_root_binding: None,
     };
     let pragmas_started = std::time::Instant::now();
     if let Err(err) = db.apply_pragmas(busy_timeout_ms) {

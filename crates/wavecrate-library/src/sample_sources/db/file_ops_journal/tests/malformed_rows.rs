@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn reconcile_reports_and_drops_malformed_journal_rows() {
+fn reconcile_reports_and_retains_malformed_journal_rows() {
     let temp = TempDir::new().unwrap();
     let target_root = temp.path().join("target");
     std::fs::create_dir_all(&target_root).unwrap();
@@ -34,12 +34,12 @@ fn reconcile_reports_and_drops_malformed_journal_rows() {
         )
         .unwrap();
 
-    let summary = reconcile_pending_ops(&target_db).unwrap();
+    let summary = reconcile_pending_ops_for_tests(&target_db).unwrap();
     assert_eq!(summary.total, 1);
     assert_eq!(summary.completed, 0);
     assert_eq!(summary.errors.len(), 1);
     assert!(summary.errors[0].contains("bad-row"));
-    assert!(summary.errors[0].contains("dropped malformed journal row"));
+    assert!(summary.errors[0].contains("retained journal row"));
     let entry_count = target_db
         .connection
         .query_row(
@@ -48,5 +48,5 @@ fn reconcile_reports_and_drops_malformed_journal_rows() {
             |row: &rusqlite::Row<'_>| row.get::<_, i64>(0),
         )
         .unwrap();
-    assert_eq!(entry_count, 0);
+    assert_eq!(entry_count, 1);
 }

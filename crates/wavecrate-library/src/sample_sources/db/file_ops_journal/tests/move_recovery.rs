@@ -14,7 +14,7 @@ fn reconcile_move_from_staged_file() {
     )
     .unwrap();
 
-    let summary = reconcile_pending_ops(&fixture.target_db).unwrap();
+    let summary = reconcile_pending_ops_for_tests(&fixture.target_db).unwrap();
     assert_eq!(summary.completed, 1);
     assert!(!fixture.staged_absolute().exists());
     assert!(fixture.target_absolute().exists());
@@ -73,7 +73,7 @@ fn reconcile_same_source_move_from_staged_file() {
     )
     .unwrap();
 
-    let summary = reconcile_pending_ops(&db).unwrap();
+    let summary = reconcile_pending_ops_for_tests(&db).unwrap();
     assert_eq!(summary.completed, 1);
     assert!(!staged_absolute.exists());
     assert!(source_root.join(&target_relative).exists());
@@ -97,7 +97,7 @@ fn reconcile_target_db_stage_removes_orphaned_source_row() {
     std::fs::rename(fixture.source_absolute(), fixture.target_absolute()).unwrap();
     fixture.stage_target_db();
 
-    let summary = reconcile_pending_ops(&fixture.target_db).unwrap();
+    let summary = reconcile_pending_ops_for_tests(&fixture.target_db).unwrap();
     assert_eq!(summary.completed, 1);
     assert!(fixture.target_absolute().exists());
     assert!(
@@ -141,7 +141,7 @@ fn reconcile_source_db_stage_is_idempotent_after_move_completion() {
         .unwrap();
     fixture.stage_source_db();
 
-    let summary = reconcile_pending_ops(&fixture.target_db).unwrap();
+    let summary = reconcile_pending_ops_for_tests(&fixture.target_db).unwrap();
     assert_eq!(summary.completed, 1);
     assert!(fixture.target_absolute().exists());
     assert_target_metadata_preserved(&fixture);
@@ -165,7 +165,7 @@ fn reconcile_missing_staged_file_keeps_original_source_when_target_missing() {
         .upsert_file(&fixture.target_relative, 16, 1)
         .unwrap();
 
-    let summary = reconcile_pending_ops(&fixture.target_db).unwrap();
+    let summary = reconcile_pending_ops_for_tests(&fixture.target_db).unwrap();
     assert_eq!(summary.completed, 1);
     assert!(fixture.source_absolute().exists());
     assert!(!fixture.target_absolute().exists());
@@ -225,7 +225,7 @@ fn reconcile_move_defers_when_target_exists_and_journal_identity_is_incomplete()
         .set_last_played_at(&fixture.target_relative, 77)
         .unwrap();
 
-    let summary = reconcile_pending_ops(&fixture.target_db).unwrap();
+    let summary = reconcile_pending_ops_for_tests(&fixture.target_db).unwrap();
     assert_eq!(summary.completed, 0);
     assert_eq!(list_entries(&fixture.target_db).unwrap().entries.len(), 1);
     assert!(fixture.staged_absolute().exists());

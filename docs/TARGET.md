@@ -472,6 +472,17 @@ explicit calibrated lane rather than an unbounded normal-CI soak.
 
 If a source database is missing, corrupt, locked, or unreadable, Wavecrate should keep the user's audio files untouched, report the source database problem clearly, and offer repair/rebuild/reindex options where safe.
 
+File-operation journal recovery must keep staged publication and cleanup bound to the
+descriptor that was verified under the no-follow target-root capability. Windows recovery
+uses a handle-bound, atomic no-replace rename and handle-bound disposition; it must not
+re-resolve the staged pathname or fall back to pathname move, hard-link, or unlink helpers.
+Platforms without an equivalent descriptor-bound primitive fail closed before staged
+publication or cleanup and retain both staged data and the journal row. Move recovery must
+also open the source database through a self-validated namespace bound to the verified
+source-root capability, keeping that binding alive through SQLite use and close so its WAL
+and SHM sidecars remain in the same namespace. Root replacement, namespace mismatch, or
+binding unavailability must leave source data and recovery state retained for retry.
+
 ## Audio Format and Channel Target
 
 Wavecrate should support the following audio formats:

@@ -5,6 +5,10 @@ use tempfile::TempDir;
 
 use crate::sample_sources::{Rating, SourceDatabase};
 
+fn reconcile_pending_ops_for_tests(db: &SourceDatabase) -> Result<FileOpReconcileSummary, String> {
+    super::reconcile::reconcile_pending_ops_with_test_finalizer(db)
+}
+
 mod copy_recovery;
 mod malformed_rows;
 mod move_recovery;

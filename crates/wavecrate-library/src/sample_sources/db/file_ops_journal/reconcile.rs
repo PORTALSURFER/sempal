@@ -1,20 +1,21 @@
 use std::path::Path;
-use std::time::UNIX_EPOCH;
 
 use super::super::SourceDatabase;
 use super::FileOpJournalEntry;
 use super::entry::{FileOpKind, FileOpStage};
+#[cfg(test)]
+use super::recovery_io::TestStagedFileFinalizer;
 use super::recovery_io::{
-    RecoveryFilesystem, RecoverySourceDatabases, SourceDatabaseRecoveryAccess,
-    SystemRecoveryFilesystem,
+    OpenedFile, PlatformStagedFileFinalizer, RecoveryRoot, RecoverySourceDatabases,
+    SourceDatabaseRecoveryAccess, StagedFileFinalizer, StagedFinalization,
 };
 use super::store::FileOpJournalStore;
 
-struct FileOpRecoveryCoordinator<'a, F, D> {
+struct FileOpRecoveryCoordinator<'a, D, F> {
     target_db: &'a SourceDatabase,
     journal: FileOpJournalStore<'a>,
-    filesystem: F,
     source_databases: D,
+    staged_finalizer: F,
 }
 
 /// Summary of reconciliation work performed for pending file ops.
@@ -33,13 +34,26 @@ pub fn reconcile_pending_ops(db: &SourceDatabase) -> Result<FileOpReconcileSumma
     FileOpRecoveryCoordinator {
         target_db: db,
         journal: FileOpJournalStore::new(db),
-        filesystem: SystemRecoveryFilesystem,
         source_databases: SourceDatabaseRecoveryAccess,
+        staged_finalizer: PlatformStagedFileFinalizer,
     }
     .reconcile()
 }
 
-impl<F: RecoveryFilesystem, D: RecoverySourceDatabases> FileOpRecoveryCoordinator<'_, F, D> {
+#[cfg(test)]
+pub(super) fn reconcile_pending_ops_with_test_finalizer(
+    db: &SourceDatabase,
+) -> Result<FileOpReconcileSummary, String> {
+    FileOpRecoveryCoordinator {
+        target_db: db,
+        journal: FileOpJournalStore::new(db),
+        source_databases: SourceDatabaseRecoveryAccess,
+        staged_finalizer: TestStagedFileFinalizer,
+    }
+    .reconcile()
+}
+
+impl<D: RecoverySourceDatabases, F: StagedFileFinalizer> FileOpRecoveryCoordinator<'_, D, F> {
     fn reconcile(&self) -> Result<FileOpReconcileSummary, String> {
         let listed = self.journal.list().map_err(|err| err.to_string())?;
         let mut summary = FileOpReconcileSummary {
@@ -49,25 +63,16 @@ impl<F: RecoveryFilesystem, D: RecoverySourceDatabases> FileOpRecoveryCoordinato
         };
         for malformed in listed.malformed {
             let message = malformed.describe();
-            if let Some(id) = malformed.id.as_deref() {
-                match self.journal.remove(id) {
-                    Ok(()) => summary
-                        .errors
-                        .push(format!("{message}; dropped malformed journal row")),
-                    Err(err) => summary.errors.push(format!(
-                        "{message}; failed to drop malformed row {id}: {err}"
-                    )),
-                }
-            } else {
-                summary.errors.push(message);
-            }
+            summary.errors.push(format!(
+                "{message}; retained journal row for diagnosis and retry"
+            ));
         }
         for entry in listed.entries {
             match reconcile_entry(
                 self.target_db,
                 &entry,
-                &self.filesystem,
                 &self.source_databases,
+                &self.staged_finalizer,
             ) {
                 Ok(()) => {
                     if let Err(err) = self.journal.remove(&entry.id) {
@@ -89,149 +94,156 @@ impl<F: RecoveryFilesystem, D: RecoverySourceDatabases> FileOpRecoveryCoordinato
 fn reconcile_entry(
     db: &SourceDatabase,
     entry: &FileOpJournalEntry,
-    filesystem: &impl RecoveryFilesystem,
     source_databases: &impl RecoverySourceDatabases,
+    staged_finalizer: &impl StagedFileFinalizer,
 ) -> Result<(), String> {
-    let target_root = db.root();
-    let target_absolute = target_root.join(&entry.target_relative);
-    let staged_absolute = entry
-        .staged_relative
-        .as_ref()
-        .map(|path| target_root.join(path));
-    validate_staged_file_identity(entry, staged_absolute.as_deref(), filesystem)?;
-    validate_existing_target_identity(
-        entry,
-        staged_absolute.as_deref(),
-        &target_absolute,
-        filesystem,
+    let target_root = RecoveryRoot::open(db.root(), entry.target_root_identity.as_deref())?;
+    let staged = match entry.staged_relative.as_deref() {
+        Some(path) => target_root.open_file(path)?,
+        None => None,
+    };
+    let target = target_root.open_file(&entry.target_relative)?;
+    validate_staged_file_identity(entry, staged.as_ref())?;
+    validate_existing_target_identity(entry, target.as_ref(), staged.is_some())?;
+
+    // A move whose staged file still exists must validate the source root before
+    // finalization, so an unavailable/replaced source leaves both staged data and
+    // the journal available for a later retry.
+    let source_root = if entry.kind == FileOpKind::Move && staged.is_some() {
+        Some(preflight_source_root(entry)?)
+    } else {
+        None
+    };
+
+    let staged_finalization = reconcile_staged_file(
+        &target_root,
+        entry.staged_relative.as_deref(),
+        &entry.target_relative,
+        staged.as_ref(),
+        target.is_some(),
+        staged_finalizer,
     )?;
-    reconcile_staged_file(staged_absolute.as_deref(), &target_absolute, filesystem)?;
-    let target_exists = reconcile_target_entry(db, entry, &target_absolute, filesystem)?;
+    let target = target_root.open_file(&entry.target_relative)?;
+    validate_staged_file_identity(entry, staged.as_ref())?;
+    validate_existing_target_identity(entry, target.as_ref(), staged.is_some())?;
+    let target_exists = reconcile_target_entry(db, entry, target.as_ref())?;
+    if staged_finalization == StagedFinalization::NeedsCleanup {
+        if let (Some(staged_relative), Some(staged)) =
+            (entry.staged_relative.as_deref(), staged.as_ref())
+        {
+            staged_finalizer.cleanup(&target_root, staged_relative, staged)?;
+        }
+    }
     if entry.kind == FileOpKind::Move {
-        reconcile_source_entry(db, entry, target_exists, filesystem, source_databases)?;
+        reconcile_source_entry(db, entry, target_exists, source_root, source_databases)?;
     }
     Ok(())
+}
+
+fn preflight_source_root(entry: &FileOpJournalEntry) -> Result<RecoveryRoot, String> {
+    let source_root = entry.source_root.as_deref().ok_or_else(|| {
+        format!(
+            "Deferred move recovery for {}: source root is missing",
+            entry.id
+        )
+    })?;
+    let root = RecoveryRoot::open(source_root, entry.source_root_identity.as_deref())?;
+    if let Some(source_relative) = entry.source_relative.as_deref()
+        && let Some(source_file) = root.open_file(source_relative)?
+    {
+        validate_opened_file(
+            entry,
+            &source_file,
+            "source",
+            "source file was replaced before recovery replay",
+        )?;
+    }
+    Ok(root)
 }
 
 /// Finalize one staged file into the target path or clean the stale staged copy.
 fn reconcile_staged_file(
-    staged_absolute: Option<&Path>,
-    target_absolute: &Path,
-    filesystem: &impl RecoveryFilesystem,
-) -> Result<(), String> {
-    let Some(staged_absolute) = staged_absolute else {
-        return Ok(());
+    target_root: &RecoveryRoot,
+    staged_relative: Option<&Path>,
+    target_relative: &Path,
+    staged: Option<&OpenedFile>,
+    target_exists: bool,
+    staged_finalizer: &impl StagedFileFinalizer,
+) -> Result<StagedFinalization, String> {
+    let Some(staged_relative) = staged_relative else {
+        return Ok(StagedFinalization::Published);
     };
-    if !filesystem.is_file(staged_absolute) {
-        return Ok(());
+    let Some(staged) = staged else {
+        return Ok(StagedFinalization::Published);
+    };
+    if target_exists {
+        return Ok(StagedFinalization::NeedsCleanup);
     }
-    if !filesystem.is_file(target_absolute) {
-        if let Some(parent) = target_absolute.parent() {
-            filesystem
-                .create_dir_all(parent)
-                .map_err(|err| format!("Failed to create target dir: {err}"))?;
-        }
-        filesystem
-            .rename(staged_absolute, target_absolute)
-            .map_err(|err| format!("Failed to finalize staged file: {err}"))?;
-    } else {
-        filesystem
-            .remove_file(staged_absolute)
-            .map_err(|err| format!("Failed to remove staged file: {err}"))?;
-    }
-    Ok(())
+    staged_finalizer.publish(target_root, staged_relative, staged, target_relative)
 }
 
 fn validate_staged_file_identity(
     entry: &FileOpJournalEntry,
-    staged_absolute: Option<&Path>,
-    filesystem: &impl RecoveryFilesystem,
+    staged: Option<&OpenedFile>,
 ) -> Result<(), String> {
-    let Some(staged_absolute) = staged_absolute else {
+    let Some(staged) = staged else {
         return Ok(());
     };
-    if !filesystem.is_file(staged_absolute) {
-        return Ok(());
-    }
-    validate_identity_match(
+    validate_opened_file(
         entry,
-        staged_absolute,
+        staged,
         "staged",
         "staged file no longer matches the recorded journal metadata",
-        filesystem,
     )
 }
 
 fn validate_existing_target_identity(
     entry: &FileOpJournalEntry,
-    staged_absolute: Option<&Path>,
-    target_absolute: &Path,
-    filesystem: &impl RecoveryFilesystem,
+    target: Option<&OpenedFile>,
+    staged_exists: bool,
 ) -> Result<(), String> {
-    if !filesystem.is_file(target_absolute) {
+    let Some(target) = target else {
         return Ok(());
-    }
-    if entry.file_size.is_none() || entry.modified_ns.is_none() {
-        return Err(format!(
-            "Deferred file-op recovery for {}: target file {} exists but journaled identity is incomplete; {}",
-            entry.id,
-            target_absolute.display(),
-            staged_copy_resolution_suffix(staged_absolute, filesystem)
-        ));
-    }
-    validate_identity_match(
+    };
+    validate_opened_file(
         entry,
-        target_absolute,
+        target,
         "target",
         &format!(
             "target path was reused before recovery replay{}",
-            staged_copy_resolution_suffix(staged_absolute, filesystem)
+            if staged_exists {
+                "; leaving staged copy intact"
+            } else {
+                "; no staged copy remains to reconcile safely"
+            }
         ),
-        filesystem,
     )
 }
 
-fn staged_copy_resolution_suffix(
-    staged_absolute: Option<&Path>,
-    filesystem: &impl RecoveryFilesystem,
-) -> String {
-    if staged_absolute.is_some_and(|path| filesystem.is_file(path)) {
-        format!(
-            "; leaving staged copy at {} intact",
-            staged_absolute.expect("checked above").display()
-        )
-    } else {
-        String::from("; no staged copy remains to reconcile safely")
-    }
-}
-
-fn validate_identity_match(
+fn validate_opened_file(
     entry: &FileOpJournalEntry,
-    path: &Path,
+    actual: &OpenedFile,
     location: &str,
     mismatch_reason: &str,
-    filesystem: &impl RecoveryFilesystem,
 ) -> Result<(), String> {
-    let Some(expected_file_size) = entry.file_size else {
-        return Ok(());
+    let Some(expected_identity) = entry.file_identity.as_deref() else {
+        return Err(format!(
+            "Deferred file-op recovery for {}: {location} file exists but journaled identity is incomplete; leaving staged copy intact",
+            entry.id
+        ));
     };
-    let Some(expected_modified_ns) = entry.modified_ns else {
-        return Ok(());
-    };
-    let actual = file_metadata(path, filesystem)?;
-    if actual == (expected_file_size, expected_modified_ns) {
+    let facts_match = entry
+        .file_size
+        .is_none_or(|expected| expected == actual.file_size)
+        && entry
+            .modified_ns
+            .is_none_or(|expected| expected == actual.modified_ns);
+    if expected_identity == actual.identity && facts_match && actual.is_still_same_object() {
         return Ok(());
     }
     Err(format!(
-        "Deferred file-op recovery for {}: {} file {} does not match journaled identity (expected {} bytes @ {}, found {} bytes @ {}); {}",
-        entry.id,
-        location,
-        path.display(),
-        expected_file_size,
-        expected_modified_ns,
-        actual.0,
-        actual.1,
-        mismatch_reason
+        "Deferred file-op recovery for {}: {location} file does not match journaled identity (expected {expected_identity}, found {}); {mismatch_reason}",
+        entry.id, actual.identity
     ))
 }
 
@@ -239,18 +251,20 @@ fn validate_identity_match(
 fn reconcile_target_entry(
     db: &SourceDatabase,
     entry: &FileOpJournalEntry,
-    target_absolute: &Path,
-    filesystem: &impl RecoveryFilesystem,
+    target: Option<&OpenedFile>,
 ) -> Result<bool, String> {
-    if filesystem.is_file(target_absolute) {
-        let (file_size, modified_ns) = file_metadata(target_absolute, filesystem)?;
+    if let Some(target) = target {
         let mut batch = db.write_batch().map_err(|err| err.to_string())?;
         match entry.kind {
             FileOpKind::Copy => batch
-                .upsert_file_without_hash(&entry.target_relative, file_size, modified_ns)
+                .upsert_file_without_hash(
+                    &entry.target_relative,
+                    target.file_size,
+                    target.modified_ns,
+                )
                 .map_err(|err| err.to_string())?,
             FileOpKind::Move => batch
-                .upsert_file(&entry.target_relative, file_size, modified_ns)
+                .upsert_file(&entry.target_relative, target.file_size, target.modified_ns)
                 .map_err(|err| err.to_string())?,
         }
         if let Some(tag) = entry.tag {
@@ -299,38 +313,56 @@ fn reconcile_source_entry(
     target_db: &SourceDatabase,
     entry: &FileOpJournalEntry,
     target_exists: bool,
-    filesystem: &impl RecoveryFilesystem,
+    source_root: Option<RecoveryRoot>,
     source_databases: &impl RecoverySourceDatabases,
 ) -> Result<(), String> {
-    let Some(source_root) = entry.source_root.as_ref() else {
+    let Some(source_root_path) = entry.source_root.as_deref() else {
         return Ok(());
     };
-    let Some(source_relative) = entry.source_relative.as_ref() else {
+    let Some(source_relative) = entry.source_relative.as_deref() else {
         return Ok(());
     };
-    if !source_root.is_dir() {
+    let source_root = match source_root {
+        Some(root) => Some(root),
+        None => RecoveryRoot::open_if_available(
+            source_root_path,
+            entry.source_root_identity.as_deref(),
+        )?,
+    };
+    let Some(source_root) = source_root else {
         if should_defer_source_cleanup(entry, target_exists) {
             return Err(format!(
                 "Deferred move recovery for {} until source root is available: {}",
                 entry.id,
-                source_root.display()
+                source_root_path.display()
             ));
         }
         return Ok(());
+    };
+    let source_file = source_root.open_file(source_relative)?;
+    if entry.file_identity.is_some()
+        && let Some(source_file) = source_file.as_ref()
+    {
+        validate_opened_file(
+            entry,
+            source_file,
+            "source",
+            "source file was replaced before recovery replay",
+        )?;
     }
-    let source_absolute = source_root.join(source_relative);
-    if filesystem.is_file(&source_absolute) && !target_exists {
+    if source_file.is_some() && !target_exists {
         return Ok(());
     }
-    let source_db = source_databases.open(source_root)?;
-    if !filesystem.is_file(&source_absolute) {
+    let source_db = source_databases.open(&source_root)?;
+    if source_file.is_none() {
+        source_root.revalidate_named_root()?;
         source_db
             .remove_file(source_relative)
             .map_err(|err| format!("Failed to drop source DB row: {err}"))?;
     } else if target_exists {
         tracing::warn!(
             "Move recovery left duplicate file at {} -> {}",
-            source_absolute.display(),
+            source_root_path.join(source_relative).display(),
             target_db.root().display()
         );
     }
@@ -339,17 +371,4 @@ fn reconcile_source_entry(
 
 fn should_defer_source_cleanup(entry: &FileOpJournalEntry, target_exists: bool) -> bool {
     target_exists && entry.stage != FileOpStage::SourceDb
-}
-
-fn file_metadata(path: &Path, filesystem: &impl RecoveryFilesystem) -> Result<(u64, i64), String> {
-    let metadata = filesystem
-        .metadata(path)
-        .map_err(|err| format!("Failed to read {}: {err}", path.display()))?;
-    let modified_ns = metadata
-        .modified()
-        .map_err(|err| format!("Missing modified time for {}: {err}", path.display()))?
-        .duration_since(UNIX_EPOCH)
-        .map_err(|_| "File modified time is before epoch".to_string())?
-        .as_nanos() as i64;
-    Ok((metadata.len(), modified_ns))
 }
