@@ -681,6 +681,35 @@ fn interrupted_manifest_audit_resumes_checked_paths_and_finishes_deletion_reconc
 }
 
 #[test]
+fn manifest_audit_progress_is_published_after_durable_checkpoint() {
+    let dir = tempdir().unwrap();
+    let relative = Path::new("missed.wav");
+    std::fs::write(dir.path().join(relative), b"missed watcher file").unwrap();
+    let db = SourceDatabase::open_for_scan(dir.path()).unwrap();
+    let mut progress = Vec::new();
+
+    audit_source_and_record_with_progress(&db, None, 0, 100, &mut |checked, path| {
+        let (checkpointed_paths, persisted_checked) = db
+            .begin_or_resume_manifest_audit_batch(101, usize::MAX)
+            .expect("read the checkpoint while publishing progress");
+        progress.push((
+            checked,
+            persisted_checked,
+            path.to_path_buf(),
+            checkpointed_paths,
+        ));
+    })
+    .expect("manifest audit should complete");
+
+    assert_eq!(progress.len(), 1);
+    let (checked, persisted_checked, path, checkpointed_paths) = &progress[0];
+    assert_eq!(*checked, 1);
+    assert_eq!(*persisted_checked, 1);
+    assert_eq!(path, relative);
+    assert_eq!(checkpointed_paths, &vec![relative.to_path_buf()]);
+}
+
+#[test]
 fn interrupted_manifest_audit_revalidates_a_checkpointed_file() {
     use std::sync::atomic::{AtomicBool, Ordering};
 

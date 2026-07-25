@@ -40,6 +40,7 @@ pub(super) fn walk_phase(
     let committed = Cell::new(false);
     let mut pending = Vec::with_capacity(APPLY_BATCH_SIZE);
     let mut pending_noops = Vec::with_capacity(APPLY_BATCH_SIZE);
+    let mut last_manifest_audit_path = None::<std::path::PathBuf>;
     let source_tree_snapshot = visit_dir_with_cancel_check(
         source_root,
         root,
@@ -98,22 +99,27 @@ pub(super) fn walk_phase(
             }
             if !prepared.requires_apply {
                 if context.resumable_manifest_audit_active() {
+                    last_manifest_audit_path = Some(path.to_path_buf());
                     context.record_manifest_audit_paths([relative_path]);
                     pending_noops.push(prepared);
                     if context.manifest_audit_checkpoint_due() {
-                        flush_manifest_audit_checkpoint_with_noops(
+                        checkpoint_manifest_audit_with_progress(
                             db,
                             root,
                             &source_root,
                             context,
                             &mut pending_noops,
+                            Some(path),
+                            on_progress,
                         )?;
                     }
                 } else {
                     skip_noop(context, &prepared);
                 }
-                publish_manifest_audit_progress(context, root, path, on_progress);
                 return Ok(());
+            }
+            if context.resumable_manifest_audit_active() {
+                last_manifest_audit_path = Some(path.to_path_buf());
             }
             pending.push(prepared);
             if pending.len() == APPLY_BATCH_SIZE {
@@ -135,21 +141,16 @@ pub(super) fn walk_phase(
                 let last_path = outcome.audited_paths.last().cloned();
                 context.record_manifest_audit_paths(outcome.audited_paths);
                 if context.manifest_audit_checkpoint_due() {
-                    flush_manifest_audit_checkpoint_with_noops(
+                    let progress_path = last_path.map(|path| root.join(path));
+                    checkpoint_manifest_audit_with_progress(
                         db,
                         root,
                         &source_root,
                         context,
                         &mut pending_noops,
-                    )?;
-                }
-                if let Some(last_path) = last_path {
-                    publish_manifest_audit_progress(
-                        context,
-                        root,
-                        &root.join(last_path),
+                        progress_path.as_deref(),
                         on_progress,
-                    );
+                    )?;
                 }
             }
             Ok(())
@@ -172,20 +173,29 @@ pub(super) fn walk_phase(
         }
         let last_path = outcome.audited_paths.last().cloned();
         context.record_manifest_audit_paths(outcome.audited_paths);
-        if let Some(last_path) = last_path {
-            publish_manifest_audit_progress(context, root, &root.join(last_path), on_progress);
-        }
+        let progress_path = last_path.map(|path| root.join(path));
+        checkpoint_manifest_audit_with_progress(
+            db,
+            root,
+            &source_root,
+            context,
+            &mut pending_noops,
+            progress_path.as_deref(),
+            on_progress,
+        )?;
     }
     context.mark_uncertain_prefixes(source_tree_snapshot.uncertain_prefixes.clone());
     if !context.has_uncertain_prefixes() {
         context.complete_missing_manifest_audit_paths();
     }
-    flush_manifest_audit_checkpoint_with_noops(
+    checkpoint_manifest_audit_with_progress(
         db,
         root,
         &source_root,
         context,
         &mut pending_noops,
+        last_manifest_audit_path.as_deref(),
+        on_progress,
     )?;
     context.observe_index_entries(source_tree_snapshot.index_entries.clone());
     context.stats.source_tree_snapshot =
@@ -220,6 +230,25 @@ fn flush_manifest_audit_checkpoint_with_noops(
         pending_noops,
         |_| {},
     )
+}
+
+fn checkpoint_manifest_audit_with_progress(
+    db: &SourceDatabase,
+    root: &Path,
+    source_root: &SourceRootCapability,
+    context: &mut ScanContext,
+    pending_noops: &mut Vec<PreparedFile>,
+    progress_path: Option<&Path>,
+    on_progress: &mut Option<&mut dyn FnMut(usize, &Path)>,
+) -> Result<(), ScanError> {
+    let checkpoint_pending = context.manifest_audit_checkpoint_pending();
+    flush_manifest_audit_checkpoint_with_noops(db, root, source_root, context, pending_noops)?;
+    if checkpoint_pending {
+        if let Some(progress_path) = progress_path {
+            publish_manifest_audit_progress(context, root, progress_path, on_progress);
+        }
+    }
+    Ok(())
 }
 
 fn flush_manifest_audit_checkpoint_with_noops_hook(
