@@ -87,6 +87,7 @@ impl FolderBrowserState {
                 self.retain_tree_state_after_selected_source_refresh();
             }
             self.bump_file_content_revision();
+            self.mark_scan_content_refresh_pending();
             self.refresh_missing_collection_state();
         }
         true
@@ -378,6 +379,7 @@ impl FolderBrowserState {
         if !result.source_root_available {
             self.source.sources[source_index].mark_missing();
             self.refresh_selected_source_from_cache_or_placeholder(source_index);
+            self.mark_scan_content_refresh_pending();
             return true;
         }
         self.source.sources[source_index].mark_available();
@@ -400,10 +402,12 @@ impl FolderBrowserState {
                 self.select_loaded_source(source_id, result.folder);
                 self.refresh_missing_collection_state();
             }
+            self.mark_scan_content_refresh_pending();
         } else {
             self.source.sources[source_index].root_folder = Some(result.folder);
             self.source.sources[source_index].parked_tree_loaded = true;
             self.bump_file_content_revision();
+            self.mark_scan_content_refresh_pending();
             self.refresh_missing_collection_state();
         }
         true
@@ -470,6 +474,7 @@ impl FolderBrowserState {
         }
         self.retain_tree_state_after_selected_source_refresh();
         self.bump_file_content_revision();
+        self.mark_scan_content_refresh_pending();
         self.refresh_missing_collection_state();
         true
     }
@@ -536,6 +541,7 @@ impl FolderBrowserState {
             }
             if changed {
                 self.bump_file_content_revision();
+                self.mark_scan_content_refresh_pending();
             }
             return changed;
         }
@@ -550,6 +556,7 @@ impl FolderBrowserState {
         if changed && self.source.selected_source == batch.source_id {
             self.tree.folders = vec![root_folder.clone()];
             self.bump_file_content_revision();
+            self.mark_scan_content_refresh_pending();
         }
         changed
     }
@@ -620,6 +627,7 @@ impl FolderBrowserState {
         self.retain_tree_state_after_selected_source_refresh();
         self.reset_tree_view();
         self.bump_file_content_revision();
+        self.mark_scan_content_refresh_pending();
         self.refresh_missing_collection_state();
     }
 

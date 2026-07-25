@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -25,6 +25,9 @@ pub(in crate::native_app) struct FolderBrowserState {
     pub(super) collection_panel: CollectionPanelState,
     pub(super) panel_layout: BrowserPanelLayoutState,
     pub(super) sample_list: SampleListState,
+    scan_content_refresh_revision: Option<u64>,
+    prepared_audio_file_ids: HashSet<String>,
+    deferred_scan_file_ids: HashSet<String>,
     /// Most recent keyboard or pointer focus activity. Pointer focus records
     /// its exact folder target when selection state alone is ambiguous.
     keyboard_focus_shown_at: Option<Instant>,
@@ -96,6 +99,9 @@ impl FolderBrowserState {
             collection_panel: CollectionPanelState::new(),
             panel_layout: BrowserPanelLayoutState::new(),
             sample_list: SampleListState::new(),
+            scan_content_refresh_revision: None,
+            prepared_audio_file_ids: HashSet::new(),
+            deferred_scan_file_ids: HashSet::new(),
             keyboard_focus_shown_at: None,
             keyboard_focus_hold: Duration::ZERO,
             keyboard_focus_alpha: 0,
@@ -127,6 +133,9 @@ impl FolderBrowserState {
             collection_panel: CollectionPanelState::new(),
             panel_layout: BrowserPanelLayoutState::new(),
             sample_list: SampleListState::new(),
+            scan_content_refresh_revision: None,
+            prepared_audio_file_ids: HashSet::new(),
+            deferred_scan_file_ids: HashSet::new(),
             keyboard_focus_shown_at: None,
             keyboard_focus_hold: Duration::ZERO,
             keyboard_focus_alpha: 0,
@@ -540,7 +549,45 @@ impl FolderBrowserState {
     }
 
     pub(super) fn bump_file_content_revision(&mut self) {
+        let preserve_scan_refresh = self.scan_content_refresh_revision
+            == Some(self.sample_list.content_revision)
+            && self.visible_sample_window_needs_content_refresh();
         self.sample_list.bump_content_revision();
+        self.scan_content_refresh_revision =
+            preserve_scan_refresh.then_some(self.sample_list.content_revision);
+    }
+
+    pub(super) fn mark_scan_content_refresh_pending(&mut self) {
+        self.scan_content_refresh_revision = Some(self.sample_list.content_revision);
+        let prepared_audio_file_ids = self.prepared_audio_file_ids.clone();
+        self.deferred_scan_file_ids = self
+            .selected_source_audio_files()
+            .into_iter()
+            .map(|file| file.id.clone())
+            .filter(|file_id| !prepared_audio_file_ids.contains(file_id))
+            .collect();
+    }
+
+    pub(super) fn clear_scan_content_refresh_pending(&mut self) {
+        self.scan_content_refresh_revision = None;
+        self.deferred_scan_file_ids.clear();
+    }
+
+    pub(super) fn remember_prepared_audio_file_ids(&mut self) {
+        self.prepared_audio_file_ids = self
+            .selected_source_audio_files()
+            .into_iter()
+            .map(|file| file.id.clone())
+            .collect();
+    }
+
+    pub(super) fn scan_file_deferred(&self, file_id: &str) -> bool {
+        self.deferred_scan_file_ids.contains(file_id)
+    }
+
+    pub(in crate::native_app) fn scan_content_refresh_pending(&self) -> bool {
+        self.scan_content_refresh_revision == Some(self.sample_list.content_revision)
+            && self.visible_sample_window_needs_content_refresh()
     }
 
     pub(in crate::native_app) fn visible_sample_window_needs_content_refresh(&self) -> bool {
