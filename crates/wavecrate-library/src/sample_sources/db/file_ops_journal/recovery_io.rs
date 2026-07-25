@@ -451,14 +451,17 @@ impl RecoveryRoot {
             });
         }
 
-        let capability = self.capability.try_clone().map_err(|error| {
-            format!("failed to retain source-root capability for database recovery: {error}")
-        })?;
-        let path = database_root_alias(&capability, &self.path, &self.identity)?;
-        Ok(BoundDatabaseRoot {
-            path,
-            _capability: capability,
-        })
+        #[cfg(not(windows))]
+        {
+            let capability = self.capability.try_clone().map_err(|error| {
+                format!("failed to retain source-root capability for database recovery: {error}")
+            })?;
+            let path = database_root_alias(&capability, &self.path, &self.identity)?;
+            Ok(BoundDatabaseRoot {
+                path,
+                _capability: capability,
+            })
+        }
     }
 
     #[cfg(any(windows, test))]
