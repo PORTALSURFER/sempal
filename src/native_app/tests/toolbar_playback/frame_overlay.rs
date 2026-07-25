@@ -1096,9 +1096,12 @@ fn manifest_maintenance_does_not_paint_source_row_pulse_overlay() {
 }
 
 #[test]
-fn scene_installs_playback_cursor_transient_overlay() {
+fn scene_composes_playback_cursor_with_waveform_overflow_fade() {
     let mut state = gui_state_for_span_tests();
+    state.waveform.current.set_play_selection_range(0.2, 0.8);
+    state.waveform.current.zoom_to_play_selection();
     state.waveform.current.start_playback(0.25);
+    state.ui.chrome.overflow_fades.arm();
     let theme = radiant::theme::ThemeTokens::default();
     let bridge = radiant::app(state)
         .view(crate::native_app::test_support::state::view)
@@ -1107,9 +1110,32 @@ fn scene_installs_playback_cursor_transient_overlay() {
     let mut runtime = SurfaceRuntime::new(bridge, Vector2::new(900.0, 620.0));
     apply_strict_update_diagnostics(&mut runtime);
     let frame = runtime.frame(&theme);
-    let mut primitives = Vec::new();
 
     assert!(runtime.has_transient_overlay_host());
+    let is_live_playback_cursor_fill = |fill: &radiant::runtime::PaintFillRect| {
+        is_playback_cursor_fill(fill) && fill.color.a == u8::MAX
+    };
+    assert!(
+        !frame
+            .paint_plan
+            .fill_rects_for_widget(crate::native_app::test_support::waveform::WAVEFORM_WIDGET_ID)
+            .any(is_live_playback_cursor_fill),
+        "the cached waveform base must not contain the live playback cursor"
+    );
+
+    let before_overlay = runtime.refresh_counters();
+    let activity = runtime.host_animation_activity();
+    assert!(
+        activity.needs_animation(),
+        "playback and waveform overflow fade should keep the host overlay active"
+    );
+    assert_eq!(
+        runtime.refresh_counters(),
+        before_overlay,
+        "polling transient overlay activity must not refresh the cached base"
+    );
+
+    let mut primitives = Vec::new();
     runtime.host_paint_transient_overlay(
         TransientOverlayContext::new(
             &frame.paint_plan,
@@ -1123,8 +1149,39 @@ fn scene_installs_playback_cursor_transient_overlay() {
         primitives
             .iter()
             .filter_map(|primitive| primitive.fill_rect())
-            .any(is_playback_cursor_fill),
-        "root scene should install the paint-only playback cursor overlay"
+            .any(is_live_playback_cursor_fill),
+        "root scene should paint the live playback cursor over the cached waveform base"
+    );
+
+    primitives.clear();
+    runtime.host_paint_transient_overlay(
+        TransientOverlayContext::new(
+            &frame.paint_plan,
+            Vector2::new(900.0, 620.0),
+            Duration::from_millis(130),
+        ),
+        &mut primitives,
+    );
+
+    assert!(
+        primitives
+            .iter()
+            .filter_map(|primitive| primitive.fill_rect())
+            .any(is_live_playback_cursor_fill),
+        "advancing root overlay should keep painting the live playback cursor"
+    );
+    assert!(
+        primitives.iter().any(|primitive| matches!(
+            primitive,
+            PaintPrimitive::FillPath(fill)
+                if matches!(fill.brush, radiant::runtime::PaintBrush::LinearGradient(_))
+        )),
+        "advancing root overlay should paint the active waveform overflow gradient"
+    );
+    assert_eq!(
+        runtime.refresh_counters(),
+        before_overlay,
+        "polling and painting transient overlays must reuse the cached base without refreshes"
     );
 }
 
