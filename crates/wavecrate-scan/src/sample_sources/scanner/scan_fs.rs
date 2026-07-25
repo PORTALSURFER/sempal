@@ -13,8 +13,10 @@ use std::{cell::RefCell, collections::BTreeSet};
 use cap_fs_ext::{DirExt, OpenOptionsFollowExt};
 use cap_std::fs::{Dir, OpenOptions};
 use tracing::warn;
+#[cfg(any(test, not(windows)))]
+use wavecrate_library::filesystem_identity::filesystem_change_marker;
 use wavecrate_library::filesystem_identity::{
-    filesystem_change_marker, stable_filesystem_identity, stable_filesystem_identity_from_open_file,
+    stable_filesystem_identity, stable_filesystem_identity_from_open_file,
 };
 use wavecrate_library::sample_sources::{
     SourceEntryClassification, SourceEntryFileType, SourceFileClassification,
@@ -689,26 +691,6 @@ pub(super) fn read_facts_from_open_file(
             }
         },
     })
-}
-
-#[cfg(windows)]
-fn stable_filesystem_identity_from_open_file(file: &fs::File) -> Option<String> {
-    use std::os::windows::io::AsRawHandle;
-    use windows::Win32::{
-        Foundation::HANDLE,
-        Storage::FileSystem::{BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle},
-    };
-
-    let mut information = BY_HANDLE_FILE_INFORMATION::default();
-    unsafe { GetFileInformationByHandle(HANDLE(file.as_raw_handle()), &mut information) }.ok()?;
-    let file_index =
-        (u64::from(information.nFileIndexHigh) << 32) | u64::from(information.nFileIndexLow);
-    let creation_time = (u64::from(information.ftCreationTime.dwHighDateTime) << 32)
-        | u64::from(information.ftCreationTime.dwLowDateTime);
-    Some(format!(
-        "windows:{}:{}:{}",
-        information.dwVolumeSerialNumber, file_index, creation_time
-    ))
 }
 
 #[cfg(windows)]
