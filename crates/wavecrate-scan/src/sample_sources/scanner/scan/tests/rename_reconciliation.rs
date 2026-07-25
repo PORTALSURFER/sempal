@@ -139,6 +139,110 @@ fn hard_rescan_preserves_genuine_rename_metadata_and_analysis_identity() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn hard_rescan_reconciles_identity_move_when_old_path_is_an_external_link() {
+    use std::os::unix::fs::symlink;
+
+    let dir = tempdir().unwrap();
+    let outside = tempdir().unwrap();
+    let old = dir.path().join("old.wav");
+    let renamed = dir.path().join("renamed.wav");
+    let outside_file = outside.path().join("outside.wav");
+    let outside_payload = b"outside target must remain untouched";
+    std::fs::write(&old, b"same sample").unwrap();
+    std::fs::write(&outside_file, outside_payload).unwrap();
+    let db = SourceDatabase::open_for_scan(dir.path()).unwrap();
+    hard_rescan(&db).unwrap();
+    db.set_tag(Path::new("old.wav"), Rating::KEEP_1).unwrap();
+    db.set_user_tag(Path::new("old.wav"), Some("External-link move"))
+        .unwrap();
+    insert_analysis_artifacts(dir.path(), "source::old.wav", "old.wav");
+
+    std::fs::rename(&old, &renamed).unwrap();
+    symlink(&outside_file, &old).unwrap();
+    let stats = hard_rescan(&db).unwrap();
+
+    assert_eq!(stats.renames_reconciled, 1);
+    let entry = db
+        .entry_for_path(Path::new("renamed.wav"))
+        .unwrap()
+        .unwrap();
+    assert_eq!(entry.tag, Rating::KEEP_1);
+    assert_eq!(entry.user_tag.as_deref(), Some("External-link move"));
+    assert!(db.entry_for_path(Path::new("old.wav")).unwrap().is_none());
+    assert!(db.list_pending_renames().unwrap().is_empty());
+    assert_eq!(
+        sample_id_count(dir.path(), "features", "source::old.wav"),
+        0
+    );
+    assert_eq!(
+        sample_id_count(dir.path(), "features", "source::renamed.wav"),
+        1
+    );
+    assert_eq!(
+        analysis_job_relative_path(dir.path(), "source::renamed.wav"),
+        "renamed.wav"
+    );
+    assert_eq!(std::fs::read(&outside_file).unwrap(), outside_payload);
+    assert_eq!(std::fs::read_link(&old).unwrap(), outside_file);
+}
+
+#[cfg(unix)]
+#[test]
+fn deferred_hash_copy_delete_recovers_when_old_path_is_an_external_link() {
+    use std::os::unix::fs::symlink;
+
+    let dir = tempdir().unwrap();
+    let outside = tempdir().unwrap();
+    let old = dir.path().join("old.wav");
+    let copied = dir.path().join("copied.wav");
+    let outside_file = outside.path().join("outside.wav");
+    let outside_payload = b"outside hash target must remain untouched";
+    let payload = vec![7_u8; 9 * 1024 * 1024];
+    std::fs::write(&old, &payload).unwrap();
+    std::fs::write(&outside_file, outside_payload).unwrap();
+
+    let db = SourceDatabase::open_for_scan(dir.path()).unwrap();
+    hard_rescan(&db).unwrap();
+    db.set_tag(Path::new("old.wav"), Rating::KEEP_1).unwrap();
+    db.set_user_tag(Path::new("old.wav"), Some("External-link copy-delete"))
+        .unwrap();
+    insert_analysis_artifacts(dir.path(), "source::old.wav", "old.wav");
+
+    std::fs::copy(&old, &copied).unwrap();
+    std::fs::remove_file(&old).unwrap();
+    symlink(&outside_file, &old).unwrap();
+    let removed = sync_paths(
+        &db,
+        &[PathBuf::from("copied.wav"), PathBuf::from("old.wav")],
+    )
+    .unwrap();
+    let stats = complete_deferred_hashes(&db, removed).unwrap();
+
+    assert_eq!(stats.renames_reconciled, 1);
+    let entry = db.entry_for_path(Path::new("copied.wav")).unwrap().unwrap();
+    assert_eq!(entry.tag, Rating::KEEP_1);
+    assert_eq!(entry.user_tag.as_deref(), Some("External-link copy-delete"));
+    assert!(db.entry_for_path(Path::new("old.wav")).unwrap().is_none());
+    assert!(db.list_pending_renames().unwrap().is_empty());
+    assert!(db.list_pending_rename_destinations().unwrap().is_empty());
+    assert_eq!(
+        sample_id_count(dir.path(), "features", "source::old.wav"),
+        0
+    );
+    assert_eq!(
+        sample_id_count(dir.path(), "features", "source::copied.wav"),
+        1
+    );
+    assert_eq!(
+        analysis_job_relative_path(dir.path(), "source::copied.wav"),
+        "copied.wav"
+    );
+    assert_eq!(std::fs::read(&outside_file).unwrap(), outside_payload);
+    assert_eq!(std::fs::read_link(&old).unwrap(), outside_file);
+}
+
 #[test]
 fn hard_rescan_retains_metadata_for_ambiguous_same_content_destinations() {
     let dir = tempdir().unwrap();
