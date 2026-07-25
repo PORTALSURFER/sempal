@@ -62,15 +62,53 @@ fn browser_metadata_page_is_keyset_paged_and_revision_fenced() {
     );
     assert_eq!(first.files.len(), 2);
     let second = db
-        .browser_metadata_page(revision, first.next_path.as_deref(), 2)
+        .browser_metadata_page(revision, first.next_cursor.as_ref(), 2)
         .unwrap();
     assert_eq!(second.files.len(), 1);
 
     db.set_tag(Path::new("a.wav"), Rating::KEEP_1).unwrap();
     assert!(
-        db.browser_metadata_page(revision, second.next_path.as_deref(), 2)
+        db.browser_metadata_page(revision, second.next_cursor.as_ref(), 2)
             .is_err()
     );
+}
+
+#[test]
+fn browser_metadata_page_advances_past_invalid_raw_path_rows() {
+    let dir = tempdir().unwrap();
+    let db = SourceDatabase::open_for_source_write(dir.path()).unwrap();
+    for name in ["a.wav", "zz.wav"] {
+        db.upsert_file(Path::new(name), 10, 5).unwrap();
+    }
+    db.connection
+        .execute(
+            "INSERT INTO wav_files (path, file_size, modified_ns, extension)
+             VALUES (?1, 10, 5, 'wav')",
+            ["z/../broken.wav"],
+        )
+        .unwrap();
+    let revision = db.get_revision().unwrap();
+
+    let first = db.browser_metadata_page(revision, None, 2).unwrap();
+    assert_eq!(first.files.len(), 1);
+    assert_eq!(first.files[0].relative_path, Path::new("a.wav"));
+    assert_eq!(
+        first.next_cursor.as_ref().map(|cursor| cursor.as_str()),
+        Some("z/../broken.wav")
+    );
+
+    let second = db
+        .browser_metadata_page(revision, first.next_cursor.as_ref(), 2)
+        .unwrap();
+    assert_eq!(
+        second
+            .files
+            .iter()
+            .map(|file| file.relative_path.clone())
+            .collect::<Vec<_>>(),
+        vec![PathBuf::from("zz.wav")]
+    );
+    assert!(second.next_cursor.is_none());
 }
 
 #[test]

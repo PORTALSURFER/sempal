@@ -195,6 +195,9 @@ fn sync_source_database(
             discovered(reset_discovery(request, Some(batch.revision)));
             provisional.emitted_root = true;
         }
+        if cancel.load(Ordering::Acquire) {
+            return;
+        }
         let mut folders = BTreeSet::new();
         for path in &batch.paths {
             let mut parent = path.parent().map(Path::to_path_buf);
@@ -205,6 +208,9 @@ fn sync_source_database(
             }
         }
         for folder in folders {
+            if cancel.load(Ordering::Acquire) {
+                return;
+            }
             let absolute = request.root.join(&folder);
             let parent = folder.parent().unwrap_or_else(|| Path::new(""));
             let parent_absolute = if parent.as_os_str().is_empty() {
@@ -221,6 +227,9 @@ fn sync_source_database(
             });
         }
         for path in batch.paths {
+            if cancel.load(Ordering::Acquire) {
+                return;
+            }
             let absolute = request.root.join(&path);
             let parent = absolute.parent().unwrap_or(&request.root);
             discovered(FolderScanDiscovery {
@@ -240,7 +249,9 @@ fn sync_source_database(
         }
     };
     let mut sync_progress = |completed: usize, path: &Path| {
-        if completed != 1 && !completed.is_multiple_of(INDEX_PROGRESS_REPORT_INTERVAL) {
+        if cancel.load(Ordering::Acquire)
+            || (completed != 1 && !completed.is_multiple_of(INDEX_PROGRESS_REPORT_INTERVAL))
+        {
             return;
         }
         progress(FolderScanProgress::new(
@@ -351,15 +362,23 @@ fn build_committed_projection(
             return Err(String::from("source projection canceled"));
         }
         let page = db
-            .browser_metadata_page(revision, cursor.as_deref(), 64)
+            .browser_metadata_page(revision, cursor.as_ref(), 64)
             .map_err(|error| error.to_string())?;
         files.extend(page.files);
-        cursor = page.next_path;
+        cursor = page.next_cursor;
         if cursor.is_none() {
             break;
         }
     }
-    emit_authoritative_discoveries(request, &layout, &files, revision, discovered, provisional);
+    emit_authoritative_discoveries(
+        request,
+        &layout,
+        &files,
+        revision,
+        discovered,
+        provisional,
+        cancel,
+    );
     let ratings = files
         .iter()
         .map(|entry| {
@@ -475,8 +494,9 @@ fn emit_authoritative_discoveries(
     revision: u64,
     discovered: &mut impl FnMut(FolderScanDiscovery),
     provisional: &mut ProvisionalDiscoveryState,
+    cancel: &AtomicBool,
 ) {
-    if provisional.emitted_root {
+    if provisional.emitted_root || cancel.load(Ordering::Acquire) {
         return;
     }
     discovered(reset_discovery(request, Some(revision)));
@@ -486,6 +506,9 @@ fn emit_authoritative_discoveries(
         .iter()
         .filter(|path| !path.as_os_str().is_empty())
     {
+        if cancel.load(Ordering::Acquire) {
+            return;
+        }
         let absolute = request.root.join(folder);
         let parent = folder.parent().unwrap_or_else(|| Path::new(""));
         let parent_absolute = if parent.as_os_str().is_empty() {
@@ -500,6 +523,9 @@ fn emit_authoritative_discoveries(
             parent_id: path_id(&parent_absolute),
             item: FolderScanItem::Folder(placeholder_folder(&absolute)),
         });
+        if cancel.load(Ordering::Acquire) {
+            return;
+        }
         discovered(FolderScanDiscovery {
             task_id: request.task_id,
             source_id: request.source_id.clone(),
@@ -509,6 +535,9 @@ fn emit_authoritative_discoveries(
         });
     }
     for entry in files.iter().filter(|entry| !entry.missing) {
+        if cancel.load(Ordering::Acquire) {
+            return;
+        }
         let absolute = request.root.join(&entry.relative_path);
         let parent = entry
             .relative_path
@@ -536,6 +565,9 @@ fn emit_authoritative_discoveries(
         });
     }
     for entry in &layout.other_files {
+        if cancel.load(Ordering::Acquire) {
+            return;
+        }
         let absolute = request.root.join(&entry.relative_path);
         let parent = entry
             .relative_path
@@ -620,6 +652,9 @@ where
     D: FnMut(FolderScanDiscovery),
 {
     fn report_initial(&mut self) {
+        if self.cancel.load(Ordering::Acquire) {
+            return;
+        }
         (self.progress)(FolderScanProgress::new(
             self.request.task_id,
             self.request.source_id.clone(),
@@ -632,10 +667,13 @@ where
     }
 
     fn record_folder(&mut self, path: &Path, parent_id: &str) {
+        if self.cancel.load(Ordering::Acquire) {
+            return;
+        }
         self.counter.completed += 1;
         self.counter.folders += 1;
         self.maybe_report_progress(path);
-        if self.publish_discoveries {
+        if self.publish_discoveries && !self.cancel.load(Ordering::Acquire) {
             (self.discovered)(FolderScanDiscovery {
                 task_id: self.request.task_id,
                 source_id: self.request.source_id.clone(),
@@ -647,7 +685,7 @@ where
     }
 
     fn record_folder_snapshot_start(&mut self, folder_id: &str) {
-        if self.publish_discoveries {
+        if self.publish_discoveries && !self.cancel.load(Ordering::Acquire) {
             (self.discovered)(FolderScanDiscovery {
                 task_id: self.request.task_id,
                 source_id: self.request.source_id.clone(),
@@ -659,10 +697,13 @@ where
     }
 
     fn record_file(&mut self, path: &Path, parent_id: &str, file: FileEntry) {
+        if self.cancel.load(Ordering::Acquire) {
+            return;
+        }
         self.counter.completed += 1;
         self.counter.files += 1;
         self.maybe_report_progress(path);
-        if self.publish_discoveries {
+        if self.publish_discoveries && !self.cancel.load(Ordering::Acquire) {
             (self.discovered)(FolderScanDiscovery {
                 task_id: self.request.task_id,
                 source_id: self.request.source_id.clone(),
@@ -674,7 +715,9 @@ where
     }
 
     fn maybe_report_progress(&mut self, path: &Path) {
-        if self.counter.completed == 1 || self.counter.completed.is_multiple_of(64) {
+        if !self.cancel.load(Ordering::Acquire)
+            && (self.counter.completed == 1 || self.counter.completed.is_multiple_of(64))
+        {
             (self.progress)(FolderScanProgress::new(
                 self.request.task_id,
                 self.request.source_id.clone(),

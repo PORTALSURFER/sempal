@@ -69,11 +69,14 @@ fn run_folder_scan_worker_with_emit_and_cancel(
         request.task_id,
         request.source_id.clone(),
         lifecycle_generation,
+        cancel,
     );
     let scan = scan::scan_source_with_progress_cancellable(
         request,
         |progress| {
-            let _ = emit(FolderScanWorkerEvent::Progress(progress));
+            if !cancel.load(Ordering::Acquire) {
+                let _ = emit(FolderScanWorkerEvent::Progress(progress));
+            }
         },
         |event| {
             discovery_transport.push(event);
@@ -96,7 +99,7 @@ fn run_folder_scan_worker_with_emit_and_cancel(
     }
 }
 
-struct FolderScanDiscoveryTransport<Emit> {
+struct FolderScanDiscoveryTransport<'cancel, Emit> {
     emit: Emit,
     task_id: u64,
     source_id: String,
@@ -104,13 +107,20 @@ struct FolderScanDiscoveryTransport<Emit> {
     pending: Vec<FolderScanDiscovery>,
     pending_revision: Option<u64>,
     next_sequence: u64,
+    cancel: &'cancel AtomicBool,
 }
 
-impl<Emit> FolderScanDiscoveryTransport<Emit>
+impl<'cancel, Emit> FolderScanDiscoveryTransport<'cancel, Emit>
 where
     Emit: Fn(FolderScanWorkerEvent) -> bool,
 {
-    fn new(emit: Emit, task_id: u64, source_id: String, lifecycle_generation: Option<u64>) -> Self {
+    fn new(
+        emit: Emit,
+        task_id: u64,
+        source_id: String,
+        lifecycle_generation: Option<u64>,
+        cancel: &'cancel AtomicBool,
+    ) -> Self {
         Self {
             emit,
             task_id,
@@ -119,12 +129,19 @@ where
             pending: Vec::with_capacity(DISCOVERY_BATCH_SIZE),
             pending_revision: None,
             next_sequence: 0,
+            cancel,
         }
     }
 
     fn push(&mut self, discovery: FolderScanDiscovery) {
+        if self.cancel.load(Ordering::Acquire) {
+            return;
+        }
         if !self.pending.is_empty() && self.pending_revision != discovery.committed_revision {
             self.flush();
+        }
+        if self.cancel.load(Ordering::Acquire) {
+            return;
         }
         self.pending_revision = discovery.committed_revision;
         self.pending.push(discovery);
@@ -134,7 +151,7 @@ where
     }
 
     fn flush(&mut self) {
-        if self.pending.is_empty() {
+        if self.pending.is_empty() || self.cancel.load(Ordering::Acquire) {
             return;
         }
         let _ = (self.emit)(FolderScanWorkerEvent::DiscoveryBatch(
@@ -164,7 +181,7 @@ mod tests {
     };
 
     use crate::native_app::sample_library::folder_browser::scan::{
-        FolderScanItem, FolderScanRequest, INDEX_PROGRESS_REPORT_INTERVAL,
+        FolderScanDiscovery, FolderScanItem, FolderScanRequest, INDEX_PROGRESS_REPORT_INTERVAL,
     };
     use wavecrate_scan::sample_sources::scanner::UncoordinatedScanWriter;
 
@@ -312,5 +329,47 @@ mod tests {
 
         assert!(result.scan.cancelled);
         assert!(result.scan.file_count < file_count);
+    }
+
+    #[test]
+    fn buffered_discovery_transport_drops_events_after_cancellation() {
+        let cancel = Arc::new(AtomicBool::new(false));
+        let callback_cancel = Arc::clone(&cancel);
+        let (sender, receiver) = mpsc::channel();
+        let mut transport = super::FolderScanDiscoveryTransport::new(
+            move |event| {
+                if matches!(&event, FolderScanWorkerEvent::DiscoveryBatch(_)) {
+                    callback_cancel.store(true, Ordering::Release);
+                }
+                sender.send(event).is_ok()
+            },
+            42,
+            String::from("source"),
+            Some(7),
+            cancel.as_ref(),
+        );
+
+        for _ in 0..=DISCOVERY_BATCH_SIZE {
+            transport.push(FolderScanDiscovery {
+                task_id: 42,
+                source_id: String::from("source"),
+                committed_revision: Some(9),
+                parent_id: String::from("root"),
+                item: FolderScanItem::ResetFolder,
+            });
+        }
+        transport.flush();
+
+        let batches = receiver
+            .try_iter()
+            .filter_map(|event| match event {
+                FolderScanWorkerEvent::DiscoveryBatch(batch) => Some(batch),
+                FolderScanWorkerEvent::Progress(_) => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].events.len(), DISCOVERY_BATCH_SIZE);
+        assert_eq!(batches[0].sequence, 0);
+        assert!(cancel.load(Ordering::Acquire));
     }
 }

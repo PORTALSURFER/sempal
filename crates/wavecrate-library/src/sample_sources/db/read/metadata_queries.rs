@@ -4,8 +4,9 @@ use rusqlite::OptionalExtension;
 
 use super::super::util::map_sql_error;
 use super::super::{
-    BrowserFileMetadata, BrowserMetadataPage, BrowserMetadataSnapshot, META_WAV_PATHS_REVISION,
-    Rating, SampleCollection, SampleSoundType, SourceDatabase, SourceDbError,
+    BrowserFileMetadata, BrowserMetadataCursor, BrowserMetadataPage, BrowserMetadataSnapshot,
+    META_WAV_PATHS_REVISION, Rating, SampleCollection, SampleSoundType, SourceDatabase,
+    SourceDbError,
 };
 use super::decode::{
     decode_path_row, decode_relative_path, table_has_columns, wav_file_has_column,
@@ -228,12 +229,12 @@ impl SourceDatabase {
 
     /// Fetch one bounded browser metadata page at an exact source revision.
     ///
-    /// `after_path` is an exclusive keyset cursor. A revision mismatch fails closed so pages
+    /// `after_cursor` is an exclusive raw-SQL keyset cursor. A revision mismatch fails closed so pages
     /// cannot be combined across committed source states.
     pub fn browser_metadata_page(
         &self,
         expected_revision: u64,
-        after_path: Option<&Path>,
+        after_cursor: Option<&BrowserMetadataCursor>,
         requested_limit: usize,
     ) -> Result<BrowserMetadataPage, SourceDbError> {
         const MAX_PAGE_SIZE: usize = 64;
@@ -270,9 +271,6 @@ impl SourceDatabase {
         };
         let legacy_collection =
             optional_browser_column(&wav_columns, "collection", "NULL AS collection");
-        let cursor = after_path
-            .map(super::super::normalize_relative_path)
-            .transpose()?;
         let sql = format!(
             "SELECT path, {}, {}, {}, {}, {legacy_collection}, {}, {}, {}
              FROM wav_files
@@ -286,44 +284,62 @@ impl SourceDatabase {
             optional_browser_column(&wav_columns, "modified_ns", "0 AS modified_ns"),
             optional_browser_column(&wav_columns, "missing", "0 AS missing"),
         );
-        let mut files = {
+        let raw_rows = {
             let mut statement = transaction.prepare(&sql).map_err(map_sql_error)?;
             statement
-                .query_map(rusqlite::params![cursor, limit as i64], |row| {
-                    let Some(relative_path) = decode_path_row(
-                        row,
-                        "Skipping browser metadata row with invalid relative path",
-                    )?
-                    else {
-                        return Ok(None);
-                    };
-                    let legacy_collection = if memberships_available {
-                        Vec::new()
-                    } else {
-                        row.get::<_, Option<i64>>(5)?
-                            .and_then(SampleCollection::from_i64)
-                            .into_iter()
-                            .collect()
-                    };
-                    Ok(Some(BrowserFileMetadata {
-                        relative_path,
-                        file_size: u64::try_from(row.get::<_, i64>(6)?).unwrap_or_default(),
-                        modified_ns: row.get(7)?,
-                        missing: row.get::<_, i64>(8)? != 0,
-                        rating: Rating::from_i64(row.get(1)?),
-                        locked: row.get::<_, i64>(2)? != 0,
-                        collections: legacy_collection,
-                        last_played_at: row.get(3)?,
-                        last_curated_at: row.get(4)?,
-                    }))
-                })
+                .query_map(
+                    rusqlite::params![
+                        after_cursor.map(BrowserMetadataCursor::as_str),
+                        limit as i64
+                    ],
+                    |row| {
+                        let raw_path: String = row.get(0)?;
+                        let Some(relative_path) = decode_relative_path(
+                            raw_path.clone(),
+                            "Skipping browser metadata row with invalid relative path",
+                        )?
+                        else {
+                            return Ok((raw_path, None));
+                        };
+                        let legacy_collection = if memberships_available {
+                            Vec::new()
+                        } else {
+                            row.get::<_, Option<i64>>(5)?
+                                .and_then(SampleCollection::from_i64)
+                                .into_iter()
+                                .collect()
+                        };
+                        Ok((
+                            raw_path,
+                            Some(BrowserFileMetadata {
+                                relative_path,
+                                file_size: u64::try_from(row.get::<_, i64>(6)?).unwrap_or_default(),
+                                modified_ns: row.get(7)?,
+                                missing: row.get::<_, i64>(8)? != 0,
+                                rating: Rating::from_i64(row.get(1)?),
+                                locked: row.get::<_, i64>(2)? != 0,
+                                collections: legacy_collection,
+                                last_played_at: row.get(3)?,
+                                last_curated_at: row.get(4)?,
+                            }),
+                        ))
+                    },
+                )
                 .map_err(map_sql_error)?
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(map_sql_error)?
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>()
         };
+        let next_cursor = (raw_rows.len() == limit)
+            .then(|| {
+                raw_rows
+                    .last()
+                    .map(|(raw_path, _)| BrowserMetadataCursor::from_raw(raw_path.clone()))
+            })
+            .flatten();
+        let mut files = raw_rows
+            .into_iter()
+            .filter_map(|(_, file)| file)
+            .collect::<Vec<_>>();
         if memberships_available && !files.is_empty() {
             let first = super::super::normalize_relative_path(&files[0].relative_path)?;
             let last = super::super::normalize_relative_path(
@@ -354,14 +370,11 @@ impl SourceDatabase {
                 }
             }
         }
-        let next_path = (files.len() == limit)
-            .then(|| files.last().map(|file| file.relative_path.clone()))
-            .flatten();
         transaction.rollback().map_err(map_sql_error)?;
         Ok(BrowserMetadataPage {
             revision,
             files,
-            next_path,
+            next_cursor,
         })
     }
     /// Return the numeric metadata value for `key` (0 if missing).

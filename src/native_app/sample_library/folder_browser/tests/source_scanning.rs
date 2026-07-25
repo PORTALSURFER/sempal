@@ -4,6 +4,40 @@ use crate::native_app::sample_library::folder_browser::model::file_entry_with_sn
 use crate::native_app::sample_library::folder_browser::scan_types::{
     FolderScanDiscovery, FolderScanItem, MetadataHydrationStatus,
 };
+use std::sync::atomic::{AtomicBool, Ordering};
+
+#[test]
+fn committed_discovery_emission_stops_at_the_cancellation_boundary() {
+    let root = temp_source_root("wavecrate-gui-source-cancelled-discovery");
+    for index in 0..96 {
+        fs::write(root.join(format!("sample-{index:03}.wav")), [0_u8; 8]).expect("write sample");
+    }
+    let mut browser = FolderBrowserState::load_default();
+    let request = browser
+        .begin_add_source_path(root.clone(), 89)
+        .expect("new source should request scan");
+    let cancel = AtomicBool::new(false);
+    let mut discovery_events = Vec::new();
+
+    let result = scan_source_with_progress_cancellable(
+        request,
+        |_| {},
+        |event| {
+            discovery_events.push(event);
+            cancel.store(true, Ordering::Release);
+        },
+        &cancel,
+        &wavecrate_scan::sample_sources::scanner::UncoordinatedScanWriter,
+    );
+
+    assert!(result.cancelled);
+    assert_eq!(
+        discovery_events.len(),
+        1,
+        "a cancellation raised by the first committed discovery must fence every later event"
+    );
+    let _ = fs::remove_dir_all(root);
+}
 
 #[test]
 fn switching_away_from_pending_source_does_not_cache_its_placeholder() {
