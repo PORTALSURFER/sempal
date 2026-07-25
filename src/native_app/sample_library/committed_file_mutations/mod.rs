@@ -505,6 +505,21 @@ impl NativeAppState {
         };
 
         for event in committed {
+            let current_lifecycle_generation = self
+                .background
+                .source_lifecycle_generations
+                .get(&event.source_id)
+                .copied();
+            if current_lifecycle_generation != Some(event.lifecycle_generation) {
+                tracing::debug!(
+                    source_id = %event.source_id,
+                    operation_id = event.operation_id,
+                    event_lifecycle_generation = event.lifecycle_generation,
+                    current_lifecycle_generation = ?current_lifecycle_generation,
+                    "Ignoring committed file-mutation completion from a stale source lifecycle"
+                );
+                continue;
+            }
             let last_commit = self
                 .transactions
                 .latest_committed_mutation

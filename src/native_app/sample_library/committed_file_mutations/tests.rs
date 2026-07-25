@@ -1,4 +1,9 @@
-use std::{fs, path::Path, sync::atomic::AtomicBool};
+use std::{
+    fs,
+    path::Path,
+    sync::{atomic::AtomicBool, mpsc},
+    time::Duration,
+};
 
 use wavecrate::sample_sources::scanner::ManifestIdentityDelta;
 use wavecrate::sample_sources::{SampleSource, SourceDatabase, SourceId, scanner};
@@ -11,6 +16,7 @@ use super::worker::{
     reconcile_file_mutation_requests_with_database_roots, reconcile_source_mutation,
 };
 use super::*;
+use crate::native_app::sample_library::source_watcher::GuiSourceWatcherHandle;
 
 fn request(
     root: &Path,
@@ -329,6 +335,176 @@ fn failed_reconciliation_does_not_apply_browser_projection() {
     assert_eq!(
         state.library.folder_browser.selected_file_id(),
         Some(selected.to_string_lossy().as_ref())
+    );
+}
+
+#[test]
+fn stale_lifecycle_completion_has_no_committed_mutation_side_effects() {
+    let root = tempfile::tempdir().expect("source root");
+    let path = root.path().join("stale.wav");
+    fs::write(&path, b"committed").expect("create source file");
+    let source =
+        SampleSource::new_with_id(SourceId::from_string("source-a"), root.path().to_path_buf());
+    let mut state = crate::native_app::test_support::state::NativeAppStateFixture::default()
+        .with_folder_browser(
+            crate::native_app::test_support::state::FolderBrowserState::from_sample_sources(&[
+                source.clone(),
+            ]),
+        )
+        .build();
+    state
+        .library
+        .folder_browser
+        .select_file("before.wav".to_string());
+
+    let (message_tx, message_rx) = mpsc::channel();
+    let watcher = GuiSourceWatcherHandle::spawn(vec![source.clone()], message_tx);
+    watcher.wait_until_ready_for_tests();
+    while message_rx.try_recv().is_ok() {}
+    state.library.source_watcher = Some(watcher);
+
+    state
+        .background
+        .source_processing
+        .replace_sources(vec![source.clone()])
+        .expect("configure source lifecycle");
+    state.background.source_lifecycle_generations =
+        state.background.source_processing.lifecycle_generations();
+    let stale_lifecycle_generation = state.background.source_lifecycle_generations["source-a"];
+
+    let replacement = source.clone().protected();
+    state
+        .background
+        .source_processing
+        .replace_sources(vec![replacement])
+        .expect("replace source lifecycle");
+    state.background.source_lifecycle_generations =
+        state.background.source_processing.lifecycle_generations();
+    assert_ne!(
+        state.background.source_lifecycle_generations["source-a"],
+        stale_lifecycle_generation
+    );
+    state
+        .background
+        .source_processing
+        .set_selected_source(Some("unrelated-source"));
+
+    let projected_path = root.path().join("stale-projection.wav");
+    let mut changes = vec![
+        FileMutationChange::content_changed(path.clone()).with_projection(
+            FileMutationProjection::SelectAndFollow {
+                path: projected_path,
+            },
+        ),
+    ];
+    capture_expected_filesystem_state(&mut changes);
+    let watcher_echoes = watcher_echoes_for_changes(root.path(), &changes);
+    let event = CommittedFileMutation {
+        source_id: String::from("source-a"),
+        lifecycle_generation: stale_lifecycle_generation,
+        operation_id: 91,
+        operation: FileMutationOperation::Edit,
+        committed_source_revision: 7,
+        changes,
+        invalidated_stages: BTreeSet::from([ReadinessStage::AnalysisFeatures]),
+        committed_delta: CommittedSourceDelta {
+            revision: 7,
+            changed: vec![ManifestIdentityDelta {
+                identity: String::from("stale-identity"),
+                relative_path: PathBuf::from("stale.wav"),
+                content_generation: String::from("stale-generation"),
+                source_metadata_changed: false,
+            }],
+            ..CommittedSourceDelta::default()
+        },
+        affected_relative_paths: vec![PathBuf::from("stale.wav")],
+        watcher_echoes,
+    };
+    let selected_before = state
+        .library
+        .folder_browser
+        .selected_file_id()
+        .map(str::to_owned);
+    let status_before = state.ui.status.sample.clone();
+    let metadata_pending_before = state
+        .metadata
+        .persisted_tag_sources_pending
+        .contains("source-a");
+    let indicator_active_before = state.waveform.cache.indicator_refresh_task.active();
+    let selected_source_priority_before = state
+        .background
+        .source_processing
+        .selected_source_priority_for_tests();
+
+    state.finish_committed_file_mutation(
+        FileMutationOutcome::Committed(vec![event]),
+        &mut radiant::prelude::UiUpdateContext::default(),
+    );
+
+    assert_eq!(
+        state.transactions.latest_committed_mutation.get("source-a"),
+        None,
+        "stale completion must not advance the mutation ledger"
+    );
+    assert_eq!(
+        state.library.folder_browser.selected_file_id(),
+        selected_before.as_deref(),
+        "stale completion must not apply browser projection"
+    );
+    assert_eq!(
+        state
+            .background
+            .source_processing
+            .pending_source_delta_contains_identity_for_tests("source-a", "stale-identity"),
+        false,
+        "stale completion must not publish a readiness delta"
+    );
+    assert_eq!(
+        state
+            .metadata
+            .persisted_tag_sources_pending
+            .contains("source-a"),
+        metadata_pending_before,
+        "stale completion must not schedule source metadata preparation"
+    );
+    assert_eq!(
+        state.waveform.cache.indicator_refresh_task.active(),
+        indicator_active_before,
+        "stale completion must not schedule waveform source preparation"
+    );
+    assert_eq!(
+        state
+            .background
+            .source_processing
+            .selected_source_priority_for_tests(),
+        selected_source_priority_before,
+        "stale completion must not promote source preparation priority"
+    );
+    assert_eq!(state.ui.status.sample, status_before);
+
+    state
+        .library
+        .source_watcher
+        .as_ref()
+        .expect("source watcher")
+        .inject_paths_for_tests(vec![path]);
+    let mut reported_watcher_change = false;
+    for _ in 0..20 {
+        match message_rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(GuiMessage::SourceFilesystemChanged {
+                source_id, paths, ..
+            }) if source_id == "source-a" && paths.contains(&PathBuf::from("stale.wav")) => {
+                reported_watcher_change = true;
+                break;
+            }
+            Ok(_) => {}
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+    }
+    assert!(
+        reported_watcher_change,
+        "stale completion must not install watcher suppression"
     );
 }
 
