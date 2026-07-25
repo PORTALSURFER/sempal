@@ -470,6 +470,10 @@ fn delivered_manifest_handoff_survives_post_commit_cancellation() {
         manifest_audit_execution_outcome(false, false, true),
         ExecutionOutcome::Cancelled
     );
+    assert_eq!(
+        manifest_audit_execution_outcome(false, true, false),
+        ExecutionOutcome::Failed
+    );
 }
 
 #[test]

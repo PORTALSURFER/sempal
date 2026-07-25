@@ -5,10 +5,11 @@ use super::{
 };
 use super::{
     AtomicBool, ContentAuditActivity, ContentAuditBudget, ContentAuditStorage, DatabaseWriterGate,
-    Duration, ExecutionOutcome, Instant, Ordering, RuntimeCandidate, RuntimeTask, ScanError,
-    SourceDatabase, SourceProcessingActivity, SourceProcessingEvent, SourceProcessingLifecycle,
-    SourceProcessingProgressEvent, audit_source_and_record_with_budget_and_progress_and_writer,
-    execute_readiness_target, manifest_audit_source_row_active, now_epoch_seconds,
+    Duration, ExecutionOutcome, Instant, ManifestAuditOutcome, Ordering, RuntimeCandidate,
+    RuntimeTask, SourceDatabase, SourceProcessingActivity, SourceProcessingEvent,
+    SourceProcessingLifecycle, SourceProcessingProgressEvent,
+    audit_source_and_record_with_budget_and_progress_and_writer_outcome, execute_readiness_target,
+    manifest_audit_source_row_active, now_epoch_seconds,
 };
 
 pub(super) fn execute_candidate(
@@ -80,8 +81,8 @@ pub(super) fn execute_candidate(
                 ));
                 last_progress_publish_at = Some(Instant::now());
             };
-            let (outcome, content_incomplete_error) =
-                match audit_source_and_record_with_budget_and_progress_and_writer(
+            let (outcome, manifest_complete, content_incomplete_error) =
+                match audit_source_and_record_with_budget_and_progress_and_writer_outcome(
                     &database,
                     Some(cancel),
                     content_budget,
@@ -89,8 +90,13 @@ pub(super) fn execute_candidate(
                     &mut publish_progress,
                     database_writer,
                 ) {
-                    Ok(outcome) => (outcome, None),
-                    Err(ScanError::Incomplete { committed, error }) => (*committed, Some(error)),
+                    Ok(ManifestAuditOutcome::Complete {
+                        stats,
+                        content_incomplete,
+                    }) => (stats, true, content_incomplete),
+                    Ok(ManifestAuditOutcome::Incomplete { committed, error }) => {
+                        (committed, false, Some(error))
+                    }
                     Err(error) => {
                         publish_event(SourceProcessingEvent::ManifestAuditFinished {
                             lifecycle: SourceProcessingLifecycle::new(
@@ -164,19 +170,20 @@ pub(super) fn execute_candidate(
                     candidate.source.id.as_str(),
                     lifecycle_generation,
                 ),
-                complete: true,
+                complete: manifest_complete,
             });
             if let Some(error) = content_incomplete_error {
                 tracing::warn!(
                     target: "wavecrate::source_processing",
                     source_id = candidate.source.id.as_str(),
                     error,
-                    "Manifest audit completed; content verification paused at its durable checkpoint"
+                    manifest_complete,
+                    "Manifest audit did not complete all work"
                 );
             }
             Ok(manifest_audit_execution_outcome(
                 foreground_refresh_owns_reconciliation,
-                false,
+                !manifest_complete,
                 cancel.load(Ordering::Acquire),
             ))
         }

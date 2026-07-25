@@ -413,6 +413,12 @@ Manifest audits, indexed hashing, similarity finalization, and retirement keep t
 existing serial compatibility paths until each can preserve its current atomic contract
 across the same typed phase boundary.
 
+Watcher recovery barriers advance only after an authoritative manifest traversal and
+reconciliation completes. A cancelled, stale, or unreadable traversal retains the prior
+barrier even when it publishes a committed partial delta for retry. A traversal that does
+complete may separately pause bounded content verification at its durable checkpoint without
+withholding the manifest-coverage completion.
+
 Source retirement keeps the audio folder, authoritative source database, source manifest, reusable analysis/similarity artifacts, and safe content-addressed analysis caches. It releases source-owned in-memory playback/preview/browser state and asynchronously removes readiness-managed jobs and unshared managed cache payloads. The source descriptor registry retains role, metadata-storage policy, and primary-import settings so protected/AppData sources rehydrate safely; corrupt present descriptor values fail closed. Cleanup is idempotent, retryable after unavailable/read-only storage, recovered from retained inactive descriptors at startup, and bounded so removal never waits for database maintenance or cache garbage collection.
 
 For every current eligible file, the readiness stages are:

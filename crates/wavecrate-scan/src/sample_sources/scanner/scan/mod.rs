@@ -7,9 +7,10 @@ pub use super::scan_hash::{ContentAuditActivity, ContentAuditBudget, ContentAudi
 pub(crate) use context::ScanContext;
 pub use errors::ScanError;
 pub use runner::{
-    ScanMode, audit_source, audit_source_and_record,
+    ManifestAuditOutcome, ScanMode, audit_source, audit_source_and_record,
     audit_source_and_record_with_budget_and_progress,
     audit_source_and_record_with_budget_and_progress_and_writer,
+    audit_source_and_record_with_budget_and_progress_and_writer_outcome,
     audit_source_and_record_with_progress, audit_source_with_budget, complete_deferred_hashes,
     complete_deferred_hashes_with_cancel, complete_deferred_rename_candidates,
     complete_deferred_rename_candidates_with_cancel,
@@ -20,7 +21,9 @@ pub use runner::{
 };
 #[cfg(test)]
 pub(crate) use runner::{
-    audit_source_and_record_with_post_scan_hook, audit_source_and_record_with_pre_record_hook,
+    audit_source_and_record_with_post_scan_hook,
+    audit_source_and_record_with_post_scan_hook_outcome,
+    audit_source_and_record_with_pre_record_hook,
 };
 pub(crate) use runner::{finish_scan_result, reconcile_scan_renames};
 pub use stats::{

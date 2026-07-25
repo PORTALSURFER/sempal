@@ -182,7 +182,66 @@ pub fn audit_source_and_record_with_budget_and_progress_and_writer(
     on_progress: &mut impl FnMut(usize, &Path),
     writer: &impl ScanWriter,
 ) -> Result<ScanStats, ScanError> {
-    audit_source_and_record_after_scan(
+    match audit_source_and_record_after_scan_outcome(
+        db,
+        cancel,
+        budget,
+        completed_at,
+        Some(on_progress),
+        writer,
+        || {},
+        || {},
+    )? {
+        ManifestAuditOutcome::Complete {
+            stats,
+            content_incomplete,
+        } => match content_incomplete {
+            Some(error) => Err(ScanError::Incomplete {
+                committed: Box::new(stats),
+                error,
+            }),
+            None => Ok(stats),
+        },
+        ManifestAuditOutcome::Incomplete { committed, error } => Err(ScanError::Incomplete {
+            committed: Box::new(committed),
+            error,
+        }),
+    }
+}
+
+/// Outcome of a source manifest audit with bounded content verification.
+///
+/// Manifest traversal coverage is represented independently from resumable content
+/// verification. Callers that own watcher recovery barriers must advance them only for the
+/// `Complete` variant; a `Complete` outcome may still carry a content checkpoint pause.
+#[derive(Debug)]
+pub enum ManifestAuditOutcome {
+    /// The authoritative manifest traversal and reconciliation completed.
+    Complete {
+        /// Statistics and committed manifest delta from the audit.
+        stats: ScanStats,
+        /// Content verification stopped after a durable checkpoint, if applicable.
+        content_incomplete: Option<String>,
+    },
+    /// Manifest traversal or reconciliation was uncertain after a committed checkpoint.
+    Incomplete {
+        /// Statistics and committed partial manifest delta to publish before retrying.
+        committed: ScanStats,
+        /// Diagnostic describing why authoritative coverage remains incomplete.
+        error: String,
+    },
+}
+
+/// Reconcile and durably record a source audit while preserving manifest coverage ownership.
+pub fn audit_source_and_record_with_budget_and_progress_and_writer_outcome(
+    db: &SourceDatabase,
+    cancel: Option<&AtomicBool>,
+    budget: ContentAuditBudget,
+    completed_at: i64,
+    on_progress: &mut impl FnMut(usize, &Path),
+    writer: &impl ScanWriter,
+) -> Result<ManifestAuditOutcome, ScanError> {
+    audit_source_and_record_after_scan_outcome(
         db,
         cancel,
         budget,
@@ -204,10 +263,47 @@ fn audit_source_and_record_after_scan(
     before_record: impl FnOnce(),
     after_scan: impl FnOnce(),
 ) -> Result<ScanStats, ScanError> {
+    match audit_source_and_record_after_scan_outcome(
+        db,
+        cancel,
+        budget,
+        completed_at,
+        on_progress,
+        writer,
+        before_record,
+        after_scan,
+    )? {
+        ManifestAuditOutcome::Complete {
+            stats,
+            content_incomplete,
+        } => match content_incomplete {
+            Some(error) => Err(ScanError::Incomplete {
+                committed: Box::new(stats),
+                error,
+            }),
+            None => Ok(stats),
+        },
+        ManifestAuditOutcome::Incomplete { committed, error } => Err(ScanError::Incomplete {
+            committed: Box::new(committed),
+            error,
+        }),
+    }
+}
+
+fn audit_source_and_record_after_scan_outcome(
+    db: &SourceDatabase,
+    cancel: Option<&AtomicBool>,
+    budget: ContentAuditBudget,
+    completed_at: i64,
+    on_progress: Option<&mut dyn FnMut(usize, &Path)>,
+    writer: &impl ScanWriter,
+    before_record: impl FnOnce(),
+    after_scan: impl FnOnce(),
+) -> Result<ManifestAuditOutcome, ScanError> {
     let root = ensure_root_dir(db)?;
     let source_root = SourceRootCapability::open(&root)?;
     source_root.ensure_current_generation()?;
-    let mut stats = scan_with_writer_using_root(
+    let mut stats = match scan_with_writer_using_root(
         db,
         &root,
         &source_root,
@@ -217,31 +313,63 @@ fn audit_source_and_record_after_scan(
         Some(completed_at),
         false,
         writer,
-    )?;
+    ) {
+        Ok(stats) => stats,
+        Err(ScanError::Incomplete { committed, error }) => {
+            return Ok(ManifestAuditOutcome::Incomplete {
+                committed: *committed,
+                error,
+            });
+        }
+        Err(error) => return Err(error),
+    };
     before_record();
     if let Err(error) =
         record_manifest_audit_completion(db, &mut stats, completed_at, writer, &source_root)
     {
         if stats.committed_delta.revision > 0 {
-            return Err(ScanError::Incomplete {
-                committed: Box::new(stats),
+            return Ok(ManifestAuditOutcome::Incomplete {
+                committed: stats,
                 error: error.to_string(),
             });
         }
         return Err(error);
     }
     after_scan();
-    let mut stats = merge_audit_verification(
-        &mut stats,
-        super::super::scan_hash::verify_content_batch_with_source_root(
-            db,
-            &source_root,
-            cancel,
-            budget,
-            completed_at,
-            writer,
-        ),
-    )?;
+    let verification = super::super::scan_hash::verify_content_batch_with_source_root(
+        db,
+        &source_root,
+        cancel,
+        budget,
+        completed_at,
+        writer,
+    );
+    let mut content_incomplete = None;
+    match verification {
+        Ok(verified) => stats.merge_deferred_hashes(verified),
+        Err(ScanError::Incomplete { committed, error }) => {
+            stats.merge_deferred_hashes(*committed);
+            content_incomplete = Some(error);
+        }
+        Err(error) if stats.committed_delta.revision > 0 => {
+            tracing::warn!(
+                %error,
+                revision = stats.committed_delta.revision,
+                "Retaining committed manifest repair before retrying failed content audit"
+            );
+            return Ok(ManifestAuditOutcome::Incomplete {
+                committed: stats,
+                error: error.to_string(),
+            });
+        }
+        Err(error) => return Err(error),
+    }
+    if content_incomplete.is_some() {
+        return Ok(ManifestAuditOutcome::Complete {
+            stats,
+            content_incomplete,
+        });
+    }
     finalize_pending_rename_completion(
         db,
         &mut stats,
@@ -249,7 +377,10 @@ fn audit_source_and_record_after_scan(
         writer,
         Some(&source_root),
     )?;
-    Ok(stats)
+    Ok(ManifestAuditOutcome::Complete {
+        stats,
+        content_incomplete,
+    })
 }
 
 fn record_manifest_audit_completion(
@@ -296,6 +427,26 @@ pub(crate) fn audit_source_and_record_with_post_scan_hook(
     after_scan: impl FnOnce(),
 ) -> Result<ScanStats, ScanError> {
     audit_source_and_record_after_scan(
+        db,
+        cancel,
+        ContentAuditBudget::entry_limited(max_hashes),
+        completed_at,
+        None,
+        &UncoordinatedScanWriter,
+        || {},
+        after_scan,
+    )
+}
+
+#[cfg(test)]
+pub(crate) fn audit_source_and_record_with_post_scan_hook_outcome(
+    db: &SourceDatabase,
+    cancel: Option<&AtomicBool>,
+    max_hashes: usize,
+    completed_at: i64,
+    after_scan: impl FnOnce(),
+) -> Result<ManifestAuditOutcome, ScanError> {
+    audit_source_and_record_after_scan_outcome(
         db,
         cancel,
         ContentAuditBudget::entry_limited(max_hashes),

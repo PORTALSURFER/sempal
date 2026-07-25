@@ -33,7 +33,7 @@ use wavecrate::sample_sources::{
     },
     scanner::{
         CommittedSourceDelta, ContentAuditActivity, ContentAuditBudget, ContentAuditStorage,
-        ScanError, audit_source_and_record_with_budget_and_progress_and_writer,
+        ManifestAuditOutcome, audit_source_and_record_with_budget_and_progress_and_writer_outcome,
         complete_pending_deep_hash_for_path, sync_paths_with_progress,
     },
 };

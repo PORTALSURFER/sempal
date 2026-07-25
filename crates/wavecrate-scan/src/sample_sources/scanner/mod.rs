@@ -13,11 +13,12 @@ mod scan_writer;
 
 pub use scan::{
     ChangedSample, CommittedScanBatch, CommittedSourceDelta, ContentAuditActivity,
-    ContentAuditBudget, ContentAuditStorage, DirectoryRepeatKind, ManifestIdentityDelta,
-    MovedManifestIdentity, RenamedSample, ScanError, ScanMode, ScanStats, SourceTreeDiagnostic,
-    SourceTreeFile, SourceTreeSnapshot, UpdatedSample, audit_source, audit_source_and_record,
-    audit_source_and_record_with_budget_and_progress,
+    ContentAuditBudget, ContentAuditStorage, DirectoryRepeatKind, ManifestAuditOutcome,
+    ManifestIdentityDelta, MovedManifestIdentity, RenamedSample, ScanError, ScanMode, ScanStats,
+    SourceTreeDiagnostic, SourceTreeFile, SourceTreeSnapshot, UpdatedSample, audit_source,
+    audit_source_and_record, audit_source_and_record_with_budget_and_progress,
     audit_source_and_record_with_budget_and_progress_and_writer,
+    audit_source_and_record_with_budget_and_progress_and_writer_outcome,
     audit_source_and_record_with_progress, audit_source_with_budget, complete_deferred_hashes,
     complete_deferred_hashes_with_cancel, complete_deferred_rename_candidates,
     complete_deferred_rename_candidates_with_cancel,
