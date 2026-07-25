@@ -16,6 +16,7 @@ thiserror = "2.0.17"
 tracing = "0.1.41"
 
 [dev-dependencies]
+filetime = "0.2.26"
 tempfile = "3.23.0"
 
 [target.'cfg(unix)'.dev-dependencies]
