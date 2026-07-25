@@ -296,15 +296,7 @@ impl SourceRowViewModel {
             scanning: scanning_source_id == Some(source.id.as_str()),
             health_label: health.and_then(source_health_label).map(str::to_string),
             health_detail: health.map(source_health_detail),
-            health_warning: health.is_some_and(|health| {
-                matches!(
-                    health.status,
-                    SourceProcessingHealthStatus::BlockedByPrerequisites
-                        | SourceProcessingHealthStatus::Offline
-                        | SourceProcessingHealthStatus::DegradedTerminal
-                        | SourceProcessingHealthStatus::ReconciliationFailed
-                )
-            }),
+            health_warning: health.is_some_and(source_health_warning),
             missing: source.is_missing(),
             protected_source_error_flash: folder_browser
                 .source_protected_error_flash_active(&source.id),
@@ -330,6 +322,38 @@ fn source_health_label(health: &SourceProcessingHealth) -> Option<&'static str> 
         SourceProcessingHealthStatus::DegradedTerminal => Some("limited"),
         SourceProcessingHealthStatus::ReconciliationFailed => Some("repair needed"),
     }
+}
+
+fn source_health_warning(health: &SourceProcessingHealth) -> bool {
+    match health.status {
+        SourceProcessingHealthStatus::BlockedByPrerequisites
+        | SourceProcessingHealthStatus::Offline
+        | SourceProcessingHealthStatus::ReconciliationFailed => true,
+        SourceProcessingHealthStatus::DegradedTerminal => !known_unsupported_only_terminal(health),
+        SourceProcessingHealthStatus::Ready
+        | SourceProcessingHealthStatus::Processing
+        | SourceProcessingHealthStatus::WaitingForRetry
+        | SourceProcessingHealthStatus::Disabled => false,
+    }
+}
+
+fn known_unsupported_only_terminal(health: &SourceProcessingHealth) -> bool {
+    let (permanent, unsupported, stale, deleted) = source_terminal_counts(health);
+    unsupported > 0 && permanent == 0 && stale == 0 && deleted == 0
+}
+
+fn source_terminal_counts(health: &SourceProcessingHealth) -> (usize, usize, usize, usize) {
+    health.stage_counts.values().fold(
+        (0, 0, 0, 0),
+        |(permanent, unsupported, stale, deleted), counts| {
+            (
+                permanent.saturating_add(counts.permanent),
+                unsupported.saturating_add(counts.unsupported),
+                stale.saturating_add(counts.stale),
+                deleted.saturating_add(counts.deleted),
+            )
+        },
+    )
 }
 
 fn source_health_detail(health: &SourceProcessingHealth) -> String {
@@ -563,6 +587,7 @@ mod tests {
     use crate::native_app::test_support::state::{
         FolderBrowserState, FolderScanProgress, NativeAppStateFixture, SourceProcessingProgress,
     };
+    use wavecrate::sample_sources::readiness::{ReadinessStage, ReadinessStageCounts};
     use wavecrate::sample_sources::{SampleSource, SourceId};
 
     #[test]
@@ -735,5 +760,99 @@ mod tests {
         );
         assert!(row.health_warning);
         assert!(state.background.source_processing_progress.is_none());
+    }
+
+    #[test]
+    fn unsupported_only_terminal_health_is_neutral_but_keeps_diagnostics() {
+        let root = tempfile::tempdir().expect("source root");
+        let source = SampleSource::new_with_id(
+            SourceId::from_string("unsupported-only-source"),
+            root.path().to_path_buf(),
+        );
+        let mut stage_counts = std::collections::BTreeMap::new();
+        stage_counts.insert(
+            ReadinessStage::AnalysisFeatures,
+            ReadinessStageCounts {
+                current: 3,
+                unsupported: 2,
+                ..ReadinessStageCounts::default()
+            },
+        );
+        let mut state = NativeAppStateFixture::default()
+            .with_folder_browser(FolderBrowserState::from_sample_sources(
+                std::slice::from_ref(&source),
+            ))
+            .build();
+        state.background.source_processing_health.insert(
+            source.id.as_str().to_string(),
+            SourceProcessingHealth {
+                source_id: source.id.as_str().to_string(),
+                lifecycle_generation: 1,
+                status: SourceProcessingHealthStatus::DegradedTerminal,
+                source_generation: 4,
+                readiness_revision: 5,
+                stage_counts,
+                retry_at: None,
+                failure_codes: vec![String::from("decoder_unsupported")],
+            },
+        );
+
+        let model = LibrarySidebarViewModel::from_app_state(&state);
+        let row = model.source_selector.rows.first().expect("source row");
+
+        assert_eq!(row.health_label.as_deref(), Some("limited"));
+        assert!(!row.health_warning);
+        assert!(
+            row.health_detail
+                .as_deref()
+                .is_some_and(|detail| detail.contains("2 unsupported"))
+        );
+        assert!(
+            row.health_detail
+                .as_deref()
+                .is_some_and(|detail| detail.contains("decoder_unsupported"))
+        );
+    }
+
+    #[test]
+    fn mixed_terminal_health_remains_warning_health() {
+        let root = tempfile::tempdir().expect("source root");
+        let source = SampleSource::new_with_id(
+            SourceId::from_string("mixed-terminal-source"),
+            root.path().to_path_buf(),
+        );
+        let mut stage_counts = std::collections::BTreeMap::new();
+        stage_counts.insert(
+            ReadinessStage::AnalysisFeatures,
+            ReadinessStageCounts {
+                unsupported: 2,
+                permanent: 1,
+                ..ReadinessStageCounts::default()
+            },
+        );
+        let mut state = NativeAppStateFixture::default()
+            .with_folder_browser(FolderBrowserState::from_sample_sources(
+                std::slice::from_ref(&source),
+            ))
+            .build();
+        state.background.source_processing_health.insert(
+            source.id.as_str().to_string(),
+            SourceProcessingHealth {
+                source_id: source.id.as_str().to_string(),
+                lifecycle_generation: 1,
+                status: SourceProcessingHealthStatus::DegradedTerminal,
+                source_generation: 4,
+                readiness_revision: 5,
+                stage_counts,
+                retry_at: None,
+                failure_codes: vec![String::from("decoder_unsupported")],
+            },
+        );
+
+        let model = LibrarySidebarViewModel::from_app_state(&state);
+        let row = model.source_selector.rows.first().expect("source row");
+
+        assert_eq!(row.health_label.as_deref(), Some("limited"));
+        assert!(row.health_warning);
     }
 }

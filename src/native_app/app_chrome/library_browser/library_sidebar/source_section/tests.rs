@@ -4,29 +4,91 @@ use super::rows::{
     SOURCE_ROW_LABEL_PADDING_X, source_acceptance_fill_for_tests, source_add_button,
     source_add_button_tooltip_for_tests, source_missing_color_for_tests,
     source_protected_error_icon_color_for_tests, source_role_icon_color_for_source_for_tests,
-    source_role_icon_color_for_tests, source_row, source_selected_fill_for_tests,
-    source_selected_marker_color_for_tests,
+    source_role_icon_color_for_tests, source_row, source_row_label_for_tests,
+    source_selected_fill_for_tests, source_selected_marker_color_for_tests,
 };
 use super::source_selector;
-use crate::native_app::app::GuiMessage;
+use crate::native_app::app::{GuiMessage, SourceProcessingHealth, SourceProcessingHealthStatus};
 use crate::native_app::app_chrome::library_browser::library_sidebar::sidebar_row::{
     sidebar_row_hover_fill_for_tests, sidebar_row_palette_for_tests,
     sidebar_row_selected_fill_for_tests,
 };
 use crate::native_app::app_chrome::palette::SELECTED_ROW_MARKER_WIDTH;
 use crate::native_app::app_chrome::view_models::library_sidebar::{
-    SourceRowViewModel, SourceSelectorViewModel,
+    LibrarySidebarViewModel, SourceRowViewModel, SourceSelectorViewModel,
 };
 use crate::native_app::sample_library::folder_browser::commands::FolderBrowserMessage;
 use crate::native_app::sample_library::folder_browser::{FolderBrowserState, model::SourceEntry};
+use crate::native_app::test_support::state::{FolderScanProgress, NativeAppStateFixture};
 use radiant::prelude as ui;
 use radiant::prelude::IntoView;
 use radiant::widgets::ButtonMessage;
 use std::time::{Duration, Instant};
-use wavecrate::sample_sources::SourceRole;
+use wavecrate::sample_sources::readiness::{ReadinessStage, ReadinessStageCounts};
+use wavecrate::sample_sources::{SampleSource, SourceId, SourceRole};
 
 fn test_source(id: &str) -> SourceEntry {
     SourceEntry::new(id, "Source", std::path::PathBuf::from("C:/samples"))
+}
+
+fn test_source_row_with_health(
+    health_label: Option<&str>,
+    health_warning: bool,
+    scanning: bool,
+) -> SourceRowViewModel {
+    SourceRowViewModel {
+        id: String::from("source-health"),
+        label: String::from("Source"),
+        role: SourceRole::Normal,
+        selected: false,
+        focused: false,
+        focus_alpha: 0,
+        reorder_enabled: false,
+        reorder_drag_active: false,
+        reorder_drag_source: false,
+        reorder_drop_target: false,
+        reorder_drop_after: false,
+        scanning,
+        health_label: health_label.map(str::to_string),
+        health_detail: Some(String::from("Readiness: diagnostics")),
+        health_warning,
+        missing: false,
+        protected_source_error_flash: false,
+        primary_source_acceptance_flash: false,
+        drag_active: false,
+        drop_candidate: false,
+        drop_target: false,
+        drop_target_active: false,
+    }
+}
+
+fn source_model_with_terminal_counts(counts: ReadinessStageCounts) -> LibrarySidebarViewModel {
+    let root = tempfile::tempdir().expect("source root");
+    let source = SampleSource::new_with_id(
+        SourceId::from_string("terminal-source"),
+        root.path().to_path_buf(),
+    );
+    let mut state = NativeAppStateFixture::default()
+        .with_folder_browser(FolderBrowserState::from_sample_sources(
+            std::slice::from_ref(&source),
+        ))
+        .build();
+    let mut stage_counts = std::collections::BTreeMap::new();
+    stage_counts.insert(ReadinessStage::AnalysisFeatures, counts);
+    state.background.source_processing_health.insert(
+        source.id.as_str().to_string(),
+        SourceProcessingHealth {
+            source_id: source.id.as_str().to_string(),
+            lifecycle_generation: 1,
+            status: SourceProcessingHealthStatus::DegradedTerminal,
+            source_generation: 4,
+            readiness_revision: 5,
+            stage_counts,
+            retry_at: None,
+            failure_codes: vec![String::from("terminal_diagnostic")],
+        },
+    );
+    LibrarySidebarViewModel::from_app_state(&state)
 }
 
 macro_rules! assert_no_left_source_marker {
@@ -378,6 +440,159 @@ fn source_row_label_keeps_left_breathing_room() {
     assert!(
         label_rect.min.x >= SOURCE_ROW_LABEL_PADDING_X,
         "source label should be inset from the sidebar edge: {label_rect:?}"
+    );
+}
+
+#[test]
+fn source_row_hides_routine_processing_suffixes() {
+    let scanning = test_source_row_with_health(Some("processing"), false, true);
+    let processing = test_source_row_with_health(Some("processing"), false, false);
+
+    assert_eq!(source_row_label_for_tests(&scanning), "Source");
+    assert_eq!(source_row_label_for_tests(&processing), "Source");
+}
+
+#[test]
+fn scanning_source_projection_renders_base_label_without_suffix() {
+    let root = tempfile::tempdir().expect("source root");
+    let source = SampleSource::new_with_id(
+        SourceId::from_string("scanning-source"),
+        root.path().to_path_buf(),
+    );
+    let mut state = NativeAppStateFixture::default()
+        .with_folder_browser(FolderBrowserState::from_sample_sources(
+            std::slice::from_ref(&source),
+        ))
+        .build();
+    let request = state
+        .library
+        .begin_source_scan(source.id.as_str().to_string(), 17)
+        .expect("begin source scan");
+    state.library.start_folder_scan(&request);
+    assert!(
+        state
+            .library
+            .apply_folder_scan_progress(FolderScanProgress::new(
+            request.task_id,
+            request.source_id.clone(),
+            request.label,
+            crate::native_app::sample_library::folder_browser::scan::FolderScanLifecycle::Scanning,
+            1,
+            10,
+            String::from("kick.wav"),
+        ))
+    );
+
+    let model = LibrarySidebarViewModel::from_app_state(&state);
+    let row = model
+        .source_selector
+        .rows
+        .first()
+        .expect("scanning source row");
+    assert!(row.scanning);
+    let frame = source_row(row)
+        .view_frame_at_size_with_default_theme(ui::Vector2::new(200.0, SOURCE_ROW_HEIGHT));
+
+    assert!(frame.paint_plan.contains_text(row.label.as_str()));
+    assert!(!frame.paint_plan.contains_text("(scanning)"));
+}
+
+#[test]
+fn unsupported_only_source_row_uses_base_label_and_neutral_text() {
+    let neutral = test_source_row_with_health(None, false, false);
+    let unsupported = test_source_row_with_health(Some("limited"), false, false);
+    let neutral_frame = source_row(&neutral)
+        .view_frame_at_size_with_default_theme(ui::Vector2::new(200.0, SOURCE_ROW_HEIGHT));
+    let unsupported_frame = source_row(&unsupported)
+        .view_frame_at_size_with_default_theme(ui::Vector2::new(200.0, SOURCE_ROW_HEIGHT));
+
+    assert_eq!(source_row_label_for_tests(&unsupported), "Source");
+    assert_eq!(
+        unsupported_frame.paint_plan.first_text_color("Source"),
+        neutral_frame.paint_plan.first_text_color("Source"),
+        "unsupported-only health should retain neutral source-row text"
+    );
+    assert!(!unsupported_frame.paint_plan.contains_text("(limited)"));
+}
+
+#[test]
+fn mixed_terminal_source_row_retains_limited_warning_presentation() {
+    let mixed = test_source_row_with_health(Some("limited"), true, false);
+    let frame = source_row(&mixed)
+        .view_frame_at_size_with_default_theme(ui::Vector2::new(200.0, SOURCE_ROW_HEIGHT));
+
+    assert_eq!(source_row_label_for_tests(&mixed), "Source (limited)");
+    assert_eq!(
+        frame.paint_plan.first_text_color("Source (limited)"),
+        Some(source_missing_color_for_tests()),
+        "mixed terminal health should retain warning text"
+    );
+}
+
+#[test]
+fn unsupported_plus_stale_projects_limited_warning_row() {
+    let model = source_model_with_terminal_counts(ReadinessStageCounts {
+        unsupported: 2,
+        stale: 1,
+        ..ReadinessStageCounts::default()
+    });
+    let row = model
+        .source_selector
+        .rows
+        .first()
+        .expect("stale terminal source row");
+    assert!(row.health_warning);
+    let frame = source_row(row)
+        .view_frame_at_size_with_default_theme(ui::Vector2::new(200.0, SOURCE_ROW_HEIGHT));
+
+    let expected_label = format!("{} (limited)", row.label);
+    assert_eq!(source_row_label_for_tests(row), expected_label);
+    assert_eq!(
+        frame.paint_plan.first_text_color(&expected_label),
+        Some(source_missing_color_for_tests())
+    );
+}
+
+#[test]
+fn unsupported_plus_deleted_projects_limited_warning_row() {
+    let model = source_model_with_terminal_counts(ReadinessStageCounts {
+        unsupported: 2,
+        deleted: 1,
+        ..ReadinessStageCounts::default()
+    });
+    let row = model
+        .source_selector
+        .rows
+        .first()
+        .expect("deleted terminal source row");
+    assert!(row.health_warning);
+    let frame = source_row(row)
+        .view_frame_at_size_with_default_theme(ui::Vector2::new(200.0, SOURCE_ROW_HEIGHT));
+
+    let expected_label = format!("{} (limited)", row.label);
+    assert_eq!(source_row_label_for_tests(row), expected_label);
+    assert_eq!(
+        frame.paint_plan.first_text_color(&expected_label),
+        Some(source_missing_color_for_tests())
+    );
+}
+
+#[test]
+fn count_empty_terminal_source_row_retains_limited_warning_suffix() {
+    let empty = test_source_row_with_health(Some("limited"), true, false);
+
+    assert_eq!(source_row_label_for_tests(&empty), "Source (limited)");
+}
+
+#[test]
+fn source_row_retains_genuine_availability_error_suffix() {
+    let offline = test_source_row_with_health(Some("offline"), true, false);
+    let scanning_offline = test_source_row_with_health(Some("offline"), true, true);
+
+    assert_eq!(source_row_label_for_tests(&offline), "Source (offline)");
+    assert_eq!(
+        source_row_label_for_tests(&scanning_offline),
+        "Source (offline)"
     );
 }
 
