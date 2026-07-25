@@ -95,11 +95,18 @@ fn reconcile_entry(
         &target_root,
         entry.staged_relative.as_deref(),
         &entry.target_relative,
-        staged.is_some(),
+        staged.as_ref(),
         target.is_some(),
     )?;
     let target = target_root.open_file(&entry.target_relative)?;
+    validate_staged_file_identity(entry, staged.as_ref())?;
+    validate_existing_target_identity(entry, target.as_ref(), staged.is_some())?;
     let target_exists = reconcile_target_entry(db, entry, target.as_ref())?;
+    if let (Some(staged_relative), Some(staged)) =
+        (entry.staged_relative.as_deref(), staged.as_ref())
+    {
+        target_root.remove_file_if_identity(staged_relative, &staged.identity)?;
+    }
     if entry.kind == FileOpKind::Move {
         reconcile_source_entry(db, entry, target_exists, source_root, source_databases)?;
     }
@@ -132,20 +139,20 @@ fn reconcile_staged_file(
     target_root: &RecoveryRoot,
     staged_relative: Option<&Path>,
     target_relative: &Path,
-    staged_exists: bool,
+    staged: Option<&OpenedFile>,
     target_exists: bool,
 ) -> Result<(), String> {
     let Some(staged_relative) = staged_relative else {
         return Ok(());
     };
-    if !staged_exists {
+    let Some(staged) = staged else {
         return Ok(());
-    }
+    };
     if !target_exists {
         target_root.ensure_parent(target_relative)?;
-        target_root.hard_link_no_replace(staged_relative, target_relative)?;
+        target_root.hard_link_no_replace(staged_relative, &staged.identity, target_relative)?;
     }
-    target_root.remove_file_nofollow(staged_relative)
+    Ok(())
 }
 
 fn validate_staged_file_identity(
@@ -319,8 +326,9 @@ fn reconcile_source_entry(
     if source_file.is_some() && !target_exists {
         return Ok(());
     }
-    let source_db = source_databases.open(source_root_path)?;
+    let source_db = source_databases.open(&source_root)?;
     if source_file.is_none() {
+        source_root.revalidate_named_root()?;
         source_db
             .remove_file(source_relative)
             .map_err(|err| format!("Failed to drop source DB row: {err}"))?;

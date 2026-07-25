@@ -22,17 +22,23 @@ use super::super::SourceDatabase;
 pub(super) struct RecoveryRoot {
     path: PathBuf,
     capability: fs::File,
+    identity: String,
 }
 
 /// Descriptor-derived facts for one regular file.
 #[derive(Debug)]
 pub(super) struct OpenedFile {
+    capability: fs::File,
     pub(super) identity: String,
     pub(super) file_size: u64,
     pub(super) modified_ns: i64,
 }
 
 impl RecoveryRoot {
+    pub(super) fn path(&self) -> &Path {
+        &self.path
+    }
+
     pub(super) fn open_if_available(
         path: &Path,
         expected_identity: Option<&str>,
@@ -77,7 +83,32 @@ impl RecoveryRoot {
         Ok(Self {
             path: path.to_path_buf(),
             capability,
+            identity: actual_identity,
         })
+    }
+
+    pub(super) fn revalidate_named_root(&self) -> Result<(), String> {
+        let capability = open_root_nofollow(&self.path).map_err(|error| {
+            format!(
+                "failed to revalidate recovery root {} without following symlinks: {error}",
+                self.path.display()
+            )
+        })?;
+        let actual_identity = root_identity_from_open_file(&capability).map_err(|error| {
+            format!(
+                "failed to inspect recovery root {} during revalidation: {error}",
+                self.path.display()
+            )
+        })?;
+        if actual_identity != self.identity {
+            return Err(format!(
+                "recovery root {} was replaced during recovery (expected {}, found {})",
+                self.path.display(),
+                self.identity,
+                actual_identity
+            ));
+        }
+        Ok(())
     }
 
     pub(super) fn open_file(&self, relative: &Path) -> Result<Option<OpenedFile>, String> {
@@ -135,6 +166,7 @@ impl RecoveryRoot {
             .map_err(|_| "file modified time is before epoch".to_string())?
             .as_nanos() as i64;
         Ok(Some(OpenedFile {
+            capability: file,
             identity,
             file_size: metadata.len(),
             modified_ns,
@@ -183,8 +215,21 @@ impl RecoveryRoot {
     pub(super) fn hard_link_no_replace(
         &self,
         staged_relative: &Path,
+        staged_identity: &str,
         target_relative: &Path,
     ) -> Result<(), String> {
+        let staged = self.open_file(staged_relative)?.ok_or_else(|| {
+            format!(
+                "staged recovery file disappeared: {}",
+                staged_relative.display()
+            )
+        })?;
+        if staged.identity != staged_identity || !staged.is_still_same_object() {
+            return Err(format!(
+                "staged recovery file changed before no-replace finalization: {}",
+                self.path.join(staged_relative).display()
+            ));
+        }
         let staged_parent =
             self.open_directory(staged_relative.parent().unwrap_or_else(|| Path::new(".")))?;
         let target_parent =
@@ -214,6 +259,23 @@ impl RecoveryRoot {
                 self.path.join(target_relative).display()
             )
         })
+    }
+
+    pub(super) fn remove_file_if_identity(
+        &self,
+        relative: &Path,
+        expected_identity: &str,
+    ) -> Result<(), String> {
+        let file = self
+            .open_file(relative)?
+            .ok_or_else(|| format!("staged recovery file disappeared: {}", relative.display()))?;
+        if file.identity != expected_identity || !file.is_still_same_object() {
+            return Err(format!(
+                "staged recovery file changed before cleanup: {}",
+                self.path.join(relative).display()
+            ));
+        }
+        self.remove_file_nofollow(relative)
     }
 
     pub(super) fn remove_file_nofollow(&self, relative: &Path) -> Result<(), String> {
@@ -271,12 +333,20 @@ pub(super) fn capture_file_identity(root_path: &Path, relative: &Path) -> io::Re
     let root = RecoveryRoot {
         path: root_path.to_path_buf(),
         capability,
+        identity: String::new(),
     };
     let file = root
         .open_file(relative)
         .map_err(io::Error::other)?
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "file is missing"))?;
     Ok(file.identity)
+}
+
+impl OpenedFile {
+    fn is_still_same_object(&self) -> bool {
+        stable_filesystem_identity_from_open_file(&self.capability).as_deref()
+            == Some(self.identity.as_str())
+    }
 }
 
 fn open_root_nofollow(path: &Path) -> io::Result<fs::File> {
@@ -324,14 +394,17 @@ fn relative_components(path: &Path) -> Result<Vec<&OsStr>, String> {
 }
 
 pub(super) trait RecoverySourceDatabases {
-    fn open(&self, root: &Path) -> Result<SourceDatabase, String>;
+    fn open(&self, root: &RecoveryRoot) -> Result<SourceDatabase, String>;
 }
 
 pub(super) struct SourceDatabaseRecoveryAccess;
 
 impl RecoverySourceDatabases for SourceDatabaseRecoveryAccess {
-    fn open(&self, root: &Path) -> Result<SourceDatabase, String> {
-        SourceDatabase::open_for_source_write(root)
-            .map_err(|error| format!("Failed to open source DB for recovery: {error}"))
+    fn open(&self, root: &RecoveryRoot) -> Result<SourceDatabase, String> {
+        root.revalidate_named_root()?;
+        let database = SourceDatabase::open_for_source_write(root.path())
+            .map_err(|error| format!("Failed to open source DB for recovery: {error}"))?;
+        root.revalidate_named_root()?;
+        Ok(database)
     }
 }
