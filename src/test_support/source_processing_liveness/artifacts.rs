@@ -1,5 +1,27 @@
 use super::*;
 
+#[cfg(target_os = "macos")]
+pub(super) fn seed_durable_watcher_checkpoint(connection: &mut Connection, source: &SampleSource) {
+    let metadata = fs::metadata(&source.root).expect("read source root metadata");
+    let root_identity =
+        wavecrate_library::filesystem_identity::stable_filesystem_identity(&source.root, &metadata)
+            .expect("temporary source root should expose stable identity");
+    connection
+        .execute(
+            "INSERT INTO metadata (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![
+                wavecrate_library::sample_sources::db::META_SOURCE_WATCHER_CHECKPOINT,
+                serde_json::json!({
+                    "root_identity": root_identity,
+                    "event_id": 1_u64,
+                })
+                .to_string(),
+            ],
+        )
+        .expect("persist durable watcher checkpoint");
+}
+
 pub(super) fn assert_exact_artifact_coverage(source: &SampleSource, snapshot: &ReadinessSnapshot) {
     let connection = open_connection(source).expect("open exact coverage database");
     let eligible_count = connection
