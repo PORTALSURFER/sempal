@@ -659,6 +659,7 @@ impl FolderBrowserState {
         &mut self,
         policy: VisibleSampleWindowPolicy<'_>,
     ) -> ui::VirtualListWindow {
+        self.clear_scan_content_refresh_pending();
         let window = self.follow_selected_file_view_matching_tags(
             policy.viewport_rows,
             policy.overscan_rows,
@@ -666,6 +667,7 @@ impl FolderBrowserState {
             policy.tags_by_file,
         );
         self.sample_list.prepared_content_revision = self.sample_list.content_revision;
+        self.remember_prepared_audio_file_ids();
         window
     }
 

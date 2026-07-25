@@ -189,6 +189,9 @@ impl FolderBrowserState {
         let curation_now = curation::now_epoch_seconds();
         let mut files = self.scoped_audio_files_for_listing();
         files.retain(|file| {
+            if self.scan_file_deferred(&file.id) {
+                return false;
+            }
             if reveal_id == Some(file.id.as_str()) {
                 return true;
             }

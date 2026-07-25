@@ -291,10 +291,11 @@ fn empty_starmap_items() -> Arc<[StarmapItem]> {
 
 fn waveform_drag_defers_sample_browser_preparation(state: &NativeAppState) -> bool {
     state.waveform.current.active_drag_kind().is_some()
-        && !state
+        && (!state
             .library
             .folder_browser
             .visible_sample_window_needs_content_refresh()
+            || state.library.folder_browser.scan_content_refresh_pending())
 }
 
 fn starmap_audition_drag_defers_sample_browser_preparation(state: &NativeAppState) -> bool {
@@ -316,7 +317,11 @@ mod tests {
     use crate::native_app::test_support::state::{NativeAppStateFixture, WaveformInteraction};
     use crate::native_app::waveform::WaveformSelectionKind;
     use crate::native_app::{
-        app::SampleBrowserDisplayMode, sample_library::folder_browser::FolderBrowserState,
+        app::SampleBrowserDisplayMode,
+        sample_library::folder_browser::{
+            FolderBrowserState,
+            scan::{FolderScanDiscoveryBatch, FolderScanLifecycle, scan_source_with_progress},
+        },
     };
     use radiant::{
         gui::types::Point,
@@ -390,6 +395,248 @@ mod tests {
             "extracted row should be visible before the active playmark drag ends"
         );
         assert!(waveform_drag_defers_sample_browser_preparation(&state));
+    }
+
+    #[test]
+    fn active_waveform_drag_defers_scan_dirty_refresh_until_release() {
+        let root = tempfile::tempdir().expect("source root");
+        let source = root.path().join("source");
+        fs::create_dir_all(&source).expect("create source folder");
+        let original = source.join("original.wav");
+        fs::write(&original, [0_u8; 8]).expect("write original");
+        let sample_source = wavecrate::sample_sources::SampleSource::new(source.clone());
+        let mut state = NativeAppStateFixture::default()
+            .with_folder_browser(FolderBrowserState::from_sample_sources_deferred(&[
+                sample_source,
+            ]))
+            .with_synthetic_waveform()
+            .build();
+        prepare_sample_browser_view(&mut state);
+
+        let request = state
+            .library
+            .begin_selected_source_scan(17)
+            .expect("source scan request");
+        state.library.start_folder_scan(&request);
+        assert!(state.library.folder_scan_active());
+
+        let mut discoveries = Vec::new();
+        let _result =
+            scan_source_with_progress(request.clone(), |_| {}, |event| discoveries.push(event));
+        assert!(
+            !discoveries.is_empty(),
+            "scan should discover the source file"
+        );
+        for (sequence, chunk) in discoveries.chunks(64).enumerate() {
+            assert!(
+                state
+                    .library
+                    .apply_folder_scan_discovery_batch(FolderScanDiscoveryBatch {
+                        task_id: request.task_id,
+                        source_id: request.source_id.clone(),
+                        committed_revision: chunk[0].committed_revision,
+                        lifecycle_generation: None,
+                        sequence: sequence as u64,
+                        events: chunk.to_vec(),
+                    })
+            );
+        }
+        assert!(state.library.folder_browser.scan_content_refresh_pending());
+        assert!(
+            state
+                .library
+                .finish_folder_scan_terminal(
+                    request.task_id,
+                    &request.source_id,
+                    None,
+                    FolderScanLifecycle::Complete,
+                )
+                .is_some()
+        );
+        assert!(!state.library.folder_scan_active());
+
+        state.waveform.current.set_play_selection_range(0.2, 0.4);
+        state
+            .waveform
+            .current
+            .apply_interaction(WaveformInteraction::BeginSelectionMove {
+                kind: WaveformSelectionKind::Play,
+                visible_ratio: 0.25,
+            });
+        assert!(
+            state
+                .library
+                .folder_browser
+                .visible_sample_window_needs_content_refresh()
+        );
+        assert!(waveform_drag_defers_sample_browser_preparation(&state));
+
+        prepare_sample_browser_view(&mut state);
+        assert!(
+            state
+                .library
+                .folder_browser
+                .visible_sample_window_needs_content_refresh()
+        );
+
+        state
+            .waveform
+            .current
+            .apply_interaction(WaveformInteraction::FinishSelection {
+                visible_ratio: 0.45,
+            });
+        assert!(!waveform_drag_defers_sample_browser_preparation(&state));
+        prepare_sample_browser_view(&mut state);
+        let projection = SampleBrowserViewProjection::from_prepared_app_state(&state);
+
+        assert!(
+            !state
+                .library
+                .folder_browser
+                .visible_sample_window_needs_content_refresh()
+        );
+        assert!(
+            projection
+                .visible_samples
+                .rows
+                .iter()
+                .any(|row| row.file.id == original.to_string_lossy().as_ref()),
+            "the scan-discovered row should become visible after the drag ends"
+        );
+    }
+
+    #[test]
+    fn active_waveform_drag_allows_foreground_file_refresh_while_scan_active() {
+        let root = tempfile::tempdir().expect("source root");
+        let source = root.path().join("source");
+        fs::create_dir_all(&source).expect("create source folder");
+        let original = source.join("original.wav");
+        let extracted = source.join("original_extraction.wav");
+        fs::write(&original, [0_u8; 8]).expect("write original");
+        let mut state = NativeAppStateFixture::default()
+            .with_folder_browser(FolderBrowserState::from_root(source.clone()))
+            .with_synthetic_waveform()
+            .build();
+        prepare_sample_browser_view(&mut state);
+
+        let request = state
+            .library
+            .begin_selected_source_scan(19)
+            .expect("source scan request");
+        state.library.start_folder_scan(&request);
+        state.waveform.current.set_play_selection_range(0.2, 0.4);
+        state
+            .waveform
+            .current
+            .apply_interaction(WaveformInteraction::BeginSelectionMove {
+                kind: WaveformSelectionKind::Play,
+                visible_ratio: 0.25,
+            });
+        fs::write(&extracted, [1_u8; 8]).expect("write extraction");
+        assert!(state.library.folder_browser.refresh_file_path(&extracted));
+        assert!(!state.library.folder_browser.scan_content_refresh_pending());
+        assert!(!waveform_drag_defers_sample_browser_preparation(&state));
+
+        prepare_sample_browser_view(&mut state);
+        let projection = SampleBrowserViewProjection::from_prepared_app_state(&state);
+        assert!(
+            projection
+                .visible_samples
+                .rows
+                .iter()
+                .any(|row| row.file.id == extracted.to_string_lossy().as_ref()),
+            "foreground extraction should be visible during the active drag"
+        );
+    }
+
+    #[test]
+    fn active_waveform_drag_preserves_scan_deferral_after_foreground_refresh() {
+        let root = tempfile::tempdir().expect("source root");
+        let source = root.path().join("source");
+        fs::create_dir_all(&source).expect("create source folder");
+        let original = source.join("original.wav");
+        let scan_file = source.join("scan_discovered.wav");
+        let extracted = source.join("aaa_extraction.wav");
+        fs::write(&original, [0_u8; 8]).expect("write original");
+        let mut state = NativeAppStateFixture::default()
+            .with_folder_browser(FolderBrowserState::from_root(source.clone()))
+            .with_synthetic_waveform()
+            .build();
+        prepare_sample_browser_view(&mut state);
+
+        let request = state
+            .library
+            .begin_selected_source_scan(23)
+            .expect("source scan request");
+        state.library.start_folder_scan(&request);
+        fs::write(&scan_file, [2_u8; 8]).expect("write scan file");
+        let scan_result = scan_source_with_progress(request, |_| {}, |_| {});
+        assert!(
+            state
+                .library
+                .folder_browser
+                .apply_scan_finished(scan_result)
+        );
+        assert!(
+            state
+                .library
+                .folder_browser
+                .selected_source_audio_files()
+                .iter()
+                .any(|file| file.id == scan_file.to_string_lossy().as_ref())
+        );
+        assert!(state.library.folder_browser.scan_content_refresh_pending());
+
+        state.waveform.current.set_play_selection_range(0.2, 0.4);
+        state
+            .waveform
+            .current
+            .apply_interaction(WaveformInteraction::BeginSelectionMove {
+                kind: WaveformSelectionKind::Play,
+                visible_ratio: 0.25,
+            });
+        fs::write(&extracted, [1_u8; 8]).expect("write extraction");
+        assert!(state.library.folder_browser.refresh_file_path(&extracted));
+        assert!(state.library.folder_browser.scan_content_refresh_pending());
+        assert!(waveform_drag_defers_sample_browser_preparation(&state));
+
+        prepare_sample_browser_view(&mut state);
+        assert!(
+            state
+                .library
+                .folder_browser
+                .visible_sample_window_needs_content_refresh()
+        );
+        let during_drag = SampleBrowserViewProjection::from_prepared_app_state(&state);
+        assert!(
+            during_drag
+                .visible_samples
+                .rows
+                .iter()
+                .any(|row| row.file.id == extracted.to_string_lossy().as_ref())
+        );
+
+        state
+            .waveform
+            .current
+            .apply_interaction(WaveformInteraction::FinishSelection {
+                visible_ratio: 0.45,
+            });
+        prepare_sample_browser_view(&mut state);
+        assert!(
+            !state
+                .library
+                .folder_browser
+                .visible_sample_window_needs_content_refresh()
+        );
+        let released = SampleBrowserViewProjection::from_prepared_app_state(&state);
+        assert!(
+            released
+                .visible_samples
+                .rows
+                .iter()
+                .any(|row| row.file.id == scan_file.to_string_lossy().as_ref())
+        );
     }
 
     #[test]

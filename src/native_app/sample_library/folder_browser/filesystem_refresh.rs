@@ -36,19 +36,35 @@ impl FolderBrowserState {
         let refreshes_selected_file =
             self.selection.selected_file_id() == Some(refreshed_file_id.as_str());
         let parent_id = path_id(parent);
-        let source = &mut self.source.sources[source_index];
-        let Some(root_folder) = &mut source.root_folder else {
-            return false;
+        let selected_source = self.source.selected_source.clone();
+        let source_root = self.source.sources[source_index].root.clone();
+        let source_database_root = self.source.sources[source_index].database_root.clone();
+        let selected_tree_active = selected_source == self.source.sources[source_index].id
+            && self.tree.folders.first().is_some();
+        let root_folder = if selected_tree_active {
+            self.tree
+                .folders
+                .first_mut()
+                .expect("checked selected tree")
+        } else {
+            let source = &mut self.source.sources[source_index];
+            let Some(root_folder) = &mut source.root_folder else {
+                return false;
+            };
+            root_folder
         };
-        let source_database_root = source.database_root.clone();
         let Some(parent_folder) = root_folder.find_mut(&parent_id) else {
             return false;
         };
         upsert_file(
             &mut parent_folder.files,
-            file_entry_for_source_path(&path.to_path_buf(), &source.root, &source_database_root),
+            file_entry_for_source_path(&path.to_path_buf(), &source_root, &source_database_root),
         );
-        self.tree.folders = vec![root_folder.clone()];
+        if selected_tree_active {
+            self.source.sources[source_index].root_folder = self.tree.folders.first().cloned();
+        } else {
+            self.tree.folders = vec![root_folder.clone()];
+        }
         if refreshes_selected_file {
             self.request_selected_file_view_refollow_after_content_change();
         }
