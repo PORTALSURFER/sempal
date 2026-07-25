@@ -525,11 +525,7 @@ fn source_index_entry(
         ));
     }
     let modified = metadata.modified()?;
-    let modified_ns = modified
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos()
-        .min(i64::MAX as u128) as i64;
+    let modified_ns = system_time_to_unix_nanos(modified);
     if let Some(entry) = index_entry_from_file_facts(
         relative_path.to_path_buf(),
         classification,
@@ -627,13 +623,11 @@ pub(super) fn read_facts(root: &Path, path: &Path) -> Result<FileFacts, ScanErro
         path: path.to_path_buf(),
         source,
     })?;
-    let modified_ns = to_nanos(
-        &meta.modified().map_err(|source| ScanError::Io {
+    let modified_ns =
+        system_time_to_unix_nanos(meta.modified().map_err(|source| ScanError::Io {
             path: path.to_path_buf(),
             source,
-        })?,
-        path,
-    )?;
+        })?);
     Ok(FileFacts {
         relative,
         size: meta.len(),
@@ -665,13 +659,11 @@ pub(super) fn read_facts_from_open_file(
         path: path.to_path_buf(),
         source,
     })?;
-    let modified_ns = to_nanos(
-        &meta.modified().map_err(|source| ScanError::Io {
+    let modified_ns =
+        system_time_to_unix_nanos(meta.modified().map_err(|source| ScanError::Io {
             path: path.to_path_buf(),
             source,
-        })?,
-        path,
-    )?;
+        })?);
     Ok(FileFacts {
         relative,
         size: meta.len(),
@@ -806,13 +798,31 @@ fn strip_relative(root: &Path, path: &Path) -> Result<PathBuf, ScanError> {
     Err(ScanError::InvalidRoot(path.to_path_buf()))
 }
 
-fn to_nanos(time: &SystemTime, path: &Path) -> Result<i64, ScanError> {
-    let duration = time
-        .duration_since(UNIX_EPOCH)
-        .map_err(|_| ScanError::Time {
-            path: path.to_path_buf(),
-        })?;
-    Ok(duration.as_nanos().min(i64::MAX as u128) as i64)
+/// Convert a filesystem timestamp to the signed nanoseconds stored by the scanner.
+///
+/// The conversion preserves every representable nanosecond, including values before
+/// the Unix epoch, and clamps timestamps outside the signed `i64` range.
+fn system_time_to_unix_nanos(time: SystemTime) -> i64 {
+    const NANOS_PER_SECOND: u128 = 1_000_000_000;
+    const MIN_MAGNITUDE: u128 = i64::MAX as u128 + 1;
+
+    match time.duration_since(UNIX_EPOCH) {
+        Ok(duration) => {
+            let nanos = u128::from(duration.as_secs()) * NANOS_PER_SECOND
+                + u128::from(duration.subsec_nanos());
+            nanos.min(i64::MAX as u128) as i64
+        }
+        Err(error) => {
+            let duration = error.duration();
+            let nanos = u128::from(duration.as_secs()) * NANOS_PER_SECOND
+                + u128::from(duration.subsec_nanos());
+            if nanos >= MIN_MAGNITUDE {
+                i64::MIN
+            } else {
+                -(nanos as i64)
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -820,6 +830,49 @@ mod tests {
     use super::*;
     use std::io;
     use std::sync::atomic::AtomicBool;
+
+    #[test]
+    fn system_time_to_unix_nanos_preserves_epoch_and_negative_nanoseconds() {
+        assert_eq!(system_time_to_unix_nanos(UNIX_EPOCH), 0);
+        assert_eq!(
+            system_time_to_unix_nanos(UNIX_EPOCH - std::time::Duration::from_nanos(1)),
+            -1
+        );
+        assert_eq!(
+            system_time_to_unix_nanos(UNIX_EPOCH + std::time::Duration::from_nanos(1)),
+            1
+        );
+    }
+
+    #[test]
+    fn system_time_to_unix_nanos_preserves_exact_i64_bounds() {
+        let max = UNIX_EPOCH + std::time::Duration::from_nanos(i64::MAX as u64);
+        let min = UNIX_EPOCH - std::time::Duration::from_nanos(i64::MAX as u64 + 1);
+
+        assert_eq!(system_time_to_unix_nanos(min), i64::MIN);
+        assert_eq!(system_time_to_unix_nanos(max), i64::MAX);
+    }
+
+    #[test]
+    fn system_time_to_unix_nanos_saturates_both_overflow_directions() {
+        let above_max = UNIX_EPOCH + std::time::Duration::from_nanos(i64::MAX as u64 + 1);
+        let below_min = UNIX_EPOCH - std::time::Duration::from_nanos(i64::MAX as u64 + 2);
+
+        assert_eq!(system_time_to_unix_nanos(above_max), i64::MAX);
+        assert_eq!(system_time_to_unix_nanos(below_min), i64::MIN);
+    }
+
+    #[test]
+    fn system_time_to_unix_nanos_orders_timestamps_across_zero() {
+        let before = system_time_to_unix_nanos(UNIX_EPOCH - std::time::Duration::from_nanos(1));
+        let epoch = system_time_to_unix_nanos(UNIX_EPOCH);
+        let after = system_time_to_unix_nanos(UNIX_EPOCH + std::time::Duration::from_nanos(1));
+
+        assert!(before < epoch);
+        assert!(epoch < after);
+        assert_eq!(before + 1, epoch);
+        assert_eq!(epoch + 1, after);
+    }
 
     struct CancelingReader {
         remaining: usize,
