@@ -1,31 +1,31 @@
 use super::*;
 
 #[derive(Debug, Serialize)]
-pub(super) struct RuntimeObservation {
-    pub(super) coordinator_running: bool,
-    pub(super) source_configured: bool,
-    pub(super) source_active: bool,
-    pub(super) source_dirty: bool,
-    pub(super) source_quarantined: bool,
-    pub(super) wake_generation: u64,
-    pub(super) settled_wake_generation: u64,
-    pub(super) wake_reason: &'static str,
-    pub(super) lifecycle_generation: Option<u64>,
-    pub(super) in_flight: usize,
-    pub(super) active_budget: bool,
-    pub(super) queue_depth: usize,
-    pub(super) readiness_queue_depth: usize,
-    pub(super) retries_due: usize,
-    pub(super) retry_at: Option<i64>,
-    pub(super) sweeps: u64,
-    pub(super) claimed: u64,
-    pub(super) completed: u64,
-    pub(super) failed: u64,
-    pub(super) retried: u64,
-    pub(super) stale: u64,
-    pub(super) cancelled: u64,
-    pub(super) contention: u64,
-    pub(super) oldest_job_age_seconds: u64,
+pub(in crate::native_app::source_processing::supervisor) struct RuntimeObservation {
+    pub(in crate::native_app::source_processing::supervisor) coordinator_running: bool,
+    pub(in crate::native_app::source_processing::supervisor) source_configured: bool,
+    pub(in crate::native_app::source_processing::supervisor) source_active: bool,
+    pub(in crate::native_app::source_processing::supervisor) source_dirty: bool,
+    pub(in crate::native_app::source_processing::supervisor) source_quarantined: bool,
+    pub(in crate::native_app::source_processing::supervisor) wake_generation: u64,
+    pub(in crate::native_app::source_processing::supervisor) settled_wake_generation: u64,
+    pub(in crate::native_app::source_processing::supervisor) wake_reason: &'static str,
+    pub(in crate::native_app::source_processing::supervisor) lifecycle_generation: Option<u64>,
+    pub(in crate::native_app::source_processing::supervisor) in_flight: usize,
+    pub(in crate::native_app::source_processing::supervisor) active_budget: bool,
+    pub(in crate::native_app::source_processing::supervisor) queue_depth: usize,
+    pub(in crate::native_app::source_processing::supervisor) readiness_queue_depth: usize,
+    pub(in crate::native_app::source_processing::supervisor) retries_due: usize,
+    pub(in crate::native_app::source_processing::supervisor) retry_at: Option<i64>,
+    pub(in crate::native_app::source_processing::supervisor) sweeps: u64,
+    pub(in crate::native_app::source_processing::supervisor) claimed: u64,
+    pub(in crate::native_app::source_processing::supervisor) completed: u64,
+    pub(in crate::native_app::source_processing::supervisor) failed: u64,
+    pub(in crate::native_app::source_processing::supervisor) retried: u64,
+    pub(in crate::native_app::source_processing::supervisor) stale: u64,
+    pub(in crate::native_app::source_processing::supervisor) cancelled: u64,
+    pub(in crate::native_app::source_processing::supervisor) contention: u64,
+    pub(in crate::native_app::source_processing::supervisor) oldest_job_age_seconds: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -51,7 +51,10 @@ struct LivenessDiagnostic {
     runtime: RuntimeObservation,
 }
 
-pub(super) fn silently_idle(snapshot: &ReadinessSnapshot, runtime: &RuntimeObservation) -> bool {
+pub(in crate::native_app::source_processing::supervisor) fn silently_idle(
+    snapshot: &ReadinessSnapshot,
+    runtime: &RuntimeObservation,
+) -> bool {
     if snapshot.availability != SourceAvailability::Active || snapshot.deficits.is_empty() {
         return false;
     }
@@ -90,7 +93,7 @@ pub(super) fn silently_idle(snapshot: &ReadinessSnapshot, runtime: &RuntimeObser
     !runtime.coordinator_running || !runtime.source_active || !observable_work
 }
 
-pub(super) fn runtime_observation(
+pub(in crate::native_app::source_processing::supervisor) fn runtime_observation(
     supervisor: &SourceProcessingSupervisor,
     source_id: &str,
 ) -> RuntimeObservation {
@@ -242,7 +245,9 @@ fn durable_job_diagnostics(connection: &Connection) -> rusqlite::Result<DurableJ
     })
 }
 
-pub(super) fn readiness_snapshot(source: &SampleSource) -> Option<ReadinessSnapshot> {
+pub(in crate::native_app::source_processing::supervisor) fn readiness_snapshot(
+    source: &SampleSource,
+) -> Option<ReadinessSnapshot> {
     let mut connection = open_connection(source).ok()?;
     ReadinessStore::new(&mut connection)
         .reconcile(source.id.as_str(), now_epoch_seconds())

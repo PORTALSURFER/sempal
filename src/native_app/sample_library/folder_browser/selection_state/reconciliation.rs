@@ -57,6 +57,8 @@ impl BrowserSelectionState {
             .collect();
         self.selected_file_ids_explicit =
             snapshot.selected_file_ids_explicit && self.selected_file_ids.len() > 1;
+        self.selected_file_ids_keyboard_range =
+            snapshot.selected_file_ids_keyboard_range && !self.selected_file_ids.is_empty();
         self.selected_file = snapshot
             .selected_file
             .and_then(|id| visible_moved_or_original_id(id, &moved_ids, &visible_id_set))
@@ -75,6 +77,7 @@ impl BrowserSelectionState {
             self.set_focus_file_set(first_visible);
         } else if self.selected_file.is_none() && self.selected_file_ids.is_empty() {
             self.selected_file_ids_explicit = false;
+            self.selected_file_ids_keyboard_range = false;
         } else if let Some(selected_file) = self.selected_file.clone()
             && self.selected_file_ids.is_empty()
         {
@@ -146,6 +149,7 @@ impl BrowserSelectionState {
         };
         self.selected_folder = target_folder_id;
         self.selected_file_ids_explicit = self.selected_file_ids.len() > 1;
+        self.selected_file_ids_keyboard_range = false;
     }
 
     pub(in crate::native_app::sample_library::folder_browser) fn discard_files(
@@ -163,6 +167,7 @@ impl BrowserSelectionState {
             .retain(|id| !removed_ids.contains(id));
         if self.selected_file.is_none() && self.selected_file_ids.is_empty() {
             self.selected_file_ids_explicit = false;
+            self.selected_file_ids_keyboard_range = false;
         }
     }
 }

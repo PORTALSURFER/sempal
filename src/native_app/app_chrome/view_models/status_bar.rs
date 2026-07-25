@@ -1,5 +1,6 @@
 use crate::native_app::app::{
     FileMoveProgress, FolderScanProgress, NativeAppState, NormalizationProgress,
+    SourceProcessingHealth, SourceProcessingHealthStatus,
 };
 use std::time::Instant;
 
@@ -65,25 +66,77 @@ struct ActiveWorkerViewModel {
 
 fn bottom_status_text(state: &NativeAppState) -> String {
     let status = state.ui.status.sample.clone();
-    match state.library.folder_browser.selected_source_status_label() {
+    let status = match state.library.folder_browser.selected_source_status_label() {
         Some(source_status) if source_status.starts_with(&status) => source_status,
         Some(source_status) if !status.starts_with(&source_status) => {
             format!("{source_status} | {status}")
         }
+        _ => status,
+    };
+    match selected_source_health(state).and_then(source_health_status_text) {
+        Some(health) if !status.contains(&health) => format!("{status} | {health}"),
         _ => status,
     }
 }
 
 fn bottom_status_severity(state: &NativeAppState, worker_active: bool) -> StatusSeverity {
     if !worker_active
-        && state
+        && (state
             .library
             .folder_browser
             .source_is_missing(state.library.folder_browser.selected_source_id())
+            || selected_source_health(state).is_some_and(|health| {
+                matches!(
+                    health.status,
+                    SourceProcessingHealthStatus::BlockedByPrerequisites
+                        | SourceProcessingHealthStatus::Offline
+                        | SourceProcessingHealthStatus::DegradedTerminal
+                        | SourceProcessingHealthStatus::ReconciliationFailed
+                )
+            }))
     {
         StatusSeverity::Warning
     } else {
         StatusSeverity::Normal
+    }
+}
+
+fn selected_source_health(state: &NativeAppState) -> Option<&SourceProcessingHealth> {
+    state
+        .background
+        .source_processing_health
+        .get(state.library.folder_browser.selected_source_id())
+}
+
+fn source_health_status_text(health: &SourceProcessingHealth) -> Option<String> {
+    let (permanent, unsupported, stale, deleted) = health.stage_counts.values().fold(
+        (0_usize, 0_usize, 0_usize, 0_usize),
+        |totals, counts| {
+            (
+                totals.0.saturating_add(counts.permanent),
+                totals.1.saturating_add(counts.unsupported),
+                totals.2.saturating_add(counts.stale),
+                totals.3.saturating_add(counts.deleted),
+            )
+        },
+    );
+    match health.status {
+        SourceProcessingHealthStatus::Ready => None,
+        SourceProcessingHealthStatus::Processing => Some(String::from("Source processing")),
+        SourceProcessingHealthStatus::WaitingForRetry => {
+            Some(String::from("Source waiting to retry"))
+        }
+        SourceProcessingHealthStatus::BlockedByPrerequisites => {
+            Some(String::from("Source readiness blocked by prerequisites"))
+        }
+        SourceProcessingHealthStatus::Offline => Some(String::from("Source offline")),
+        SourceProcessingHealthStatus::Disabled => Some(String::from("Source disabled")),
+        SourceProcessingHealthStatus::DegradedTerminal => Some(format!(
+            "Source usable with limits: {unsupported} unsupported, {permanent} failed, {stale} stale, {deleted} deleted"
+        )),
+        SourceProcessingHealthStatus::ReconciliationFailed => {
+            Some(String::from("Source readiness needs repair"))
+        }
     }
 }
 

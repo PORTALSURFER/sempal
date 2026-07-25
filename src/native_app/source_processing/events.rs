@@ -1,6 +1,9 @@
-use std::{path::PathBuf, sync::mpsc::Sender};
+use std::{collections::BTreeMap, path::PathBuf, sync::mpsc::Sender};
 
-use wavecrate::sample_sources::{readiness::ReadinessStage, scanner::CommittedSourceDelta};
+use wavecrate::sample_sources::{
+    readiness::{ReadinessStage, ReadinessStageCounts},
+    scanner::CommittedSourceDelta,
+};
 
 /// Identifies one configured lifetime of a source.
 ///
@@ -64,16 +67,46 @@ pub(in crate::native_app) struct SourceProcessingProgressEvent {
     pub(in crate::native_app) activity: SourceProcessingActivity,
 }
 
+/// Durable source-local readiness state after one reconciled observation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::native_app) enum SourceProcessingHealthState {
+    Ready,
+    Processing,
+    WaitingForRetry,
+    BlockedByPrerequisites,
+    Offline,
+    Disabled,
+    DegradedTerminal,
+    ReconciliationFailed,
+}
+
+/// Bounded backend-neutral health for one configured source lifecycle.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::native_app) struct SourceProcessingHealthEvent {
+    pub(in crate::native_app) lifecycle: SourceProcessingLifecycle,
+    pub(in crate::native_app) state: SourceProcessingHealthState,
+    pub(in crate::native_app) source_generation: i64,
+    pub(in crate::native_app) readiness_revision: i64,
+    pub(in crate::native_app) stage_counts: BTreeMap<ReadinessStage, ReadinessStageCounts>,
+    pub(in crate::native_app) retry_at: Option<i64>,
+    pub(in crate::native_app) failure_codes: Vec<String>,
+}
+
 /// Ordered outward observations produced by the source-processing supervisor.
 #[derive(Clone, Debug)]
 pub(in crate::native_app) enum SourceProcessingEvent {
     Progress(SourceProcessingProgressEvent),
+    Health(SourceProcessingHealthEvent),
     SimilarityReadinessAdvanced {
         lifecycle: SourceProcessingLifecycle,
     },
     ManifestAuditCommitted {
         lifecycle: SourceProcessingLifecycle,
         committed_delta: CommittedSourceDelta,
+    },
+    ManifestAuditFinished {
+        lifecycle: SourceProcessingLifecycle,
+        complete: bool,
     },
     Completed,
 }
@@ -82,8 +115,10 @@ impl SourceProcessingEvent {
     pub(super) fn lifecycle(&self) -> Option<&SourceProcessingLifecycle> {
         match self {
             Self::Progress(progress) => Some(&progress.lifecycle),
+            Self::Health(health) => Some(&health.lifecycle),
             Self::SimilarityReadinessAdvanced { lifecycle }
-            | Self::ManifestAuditCommitted { lifecycle, .. } => Some(lifecycle),
+            | Self::ManifestAuditCommitted { lifecycle, .. }
+            | Self::ManifestAuditFinished { lifecycle, .. } => Some(lifecycle),
             Self::Completed => None,
         }
     }

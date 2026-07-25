@@ -33,6 +33,59 @@ pub(crate) use self::queue::{SearchJobSender, SearchWorkerHandle, spawn_search_w
 use self::{cache::*, pipeline::*, queue::*};
 
 #[cfg(test)]
+pub(crate) fn project_source_paths_for_state_machine(
+    source: &crate::sample_sources::SampleSource,
+) -> Result<std::collections::BTreeSet<String>, String> {
+    let queue = SearchJobQueue::new();
+    queue.send(SearchJob {
+        request_id: 1,
+        source_id: source.id.clone(),
+        source_root: source.root.clone(),
+        query: String::new(),
+        filter: TriageFlagFilter::All,
+        rating_filter: std::collections::BTreeSet::new(),
+        playback_age_filter: std::collections::BTreeSet::new(),
+        tag_named_filter: crate::app::state::TagNamedFilter::All,
+        sidebar_filters: Default::default(),
+        sidebar_bpm_values: Default::default(),
+        sort: SampleBrowserSort::ListOrder,
+        similar_query: None,
+        duplicate_cleanup: None,
+        folder_selection: None,
+        folder_negated: None,
+        file_scope_mode: crate::app::state::FolderFileScopeMode::AllDescendants,
+        metadata_delta_paths: Vec::new(),
+        playback_age_now_unix_secs: 0,
+    });
+    let queued = queue
+        .take_blocking()
+        .ok_or_else(|| String::from("browser projection queue stopped before accepting work"))?;
+    let mut cache = SearchWorkerCache::default();
+    let result = process_search_job(
+        queued.job,
+        &SkimMatcherV2::default(),
+        &mut cache,
+        &queue,
+        queued.generation,
+    )
+    .ok_or_else(|| String::from("browser projection work was cancelled"))?;
+    let entries = cache
+        .entries
+        .as_ref()
+        .ok_or_else(|| String::from("browser projection did not load source entries"))?;
+    result
+        .visible
+        .iter()
+        .map(|index| {
+            entries
+                .get(index)
+                .map(|entry| entry.relative_path.to_string())
+                .ok_or_else(|| format!("browser projection returned invalid row index {index}"))
+        })
+        .collect()
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::sample_sources::SourceId;

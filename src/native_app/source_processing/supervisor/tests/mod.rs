@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::{io, sync::Mutex};
 
-use rusqlite::OptionalExtension;
 use tracing_subscriber::fmt::MakeWriter;
 use wavecrate::sample_sources::{
     SourceId,

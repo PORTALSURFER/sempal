@@ -171,6 +171,30 @@ fn pending_rename_migration_adds_extended_metadata_columns() {
     assert!(columns.contains("user_tag"));
     assert!(columns.contains("normal_tags"));
     assert!(columns.contains("file_identity"));
+    assert!(columns.contains("staged_generation"));
+    assert!(columns.contains("staged_at"));
+    assert_eq!(
+        conn.query_row(
+            "SELECT COUNT(*)
+             FROM sqlite_master
+             WHERE type = 'index' AND name = 'idx_pending_wav_renames_generation'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .unwrap(),
+        1
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT COUNT(*)
+             FROM sqlite_master
+             WHERE type = 'index' AND name = 'idx_pending_wav_renames_identity_facts'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .unwrap(),
+        1
+    );
 }
 
 #[test]
@@ -491,4 +515,102 @@ fn readiness_schema_repairs_current_stamped_analysis_storage() {
             .unwrap();
         assert!(exists, "missing readiness table {table}");
     }
+}
+
+#[test]
+fn source_index_migration_adds_lossless_path_encoding_to_legacy_tables() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute_batch(
+        "CREATE TABLE source_index_entries (
+            path TEXT PRIMARY KEY,
+            classification TEXT NOT NULL,
+            file_size INTEGER,
+            modified_ns INTEGER,
+            file_identity TEXT,
+            diagnostic TEXT,
+            format_policy_version INTEGER NOT NULL
+        ) WITHOUT ROWID;
+        INSERT INTO source_index_entries (
+            path, classification, file_size, modified_ns, format_policy_version
+        ) VALUES
+            ('notes.txt', 'unsupported_non_audio', 5, 10, 1),
+            ('~wavecrate-nu~ff.wav', 'unsupported_non_audio', 6, 11, 1),
+            ('folder/~wavecrate-escaped~name.txt', 'unsupported_non_audio', 7, 12, 1);",
+    )
+    .unwrap();
+
+    ensure_source_index_schema(&conn).unwrap();
+
+    assert!(
+        table_columns(&conn, "source_index_entries")
+            .unwrap()
+            .contains("path_encoding")
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT path_encoding FROM source_index_entries WHERE path = 'notes.txt'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .unwrap(),
+        0
+    );
+    for (legacy_path, file_size) in [
+        ("~wavecrate-nu~ff.wav", 6_i64),
+        ("folder/~wavecrate-escaped~name.txt", 7_i64),
+    ] {
+        let (canonical_path, path_encoding) =
+            normalize_source_index_path(Path::new(legacy_path)).unwrap();
+        assert_ne!(canonical_path, legacy_path);
+        assert_eq!(path_encoding, 1);
+        assert_eq!(
+            conn.query_row(
+                "SELECT path_encoding, file_size
+                 FROM source_index_entries
+                 WHERE path = ?1",
+                [&canonical_path],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .unwrap(),
+            (1, file_size)
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM source_index_entries WHERE path = ?1",
+                [legacy_path],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+            0
+        );
+    }
+
+    conn.execute(
+        "INSERT INTO source_index_entries (
+            path, path_encoding, classification, file_size, modified_ns, format_policy_version
+         ) VALUES (?1, 0, 'unsupported_non_audio', 99, 99, 1)",
+        ["~wavecrate-nu~ff.wav"],
+    )
+    .unwrap();
+    ensure_source_index_schema(&conn).unwrap();
+    assert_eq!(
+        conn.query_row("SELECT COUNT(*) FROM source_index_entries", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .unwrap(),
+        3,
+        "a legacy/canonical collision must converge to one canonical row"
+    );
+    let (canonical_path, _) =
+        normalize_source_index_path(Path::new("~wavecrate-nu~ff.wav")).unwrap();
+    assert_eq!(
+        conn.query_row(
+            "SELECT file_size FROM source_index_entries WHERE path = ?1",
+            [&canonical_path],
+            |row| row.get::<_, i64>(0),
+        )
+        .unwrap(),
+        6,
+        "the already-canonical row must win a mixed-state collision"
+    );
 }

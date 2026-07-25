@@ -53,6 +53,7 @@ pub(in crate::native_app) struct VisibleSampleRow<'a> {
     pub(in crate::native_app) selected: bool,
     pub(in crate::native_app) focused: bool,
     pub(in crate::native_app) focus_alpha: u8,
+    pub(in crate::native_app) selection_flash: bool,
     pub(in crate::native_app) copy_flash: bool,
     pub(in crate::native_app) protected_source_error_flash: bool,
     pub(in crate::native_app) drag_active: bool,
@@ -771,6 +772,7 @@ impl FolderBrowserState {
             } else {
                 0
             },
+            selection_flash: self.marked_item_flash_active(&file.id),
             copy_flash: self.copied_file_flash_active(&file.id),
             protected_source_error_flash: self.protected_source_error_file_flash_active(&file.id),
             drag_active: self.file_drag_active(),

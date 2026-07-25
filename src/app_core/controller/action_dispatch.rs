@@ -178,6 +178,9 @@ fn record_ui_action(
 
 fn should_record_ui_action(action: &'static str, outcome: &'static str) -> bool {
     if action == "set_browser_view_start" && outcome == "success" {
+        #[cfg(test)]
+        return false;
+        #[cfg(not(test))]
         return crate::env_flags::env_var_truthy(crate::hotpath_telemetry::HOTPATH_TELEMETRY_ENV);
     }
     true

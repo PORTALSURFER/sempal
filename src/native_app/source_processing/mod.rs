@@ -7,9 +7,12 @@ mod worker;
 
 pub(in crate::native_app) use events::{
     SourceDiscoveryPhase, SourceProcessingActivity, SourceProcessingEvent,
-    SourceProcessingEventSink, SourceProcessingLifecycle, SourceProcessingProgressEvent,
+    SourceProcessingEventSink, SourceProcessingHealthEvent, SourceProcessingHealthState,
+    SourceProcessingLifecycle, SourceProcessingProgressEvent,
 };
-pub(in crate::native_app) use supervisor::{SourceProcessingSupervisor, SourceScanAdmissionState};
+pub(in crate::native_app) use supervisor::{
+    SourceAuditLifecycleCause, SourceProcessingSupervisor, SourceScanAdmissionState,
+};
 pub(in crate::native_app) use worker::run_internal_source_analysis_from_args;
 #[cfg(not(test))]
 pub(in crate::native_app) use worker::wait_for_cancellable_child;

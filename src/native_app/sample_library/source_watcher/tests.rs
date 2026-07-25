@@ -9,7 +9,8 @@ use std::{
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
-use wavecrate::sample_sources::{SampleSource, SourceId};
+use wavecrate::sample_sources::{SampleSource, SourceDatabase, SourceId};
+use wavecrate_scan::sample_sources::scanner::{scan_once, sync_paths};
 
 use crate::native_app::app::GuiMessage;
 
@@ -94,6 +95,39 @@ fn apple_double_sidecars_do_not_trigger_source_refresh() {
         &root.join("drums").join("._snare.wav"),
         EventKind::Create(notify::event::CreateKind::File),
     ));
+}
+
+#[cfg(unix)]
+#[test]
+fn symlink_replacement_stays_a_watcher_candidate_until_targeted_sync_retires_it() {
+    use std::os::unix::fs as unix_fs;
+
+    let root = tempfile::tempdir().expect("create source watcher fixture");
+    let outside = tempfile::tempdir().expect("create outside fixture");
+    let tracked = root.path().join("kick.wav");
+    let target = outside.path().join("outside.wav");
+    fs::write(&tracked, b"indexed").expect("write indexed source file");
+    fs::write(&target, b"outside").expect("write outside file");
+    let database = SourceDatabase::open_for_source_write(root.path()).expect("open source db");
+    scan_once(&database).expect("index tracked file");
+
+    fs::remove_file(&tracked).expect("remove indexed source file");
+    unix_fs::symlink(&target, &tracked).expect("replace source file with link");
+    assert!(path_is_source_refresh_candidate(
+        &tracked,
+        EventKind::Modify(notify::event::ModifyKind::Data(
+            notify::event::DataChange::Any,
+        )),
+    ));
+    let stats = sync_paths(&database, &[PathBuf::from("kick.wav")])
+        .expect("reconcile link replacement without following it");
+    assert_eq!(stats.missing, 1);
+    assert!(
+        database
+            .entry_for_path(Path::new("kick.wav"))
+            .expect("read indexed entry")
+            .is_none()
+    );
 }
 
 #[test]
@@ -557,7 +591,7 @@ fn foreground_reconciliation_request_refreshes_every_configured_source() {
         receiver
             .recv_timeout(super::WATCHER_START_TIMEOUT)
             .expect("watcher-ready message"),
-        GuiMessage::SourceWatcherReady
+        GuiMessage::SourceWatcherReady { .. }
     ) {}
 
     watcher.request_full_reconciliation();
@@ -575,6 +609,7 @@ fn foreground_reconciliation_request_refreshes_every_configured_source() {
             paths,
             overflowed,
             source_root_available,
+            ..
         } = message
         {
             assert!(paths.is_empty());
@@ -620,7 +655,7 @@ fn idempotent_startup_source_sync_does_not_refresh_every_source() {
     assert_eq!(
         messages
             .iter()
-            .filter(|message| matches!(message, GuiMessage::SourceWatcherReady))
+            .filter(|message| matches!(message, GuiMessage::SourceWatcherReady { .. }))
             .count(),
         1,
         "the startup audit boundary must be published exactly once"
@@ -633,6 +668,7 @@ fn idempotent_startup_source_sync_does_not_refresh_every_source() {
                 paths,
                 overflowed,
                 source_root_available,
+                ..
             } = message
             else {
                 return None;
@@ -662,7 +698,7 @@ fn filesystem_event_after_initial_watcher_ready_is_not_suppressed() {
         receiver
             .recv_timeout(super::WATCHER_START_TIMEOUT)
             .expect("watcher-ready message"),
-        GuiMessage::SourceWatcherReady
+        GuiMessage::SourceWatcherReady { .. }
     ) {}
 
     let created = root.path().join("recording.wav");
@@ -682,6 +718,7 @@ fn filesystem_event_after_initial_watcher_ready_is_not_suppressed() {
             paths,
             overflowed,
             source_root_available,
+            ..
         } = message
         {
             break (source_id, paths, overflowed, source_root_available);
@@ -712,7 +749,7 @@ fn watcher_restarts_and_overflows_when_a_live_root_is_replaced_at_the_same_path(
         receiver
             .recv_timeout(super::WATCHER_START_TIMEOUT)
             .expect("watcher-ready message"),
-        GuiMessage::SourceWatcherReady
+        GuiMessage::SourceWatcherReady { .. }
     ) {}
 
     fs::rename(&root, &retired).expect("retire watched source root");
@@ -730,6 +767,7 @@ fn watcher_restarts_and_overflows_when_a_live_root_is_replaced_at_the_same_path(
             paths,
             overflowed,
             source_root_available,
+            ..
         } = message
             && source_id == expected_source_id
             && overflowed

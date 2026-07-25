@@ -33,6 +33,7 @@ impl NativeAppState {
         paths: Vec<PathBuf>,
         overflowed: bool,
         source_root_available: bool,
+        journal_checkpoint_event_id: Option<u64>,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
         let started_at = Instant::now();
@@ -72,7 +73,13 @@ impl NativeAppState {
                 source_id,
                 changed_count,
             } => {
-                self.queue_source_filesystem_sync(source_id.clone(), paths, changed_count, context);
+                self.queue_source_filesystem_sync(
+                    source_id.clone(),
+                    paths,
+                    changed_count,
+                    journal_checkpoint_event_id,
+                    context,
+                );
                 emit_gui_action(
                     "folder_browser.source.filesystem_change",
                     Some("sources"),
@@ -110,6 +117,7 @@ impl NativeAppState {
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
         let source_id = result.source_id;
+        let journal_checkpoint_event_id = result.journal_checkpoint_event_id;
         self.library
             .mark_targeted_source_sync_finished(&source_id, result.lifecycle_generation);
         if self.background.source_lifecycle_generations.get(&source_id)
@@ -176,6 +184,15 @@ impl NativeAppState {
                             &source_id,
                             "filesystem_sync_incomplete_after_commit",
                         );
+                }
+                if !result.cancelled
+                    && incomplete_error.is_none()
+                    && let (Some(watcher), Some(event_id)) = (
+                        self.library.source_watcher.as_ref(),
+                        journal_checkpoint_event_id,
+                    )
+                {
+                    watcher.advance_journal_checkpoint(source_id.clone(), event_id);
                 }
                 if result.cancelled || incomplete_error.is_some() {
                     self.queue_filesystem_source_refresh(
@@ -340,6 +357,7 @@ impl NativeAppState {
                 pending.source_id,
                 pending.paths,
                 changed_count,
+                None,
                 context,
             );
             break;
@@ -443,6 +461,7 @@ impl NativeAppState {
         source_id: String,
         paths: Vec<PathBuf>,
         changed_count: usize,
+        journal_checkpoint_event_id: Option<u64>,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
         if paths.is_empty() {
@@ -496,6 +515,7 @@ impl NativeAppState {
                         source_id,
                         lifecycle_generation: expected_lifecycle_generation,
                         changed_count,
+                        journal_checkpoint_event_id,
                         cancelled: true,
                         result: Err(String::from("Source filesystem sync canceled")),
                     };
@@ -504,7 +524,7 @@ impl NativeAppState {
                 let cancel = permit.cancel_token();
                 let scan_writer = permit.scan_writer();
                 let recovery_source_id = source_id.clone();
-                let result = recover_source_filesystem_sync(
+                let mut result = recover_source_filesystem_sync(
                     recovery_source_id,
                     lifecycle_generation,
                     changed_count,
@@ -520,6 +540,7 @@ impl NativeAppState {
                         )
                     },
                 );
+                result.journal_checkpoint_event_id = journal_checkpoint_event_id;
                 drop(permit);
                 result
             },

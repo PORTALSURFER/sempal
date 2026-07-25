@@ -159,6 +159,7 @@ fn similarity_blocker_state_ignores_unrelated_retries_and_non_file_targets() {
             wavecrate::sample_sources::readiness::ReadinessEntry {
                 target: file_target(ReadinessStage::EmbeddingAspects),
                 classification: ReadinessClassification::PermanentFailure {
+                    code: String::from("embedding_failed"),
                     reason: String::from("embedding failed permanently"),
                 },
             },
@@ -170,6 +171,7 @@ fn similarity_blocker_state_ignores_unrelated_retries_and_non_file_targets() {
                 },
                 classification: ReadinessClassification::RetryableFailure {
                     retry_at: 200,
+                    code: String::from("source_retry"),
                     reason: String::from("unrelated source retry"),
                 },
             },
@@ -197,9 +199,10 @@ fn similarity_blocker_state_ignores_unrelated_retries_and_non_file_targets() {
         .find(|entry| entry.target.stage == ReadinessStage::EmbeddingAspects)
         .expect("embedding blocker")
         .classification = ReadinessClassification::RetryableFailure {
-        retry_at: 300,
-        reason: String::from("embedding retry"),
-    };
+            retry_at: 300,
+            code: String::from("embedding_retry"),
+            reason: String::from("embedding retry"),
+        };
     assert_eq!(
         similarity_prerequisite_blocker_stats(&snapshot),
         (1, Some(300))

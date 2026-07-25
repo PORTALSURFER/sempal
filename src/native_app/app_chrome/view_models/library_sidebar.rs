@@ -2,6 +2,7 @@ use radiant::prelude as ui;
 use wavecrate::sample_sources::SourceRole;
 
 use crate::native_app::app::NativeAppState;
+use crate::native_app::app::{SourceProcessingHealth, SourceProcessingHealthStatus};
 use crate::native_app::metadata::MetadataTagDisplayCategory;
 use crate::native_app::sample_library::folder_browser::view_contract::{
     CollectionRenameView, FOLDER_TREE_EDGE_CONTEXT_ROWS, FOLDER_TREE_OVERSCAN_ROWS,
@@ -47,6 +48,9 @@ pub(in crate::native_app) struct SourceRowViewModel {
     pub(in crate::native_app) reorder_drop_target: bool,
     pub(in crate::native_app) reorder_drop_after: bool,
     pub(in crate::native_app) scanning: bool,
+    pub(in crate::native_app) health_label: Option<String>,
+    pub(in crate::native_app) health_detail: Option<String>,
+    pub(in crate::native_app) health_warning: bool,
     pub(in crate::native_app) missing: bool,
     pub(in crate::native_app) protected_source_error_flash: bool,
     pub(in crate::native_app) primary_source_acceptance_flash: bool,
@@ -201,6 +205,7 @@ impl LibrarySidebarViewModel {
                         )
                     })
                     .map(|progress| progress.source_id.as_str()),
+                &state.background.source_processing_health,
             ),
             folder_tree: FolderTreeViewModel::from_folder_browser(
                 folder_browser,
@@ -220,13 +225,19 @@ impl SourceSelectorViewModel {
         folder_browser: &FolderBrowserState,
         help_tooltips_enabled: bool,
     ) -> Self {
-        Self::from_folder_browser_with_scanning(folder_browser, help_tooltips_enabled, None)
+        Self::from_folder_browser_with_scanning(
+            folder_browser,
+            help_tooltips_enabled,
+            None,
+            &std::collections::BTreeMap::new(),
+        )
     }
 
     fn from_folder_browser_with_scanning(
         folder_browser: &FolderBrowserState,
         help_tooltips_enabled: bool,
         scanning_source_id: Option<&str>,
+        source_health: &std::collections::BTreeMap<String, SourceProcessingHealth>,
     ) -> Self {
         let selected_source_id = folder_browser.selected_source_id();
         let rows: Vec<_> = folder_browser
@@ -238,6 +249,7 @@ impl SourceSelectorViewModel {
                     selected_source_id,
                     folder_browser,
                     scanning_source_id,
+                    source_health.get(source.id.as_str()),
                 )
             })
             .collect();
@@ -257,6 +269,7 @@ impl SourceRowViewModel {
         selected_source_id: &str,
         folder_browser: &FolderBrowserState,
         scanning_source_id: Option<&str>,
+        health: Option<&SourceProcessingHealth>,
     ) -> Self {
         let reorder_drag_source =
             folder_browser.source_reorder_drag_source_id() == Some(source.id.as_str());
@@ -281,6 +294,9 @@ impl SourceRowViewModel {
             reorder_drop_target: reorder_drop_after.is_some(),
             reorder_drop_after: reorder_drop_after.unwrap_or(false),
             scanning: scanning_source_id == Some(source.id.as_str()),
+            health_label: health.and_then(source_health_label).map(str::to_string),
+            health_detail: health.map(source_health_detail),
+            health_warning: health.is_some_and(source_health_warning),
             missing: source.is_missing(),
             protected_source_error_flash: folder_browser
                 .source_protected_error_flash_active(&source.id),
@@ -293,6 +309,85 @@ impl SourceRowViewModel {
             drop_target_active: folder_browser.hovered_drop_target_source_id().is_some(),
         }
     }
+}
+
+fn source_health_label(health: &SourceProcessingHealth) -> Option<&'static str> {
+    match health.status {
+        SourceProcessingHealthStatus::Ready => None,
+        SourceProcessingHealthStatus::Processing => Some("processing"),
+        SourceProcessingHealthStatus::WaitingForRetry => Some("retry pending"),
+        SourceProcessingHealthStatus::BlockedByPrerequisites => Some("blocked"),
+        SourceProcessingHealthStatus::Offline => Some("offline"),
+        SourceProcessingHealthStatus::Disabled => Some("disabled"),
+        SourceProcessingHealthStatus::DegradedTerminal => Some("limited"),
+        SourceProcessingHealthStatus::ReconciliationFailed => Some("repair needed"),
+    }
+}
+
+fn source_health_warning(health: &SourceProcessingHealth) -> bool {
+    match health.status {
+        SourceProcessingHealthStatus::BlockedByPrerequisites
+        | SourceProcessingHealthStatus::Offline
+        | SourceProcessingHealthStatus::ReconciliationFailed => true,
+        SourceProcessingHealthStatus::DegradedTerminal => !known_unsupported_only_terminal(health),
+        SourceProcessingHealthStatus::Ready
+        | SourceProcessingHealthStatus::Processing
+        | SourceProcessingHealthStatus::WaitingForRetry
+        | SourceProcessingHealthStatus::Disabled => false,
+    }
+}
+
+fn known_unsupported_only_terminal(health: &SourceProcessingHealth) -> bool {
+    let (permanent, unsupported, stale, deleted) = source_terminal_counts(health);
+    unsupported > 0 && permanent == 0 && stale == 0 && deleted == 0
+}
+
+fn source_terminal_counts(health: &SourceProcessingHealth) -> (usize, usize, usize, usize) {
+    health.stage_counts.values().fold(
+        (0, 0, 0, 0),
+        |(permanent, unsupported, stale, deleted), counts| {
+            (
+                permanent.saturating_add(counts.permanent),
+                unsupported.saturating_add(counts.unsupported),
+                stale.saturating_add(counts.stale),
+                deleted.saturating_add(counts.deleted),
+            )
+        },
+    )
+}
+
+fn source_health_detail(health: &SourceProcessingHealth) -> String {
+    let counts = health.stage_counts.values().fold(
+        (0_usize, 0_usize, 0_usize, 0_usize, 0_usize, 0_usize),
+        |totals, counts| {
+            (
+                totals.0.saturating_add(counts.current),
+                totals
+                    .1
+                    .saturating_add(counts.pending)
+                    .saturating_add(counts.running),
+                totals.2.saturating_add(counts.retryable),
+                totals.3.saturating_add(counts.permanent),
+                totals.4.saturating_add(counts.unsupported),
+                totals
+                    .5
+                    .saturating_add(counts.stale)
+                    .saturating_add(counts.deleted),
+            )
+        },
+    );
+    let mut detail = format!(
+        "Readiness: {} current, {} processing, {} retrying, {} failed, {} unsupported, {} stale/deleted",
+        counts.0, counts.1, counts.2, counts.3, counts.4, counts.5
+    );
+    if let Some(retry_at) = health.retry_at {
+        detail.push_str(&format!(" | Retry deadline: {retry_at}"));
+    }
+    if !health.failure_codes.is_empty() {
+        detail.push_str(" | Codes: ");
+        detail.push_str(&health.failure_codes.join(", "));
+    }
+    detail
 }
 
 impl FolderTreeViewModel {
@@ -488,9 +583,11 @@ mod tests {
     use std::fs;
 
     use super::LibrarySidebarViewModel;
+    use crate::native_app::app::{SourceProcessingHealth, SourceProcessingHealthStatus};
     use crate::native_app::test_support::state::{
         FolderBrowserState, FolderScanProgress, NativeAppStateFixture, SourceProcessingProgress,
     };
+    use wavecrate::sample_sources::readiness::{ReadinessStage, ReadinessStageCounts};
     use wavecrate::sample_sources::{SampleSource, SourceId};
 
     #[test]
@@ -625,5 +722,137 @@ mod tests {
                 .any(|row| row.id == processing_source.id.as_str()),
             "grace-surviving discovery must preserve the active source row"
         );
+    }
+
+    #[test]
+    fn source_rows_retain_concise_terminal_health_after_progress_is_idle() {
+        let root = tempfile::tempdir().expect("source root");
+        let source = SampleSource::new_with_id(
+            SourceId::from_string("limited-source"),
+            root.path().to_path_buf(),
+        );
+        let mut state = NativeAppStateFixture::default()
+            .with_folder_browser(FolderBrowserState::from_sample_sources(
+                std::slice::from_ref(&source),
+            ))
+            .build();
+        state.background.source_processing_health.insert(
+            source.id.as_str().to_string(),
+            SourceProcessingHealth {
+                source_id: source.id.as_str().to_string(),
+                lifecycle_generation: 1,
+                status: SourceProcessingHealthStatus::DegradedTerminal,
+                source_generation: 4,
+                readiness_revision: 5,
+                stage_counts: std::collections::BTreeMap::new(),
+                retry_at: None,
+                failure_codes: vec![String::from("decoder_unsupported")],
+            },
+        );
+
+        let model = LibrarySidebarViewModel::from_app_state(&state);
+        let row = model.source_selector.rows.first().expect("source row");
+        assert_eq!(row.health_label.as_deref(), Some("limited"));
+        assert!(
+            row.health_detail
+                .as_deref()
+                .is_some_and(|detail| detail.contains("decoder_unsupported"))
+        );
+        assert!(row.health_warning);
+        assert!(state.background.source_processing_progress.is_none());
+    }
+
+    #[test]
+    fn unsupported_only_terminal_health_is_neutral_but_keeps_diagnostics() {
+        let root = tempfile::tempdir().expect("source root");
+        let source = SampleSource::new_with_id(
+            SourceId::from_string("unsupported-only-source"),
+            root.path().to_path_buf(),
+        );
+        let mut stage_counts = std::collections::BTreeMap::new();
+        stage_counts.insert(
+            ReadinessStage::AnalysisFeatures,
+            ReadinessStageCounts {
+                current: 3,
+                unsupported: 2,
+                ..ReadinessStageCounts::default()
+            },
+        );
+        let mut state = NativeAppStateFixture::default()
+            .with_folder_browser(FolderBrowserState::from_sample_sources(
+                std::slice::from_ref(&source),
+            ))
+            .build();
+        state.background.source_processing_health.insert(
+            source.id.as_str().to_string(),
+            SourceProcessingHealth {
+                source_id: source.id.as_str().to_string(),
+                lifecycle_generation: 1,
+                status: SourceProcessingHealthStatus::DegradedTerminal,
+                source_generation: 4,
+                readiness_revision: 5,
+                stage_counts,
+                retry_at: None,
+                failure_codes: vec![String::from("decoder_unsupported")],
+            },
+        );
+
+        let model = LibrarySidebarViewModel::from_app_state(&state);
+        let row = model.source_selector.rows.first().expect("source row");
+
+        assert_eq!(row.health_label.as_deref(), Some("limited"));
+        assert!(!row.health_warning);
+        assert!(
+            row.health_detail
+                .as_deref()
+                .is_some_and(|detail| detail.contains("2 unsupported"))
+        );
+        assert!(
+            row.health_detail
+                .as_deref()
+                .is_some_and(|detail| detail.contains("decoder_unsupported"))
+        );
+    }
+
+    #[test]
+    fn mixed_terminal_health_remains_warning_health() {
+        let root = tempfile::tempdir().expect("source root");
+        let source = SampleSource::new_with_id(
+            SourceId::from_string("mixed-terminal-source"),
+            root.path().to_path_buf(),
+        );
+        let mut stage_counts = std::collections::BTreeMap::new();
+        stage_counts.insert(
+            ReadinessStage::AnalysisFeatures,
+            ReadinessStageCounts {
+                unsupported: 2,
+                permanent: 1,
+                ..ReadinessStageCounts::default()
+            },
+        );
+        let mut state = NativeAppStateFixture::default()
+            .with_folder_browser(FolderBrowserState::from_sample_sources(
+                std::slice::from_ref(&source),
+            ))
+            .build();
+        state.background.source_processing_health.insert(
+            source.id.as_str().to_string(),
+            SourceProcessingHealth {
+                source_id: source.id.as_str().to_string(),
+                lifecycle_generation: 1,
+                status: SourceProcessingHealthStatus::DegradedTerminal,
+                source_generation: 4,
+                readiness_revision: 5,
+                stage_counts,
+                retry_at: None,
+                failure_codes: vec![String::from("decoder_unsupported")],
+            },
+        );
+
+        let model = LibrarySidebarViewModel::from_app_state(&state);
+        let row = model.source_selector.rows.first().expect("source row");
+
+        assert_eq!(row.health_label.as_deref(), Some("limited"));
+        assert!(row.health_warning);
     }
 }

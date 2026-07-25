@@ -17,6 +17,36 @@ const BASE_SCHEMA_SQL: &str = "CREATE TABLE IF NOT EXISTS metadata (
     CREATE TABLE IF NOT EXISTS source_manifest_audit_seen (
         path TEXT PRIMARY KEY
     ) WITHOUT ROWID;
+    CREATE TABLE IF NOT EXISTS source_content_audit_state (
+        singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+        rotation_id INTEGER NOT NULL,
+        rotation_started_at INTEGER NOT NULL,
+        cursor TEXT NOT NULL DEFAULT '',
+        retry_cursor TEXT NOT NULL DEFAULT '',
+        retry_next INTEGER NOT NULL DEFAULT 0 CHECK(retry_next IN (0, 1)),
+        checkpoint_revision INTEGER NOT NULL DEFAULT 0,
+        verified_entries INTEGER NOT NULL DEFAULT 0,
+        verified_bytes INTEGER NOT NULL DEFAULT 0,
+        bytes_read INTEGER NOT NULL DEFAULT 0,
+        skipped_entries INTEGER NOT NULL DEFAULT 0,
+        last_batch_at INTEGER,
+        last_rotation_completed_at INTEGER,
+        last_rotation_seconds INTEGER
+    );
+    CREATE TABLE IF NOT EXISTS source_content_audit_entries (
+        path TEXT PRIMARY KEY,
+        verified_rotation INTEGER,
+        verified_at INTEGER,
+        verified_file_size INTEGER,
+        verified_modified_ns INTEGER,
+        verified_file_identity TEXT,
+        last_attempt_at INTEGER,
+        retry_at INTEGER,
+        skip_reason TEXT,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        bytes_read INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY(path) REFERENCES wav_files(path) ON DELETE CASCADE
+    ) WITHOUT ROWID;
     CREATE TABLE IF NOT EXISTS wav_files (
         path TEXT PRIMARY KEY,
         file_size INTEGER NOT NULL,
@@ -34,6 +64,21 @@ const BASE_SCHEMA_SQL: &str = "CREATE TABLE IF NOT EXISTS metadata (
         collection INTEGER,
         file_identity TEXT
     );
+    CREATE TABLE IF NOT EXISTS source_index_entries (
+        path TEXT PRIMARY KEY,
+        path_encoding INTEGER NOT NULL DEFAULT 0,
+        classification TEXT NOT NULL CHECK(classification IN (
+            'unsupported_audio',
+            'unsupported_non_audio',
+            'inaccessible',
+            'practically_unsupported_audio'
+        )),
+        file_size INTEGER,
+        modified_ns INTEGER,
+        file_identity TEXT,
+        diagnostic TEXT,
+        format_policy_version INTEGER NOT NULL
+    ) WITHOUT ROWID;
     CREATE TABLE IF NOT EXISTS source_tags (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         normalized_text TEXT NOT NULL UNIQUE,
@@ -291,7 +336,9 @@ const BASE_SCHEMA_SQL: &str = "CREATE TABLE IF NOT EXISTS metadata (
         collection INTEGER,
         collections TEXT,
         tag_named INTEGER NOT NULL DEFAULT 0,
-        file_identity TEXT
+        file_identity TEXT,
+        staged_generation INTEGER NOT NULL DEFAULT 0,
+        staged_at INTEGER
     );
     CREATE TABLE IF NOT EXISTS pending_wav_rename_destinations (
         path TEXT PRIMARY KEY,
@@ -303,6 +350,17 @@ const INDEX_SQL: &str = "CREATE INDEX IF NOT EXISTS idx_wav_files_missing
          ON wav_files(path) WHERE missing != 0;
      CREATE INDEX IF NOT EXISTS idx_wav_files_extension
          ON wav_files(extension);
+     CREATE INDEX IF NOT EXISTS idx_source_index_entries_classification_path
+         ON source_index_entries(classification, path);
+     CREATE INDEX IF NOT EXISTS idx_source_content_audit_forward_path
+         ON wav_files(path)
+         WHERE missing = 0
+           AND extension IN ('wav')
+           AND path NOT GLOB '._*'
+           AND path NOT GLOB '*/._*';
+     CREATE INDEX IF NOT EXISTS idx_source_content_audit_retry_due
+         ON source_content_audit_entries(COALESCE(retry_at, 0), path)
+         WHERE skip_reason IS NOT NULL;
      CREATE INDEX IF NOT EXISTS idx_wav_file_tags_tag_id
          ON wav_file_tags(tag_id);
      CREATE INDEX IF NOT EXISTS idx_wav_file_collections_collection
@@ -311,8 +369,12 @@ const INDEX_SQL: &str = "CREATE INDEX IF NOT EXISTS idx_wav_files_missing
          ON pending_wav_renames (content_hash);
      CREATE INDEX IF NOT EXISTS idx_pending_wav_renames_file_identity
          ON pending_wav_renames (file_identity);
+     CREATE INDEX IF NOT EXISTS idx_pending_wav_renames_identity_facts
+         ON pending_wav_renames (file_identity, file_size, modified_ns);
      CREATE INDEX IF NOT EXISTS idx_pending_wav_renames_facts
          ON pending_wav_renames (file_size, modified_ns);
+     CREATE INDEX IF NOT EXISTS idx_pending_wav_renames_generation
+         ON pending_wav_renames (staged_generation);
      CREATE INDEX IF NOT EXISTS idx_analysis_jobs_source_job_status_created
          ON analysis_jobs (source_id, job_type, status, created_at);
      CREATE INDEX IF NOT EXISTS idx_analysis_jobs_job_relative_path_status

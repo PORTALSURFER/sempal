@@ -1,6 +1,6 @@
 use super::{
-    Arc, AtomicBool, ExecutionOutcome, InFlightWorkGuard, Instant, RuntimeCandidate, Shared,
-    execute_candidate,
+    Arc, AtomicBool, ContentAuditActivity, ExecutionOutcome, InFlightWorkGuard, Instant,
+    RuntimeCandidate, Shared, execute_candidate,
 };
 use crate::native_app::source_processing::scheduler::BudgetPermit;
 use std::{
@@ -162,12 +162,20 @@ fn run_worker(
             }
         }
         let lifecycle_generation = request.in_flight.lifecycle_generation;
+        let content_audit_activity = {
+            let control = shared.control();
+            ContentAuditActivity {
+                playback_active: control.playback_active,
+                foreground_active: control.foreground_active,
+            }
+        };
         let started = Instant::now();
         let result = execute_candidate(
             &request.candidate,
             lifecycle_generation,
             request.cancel.as_ref(),
             &shared.database_writer,
+            content_audit_activity,
             &mut |event| shared.publish_event(event),
         );
         let elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0;

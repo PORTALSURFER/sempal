@@ -1,7 +1,4 @@
-use super::sample_mutation::{
-    RenameLoopedMetadata, RenameLoopedProvenanceLog, perform_sample_rename,
-    take_rename_looped_provenance_logs_for_tests,
-};
+use super::sample_mutation::{RenameLoopedMetadata, perform_sample_rename};
 use super::sample_mutation::{
     SAMPLE_RENAME_DB_RETRIES_PRODUCTION, SAMPLE_RENAME_DB_RETRY_DELAY_PRODUCTION,
 };

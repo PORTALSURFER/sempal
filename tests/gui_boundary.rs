@@ -1035,6 +1035,10 @@ fn wavecrate_non_blocking_guardrail() -> WavecrateNonBlockingGuardrail {
             "source watcher worker",
         ),
         (
+            "src/native_app/sample_library/source_watcher/journal.rs",
+            "durable source watcher journal worker",
+        ),
+        (
             "src/native_app/sample_library/source_watcher/roots.rs",
             "source watcher worker",
         ),

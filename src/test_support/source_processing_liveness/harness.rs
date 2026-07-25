@@ -224,6 +224,7 @@ impl LivenessHarness {
                 paths,
                 overflowed,
                 source_root_available: reported_source_root_available,
+                ..
             }) = message
             else {
                 if Instant::now() >= deadline {

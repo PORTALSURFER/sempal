@@ -4,10 +4,12 @@ use std::{
 };
 
 use crate::native_app::{
-    app::{GuiMessage, SourceProcessingProgress},
+    app::{
+        GuiMessage, SourceProcessingHealth, SourceProcessingHealthStatus, SourceProcessingProgress,
+    },
     source_processing::{
         SourceProcessingActivity, SourceProcessingEvent, SourceProcessingEventSink,
-        SourceProcessingProgressEvent,
+        SourceProcessingHealthEvent, SourceProcessingHealthState, SourceProcessingProgressEvent,
     },
 };
 
@@ -33,6 +35,9 @@ fn map_event(event: SourceProcessingEvent) -> GuiMessage {
         SourceProcessingEvent::Progress(progress) => {
             GuiMessage::SourceProcessingProgress(map_progress(progress))
         }
+        SourceProcessingEvent::Health(health) => {
+            GuiMessage::SourceProcessingHealth(map_health(health))
+        }
         SourceProcessingEvent::SimilarityReadinessAdvanced { lifecycle } => {
             GuiMessage::SimilarityReadinessAdvanced {
                 source_id: lifecycle.source_id,
@@ -47,6 +52,14 @@ fn map_event(event: SourceProcessingEvent) -> GuiMessage {
             lifecycle_generation: lifecycle.generation,
             committed_delta,
         },
+        SourceProcessingEvent::ManifestAuditFinished {
+            lifecycle,
+            complete,
+        } => GuiMessage::SourceManifestAuditFinished {
+            source_id: lifecycle.source_id,
+            lifecycle_generation: lifecycle.generation,
+            complete,
+        },
         SourceProcessingEvent::Completed => {
             GuiMessage::SourceProcessingProgress(SourceProcessingProgress {
                 source_id: String::new(),
@@ -59,6 +72,36 @@ fn map_event(event: SourceProcessingEvent) -> GuiMessage {
                 detail: String::new(),
             })
         }
+    }
+}
+
+fn map_health(event: SourceProcessingHealthEvent) -> SourceProcessingHealth {
+    SourceProcessingHealth {
+        source_id: event.lifecycle.source_id,
+        lifecycle_generation: event.lifecycle.generation,
+        status: match event.state {
+            SourceProcessingHealthState::Ready => SourceProcessingHealthStatus::Ready,
+            SourceProcessingHealthState::Processing => SourceProcessingHealthStatus::Processing,
+            SourceProcessingHealthState::WaitingForRetry => {
+                SourceProcessingHealthStatus::WaitingForRetry
+            }
+            SourceProcessingHealthState::BlockedByPrerequisites => {
+                SourceProcessingHealthStatus::BlockedByPrerequisites
+            }
+            SourceProcessingHealthState::Offline => SourceProcessingHealthStatus::Offline,
+            SourceProcessingHealthState::Disabled => SourceProcessingHealthStatus::Disabled,
+            SourceProcessingHealthState::DegradedTerminal => {
+                SourceProcessingHealthStatus::DegradedTerminal
+            }
+            SourceProcessingHealthState::ReconciliationFailed => {
+                SourceProcessingHealthStatus::ReconciliationFailed
+            }
+        },
+        source_generation: event.source_generation,
+        readiness_revision: event.readiness_revision,
+        stage_counts: event.stage_counts,
+        retry_at: event.retry_at,
+        failure_codes: event.failure_codes,
     }
 }
 
@@ -302,6 +345,39 @@ mod tests {
         };
         assert!(!completed.active);
         assert!(completed.source_id.is_empty());
+    }
+
+    #[test]
+    fn maps_durable_health_without_exposing_backend_error_text() {
+        let mut stage_counts = std::collections::BTreeMap::new();
+        stage_counts.insert(
+            ReadinessStage::AnalysisFeatures,
+            wavecrate::sample_sources::readiness::ReadinessStageCounts {
+                permanent: 2,
+                ..Default::default()
+            },
+        );
+        let GuiMessage::SourceProcessingHealth(health) =
+            map_event(SourceProcessingEvent::Health(SourceProcessingHealthEvent {
+                lifecycle: SourceProcessingLifecycle::new("source", 17),
+                state: SourceProcessingHealthState::DegradedTerminal,
+                source_generation: 23,
+                readiness_revision: 29,
+                stage_counts: stage_counts.clone(),
+                retry_at: None,
+                failure_codes: vec![String::from("decoder_unsupported")],
+            }))
+        else {
+            panic!("expected mapped health");
+        };
+        assert_eq!(health.source_id, "source");
+        assert_eq!(health.lifecycle_generation, 17);
+        assert_eq!(
+            health.status,
+            SourceProcessingHealthStatus::DegradedTerminal
+        );
+        assert_eq!(health.stage_counts, stage_counts);
+        assert_eq!(health.failure_codes, ["decoder_unsupported"]);
     }
 
     #[test]

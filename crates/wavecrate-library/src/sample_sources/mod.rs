@@ -10,21 +10,31 @@ pub mod db;
 pub mod library;
 /// Durable source-readiness and convergence coordination contracts.
 pub mod readiness;
+mod source_entry;
 
 pub use audio_support::{
-    is_apple_double_sidecar, is_supported_audio, supported_audio_where_clause,
+    is_apple_double_sidecar, is_recognized_audio, is_supported_audio, supported_audio_where_clause,
 };
 pub use db::normalize_relative_path;
 pub use db::{
-    BrowserFileMetadata, BrowserMetadataSnapshot, DB_FILE_NAME, Rating, SampleCollection,
-    SourceCollectionWrite, SourceContentHashWrite, SourceDatabase, SourceDatabaseConnectionRole,
-    SourceDbError, SourceFileWrite, SourceManifestEntry, SourceTag, SourceTagUsage, SourceTagWrite,
+    BrowserFileMetadata, BrowserMetadataCursor, BrowserMetadataPage, BrowserMetadataSnapshot,
+    DB_FILE_NAME, ManifestCommitResult, Rating, SampleCollection, SourceCollectionWrite,
+    SourceContentHashWrite, SourceDatabase, SourceDatabaseConnectionRole, SourceDbError,
+    SourceFileWrite, SourceIndexClassification, SourceIndexDiagnostic, SourceIndexEntry,
+    SourceIndexSnapshot, SourceManifestEntry, SourceTag, SourceTagUsage, SourceTagWrite,
     SourceWriteCommand, WavEntry,
 };
 pub use library::{
     HarvestDerivationOperation, HarvestDerivationRecord, HarvestFileIdentity, HarvestFileKey,
     HarvestFileRecord, HarvestMetadataSnapshot, HarvestSourceRange, HarvestState,
     LIBRARY_DB_FILE_NAME, LibraryError, LibraryState, NewHarvestDerivation,
+};
+pub use source_entry::{
+    HiddenDirectoryPolicy, SOURCE_FORMAT_POLICY_VERSION, SourceEntryClassification,
+    SourceEntryFileType, SourceEntryKind, SourceEntryProbeError, SourceEntryRejection,
+    SourceFileClassification, SourceTraversalPolicy, classify_path_without_following,
+    classify_path_without_following_with_policy, classify_source_entry,
+    classify_source_entry_with_policy, is_rejected_source_file_path,
 };
 
 /// Identifier for a configured sample source.

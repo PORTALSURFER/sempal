@@ -34,6 +34,7 @@ mod scenarios;
 
 use artifacts::*;
 use diagnostics::*;
+pub(super) use diagnostics::{readiness_snapshot, runtime_observation, silently_idle};
 use harness::*;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(20);

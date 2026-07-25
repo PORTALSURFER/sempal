@@ -78,7 +78,7 @@ pub(super) fn handle_completion(
     if matches!(
         &result,
         Ok(ExecutionOutcome::Completed | ExecutionOutcome::CompletedAwaitingForegroundRefresh)
-    ) && matches!(&candidate.task, RuntimeTask::ManifestAudit)
+    ) && matches!(&candidate.task, RuntimeTask::ManifestAudit { .. })
     {
         clear_satisfied_manifest_audit_request(shared.as_ref(), candidate.source.id.as_str());
     }
@@ -216,13 +216,14 @@ pub(super) fn handle_completion(
     let should_refresh = matches!(
         (&candidate.task, execution_outcome),
         (
-            RuntimeTask::ManifestAudit,
+            RuntimeTask::ManifestAudit { .. },
             Some(ExecutionOutcome::Completed | ExecutionOutcome::Failed)
         ) | (
             RuntimeTask::Readiness(ReadinessTarget {
                 stage: ReadinessStage::IndexedIdentity
                     | ReadinessStage::AnalysisFeatures
-                    | ReadinessStage::EmbeddingAspects,
+                    | ReadinessStage::EmbeddingAspects
+                    | ReadinessStage::SimilarityLayout,
                 ..
             }),
             Some(ExecutionOutcome::Completed),

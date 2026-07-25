@@ -68,7 +68,7 @@ impl NativeAppState {
         tab: AppSettingsTab,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
-        self.refresh_audio_options();
+        self.queue_audio_options_refresh(context);
         self.queue_global_storage_usage_refresh(context);
         self.ui.settings.ui.audio_settings_open = true;
         self.ui.settings.ui.app_settings_tab = tab;

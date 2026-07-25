@@ -100,6 +100,7 @@ fn foreground_scan_terminal_release_admits_coalesced_watcher_paths() {
         vec![sample_path],
         false,
         true,
+        None,
         &mut context,
     );
     assert!(
@@ -252,6 +253,7 @@ fn source_filesystem_change_during_scan_is_refreshed_after_scan_finishes() {
         Vec::new(),
         true,
         true,
+        None,
         &mut context,
     );
 
@@ -261,6 +263,7 @@ fn source_filesystem_change_during_scan_is_refreshed_after_scan_finishes() {
             paths: Vec::new(),
             overflowed: true,
             source_root_available: true,
+            journal_checkpoint_event_id: None,
         },
         &mut context,
     );

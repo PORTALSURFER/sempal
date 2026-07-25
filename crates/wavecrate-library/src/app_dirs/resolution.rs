@@ -4,8 +4,8 @@ use directories::BaseDirs;
 
 use super::profile::{ProfileSelection, ResolvedPersistence, persistence_mode_from_selection};
 use super::state::{
-    APP_ROOT_OVERRIDE, CONFIG_BASE_OVERRIDE, SCOPED_APP_ROOT_OVERRIDE, SCOPED_PROFILE_OVERRIDE,
-    TEST_CONFIG_BASE, TEST_CONFIG_OVERRIDE,
+    APP_ROOT_OVERRIDE, CONFIG_BASE_OVERRIDE, IGNORE_GLOBAL_APP_ROOT_OVERRIDE,
+    SCOPED_APP_ROOT_OVERRIDE, SCOPED_PROFILE_OVERRIDE, TEST_CONFIG_BASE, TEST_CONFIG_OVERRIDE,
 };
 use super::{
     APP_DIR_NAME, AUTOMATED_PROFILE_NAME, AppDirError, CONFIG_PROFILE_ENV, PROFILE_DIR_NAME,
@@ -113,6 +113,9 @@ fn scoped_or_global_app_root_override() -> Result<Option<PathBuf>, AppDirError> 
     {
         create_dir(&path)?;
         return Ok(Some(path));
+    }
+    if IGNORE_GLOBAL_APP_ROOT_OVERRIDE.with(std::cell::Cell::get) {
+        return Ok(None);
     }
     if let Some(path) = APP_ROOT_OVERRIDE
         .lock()

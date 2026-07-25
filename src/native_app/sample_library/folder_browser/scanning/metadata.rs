@@ -6,7 +6,9 @@ use std::{
 
 use super::super::FileEntry;
 use super::{
-    entry::{BrowserEntryKind, classify_path_without_following},
+    entry::{
+        BrowserEntryKind, classify_path_without_following_with_policy, source_traversal_policy,
+    },
     file_entry_metadata::file_entry_with_metadata,
 };
 use wavecrate::sample_sources::{
@@ -66,16 +68,6 @@ pub(super) fn source_rating_map(
     Ok((metadata, revision))
 }
 
-pub(super) fn source_browser_snapshot(
-    root: &Path,
-    database_root: &Path,
-) -> Result<BrowserMetadataSnapshot, SourceMetadataHydrationError> {
-    let db = SourceDatabase::open_for_ui_read_with_database_root(root, database_root)
-        .map_err(|error| SourceMetadataHydrationError::Open(error.to_string()))?;
-    db.browser_metadata_snapshot()
-        .map_err(|error| SourceMetadataHydrationError::Snapshot(error.to_string()))
-}
-
 pub(in crate::native_app::sample_library::folder_browser) fn file_entry_for_source_path(
     path: &PathBuf,
     source_root: &Path,
@@ -104,9 +96,13 @@ pub(in crate::native_app::sample_library::folder_browser) fn refreshed_file_entr
             tracing::warn!(source = %source_root.display(), "{error}");
             SourceMetadataMap::new()
         });
+    let policy = source_traversal_policy(source_root, source_database_root);
     paths
         .iter()
-        .filter(|path| classify_path_without_following(path) == Some(BrowserEntryKind::File))
+        .filter(|path| {
+            classify_path_without_following_with_policy(path, policy)
+                == Some(BrowserEntryKind::File)
+        })
         .map(|path| rated_file_entry(path, source_root, &ratings))
         .collect()
 }

@@ -389,6 +389,30 @@ fn folder_tree_refresh_adds_new_empty_folder() {
 }
 
 #[test]
+fn folder_tree_refresh_honors_excluded_hidden_directory_policy() {
+    let root = temp_source_root("wavecrate-gui-folder-tree-refresh-hidden-policy");
+    let hidden = root.join(".hidden");
+    fs::create_dir_all(&hidden).expect("create hidden folder");
+    fs::write(hidden.join("kick.wav"), [0_u8; 8]).expect("write hidden sample");
+    SourceDatabase::open_for_source_write(&root)
+        .expect("open source db")
+        .set_source_traversal_policy(
+            wavecrate::sample_sources::SourceTraversalPolicy::exclude_hidden_directories(),
+        )
+        .expect("set hidden directory policy");
+
+    let result = refresh_folder_tree_only(FolderTreeRefreshRequest {
+        source_id: String::from("source"),
+        label: String::from("Assets"),
+        root: root.clone(),
+        database_root: root.clone(),
+    });
+
+    assert!(result.folder.find(&path_id(&hidden)).is_none());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn folder_tree_refresh_reconciles_deleted_selected_folder() {
     let root = temp_source_root("wavecrate-gui-folder-tree-refresh-selected");
     let stale = root.join("stale");
@@ -528,6 +552,11 @@ fn reselecting_loaded_source_reconciles_disk_without_clearing_cached_tree() {
         !browser.apply_scan_discovered_batch(FolderScanDiscoveryBatch {
             task_id: 95,
             source_id: source_id.clone(),
+            committed_revision: discoveries
+                .first()
+                .and_then(|event| event.committed_revision),
+            lifecycle_generation: None,
+            sequence: 0,
             events: discoveries,
         }),
         "background discoveries must not mutate a fully loaded selected tree"

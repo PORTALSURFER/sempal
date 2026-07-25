@@ -1,16 +1,17 @@
+#[cfg(not(test))]
+use std::sync::OnceLock;
 use std::{
-    sync::{
-        OnceLock,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::atomic::{AtomicU64, Ordering},
     time::{Duration, Instant},
 };
 
+#[cfg(not(test))]
 const HOTPATH_TELEMETRY_ENV: &str = "WAVECRATE_HOTPATH_TELEMETRY";
 
 const STARMAP_AUDITION_TELEMETRY_LOG_EVERY: u64 = 32;
 const STARMAP_AUDITION_SLOW_EVENT_THRESHOLD: Duration = Duration::from_millis(8);
 
+#[cfg(not(test))]
 static STARMAP_AUDITION_TELEMETRY_ENABLED: OnceLock<bool> = OnceLock::new();
 static STARMAP_AUDITION_EVENTS_TOTAL: AtomicU64 = AtomicU64::new(0);
 static STARMAP_AUDITION_DRAG_BEGIN: AtomicU64 = AtomicU64::new(0);
@@ -147,6 +148,11 @@ impl StarmapAuditionDuration {
 }
 
 pub(in crate::native_app) fn enabled() -> bool {
+    #[cfg(test)]
+    {
+        false
+    }
+    #[cfg(not(test))]
     *STARMAP_AUDITION_TELEMETRY_ENABLED.get_or_init(|| env_var_truthy(HOTPATH_TELEMETRY_ENV))
 }
 
@@ -512,6 +518,7 @@ fn should_emit(sample_tick: u64, every: u64) -> bool {
     sample_tick != 0 && sample_tick.is_multiple_of(every)
 }
 
+#[cfg(not(test))]
 fn env_var_truthy(key: &str) -> bool {
     std::env::var(key)
         .ok()

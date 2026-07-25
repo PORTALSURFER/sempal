@@ -63,6 +63,7 @@ struct FrameProjectionState {
     playback_visual_generation: u64,
     play_selection_flash_active: bool,
     copy_flash_frames: u8,
+    selection_flash_frames: u8,
     protected_source_error_flash_frames: u8,
     keyboard_focus_alpha: u8,
 }
@@ -96,6 +97,7 @@ struct TransientFrameProjectionState {
     playback_visual_generation: u64,
     play_selection_flash_active: bool,
     copy_flash_frames: u8,
+    selection_flash_frames: u8,
     protected_source_error_flash_frames: u8,
     keyboard_focus_alpha: u8,
     progress_tick_bits: u32,
@@ -389,6 +391,7 @@ impl FrameSurfaceRevisionInputs {
                     .folder_browser
                     .copy_flash_frames()
                     .max(state.waveform.current.copy_flash_frames()),
+                selection_flash_frames: state.library.folder_browser.selection_flash_frames(),
                 protected_source_error_flash_frames: state
                     .library
                     .folder_browser
@@ -457,6 +460,7 @@ impl TransientFrameRevisionInputs {
                     .folder_browser
                     .copy_flash_frames()
                     .max(state.waveform.current.copy_flash_frames()),
+                selection_flash_frames: state.library.folder_browser.selection_flash_frames(),
                 protected_source_error_flash_frames: state
                     .library
                     .folder_browser

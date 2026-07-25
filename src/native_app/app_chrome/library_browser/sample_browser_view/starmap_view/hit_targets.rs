@@ -316,6 +316,7 @@ pub(super) fn starmap_item_metadata(items: &[StarmapItem]) -> StarmapItemMetadat
         item.color.b.hash(&mut paint_hasher);
         item.color.a.hash(&mut paint_hasher);
         item.selected.hash(&mut paint_hasher);
+        item.selection_flash.hash(&mut paint_hasher);
         item.copy_flash.hash(&mut paint_hasher);
         item.similarity_anchor.hash(&mut paint_hasher);
         item.instant_audition_ready.hash(&mut paint_hasher);

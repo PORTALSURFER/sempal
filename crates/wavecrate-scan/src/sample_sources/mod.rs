@@ -17,11 +17,11 @@ pub mod library {
 
 pub use scan_state::ScanTracker;
 pub use scanner::{
-    ChangedSample, CommittedSourceDelta, ManifestIdentityDelta, MovedManifestIdentity,
-    RenamedSample, ScanError, ScanMode, ScanStats, SourceTreeFile, SourceTreeSnapshot,
-    UpdatedSample,
+    ChangedSample, CommittedSourceDelta, ContentAuditActivity, ContentAuditBudget,
+    ContentAuditStorage, DirectoryRepeatKind, ManifestIdentityDelta, MovedManifestIdentity,
+    RenamedSample, ScanError, ScanMode, ScanStats, SourceTreeDiagnostic, SourceTreeFile,
+    SourceTreeSnapshot, UpdatedSample,
 };
-pub(crate) use wavecrate_library::sample_sources::is_supported_audio;
 pub use wavecrate_library::sample_sources::normalize_relative_path;
 pub use wavecrate_library::sample_sources::{
     DB_FILE_NAME, LIBRARY_DB_FILE_NAME, LibraryError, LibraryState, Rating, SampleSource,

@@ -15,6 +15,7 @@ use std::{
 use wavecrate::sample_sources::SampleSource;
 
 use super::classification::retain_source_refresh_candidates;
+use super::journal::{self, JournalRecovery};
 use super::roots::{
     RootIdentityRecovery, RootWatchUpdate, WatchedRootIdentities, root_watch_status,
     update_watched_roots,
@@ -63,7 +64,7 @@ const MAX_UNRESOLVED_TEARDOWNS: usize = 3;
 /// lifecycle work remains; completed handles are joined when the next handoff is registered.
 static SHUTDOWN_LIFECYCLE_WORKERS: OnceLock<Mutex<Vec<thread::JoinHandle<()>>>> = OnceLock::new();
 
-fn retain_shutdown_lifecycle_worker(worker: thread::JoinHandle<()>) {
+pub(super) fn retain_shutdown_lifecycle_worker(worker: thread::JoinHandle<()>) {
     let workers = SHUTDOWN_LIFECYCLE_WORKERS.get_or_init(|| Mutex::new(Vec::new()));
     let mut workers = workers.lock().expect("shutdown lifecycle worker registry");
     let mut index = 0;
@@ -282,6 +283,32 @@ impl GuiSourceWatcherHandle {
             });
     }
 
+    pub(in crate::native_app) fn advance_journal_checkpoint(
+        &self,
+        source_id: String,
+        event_id: u64,
+    ) {
+        let _ = self
+            .command_tx
+            .send(GuiSourceWatchCommand::AdvanceJournalCheckpoint {
+                source_id,
+                event_id,
+            });
+    }
+
+    pub(in crate::native_app) fn finish_journal_barrier_audit(
+        &self,
+        source_id: String,
+        complete: bool,
+    ) {
+        let _ = self
+            .command_tx
+            .send(GuiSourceWatchCommand::FinishJournalBarrierAudit {
+                source_id,
+                complete,
+            });
+    }
+
     #[cfg(test)]
     pub(in crate::native_app) fn request_full_reconciliation(&self) {
         let _ = self
@@ -351,6 +378,14 @@ enum GuiSourceWatchCommand {
         echoes: Vec<CommittedWatcherEcho>,
         operation_id: u64,
     },
+    AdvanceJournalCheckpoint {
+        source_id: String,
+        event_id: u64,
+    },
+    FinishJournalBarrierAudit {
+        source_id: String,
+        complete: bool,
+    },
     #[cfg(test)]
     ForceRestart,
     #[cfg(test)]
@@ -382,7 +417,10 @@ fn run_source_watcher(
     let mut restart_delay = WATCHER_RESTART_MIN;
     let mut next_root_refresh = Instant::now();
     let mut root_identity_recovery = RootIdentityRecovery::default();
+    let mut audit_barriers = HashMap::new();
+    let mut deferred_audit_barrier_sources = HashSet::new();
     let mut watcher_has_been_ready = false;
+    let mut watcher_unavailable_reported = false;
     #[cfg(any(test, feature = "legacy-controller"))]
     let mut readiness_waiters = Vec::<Sender<()>>::new();
 
@@ -412,6 +450,34 @@ fn run_source_watcher(
                     operation_id,
                     Instant::now(),
                 );
+            }
+            Ok(GuiSourceWatchCommand::AdvanceJournalCheckpoint {
+                source_id,
+                event_id,
+            }) => journal::advance_after_reconciliation(&state.sources, &source_id, event_id),
+            Ok(GuiSourceWatchCommand::FinishJournalBarrierAudit {
+                source_id,
+                complete,
+            }) => {
+                if complete {
+                    if let Some(barrier) = audit_barriers.remove(&source_id) {
+                        journal::commit_audit_barrier(&state.sources, &source_id, barrier);
+                    }
+                }
+                if deferred_audit_barrier_sources.remove(&source_id) {
+                    // The unavailable-watcher audit predates watcher recovery. Capture only now,
+                    // after that audit has completed, then schedule a fresh audit tied to this
+                    // barrier instead of letting the older completion advance a new cursor.
+                    if let Some(barrier) =
+                        journal::capture_audit_barrier(&state.sources, &source_id)
+                    {
+                        audit_barriers.insert(source_id.clone(), barrier);
+                        let _ = message_tx.send(GuiMessage::SourceWatcherJournalGap {
+                            source_id,
+                            reason: "watcher_recovered_after_unavailable",
+                        });
+                    }
+                }
             }
             #[cfg(test)]
             Ok(GuiSourceWatchCommand::ReconcileAllSources) => {
@@ -480,6 +546,13 @@ fn run_source_watcher(
                     Arc::clone(&ingress_overflowed),
                     backend,
                 ) {
+                    if !watcher_has_been_ready {
+                        publish_watcher_unavailable_fallback(
+                            &message_tx,
+                            &state.sources,
+                            &mut watcher_unavailable_reported,
+                        );
+                    }
                     next_restart = now + restart_delay;
                     restart_delay = doubled_backoff(restart_delay);
                 }
@@ -489,6 +562,13 @@ fn run_source_watcher(
                     max_unresolved_initializers = MAX_UNRESOLVED_INITIALIZERS,
                     "All GUI source watcher initializer slots are unresolved; backing off recovery"
                 );
+                if !watcher_has_been_ready {
+                    publish_watcher_unavailable_fallback(
+                        &message_tx,
+                        &state.sources,
+                        &mut watcher_unavailable_reported,
+                    );
+                }
                 next_restart = now + restart_delay;
                 restart_delay = doubled_backoff(restart_delay);
             }
@@ -533,15 +613,30 @@ fn run_source_watcher(
                     } else {
                         restarted.ingress_enabled.store(true, Ordering::Release);
                         let first_ready = !watcher_has_been_ready;
+                        let recovered_after_unavailability = watcher_unavailable_reported;
                         watcher_has_been_ready = true;
                         watcher = Some(restarted);
                         if first_ready {
                             // Registration callbacks were fenced while every root was installed.
-                            // Re-arm the authoritative startup audit after ingress is live so it
-                            // closes that short construction window without queuing foreground
-                            // scans for every source.
-                            let _ = message_tx.send(GuiMessage::SourceWatcherReady);
+                            // Now that ingress is live, replay the durable macOS journal before
+                            // admitting the lifecycle probe. A history gap is scoped to the one
+                            // affected source and deliberately falls back to its bounded audit.
+                            publish_closed_app_journal_recovery(
+                                &message_tx,
+                                &state.sources,
+                                backend == SourceWatcherBackend::Native,
+                                &mut audit_barriers,
+                                &mut deferred_audit_barrier_sources,
+                                recovered_after_unavailability,
+                            );
+                            let _ = message_tx.send(GuiMessage::SourceWatcherReady {
+                                deferred_audit_sources: deferred_audit_barrier_sources
+                                    .iter()
+                                    .cloned()
+                                    .collect(),
+                            });
                         }
+                        watcher_unavailable_reported = false;
                         restart_delay = WATCHER_RESTART_MIN;
                         next_root_refresh = now
                             + if unavailable {
@@ -574,6 +669,13 @@ fn run_source_watcher(
                             restart_delay = doubled_backoff(restart_delay);
                         }
                     } else {
+                        if !watcher_has_been_ready {
+                            publish_watcher_unavailable_fallback(
+                                &message_tx,
+                                &state.sources,
+                                &mut watcher_unavailable_reported,
+                            );
+                        }
                         next_restart = now + restart_delay;
                         restart_delay = doubled_backoff(restart_delay);
                     }
@@ -620,6 +722,13 @@ fn run_source_watcher(
                             restart_delay = doubled_backoff(restart_delay);
                         }
                     } else {
+                        if !watcher_has_been_ready {
+                            publish_watcher_unavailable_fallback(
+                                &message_tx,
+                                &state.sources,
+                                &mut watcher_unavailable_reported,
+                            );
+                        }
                         next_restart = now + restart_delay;
                         restart_delay = doubled_backoff(restart_delay);
                     }
@@ -647,6 +756,13 @@ fn run_source_watcher(
                             restart_delay = doubled_backoff(restart_delay);
                         }
                     } else {
+                        if !watcher_has_been_ready {
+                            publish_watcher_unavailable_fallback(
+                                &message_tx,
+                                &state.sources,
+                                &mut watcher_unavailable_reported,
+                            );
+                        }
                         next_restart = now + restart_delay;
                         restart_delay = doubled_backoff(restart_delay);
                     }
@@ -734,6 +850,7 @@ fn run_source_watcher(
                 paths: event.paths,
                 overflowed: event.overflowed,
                 source_root_available: event.source_root_available,
+                journal_checkpoint_event_id: None,
             });
         }
     }
@@ -756,6 +873,94 @@ fn run_source_watcher(
         lifecycle_tx
             .send(lifecycle)
             .expect("source watcher lifecycle service must outlive its coordinator");
+    }
+}
+
+fn publish_closed_app_journal_recovery(
+    message_tx: &Sender<GuiMessage>,
+    sources: &[SampleSource],
+    native_watcher: bool,
+    audit_barriers: &mut HashMap<String, journal::AuditBarrier>,
+    deferred_audit_barrier_sources: &mut HashSet<String>,
+    defer_audit_barriers: bool,
+) {
+    for (source, recovery) in sources
+        .iter()
+        .zip(journal::recover_sources(sources, native_watcher))
+    {
+        match recovery {
+            #[cfg(target_os = "macos")]
+            JournalRecovery::Changes { paths, event_id } if paths.is_empty() => {
+                journal::advance_after_reconciliation(sources, source.id.as_str(), event_id);
+                tracing::debug!(
+                    source_id = source.id.as_str(),
+                    "Durable source watcher journal found no closed-application changes"
+                );
+            }
+            #[cfg(target_os = "macos")]
+            JournalRecovery::Changes { paths, event_id } => {
+                tracing::info!(
+                    source_id = source.id.as_str(),
+                    path_count = paths.len(),
+                    "Replaying closed-application source watcher changes"
+                );
+                let _ = message_tx.send(GuiMessage::SourceFilesystemChanged {
+                    source_id: source.id.as_str().to_string(),
+                    paths,
+                    overflowed: false,
+                    source_root_available: true,
+                    journal_checkpoint_event_id: Some(event_id),
+                });
+            }
+            JournalRecovery::FullAudit { reason } => {
+                tracing::info!(
+                    source_id = source.id.as_str(),
+                    reason,
+                    "Durable source watcher coverage requires a bounded manifest audit"
+                );
+                if defer_audit_barriers {
+                    // An unavailable-watcher fallback may already be auditing this source.
+                    // Wait for that completion command before capturing the barrier and emitting
+                    // the replacement audit request; otherwise the replacement could start
+                    // before its fence exists.
+                    deferred_audit_barrier_sources.insert(source.id.as_str().to_string());
+                } else {
+                    if let Some(barrier) =
+                        journal::capture_audit_barrier(sources, source.id.as_str())
+                    {
+                        audit_barriers.insert(source.id.as_str().to_string(), barrier);
+                    }
+                    let _ = message_tx.send(GuiMessage::SourceWatcherJournalGap {
+                        source_id: source.id.as_str().to_string(),
+                        reason,
+                    });
+                }
+            }
+        }
+    }
+}
+
+/// A watcher that cannot initialize must not hold startup reconciliation hostage. This fallback
+/// deliberately has no audit barrier: without a live ingress stream, advancing a durable cursor
+/// would risk hiding mutations made during the audit. The old cursor remains replayable when a
+/// watcher eventually recovers, while the supervisor gets a bounded, retryable source audit now.
+fn publish_watcher_unavailable_fallback(
+    message_tx: &Sender<GuiMessage>,
+    sources: &[SampleSource],
+    already_reported: &mut bool,
+) {
+    if std::mem::replace(already_reported, true) {
+        return;
+    }
+    tracing::warn!(
+        source_count = sources.len(),
+        "Source watcher unavailable at startup; admitting bounded source audit fallback"
+    );
+    for source in sources {
+        let _ = message_tx.send(GuiMessage::SourceWatcherJournalGap {
+            source_id: source.id.as_str().to_string(),
+            reason: "watcher_unavailable",
+        });
     }
 }
 
@@ -1016,6 +1221,7 @@ mod lifecycle_tests {
             mpsc::{Receiver, SyncSender},
         },
     };
+    use wavecrate::sample_sources::{SampleSource, SourceId};
 
     static LIFECYCLE_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
@@ -1024,6 +1230,29 @@ mod lifecycle_tests {
             .get_or_init(|| Mutex::new(()))
             .lock()
             .expect("lifecycle test lock")
+    }
+
+    #[test]
+    fn startup_watcher_unavailability_admits_one_scoped_fallback_per_source() {
+        let source = SampleSource::new_with_id(
+            SourceId::from_string("watcher-unavailable"),
+            PathBuf::from("/tmp/watcher-unavailable"),
+        );
+        let (message_tx, message_rx) = std::sync::mpsc::channel();
+        let mut reported = false;
+
+        publish_watcher_unavailable_fallback(&message_tx, &[source], &mut reported);
+        publish_watcher_unavailable_fallback(&message_tx, &[], &mut reported);
+
+        assert!(matches!(
+            message_rx.recv().expect("watcher fallback message"),
+            GuiMessage::SourceWatcherJournalGap { source_id, reason }
+                if source_id == "watcher-unavailable" && reason == "watcher_unavailable"
+        ));
+        assert!(matches!(
+            message_rx.try_recv(),
+            Err(std::sync::mpsc::TryRecvError::Empty)
+        ));
     }
 
     fn blocking_initializer(

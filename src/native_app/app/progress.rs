@@ -1,7 +1,8 @@
-use std::path::PathBuf;
+use std::{collections::BTreeMap, path::PathBuf};
 
 use crate::native_app::sample_library::folder_browser::RefreshedFileEntry;
 use wavecrate::sample_sources::HarvestDerivationOperation;
+use wavecrate::sample_sources::readiness::{ReadinessStage, ReadinessStageCounts};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::native_app) struct NormalizationProgress {
@@ -54,6 +55,31 @@ pub(in crate::native_app) struct SourceProcessingProgress {
     pub(in crate::native_app) total: usize,
     pub(in crate::native_app) stage: String,
     pub(in crate::native_app) detail: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::native_app) enum SourceProcessingHealthStatus {
+    Ready,
+    Processing,
+    WaitingForRetry,
+    BlockedByPrerequisites,
+    Offline,
+    Disabled,
+    DegradedTerminal,
+    ReconciliationFailed,
+}
+
+/// Last durable readiness observation for one configured source lifecycle.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::native_app) struct SourceProcessingHealth {
+    pub(in crate::native_app) source_id: String,
+    pub(in crate::native_app) lifecycle_generation: u64,
+    pub(in crate::native_app) status: SourceProcessingHealthStatus,
+    pub(in crate::native_app) source_generation: i64,
+    pub(in crate::native_app) readiness_revision: i64,
+    pub(in crate::native_app) stage_counts: BTreeMap<ReadinessStage, ReadinessStageCounts>,
+    pub(in crate::native_app) retry_at: Option<i64>,
+    pub(in crate::native_app) failure_codes: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

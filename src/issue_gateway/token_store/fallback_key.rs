@@ -126,12 +126,14 @@ pub(super) fn fallback_key_cache() -> &'static Mutex<Option<[u8; 32]>> {
 
 /// Lock the process-wide fallback key cache and recover from poisoning.
 pub(super) fn lock_fallback_key_cache() -> std::sync::MutexGuard<'static, Option<[u8; 32]>> {
-    match fallback_key_cache().lock() {
+    let cache = fallback_key_cache();
+    match cache.lock() {
         Ok(guard) => guard,
         Err(poisoned) => {
             tracing::warn!("Fallback key cache mutex poisoned; clearing cached key.");
             let mut inner = poisoned.into_inner();
             *inner = None;
+            cache.clear_poison();
             inner
         }
     }

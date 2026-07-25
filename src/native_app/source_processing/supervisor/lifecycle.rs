@@ -16,6 +16,12 @@ impl SourceProcessingSupervisor {
             .unwrap_or_else(|poison| poison.into_inner());
         let sources = sources_by_id(sources);
         let mut control = self.shared.control();
+        #[cfg(test)]
+        if std::mem::take(&mut control.reject_next_source_replacement) {
+            return Err(String::from(
+                "state-machine lifecycle replacement rejected at serialized boundary",
+            ));
+        }
         if source_maps_match(&control.sources, &sources) {
             if !control.quarantined_sources.is_empty() {
                 control.quarantined_sources.clear();
@@ -141,6 +147,9 @@ impl SourceProcessingSupervisor {
         control.safety_probe_sources.retain(|source_id| {
             retained_source_ids.contains(source_id) && !changed_source_ids.contains(source_id)
         });
+        control
+            .deferred_lifecycle_audit_sources
+            .retain(|source_id| retained_source_ids.contains(source_id));
         control.pending_readiness_deltas.retain(|source_id, _| {
             retained_source_ids.contains(source_id) && !changed_source_ids.contains(source_id)
         });
@@ -189,6 +198,14 @@ impl SourceProcessingSupervisor {
         {
             control.priority.current_folder = None;
         }
+        self.shared
+            .published_source_health
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .retain(|source_id, health| {
+                control.source_lifecycle_generations.get(source_id)
+                    == Some(&health.lifecycle.generation)
+            });
         control.notify("configured_sources_changed");
         drop(control);
         self.shared.budget_wake.notify_all();

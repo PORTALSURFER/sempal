@@ -9,6 +9,7 @@ impl SourceWriteBatch<'_> {
     /// Remove a wav row within the batch.
     pub fn remove_file(&mut self, relative_path: &Path) -> Result<(), SourceDbError> {
         self.paths_revision_dirty = true;
+        self.identities_revision_dirty = true;
         self.manifest_touched_paths
             .insert(relative_path.to_path_buf());
         delete_path_statement(&self.tx, relative_path)
@@ -21,6 +22,7 @@ impl SourceWriteBatch<'_> {
         new_relative_path: &Path,
     ) -> Result<(), SourceDbError> {
         self.paths_revision_dirty = true;
+        self.identities_revision_dirty = true;
         self.manifest_touched_paths
             .insert(old_relative_path.to_path_buf());
         self.manifest_touched_paths

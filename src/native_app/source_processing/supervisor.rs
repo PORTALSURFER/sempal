@@ -18,17 +18,22 @@ use rusqlite::params;
 use serde_json::Value;
 use wavecrate::sample_sources::{
     SampleSource, SourceDatabase, SourceDatabaseConnectionRole, SourceMetadataStorage,
-    db::{META_LAST_MANIFEST_AUDIT_AT, META_WAV_PATHS_REVISION},
+    db::{
+        META_LAST_MANIFEST_AUDIT_AT, META_READINESS_DUPLICATE_IDENTITY,
+        META_WAV_IDENTITIES_REVISION, META_WAV_PATHS_REVISION,
+    },
     readiness::{
-        ArtifactPublishOutcome, ClaimedReadinessWork, ReadinessClassification,
+        ArtifactPublishOutcome, ClaimedReadinessWork, ReadinessActivity, ReadinessClassification,
         ReadinessDeltaPublicationOutcome, ReadinessEligibility, ReadinessFailureClassification,
         ReadinessFailureOutcome, ReadinessLeaseRenewalOutcome, ReadinessMembership,
         ReadinessProgress, ReadinessRetryPolicy, ReadinessScopeKind, ReadinessSnapshot,
-        ReadinessStage, ReadinessStore, ReadinessTarget, ReadinessTargetDeltaPublication,
-        ReadinessTargetPublication, ReadinessWorkMutationOutcome, SourceAvailability,
+        ReadinessStage, ReadinessStageCounts, ReadinessStore, ReadinessTarget,
+        ReadinessTargetDeltaPublication, ReadinessTargetPublication, ReadinessView,
+        ReadinessWorkMutationOutcome, SourceAvailability,
     },
     scanner::{
-        CommittedSourceDelta, ScanError, audit_source_and_record_with_progress,
+        CommittedSourceDelta, ContentAuditActivity, ContentAuditBudget, ContentAuditStorage,
+        ScanError, audit_source_and_record_with_budget_and_progress_and_writer,
         complete_pending_deep_hash_for_path, sync_paths_with_progress,
     },
 };
@@ -36,7 +41,8 @@ use wavecrate::sample_sources::{
 use super::worker::{SourceProcessingFailure, source_database_failure};
 use super::{
     SourceDiscoveryPhase, SourceProcessingActivity, SourceProcessingEvent,
-    SourceProcessingEventSink, SourceProcessingLifecycle, SourceProcessingProgressEvent,
+    SourceProcessingEventSink, SourceProcessingHealthEvent, SourceProcessingHealthState,
+    SourceProcessingLifecycle, SourceProcessingProgressEvent,
     scheduler::{
         BudgetTracker, FairScheduler, PriorityContext, ProcessingBudgets, ProcessingLane,
         WorkCandidate,
@@ -69,6 +75,7 @@ mod execution_pool;
 mod execution_readiness;
 mod execution_stages;
 mod execution_validation;
+mod health;
 mod lifecycle;
 mod model;
 mod progress;
@@ -79,11 +86,14 @@ mod shutdown;
 mod source_registry_model;
 mod startup;
 mod state;
+#[cfg(test)]
+mod state_machine_observation;
 mod telemetry;
 
 pub(in crate::native_app) use admission::SourceScanAdmissionState;
 use admission::{SourceProcessingBudgetHandle, install_worker_app_root};
 use cache_ownership::*;
+pub(in crate::native_app) use commands::SourceAuditLifecycleCause;
 use control::*;
 use coordination::*;
 use coordinator::*;
@@ -103,6 +113,7 @@ use execution_pool::*;
 use execution_readiness::*;
 use execution_stages::*;
 use execution_validation::*;
+use health::*;
 use model::*;
 use progress::*;
 use registry::*;
@@ -122,7 +133,6 @@ const DISCOVERY_PROGRESS_REFRESH_INTERVAL: Duration = Duration::from_millis(250)
 const DISCOVERY_PROGRESS_LOG_INTERVAL: Duration = Duration::from_secs(2);
 const SIMILARITY_SCORE_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
 const MANIFEST_AUDIT_INTERVAL_SECONDS: i64 = 24 * 60 * 60;
-const MANIFEST_AUDIT_HASH_BATCH: usize = 8;
 const MAX_VISIBLE_PRIORITY_PATHS: usize = 128;
 const READINESS_LEASE_SECONDS: i64 = 5 * 60;
 const READINESS_MAX_ATTEMPTS: u32 = 8;
@@ -148,6 +158,10 @@ pub(in crate::native_app) struct SourceProcessingSupervisor {
 #[cfg(test)]
 #[path = "../../test_support/source_processing_liveness/mod.rs"]
 mod liveness_tests;
+
+#[cfg(test)]
+#[path = "../../test_support/source_processing_state_machine/mod.rs"]
+mod state_machine_tests;
 
 #[cfg(test)]
 mod tests;

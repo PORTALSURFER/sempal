@@ -425,7 +425,8 @@ fn remap_rejects_existing_file_mutation() {
     )]);
     let destination = tempfile::tempdir().expect("destination");
     controller.begin_pending_file_mutation(&source.id, [std::path::PathBuf::from("pending.wav")]);
-    crate::sample_sources::db::test_reset_source_db_open_total_count(&source.root);
+    let _open_count_scope =
+        crate::sample_sources::db::test_scope_source_db_open_total_count(&source.root);
 
     let error = controller
         .remap_source_to(0, destination.path().to_path_buf())

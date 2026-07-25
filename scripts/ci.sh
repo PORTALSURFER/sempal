@@ -4,7 +4,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: scripts/ci.sh <smoke|agent|quick|local> [args...]
+Usage: scripts/ci.sh <smoke|agent|quick|local|isolation-stress> [args...]
 EOF
 }
 
@@ -23,6 +23,7 @@ case "$command" in
   agent) script="$script_dir/ci_agent.sh" ;;
   quick) script="$script_dir/ci_quick.sh" ;;
   local) script="$script_dir/ci_local.sh" ;;
+  isolation-stress) script="$script_dir/ci_isolation_stress.sh" ;;
   -h|--help)
     usage
     exit 0

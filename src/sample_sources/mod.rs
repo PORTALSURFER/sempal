@@ -21,9 +21,12 @@ pub mod scan_state {
 /// Source scanning logic.
 pub mod scanner {
     pub use wavecrate_scan::sample_sources::scanner::{
-        ChangedSample, CommittedSourceDelta, ManifestIdentityDelta, MovedManifestIdentity,
-        RenamedSample, ScanError, ScanMode, ScanStats, UpdatedSample, audit_source,
-        audit_source_and_record, audit_source_and_record_with_progress, complete_deferred_hashes,
+        ChangedSample, CommittedSourceDelta, ContentAuditActivity, ContentAuditBudget,
+        ContentAuditStorage, ManifestIdentityDelta, MovedManifestIdentity, RenamedSample,
+        ScanError, ScanMode, ScanStats, UpdatedSample, audit_source, audit_source_and_record,
+        audit_source_and_record_with_budget_and_progress,
+        audit_source_and_record_with_budget_and_progress_and_writer,
+        audit_source_and_record_with_progress, audit_source_with_budget, complete_deferred_hashes,
         complete_deferred_hashes_with_cancel, complete_deferred_rename_candidates,
         complete_deferred_rename_candidates_with_cancel, complete_pending_deep_hash_for_path,
         complete_pending_deep_hashes, hard_rescan, scan_in_background, scan_once,
@@ -33,19 +36,22 @@ pub mod scanner {
 
 /// Per-source database helpers.
 pub mod db {
-    pub use wavecrate_library::sample_sources::db::{
-        BrowserMetadataSnapshot, DB_FILE_NAME, LEGACY_DB_FILE_NAME,
-        META_DEFERRED_MAINTENANCE_REVISION, META_DEFERRED_MAINTENANCE_SCHEMA,
-        META_LAST_MANIFEST_AUDIT_AT, META_LAST_SCAN_COMPLETED_AT, META_WAV_PATHS_REVISION,
-        PendingRenameEntry, Rating, SOURCE_DB_READ_ONLY_ENV, SampleCollection, SampleSoundType,
-        SourceCollectionWrite, SourceContentHashWrite, SourceDatabase,
-        SourceDatabaseConnectionRole, SourceDatabaseWriteFence, SourceDbError, SourceFileWrite,
-        SourceTag, SourceTagUsage, SourceTagWrite, SourceWriteBatch, SourceWriteCommand, WavEntry,
-        file_ops_journal, normalize_relative_path, read, schema, tags, util, write,
-    };
     #[cfg(debug_assertions)]
+    pub use wavecrate_library::sample_sources::db::test_scope_source_db_open_total_count;
+    #[cfg(debug_assertions)]
+    pub use wavecrate_library::sample_sources::db::test_source_db_open_total_count;
     pub use wavecrate_library::sample_sources::db::{
-        test_reset_source_db_open_total_count, test_source_db_open_total_count,
+        BrowserMetadataSnapshot, ContentAuditCheckpoint, ContentAuditEntryState,
+        ContentAuditReport, ContentAuditSkipReason, DB_FILE_NAME, LEGACY_DB_FILE_NAME,
+        META_DEFERRED_MAINTENANCE_REVISION, META_DEFERRED_MAINTENANCE_SCHEMA,
+        META_LAST_MANIFEST_AUDIT_AT, META_LAST_SCAN_COMPLETED_AT,
+        META_READINESS_DUPLICATE_IDENTITY, META_SOURCE_TRAVERSAL_POLICY,
+        META_WAV_IDENTITIES_REVISION, META_WAV_PATHS_REVISION, PendingRenameEntry, Rating,
+        SOURCE_DB_READ_ONLY_ENV, SampleCollection, SampleSoundType, SourceCollectionWrite,
+        SourceContentHashWrite, SourceDatabase, SourceDatabaseConnectionRole,
+        SourceDatabaseWriteFence, SourceDbError, SourceFileWrite, SourceTag, SourceTagUsage,
+        SourceTagWrite, SourceWriteBatch, SourceWriteCommand, WavEntry, file_ops_journal,
+        normalize_relative_path, read, schema, tags, util, write,
     };
 }
 
@@ -94,6 +100,7 @@ pub use wavecrate_library::sample_sources::{
     SourceMetadataStorage, SourceRole, SourceTagWrite, SourceWriteCommand, WavEntry,
     database_path_for, default_primary_import_folder, normalize_path,
 };
+pub use wavecrate_library::sample_sources::{HiddenDirectoryPolicy, SourceTraversalPolicy};
 pub use wavecrate_scan::sample_sources::ScanTracker;
 pub use wavecrate_scan::sample_sources::{
     ChangedSample, CommittedSourceDelta, ManifestIdentityDelta, MovedManifestIdentity,

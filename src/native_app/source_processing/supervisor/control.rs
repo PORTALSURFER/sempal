@@ -10,6 +10,11 @@ pub(super) struct ControlState {
     pub(super) next_lifecycle_generation: u64,
     pub(super) dirty_sources: BTreeSet<String>,
     pub(super) safety_probe_sources: BTreeSet<String>,
+    /// Initial lifecycle probes must wait until the source watcher has replayed its durable
+    /// journal. A journal-gap request clears the safety-probe bit for its source and can still
+    /// proceed because its watcher-side audit barrier was captured first.
+    pub(super) lifecycle_audits_deferred_until_watcher_ready: bool,
+    pub(super) deferred_lifecycle_audit_sources: BTreeSet<String>,
     pub(super) pending_readiness_deltas: BTreeMap<String, PendingReadinessDelta>,
     pub(super) awaiting_foreground_refresh_sources: BTreeSet<String>,
     pub(super) force_manifest_audit_sources: BTreeSet<String>,
@@ -23,6 +28,10 @@ pub(super) struct ControlState {
     pub(super) foreground_active: bool,
     pub(super) shutdown: bool,
     pub(super) priority: PriorityContext,
+    #[cfg(test)]
+    pub(super) reject_next_delta_delivery: bool,
+    #[cfg(test)]
+    pub(super) reject_next_source_replacement: bool,
 }
 
 impl ControlState {

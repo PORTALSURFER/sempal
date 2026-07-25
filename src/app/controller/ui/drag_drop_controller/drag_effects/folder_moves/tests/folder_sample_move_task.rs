@@ -1,6 +1,5 @@
 use super::super::worker::{
-    run_folder_sample_move_task, set_before_folder_sample_batch_hook,
-    set_before_folder_sample_finalize_hook,
+    FolderMoveTestHooks, run_folder_sample_move_task, run_folder_sample_move_task_with_hooks,
 };
 use super::support::{Must, folder_move_test_guard, read_file_metadata};
 use crate::app::controller::jobs::FolderSampleMoveRequest;
@@ -16,8 +15,6 @@ use tempfile::tempdir;
 /// Moving a single file updates filesystem state, DB metadata, and clears journal entries.
 fn folder_sample_move_updates_db_entry() {
     let _guard = folder_move_test_guard();
-    set_before_folder_sample_batch_hook(None);
-    set_before_folder_sample_finalize_hook(None);
     let temp = tempdir().must();
     let source_root = temp.path().join("source");
     let target_dir = source_root.join("folder");
@@ -82,8 +79,6 @@ fn folder_sample_move_updates_db_entry() {
 /// Cancellation before the batch starts leaves source file and DB entries unchanged.
 fn folder_sample_move_cancelled_before_processing_keeps_source_unchanged() {
     let _guard = folder_move_test_guard();
-    set_before_folder_sample_batch_hook(None);
-    set_before_folder_sample_finalize_hook(None);
     let temp = tempdir().must();
     let source_root = temp.path().join("source");
     let target_dir = source_root.join("folder");
@@ -131,8 +126,6 @@ fn folder_sample_move_cancelled_before_processing_keeps_source_unchanged() {
 /// A DB-write failure rolls the file back to source and keeps staged journal data for recovery.
 fn folder_sample_move_db_write_failure_rolls_back_source_and_keeps_journal_for_recovery() {
     let _guard = folder_move_test_guard();
-    set_before_folder_sample_batch_hook(None);
-    set_before_folder_sample_finalize_hook(None);
     let temp = tempdir().must();
     let source_root = temp.path().join("source");
     let target_dir = source_root.join("folder");
@@ -154,24 +147,27 @@ fn folder_sample_move_db_write_failure_rolls_back_source_and_keeps_journal_for_r
     let mut lock_release_rx = Some(lock_release_rx);
     let mut lock_done_tx = Some(lock_done_tx);
     let source_root_for_hook = source_root.clone();
-    set_before_folder_sample_batch_hook(Some(Box::new(move || {
-        let (locked_tx, locked_rx) = std::sync::mpsc::channel();
-        let db_file = source_root_for_hook.join(DB_FILE_NAME);
-        let lock_release_rx = lock_release_rx.take().must();
-        let lock_done_tx = lock_done_tx.take().must();
-        std::thread::spawn(move || {
-            let conn = rusqlite::Connection::open(db_file).must();
-            conn.execute_batch("BEGIN IMMEDIATE").must();
-            let _ = locked_tx.send(());
-            let _ = lock_release_rx.recv();
-            let _ = conn.execute_batch("COMMIT");
-            drop(conn);
-            let _ = lock_done_tx.send(());
-        });
-        locked_rx.recv().must();
-    })));
+    let mut hooks = FolderMoveTestHooks {
+        before_folder_sample_batch: Some(Box::new(move || {
+            let (locked_tx, locked_rx) = std::sync::mpsc::channel();
+            let db_file = source_root_for_hook.join(DB_FILE_NAME);
+            let lock_release_rx = lock_release_rx.take().must();
+            let lock_done_tx = lock_done_tx.take().must();
+            std::thread::spawn(move || {
+                let conn = rusqlite::Connection::open(db_file).must();
+                conn.execute_batch("BEGIN IMMEDIATE").must();
+                let _ = locked_tx.send(());
+                let _ = lock_release_rx.recv();
+                let _ = conn.execute_batch("COMMIT");
+                drop(conn);
+                let _ = lock_done_tx.send(());
+            });
+            locked_rx.recv().must();
+        })),
+        ..Default::default()
+    };
 
-    let result = run_folder_sample_move_task(
+    let result = run_folder_sample_move_task_with_hooks(
         source.id.clone(),
         source_root.clone(),
         vec![FolderSampleMoveRequest {
@@ -181,8 +177,8 @@ fn folder_sample_move_db_write_failure_rolls_back_source_and_keeps_journal_for_r
         Vec::new(),
         Arc::new(AtomicBool::new(false)),
         None,
+        &mut hooks,
     );
-    set_before_folder_sample_batch_hook(None);
     let _ = lock_release_tx.send(());
     lock_done_rx.recv_timeout(Duration::from_secs(1)).must();
 
@@ -225,8 +221,6 @@ fn folder_sample_move_db_write_failure_rolls_back_source_and_keeps_journal_for_r
 /// A final rename failure after DB commit rolls the DB and staged file back immediately.
 fn folder_sample_move_finalize_failure_rolls_back_db_file_and_journal() {
     let _guard = folder_move_test_guard();
-    set_before_folder_sample_batch_hook(None);
-    set_before_folder_sample_finalize_hook(None);
     let temp = tempdir().must();
     let source_root = temp.path().join("source");
     let target_dir = source_root.join("folder");
@@ -247,11 +241,14 @@ fn folder_sample_move_finalize_failure_rolls_back_db_file_and_journal() {
     batch.commit().must();
 
     let target_blocker = source_root.join("folder/one.wav");
-    set_before_folder_sample_finalize_hook(Some(Box::new(move || {
-        std::fs::create_dir(&target_blocker).must();
-    })));
+    let mut hooks = FolderMoveTestHooks {
+        before_folder_sample_finalize: Some(Box::new(move || {
+            std::fs::create_dir(&target_blocker).must();
+        })),
+        ..Default::default()
+    };
 
-    let result = run_folder_sample_move_task(
+    let result = run_folder_sample_move_task_with_hooks(
         source.id.clone(),
         source_root.clone(),
         vec![FolderSampleMoveRequest {
@@ -261,8 +258,8 @@ fn folder_sample_move_finalize_failure_rolls_back_db_file_and_journal() {
         Vec::new(),
         Arc::new(AtomicBool::new(false)),
         None,
+        &mut hooks,
     );
-    set_before_folder_sample_finalize_hook(None);
 
     assert!(result.moved.is_empty());
     assert!(

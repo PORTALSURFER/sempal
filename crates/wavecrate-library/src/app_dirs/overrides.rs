@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use super::{
     AppDirError,
-    state::{APP_ROOT_OVERRIDE, SCOPED_APP_ROOT_OVERRIDE, TEST_CONFIG_OVERRIDE},
+    state::{IGNORE_GLOBAL_APP_ROOT_OVERRIDE, SCOPED_APP_ROOT_OVERRIDE, TEST_CONFIG_OVERRIDE},
 };
 
 /// Guard that pins application-root resolution on the current thread.
@@ -45,7 +45,7 @@ impl Drop for AppRootGuard {
 pub struct ConfigBaseGuard {
     previous: Option<PathBuf>,
     previous_scoped_root: Option<PathBuf>,
-    previous_root: Option<PathBuf>,
+    previous_ignore_global_root: bool,
 }
 
 impl ConfigBaseGuard {
@@ -63,15 +63,12 @@ impl ConfigBaseGuard {
             *slot = None;
             prev
         });
-        let mut root_guard = APP_ROOT_OVERRIDE
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let previous_root = root_guard.clone();
-        *root_guard = None;
+        let previous_ignore_global_root =
+            IGNORE_GLOBAL_APP_ROOT_OVERRIDE.with(|ignore| ignore.replace(true));
         Self {
             previous,
-            previous_root,
             previous_scoped_root,
+            previous_ignore_global_root,
         }
     }
 }
@@ -86,9 +83,6 @@ impl Drop for ConfigBaseGuard {
         SCOPED_APP_ROOT_OVERRIDE.with(|override_path| {
             *override_path.borrow_mut() = previous_scoped_root;
         });
-        let mut root_guard = APP_ROOT_OVERRIDE
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        *root_guard = self.previous_root.take();
+        IGNORE_GLOBAL_APP_ROOT_OVERRIDE.with(|ignore| ignore.set(self.previous_ignore_global_root));
     }
 }

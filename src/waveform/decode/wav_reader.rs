@@ -2,11 +2,6 @@ use super::peaks;
 use crate::waveform::{DecodedWaveform, WaveformDecodeError, WaveformRenderer};
 use hound::SampleFormat;
 use std::sync::Arc;
-#[cfg(test)]
-use std::sync::atomic::{AtomicUsize, Ordering};
-
-#[cfg(test)]
-static WAV_DECODE_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 impl WaveformRenderer {
     pub(super) fn load_decoded_wav(
@@ -19,9 +14,6 @@ impl WaveformRenderer {
             Ok(reader) => reader,
             Err(_) => return Ok(None),
         };
-        #[cfg(test)]
-        WAV_DECODE_COUNT.fetch_add(1, Ordering::Relaxed);
-
         let spec = reader.spec();
         let spec_channels = spec.channels.max(1);
         let channels = spec_channels as usize;

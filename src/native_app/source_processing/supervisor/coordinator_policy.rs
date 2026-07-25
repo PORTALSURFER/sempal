@@ -25,7 +25,7 @@ pub(super) fn candidate_invalidation_scope(
 ) -> CandidateInvalidationScope {
     match (task, outcome) {
         (
-            RuntimeTask::ManifestAudit,
+            RuntimeTask::ManifestAudit { .. },
             Some(
                 ExecutionOutcome::Completed
                 | ExecutionOutcome::CompletedAwaitingForegroundRefresh

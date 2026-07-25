@@ -1,12 +1,11 @@
 use std::{
     collections::HashSet,
-    sync::mpsc::Receiver,
     time::{Duration, Instant},
 };
 
 use wavecrate::audio::{
     AudioDeviceSummary, AudioHostSummary, AudioOutputConfig, AudioPlayer, PlaybackRequestId,
-    PlaybackRuntimeEvent, PlaybackRuntimeHandle, PlaybackRuntimeProgress,
+    PlaybackRuntimeEventReceiver, PlaybackRuntimeHandle, PlaybackRuntimeProgress,
     PlaybackRuntimeStreamPolicy, ResolvedOutput,
 };
 use wavecrate::sample_sources::config::AppSettingsCore;
@@ -35,6 +34,7 @@ pub(in crate::native_app) struct AudioAppState {
     pub(in crate::native_app) last_played_persist_task: radiant::prelude::LatestTask,
     pub(in crate::native_app) pending_last_played_persist: Option<LastPlayedPersistRequest>,
     pub(in crate::native_app) output_config: AudioOutputConfig,
+    pub(in crate::native_app) output_config_persist_pending: bool,
     pub(in crate::native_app) output_resolved: Option<ResolvedOutput>,
     pub(in crate::native_app) hosts: Vec<AudioHostSummary>,
     pub(in crate::native_app) devices: Vec<AudioDeviceSummary>,
@@ -47,12 +47,20 @@ pub(in crate::native_app) struct AudioAppState {
     pub(in crate::native_app) sample_playback_session: Option<SamplePlaybackSession>,
     pub(in crate::native_app) next_sample_playback_generation: u64,
     pub(in crate::native_app) playback_runtime: Option<PlaybackRuntimeHandle>,
-    pub(in crate::native_app) playback_events: Option<Receiver<PlaybackRuntimeEvent>>,
+    pub(in crate::native_app) playback_events: Option<PlaybackRuntimeEventReceiver>,
     pub(in crate::native_app) playback_progress: PlaybackRuntimeProgress,
     pub(in crate::native_app) playback_visual_progress: Option<PlaybackVisualProgress>,
     pub(in crate::native_app) pending_playback_progress_polls: HashSet<u64>,
     pub(in crate::native_app) completed_transient_playback:
         Option<CompletedTransientSamplePlayback>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(in crate::native_app) struct AudioOptionsRefreshResult {
+    pub(in crate::native_app) hosts: Vec<AudioHostSummary>,
+    pub(in crate::native_app) devices: Vec<AudioDeviceSummary>,
+    pub(in crate::native_app) sample_rates: Vec<u32>,
+    pub(in crate::native_app) error: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -274,6 +282,7 @@ impl AudioAppState {
             last_played_persist_task: radiant::prelude::LatestTask::new(),
             pending_last_played_persist: None,
             output_config: settings.audio_output.clone(),
+            output_config_persist_pending: false,
             output_resolved: None,
             hosts: Vec::new(),
             devices: Vec::new(),

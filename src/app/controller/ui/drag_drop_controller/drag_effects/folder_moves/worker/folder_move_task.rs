@@ -47,6 +47,7 @@ pub(super) fn run_folder_move_task(
     request: FolderMoveRequest,
     cancel: Arc<AtomicBool>,
     sender: Option<&Sender<FileOpMessage>>,
+    hooks: &mut impl super::FolderMoveHooks,
 ) -> FolderMoveResult {
     if cancel.load(Ordering::Relaxed) {
         return cancelled_result(&request);
@@ -59,8 +60,7 @@ pub(super) fn run_folder_move_task(
     if let Err(result) = transaction.commit_filesystem_stage() {
         return result;
     }
-    #[cfg(test)]
-    super::run_before_folder_move_batch_hook();
+    hooks.before_folder_move_batch();
     if let Err(result) = transaction.commit_db_stage() {
         return result;
     }

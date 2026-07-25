@@ -150,7 +150,7 @@ fn stale_scope_outcomes_discard_already_discovered_dependents() {
     );
     assert_eq!(
         candidate_invalidation_scope(
-            &RuntimeTask::ManifestAudit,
+            &RuntimeTask::ManifestAudit { accelerated: false },
             Some(ExecutionOutcome::Completed)
         ),
         CandidateInvalidationScope::Source

@@ -513,6 +513,23 @@ pub struct ReadinessWorkStats {
     pub completed: usize,
 }
 
+impl ReadinessWorkStats {
+    /// Whether durable readiness work can be claimed immediately.
+    pub fn has_actionable_work(&self) -> bool {
+        self.pending > 0 || self.expired_leases > 0 || self.retries_due > 0
+    }
+
+    /// Return the earliest future retry or lease deadline.
+    pub fn earliest_future_deadline(&self) -> Option<i64> {
+        match (self.earliest_retry_at, self.earliest_lease_expiry_at) {
+            (Some(retry_at), Some(lease_expires_at)) => Some(retry_at.min(lease_expires_at)),
+            (Some(retry_at), None) => Some(retry_at),
+            (None, Some(lease_expires_at)) => Some(lease_expires_at),
+            (None, None) => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct ReadinessKey {
     pub(crate) source_id: String,

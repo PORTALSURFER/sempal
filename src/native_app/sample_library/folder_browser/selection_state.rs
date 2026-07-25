@@ -16,6 +16,7 @@ pub(super) struct BrowserSelectionState {
     pub(super) selected_file: Option<String>,
     pub(super) selected_file_ids: HashSet<String>,
     pub(super) selected_file_ids_explicit: bool,
+    pub(super) selected_file_ids_keyboard_range: bool,
     pub(super) selected_collection: Option<SampleCollection>,
     pub(super) folder_before_collection: Option<String>,
 }
@@ -29,6 +30,7 @@ pub(super) struct BrowserSelectionSnapshot {
     pub(super) selected_file: Option<String>,
     pub(super) selected_file_ids: HashSet<String>,
     pub(super) selected_file_ids_explicit: bool,
+    pub(super) selected_file_ids_keyboard_range: bool,
     pub(super) selected_collection: Option<SampleCollection>,
     pub(super) folder_before_collection: Option<String>,
 }
@@ -43,6 +45,7 @@ impl BrowserSelectionState {
             selected_file: None,
             selected_file_ids: HashSet::new(),
             selected_file_ids_explicit: false,
+            selected_file_ids_keyboard_range: false,
             selected_collection: None,
             folder_before_collection: None,
         }

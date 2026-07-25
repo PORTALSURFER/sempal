@@ -1,3 +1,4 @@
+use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 use radiant::prelude as ui;
@@ -19,12 +20,13 @@ impl NativeAppState {
         {
             return;
         }
-        self.queue_configured_audio_player_open(context);
+        self.queue_configured_audio_player_open(context, false);
     }
 
     pub(in crate::native_app) fn queue_configured_audio_player_open(
         &mut self,
         context: &mut ui::UiUpdateContext<GuiMessage>,
+        persist_on_success: bool,
     ) {
         if self.background.audio_open.active().is_some() {
             return;
@@ -33,6 +35,9 @@ impl NativeAppState {
         let request = self.background.audio_open.begin();
         let config = self.audio.output_config.clone();
         let volume = self.audio.volume;
+        if persist_on_success {
+            self.audio.output_config_persist_pending = true;
+        }
         self.audio.settings_error = None;
         context.business().blocking_io("gui-audio-open").run(
             move |_| {
@@ -64,6 +69,7 @@ impl NativeAppState {
     pub(in crate::native_app) fn finish_audio_player_open(
         &mut self,
         completion: crate::native_app::app::AudioOpenTaskCompletion,
+        context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
         let started_at = Instant::now();
         let AudioOpenCompletion::Current(result) = self.background.audio_open.finish(completion)
@@ -79,12 +85,17 @@ impl NativeAppState {
             return;
         };
         match *result {
-            Ok(player) => self.finish_current_audio_player_open(player, started_at),
+            Ok(player) => self.finish_current_audio_player_open(player, started_at, context),
             Err(err) => self.finish_failed_audio_player_open(err, started_at),
         }
     }
 
-    fn finish_current_audio_player_open(&mut self, player: AudioPlayer, started_at: Instant) {
+    fn finish_current_audio_player_open(
+        &mut self,
+        player: AudioPlayer,
+        started_at: Instant,
+        context: &mut ui::UiUpdateContext<GuiMessage>,
+    ) {
         log_audio_open_timing("audio.output.open.finish", started_at.elapsed(), false);
         self.audio.output_resolved = Some(player.output_details().clone());
         self.audio.settings_error = None;
@@ -101,6 +112,12 @@ impl NativeAppState {
                 );
                 return;
             }
+        }
+        if self.audio.output_config_persist_pending {
+            self.background
+                .audio_output_persist_generation
+                .fetch_add(1, Ordering::AcqRel);
+            self.queue_audio_output_persist(context);
         }
         let pending = self.audio.pending_playback_start.take();
         if let Some(pending) = pending {

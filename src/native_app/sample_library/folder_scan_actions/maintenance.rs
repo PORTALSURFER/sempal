@@ -200,7 +200,8 @@ mod tests {
         std::fs::write(&first, b"first").unwrap();
         std::fs::write(&second, b"second").unwrap();
         let source = SampleSource::new(root.path().to_path_buf());
-        wavecrate::sample_sources::db::test_reset_source_db_open_total_count(root.path());
+        let _open_count_scope =
+            wavecrate::sample_sources::db::test_scope_source_db_open_total_count(root.path());
 
         let errors = persist_harvest_discoveries(&[source], &[first, second]);
 

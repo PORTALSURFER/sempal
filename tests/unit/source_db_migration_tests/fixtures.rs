@@ -34,6 +34,18 @@ pub(super) const SOURCE_DB_SCHEMA_CONTRACT: &[TableContract] = &[
         ],
     },
     TableContract {
+        name: "source_index_entries",
+        columns: &[
+            "path",
+            "classification",
+            "file_size",
+            "modified_ns",
+            "file_identity",
+            "diagnostic",
+            "format_policy_version",
+        ],
+    },
+    TableContract {
         name: "source_tags",
         columns: &["id", "normalized_text", "display_label"],
     },

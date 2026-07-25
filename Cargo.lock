@@ -812,6 +812,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "cap-fs-ext"
+version = "4.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d78e5a3368ae89b7cb68186411452b4b9fac8b41be9c19bf3f47c2d2c8e36e6b"
+dependencies = [
+ "cap-primitives",
+ "cap-std",
+ "io-lifetimes 3.0.1",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "cap-primitives"
 version = "4.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -827,6 +839,18 @@ dependencies = [
  "rustix-linux-procfs",
  "windows-sys 0.61.2",
  "winx",
+]
+
+[[package]]
+name = "cap-std"
+version = "4.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7281235d6e96d3544ca18bba9049be92f4190f8d923e3caef1b5f66cfa752608"
+dependencies = [
+ "cap-primitives",
+ "io-extras",
+ "io-lifetimes 3.0.1",
+ "rustix 1.1.4",
 ]
 
 [[package]]
@@ -6111,6 +6135,7 @@ dependencies = [
  "ed25519-dalek",
  "embed-resource",
  "filetime",
+ "fsevent-sys",
  "fuzzy-matcher",
  "hound",
  "image",
@@ -6234,11 +6259,15 @@ name = "wavecrate-scan"
 version = "0.19.1"
 dependencies = [
  "blake3",
+ "cap-fs-ext",
+ "cap-std",
+ "filetime",
  "libc",
  "tempfile",
  "thiserror 2.0.18",
  "tracing",
  "wavecrate-library",
+ "windows 0.62.2",
 ]
 
 [[package]]

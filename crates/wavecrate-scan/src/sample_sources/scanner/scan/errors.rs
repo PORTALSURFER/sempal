@@ -15,6 +15,35 @@ pub enum ScanError {
     /// Scan was canceled by the caller.
     #[error("Scan canceled")]
     Canceled,
+    /// A newer source manifest revision invalidated work planned from an older snapshot.
+    #[error(
+        "Source manifest changed while the scan checkpoint was being finalized \
+         (expected revision {expected}, found {actual})"
+    )]
+    StaleRevision {
+        /// Manifest revision from which the work was planned.
+        expected: u64,
+        /// Current manifest revision observed before commit.
+        actual: u64,
+    },
+    /// Targeted rename recovery exceeded its bounded carry-over candidate set.
+    #[error(
+        "Targeted rename recovery exceeded the bounded candidate limit ({limit}); \
+         authoritative recovery is required"
+    )]
+    TargetedRenameCandidateOverflow {
+        /// Maximum number of carry-over candidates admitted to targeted recovery.
+        limit: usize,
+    },
+    /// The configured source path no longer names the retained root directory.
+    #[error("Source root generation changed while scanning: {root}")]
+    StaleRootGeneration {
+        /// Configured source root whose identity changed or became unavailable.
+        root: PathBuf,
+    },
+    /// The hidden-directory policy changed while the scan was in progress.
+    #[error("Source traversal policy changed while the scan was in progress")]
+    TraversalPolicyChanged,
     /// A source revision committed before later work stopped.
     #[error("Scan incomplete after committed checkpoint: {error}")]
     Incomplete {

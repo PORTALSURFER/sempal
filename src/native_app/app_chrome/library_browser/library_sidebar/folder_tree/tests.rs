@@ -201,6 +201,22 @@ fn selected_folder_rows_paint_global_fill_and_persistent_marker() {
 }
 
 #[test]
+fn x_marked_folder_rows_paint_the_selection_flash_fill() {
+    let mut folder = visible_folder_for_tests(false);
+    folder.selected = true;
+    folder.selection_flash = true;
+    let frame = folder_row(&folder)
+        .view_frame_at_size_with_default_theme(ui::Vector2::new(320.0, TREE_ROW_HEIGHT));
+
+    assert!(
+        frame.paint_plan.fill_rects().any(|fill| {
+            fill.color == crate::native_app::app_chrome::palette::SELECTION_FLASH_FILL
+        }),
+        "x-marked folders should paint the transient accent flash"
+    );
+}
+
+#[test]
 fn folder_labels_keep_space_after_the_selection_rail_and_disclosure_slot() {
     let mut folder = visible_folder_for_tests(false);
     folder.selected = true;
@@ -329,6 +345,7 @@ fn visible_folder_for_tests(empty: bool) -> VisibleFolder {
         selected: false,
         focused: false,
         focus_alpha: u8::MAX,
+        selection_flash: false,
         drag_active: false,
         drag_source: false,
         drop_candidate: false,

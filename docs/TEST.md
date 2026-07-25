@@ -30,6 +30,37 @@ Use the lightest lane that still gives trustworthy coverage for the change.
    - macOS/Linux/WSL:
      `bash scripts/ci.sh local`
 
+### Opt-in parallel-isolation stress lane
+
+Use the normal `agent` lane for routine compile and broad library validation.
+Use the parallel-isolation stress lane after changing test runtime guards,
+process environment/current-directory handling, mutable global test controls,
+worker cleanup, or when investigating a failure that disappears on retry:
+
+- Windows PowerShell:
+  `powershell -ExecutionPolicy Bypass -File scripts/ci.ps1 isolation-stress -Iterations 5 -TestThreads 8`
+- macOS/Linux/WSL:
+  `bash scripts/ci.sh isolation-stress --iterations 5 --test-threads 8`
+
+This lane is deliberately not part of `scripts/ci.* agent`. It compiles the
+Wavecrate library harness once, proves that deliberately injected
+process-state and mutable-global-control leaks are detected, and then starts a
+fresh test-binary process for every bounded iteration. Each process uses the
+requested explicit libtest parallelism and a 15-minute default timeout. The
+lane stops at the first unexpected failure instead of retrying until green.
+
+Every process writes one compact JSONL record containing the test binary,
+iteration, parallelism, status, test name, failure class, and disposition. The
+metadata record separately identifies known quarantined coverage and its
+exclusion reason. Reports default to a timestamped file under
+`target/test-isolation-stress/`; pass `--output` on Bash or `-Output` on
+PowerShell to select a stable artifact path.
+
+Focused runner coverage, including report parsing, fresh-process invocation,
+timeouts, exit behavior, and injected-leak classification, is available with:
+
+`python3 -m unittest scripts/internal/ci/test_parallel_isolation_stress.py`
+
 ## Agent preflight and Git hooks
 
 `scripts/agent.sh preflight` / `scripts/agent.sh request` and their PowerShell
@@ -299,6 +330,16 @@ inherit a real-time soak:
   `cargo test -p wavecrate --lib native_app::source_processing::supervisor::tests`
   and
   `cargo test -p wavecrate-library sample_sources::readiness::tests`
+- seeded, replayable source lifecycle and scan-order state machine (six retained
+  regression seeds in the bounded normal-CI scanner lane):
+  `cargo test -p wavecrate --lib source_processing_seeded_state_machine_normal_ci`
+- integrated real-supervisor replay for the calibrated lifecycle seed:
+  `cargo test -p wavecrate --lib source_processing_seeded_state_machine_integrated_supervisor -- --ignored --nocapture`
+- extended 1,000-sequence state-machine stress lane:
+  `cargo test -p wavecrate --lib source_processing_seeded_state_machine_stress_1000 -- --ignored --nocapture`
+- replay a decimal seed or the minimized JSON artifact path printed by a
+  failure:
+  `WAVECRATE_SOURCE_STATE_MACHINE_REPLAY=<seed-or-artifact> cargo test -p wavecrate --lib source_processing_seeded_state_machine_replay -- --ignored --nocapture`
 - UI frame and input budgets while exercising browser interactions:
   `bash scripts/perf.sh guard` on macOS/Linux/WSL or
   `powershell -ExecutionPolicy Bypass -File scripts/perf.ps1 guard` on Windows
@@ -310,6 +351,21 @@ sleep for a fixed success delay. An active source with actionable deficits must
 be dirty/scheduled, queued, in flight, resource-paused, waiting for a retry, or
 waiting for an exact prerequisite. A stable state outside those categories
 fails as silently idle.
+
+The seeded state-machine lane runs only against the versioned
+`small-multi-source` native fixture. It generates filesystem mutations,
+coalesced watcher/audit/foreground causes, focus changes, cancellation,
+restart, source removal/re-add, root loss/replacement, and deterministic
+transaction/publication/watcher/hash/lifecycle failure boundaries. Every
+observable commit checks the reference manifest and browser projection,
+monotonic accepted revisions, at-most-once revision/cause publication, bounded
+cause coalescing, and controlled-quiescence liveness. The integrated lane
+submits duplicate deltas through the real supervisor queue and observes the
+durable readiness publication/fallback output. Failures are greedily
+minimized without removing lifecycle transitions and written below
+`target/source-state-machine-failures/` (or the active `CARGO_TARGET_DIR`);
+artifacts preserve scanner-only versus integrated execution mode and reject
+fixture-version drift during replay.
 
 Timeouts and invariant failures emit a JSON snapshot containing source and
 readiness generations, availability, activity, per-stage deficits and

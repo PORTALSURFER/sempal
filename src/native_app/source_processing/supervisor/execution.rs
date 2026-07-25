@@ -4,11 +4,11 @@ use super::{
     SourceDatabaseConnectionRole, cancel_claim,
 };
 use super::{
-    AtomicBool, DatabasePhase, DatabaseWriterGate, Duration, ExecutionOutcome, Instant,
-    MANIFEST_AUDIT_HASH_BATCH, Ordering, RuntimeCandidate, RuntimeTask, ScanError, SourceDatabase,
-    SourceProcessingActivity, SourceProcessingEvent, SourceProcessingLifecycle,
-    SourceProcessingProgressEvent, audit_source_and_record_with_progress, execute_readiness_target,
-    manifest_audit_source_row_active, now_epoch_seconds,
+    AtomicBool, ContentAuditActivity, ContentAuditBudget, ContentAuditStorage, DatabaseWriterGate,
+    Duration, ExecutionOutcome, Instant, Ordering, RuntimeCandidate, RuntimeTask, ScanError,
+    SourceDatabase, SourceProcessingActivity, SourceProcessingEvent, SourceProcessingLifecycle,
+    SourceProcessingProgressEvent, audit_source_and_record_with_budget_and_progress_and_writer,
+    execute_readiness_target, manifest_audit_source_row_active, now_epoch_seconds,
 };
 
 pub(super) fn execute_candidate(
@@ -16,11 +16,11 @@ pub(super) fn execute_candidate(
     lifecycle_generation: u64,
     cancel: &AtomicBool,
     database_writer: &DatabaseWriterGate,
+    content_audit_activity: ContentAuditActivity,
     publish_event: &mut dyn FnMut(SourceProcessingEvent) -> bool,
 ) -> Result<ExecutionOutcome, String> {
     let result = match &candidate.task {
-        RuntimeTask::ManifestAudit => {
-            let _writer = database_writer.lock(DatabasePhase::SerialCompatibility);
+        RuntimeTask::ManifestAudit { accelerated } => {
             let database_root = candidate
                 .source
                 .database_root()
@@ -44,6 +44,12 @@ pub(super) fn execute_candidate(
                 .list_manifest_entries()
                 .map_err(|error| error.to_string())?
                 .len();
+            let content_budget = ContentAuditBudget::adaptive(
+                expected_files,
+                content_audit_activity,
+                ContentAuditStorage::classify(&candidate.source.root),
+                *accelerated,
+            );
             let source_id = candidate.source.id.as_str().to_string();
             let source_root = candidate.source.root.clone();
             let audit_started_at = Instant::now();
@@ -74,17 +80,50 @@ pub(super) fn execute_candidate(
                 ));
                 last_progress_publish_at = Some(Instant::now());
             };
-            let (outcome, incomplete_error) = match audit_source_and_record_with_progress(
-                &database,
-                Some(cancel),
-                MANIFEST_AUDIT_HASH_BATCH,
-                completed_at,
-                &mut publish_progress,
-            ) {
-                Ok(outcome) => (outcome, None),
-                Err(ScanError::Incomplete { committed, error }) => (*committed, Some(error)),
-                Err(error) => return Err(error.to_string()),
-            };
+            let (outcome, content_incomplete_error) =
+                match audit_source_and_record_with_budget_and_progress_and_writer(
+                    &database,
+                    Some(cancel),
+                    content_budget,
+                    completed_at,
+                    &mut publish_progress,
+                    database_writer,
+                ) {
+                    Ok(outcome) => (outcome, None),
+                    Err(ScanError::Incomplete { committed, error }) => (*committed, Some(error)),
+                    Err(error) => {
+                        publish_event(SourceProcessingEvent::ManifestAuditFinished {
+                            lifecycle: SourceProcessingLifecycle::new(
+                                candidate.source.id.as_str(),
+                                lifecycle_generation,
+                            ),
+                            complete: false,
+                        });
+                        return Err(error.to_string());
+                    }
+                };
+            if let Some(report) = outcome.content_audit.as_ref() {
+                tracing::info!(
+                    target: "wavecrate::source_processing",
+                    event = "source_processing.content_audit_coverage",
+                    source_id = candidate.source.id.as_str(),
+                    rotation_id = report.rotation_id,
+                    checkpoint_revision = report.checkpoint_revision,
+                    retry_cursor = report.retry_cursor.as_str(),
+                    retry_next = report.retry_next,
+                    verified_entries = report.verified_entries,
+                    total_entries = report.total_entries,
+                    remaining_entries = report.remaining_entries,
+                    verified_bytes = report.verified_bytes,
+                    remaining_bytes = report.remaining_bytes,
+                    bytes_read = report.bytes_read,
+                    skipped_retry_entries = report.skipped_retry_entries,
+                    oldest_unverified_age_seconds = report.oldest_unverified_age_seconds,
+                    estimated_rotation_seconds = report.estimated_rotation_seconds,
+                    last_rotation_seconds = report.last_rotation_seconds,
+                    "Content verification coverage checkpoint committed"
+                );
+            }
             tracing::debug!(
                 target: "wavecrate::source_processing",
                 source_id = candidate.source.id.as_str(),
@@ -111,28 +150,33 @@ pub(super) fn execute_candidate(
                 && crate::native_app::source_processing::manifest_delta_requires_browser_refresh(
                     &outcome.committed_delta,
                 );
-            let audit_published = !outcome.committed_delta.is_empty()
-                && publish_event(SourceProcessingEvent::ManifestAuditCommitted {
-                    lifecycle: SourceProcessingLifecycle::new(
-                        candidate.source.id.as_str(),
-                        lifecycle_generation,
-                    ),
-                    committed_delta: outcome.committed_delta,
-                });
+            let audit_published = publish_event(SourceProcessingEvent::ManifestAuditCommitted {
+                lifecycle: SourceProcessingLifecycle::new(
+                    candidate.source.id.as_str(),
+                    lifecycle_generation,
+                ),
+                committed_delta: outcome.committed_delta,
+            });
             let foreground_refresh_owns_reconciliation =
                 browser_refresh_required && audit_published;
-            let incomplete = incomplete_error.is_some();
-            if let Some(error) = incomplete_error {
+            publish_event(SourceProcessingEvent::ManifestAuditFinished {
+                lifecycle: SourceProcessingLifecycle::new(
+                    candidate.source.id.as_str(),
+                    lifecycle_generation,
+                ),
+                complete: true,
+            });
+            if let Some(error) = content_incomplete_error {
                 tracing::warn!(
                     target: "wavecrate::source_processing",
                     source_id = candidate.source.id.as_str(),
                     error,
-                    "Manifest audit published a committed checkpoint and remains due"
+                    "Manifest audit completed; content verification paused at its durable checkpoint"
                 );
             }
             Ok(manifest_audit_execution_outcome(
                 foreground_refresh_owns_reconciliation,
-                incomplete,
+                false,
                 cancel.load(Ordering::Acquire),
             ))
         }

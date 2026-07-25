@@ -3,6 +3,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc, Mutex,
+        atomic::AtomicU64,
         mpsc::{Receiver, Sender},
     },
 };
@@ -13,7 +14,8 @@ use wavecrate::audio::AudioPlayer;
 use crate::native_app::app::GuiSourceProcessingEventSink;
 use crate::native_app::app::{
     ExtractedFilePlaybackType, FileMoveProgress, GuiMessage, NormalizationProgress,
-    NormalizationQueueItem, PendingWaveformDestructiveEdit, SourceProcessingProgress,
+    NormalizationQueueItem, PendingWaveformDestructiveEdit, SourceProcessingHealth,
+    SourceProcessingProgress,
 };
 use crate::native_app::source_processing::SourceProcessingSupervisor;
 use crate::native_app::waveform::WaveformPreservedMarks;
@@ -32,6 +34,11 @@ pub(in crate::native_app) struct BackgroundTaskState {
     pub(in crate::native_app) preview_audition_warm_task: ui::LatestTask,
     pub(in crate::native_app) starmap_audition_advance_task: ui::LatestTask,
     pub(in crate::native_app) starmap_audition_promotion_task: ui::LatestTask,
+    pub(in crate::native_app) audio_options_refresh_task: ui::LatestTask,
+    pub(in crate::native_app) audio_options_refresh_cancel: Option<ui::CancellationToken>,
+    pub(in crate::native_app) audio_output_persist_task: ui::LatestTask,
+    pub(in crate::native_app) audio_output_persist_generation: Arc<AtomicU64>,
+    pub(in crate::native_app) audio_output_persist_lock: Arc<Mutex<()>>,
     pub(in crate::native_app) audio_open: AudioOpenTaskOwner,
     pub(in crate::native_app) folder_tree_refresh_task: ui::LatestTask,
     pub(in crate::native_app) folder_verify_task: ui::LatestTask,
@@ -45,6 +52,7 @@ pub(in crate::native_app) struct BackgroundTaskState {
     pub(in crate::native_app) normalization_queue: VecDeque<NormalizationQueueItem>,
     pub(in crate::native_app) file_move_progress: Option<FileMoveProgress>,
     pub(in crate::native_app) source_processing_progress: Option<SourceProcessingProgress>,
+    pub(in crate::native_app) source_processing_health: BTreeMap<String, SourceProcessingHealth>,
     pub(in crate::native_app) source_lifecycle_generations: BTreeMap<String, u64>,
     pub(in crate::native_app) progress_tick: f32,
     pub(in crate::native_app) frame_cadence: frame_ui::FrameCadenceMonitor,
@@ -107,6 +115,11 @@ impl BackgroundTaskState {
             preview_audition_warm_task: ui::LatestTask::new(),
             starmap_audition_advance_task: ui::LatestTask::new(),
             starmap_audition_promotion_task: ui::LatestTask::new(),
+            audio_options_refresh_task: ui::LatestTask::new(),
+            audio_options_refresh_cancel: None,
+            audio_output_persist_task: ui::LatestTask::new(),
+            audio_output_persist_generation: Arc::new(AtomicU64::new(0)),
+            audio_output_persist_lock: Arc::new(Mutex::new(())),
             audio_open: AudioOpenTaskOwner::new(),
             folder_tree_refresh_task: ui::LatestTask::new(),
             folder_verify_task: ui::LatestTask::new(),
@@ -119,6 +132,7 @@ impl BackgroundTaskState {
             normalization_queue: VecDeque::new(),
             file_move_progress: None,
             source_processing_progress: None,
+            source_processing_health: BTreeMap::new(),
             source_lifecycle_generations,
             progress_tick: 0.0,
             frame_cadence: frame_ui::FrameCadenceMonitor::new(),

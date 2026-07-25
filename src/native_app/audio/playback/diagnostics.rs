@@ -1,12 +1,13 @@
-use std::{
-    sync::OnceLock,
-    time::{Duration, Instant},
-};
+#[cfg(not(test))]
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
 use radiant::runtime as runtime_ui;
 
+#[cfg(not(test))]
 const PLAYHEAD_FRAME_DIAGNOSTICS_ENV: &str = "WAVECRATE_PLAYHEAD_FRAME_DIAGNOSTICS";
 
+#[cfg(not(test))]
 static PLAYHEAD_FRAME_DIAGNOSTICS_ENABLED: OnceLock<bool> = OnceLock::new();
 
 #[derive(Default)]
@@ -161,6 +162,11 @@ pub(super) fn log_slow_playback_phase(
 }
 
 fn playhead_frame_diagnostics_enabled() -> bool {
+    #[cfg(test)]
+    {
+        false
+    }
+    #[cfg(not(test))]
     *PLAYHEAD_FRAME_DIAGNOSTICS_ENABLED
         .get_or_init(|| env_var_truthy(PLAYHEAD_FRAME_DIAGNOSTICS_ENV))
 }
@@ -169,12 +175,14 @@ fn duration_ms(duration: Duration) -> f64 {
     duration.as_secs_f64() * 1_000.0
 }
 
+#[cfg(not(test))]
 fn env_var_truthy(name: &str) -> bool {
     std::env::var(name)
         .ok()
         .is_some_and(|value| is_truthy(&value))
 }
 
+#[cfg(not(test))]
 fn is_truthy(value: &str) -> bool {
     matches!(
         value.trim().to_ascii_lowercase().as_str(),

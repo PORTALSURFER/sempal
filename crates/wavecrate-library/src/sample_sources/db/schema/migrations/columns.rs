@@ -123,6 +123,28 @@ pub(super) fn ensure_pending_rename_optional_columns(
         &columns,
         OptionalColumn::new("pending_wav_renames", "file_identity", "TEXT"),
     )?;
+    add_column_if_missing(
+        connection,
+        &columns,
+        OptionalColumn::new(
+            "pending_wav_renames",
+            "staged_generation",
+            "INTEGER NOT NULL DEFAULT 0",
+        ),
+    )?;
+    add_column_if_missing(
+        connection,
+        &columns,
+        OptionalColumn::new("pending_wav_renames", "staged_at", "INTEGER"),
+    )?;
+    connection
+        .execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_pending_wav_renames_generation
+                 ON pending_wav_renames (staged_generation);
+             CREATE INDEX IF NOT EXISTS idx_pending_wav_renames_identity_facts
+                 ON pending_wav_renames (file_identity, file_size, modified_ns);",
+        )
+        .map_err(map_sql_error)?;
     Ok(())
 }
 

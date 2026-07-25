@@ -9,12 +9,18 @@ missing_docs = "deny"
 
 [dependencies]
 blake3 = "1.6.1"
+cap-fs-ext = "4.0.2"
+cap-std = "4.0.2"
 wavecrate-library = { path = "../wavecrate-library" }
 thiserror = "2.0.17"
 tracing = "0.1.41"
 
 [dev-dependencies]
+filetime = "0.2.26"
 tempfile = "3.23.0"
 
 [target.'cfg(unix)'.dev-dependencies]
 libc = "0.2.176"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }

@@ -9,12 +9,27 @@ impl SourceDatabase {
     /// Start a durable manifest-audit cycle or recover the paths already checked by an
     /// interrupted cycle.
     ///
+    /// Returned paths are resumable traversal candidates, not proof that the current filesystem
+    /// state is still represented by the manifest. The scanner reopens every returned path before
+    /// allowing the resumed cycle to complete.
+    ///
     /// Audit bookkeeping deliberately does not advance the source revision: it is private scan
     /// progress, not a committed manifest mutation.
     pub fn begin_or_resume_manifest_audit(
         &self,
         started_at: i64,
     ) -> Result<Vec<PathBuf>, SourceDbError> {
+        self.begin_or_resume_manifest_audit_batch(started_at, usize::MAX)
+            .map(|(paths, _)| paths)
+    }
+
+    /// Start or resume an audit and load one bounded slice of paths that still need
+    /// checkpoint revalidation.
+    pub fn begin_or_resume_manifest_audit_batch(
+        &self,
+        started_at: i64,
+        limit: usize,
+    ) -> Result<(Vec<PathBuf>, usize), SourceDbError> {
         let transaction =
             Transaction::new_unchecked(&self.connection, TransactionBehavior::Immediate)
                 .map_err(map_sql_error)?;
@@ -28,16 +43,28 @@ impl SourceDatabase {
             .map_err(map_sql_error)?;
         let raw_paths = {
             let mut statement = transaction
-                .prepare("SELECT path FROM source_manifest_audit_seen ORDER BY path ASC")
+                .prepare(
+                    "SELECT path FROM source_manifest_audit_seen
+                     ORDER BY path ASC LIMIT ?1",
+                )
                 .map_err(map_sql_error)?;
             statement
-                .query_map([], |row| row.get::<_, String>(0))
+                .query_map([i64::try_from(limit).unwrap_or(i64::MAX)], |row| {
+                    row.get::<_, String>(0)
+                })
                 .map_err(map_sql_error)?
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(map_sql_error)?
         };
+        let checked_files = transaction
+            .query_row(
+                "SELECT checked_files FROM source_manifest_audit_state WHERE singleton = 1",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(map_sql_error)?;
         transaction.commit().map_err(map_sql_error)?;
-        Ok(raw_paths
+        let paths = raw_paths
             .into_iter()
             .filter_map(|path| match parse_relative_path_from_db(&path) {
                 Ok(path) => Some(path),
@@ -50,24 +77,36 @@ impl SourceDatabase {
                     None
                 }
             })
-            .collect())
+            .collect();
+        Ok((paths, usize::try_from(checked_files).unwrap_or(0)))
     }
 
     /// Durably checkpoint paths completed by the current manifest-audit cycle.
     pub fn checkpoint_manifest_audit_paths(&self, paths: &[PathBuf]) -> Result<(), SourceDbError> {
+        self.checkpoint_manifest_audit_paths_with_count(paths)
+            .map(|_| ())
+    }
+
+    /// Durably checkpoint paths and return the number that were new to the current audit state.
+    pub fn checkpoint_manifest_audit_paths_with_count(
+        &self,
+        paths: &[PathBuf],
+    ) -> Result<usize, SourceDbError> {
         if paths.is_empty() {
-            return Ok(());
+            return Ok(0);
         }
         let transaction =
             Transaction::new_unchecked(&self.connection, TransactionBehavior::Immediate)
                 .map_err(map_sql_error)?;
+        let mut inserted = 0;
         {
             let mut insert = transaction
                 .prepare("INSERT OR IGNORE INTO source_manifest_audit_seen (path) VALUES (?1)")
                 .map_err(map_sql_error)?;
             for path in paths {
                 let normalized = normalize_relative_path(path)?;
-                insert.execute([normalized]).map_err(map_sql_error)?;
+                inserted += usize::try_from(insert.execute([normalized]).map_err(map_sql_error)?)
+                    .unwrap_or(0);
             }
         }
         transaction
@@ -81,7 +120,37 @@ impl SourceDatabase {
             )
             .map_err(map_sql_error)?;
         transaction.commit().map_err(map_sql_error)?;
-        Ok(())
+        Ok(inserted)
+    }
+
+    /// Remove paths whose resumed checkpoint revalidation committed successfully.
+    pub fn clear_manifest_audit_paths(&self, paths: &[PathBuf]) -> Result<(), SourceDbError> {
+        if paths.is_empty() {
+            return Ok(());
+        }
+        let transaction =
+            Transaction::new_unchecked(&self.connection, TransactionBehavior::Immediate)
+                .map_err(map_sql_error)?;
+        {
+            let mut delete = transaction
+                .prepare("DELETE FROM source_manifest_audit_seen WHERE path = ?1")
+                .map_err(map_sql_error)?;
+            for path in paths {
+                let normalized = normalize_relative_path(path)?;
+                delete.execute([normalized]).map_err(map_sql_error)?;
+            }
+        }
+        transaction
+            .execute(
+                "UPDATE source_manifest_audit_state
+                 SET checked_files = (
+                     SELECT COUNT(*) FROM source_manifest_audit_seen
+                 )
+                 WHERE singleton = 1",
+                [],
+            )
+            .map_err(map_sql_error)?;
+        transaction.commit().map_err(map_sql_error)
     }
 }
 
@@ -131,6 +200,21 @@ mod tests {
                 .begin_or_resume_manifest_audit(20)
                 .expect("resume audit"),
             vec![PathBuf::from("a.wav"), PathBuf::from("nested/b.wav")]
+        );
+        assert_eq!(
+            database
+                .begin_or_resume_manifest_audit_batch(20, 1)
+                .expect("bounded resume batch"),
+            (vec![PathBuf::from("a.wav")], 2)
+        );
+        database
+            .clear_manifest_audit_paths(&[PathBuf::from("a.wav")])
+            .expect("clear revalidated checkpoint");
+        assert_eq!(
+            database
+                .begin_or_resume_manifest_audit_batch(20, 1)
+                .expect("next bounded resume batch"),
+            (vec![PathBuf::from("nested/b.wav")], 1)
         );
 
         let mut batch = database.write_batch().expect("completion batch");

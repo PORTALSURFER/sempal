@@ -171,6 +171,7 @@ pub(in crate::native_app) enum FolderScanItem {
 pub(in crate::native_app) struct FolderScanDiscovery {
     pub(in crate::native_app) task_id: u64,
     pub(in crate::native_app) source_id: String,
+    pub(in crate::native_app) committed_revision: Option<u64>,
     pub(in crate::native_app) parent_id: String,
     pub(in crate::native_app) item: FolderScanItem,
 }
@@ -179,6 +180,9 @@ pub(in crate::native_app) struct FolderScanDiscovery {
 pub(in crate::native_app) struct FolderScanDiscoveryBatch {
     pub(in crate::native_app) task_id: u64,
     pub(in crate::native_app) source_id: String,
+    pub(in crate::native_app) committed_revision: Option<u64>,
+    pub(in crate::native_app) lifecycle_generation: Option<u64>,
+    pub(in crate::native_app) sequence: u64,
     pub(in crate::native_app) events: Vec<FolderScanDiscovery>,
 }
 
@@ -287,6 +291,8 @@ pub(in crate::native_app) struct FolderTreeRefreshResult {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::native_app) struct FolderVerifyRequest {
     pub(in crate::native_app) source_id: String,
+    pub(in crate::native_app) source_root: PathBuf,
+    pub(in crate::native_app) database_root: PathBuf,
     pub(in crate::native_app) folder_path: PathBuf,
     pub(in crate::native_app) cached_child_ids: Vec<String>,
     pub(in crate::native_app) cached_file_signatures: Vec<(String, u64)>,

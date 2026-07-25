@@ -78,7 +78,8 @@ mod tests {
             sources: vec![source.clone()],
         })
         .expect("save source library");
-        crate::sample_sources::db::test_reset_source_db_open_total_count(&source.root);
+        let _open_count_scope =
+            crate::sample_sources::db::test_scope_source_db_open_total_count(&source.root);
 
         {
             let _guard = FileOpWritePriorityGuard::new(&source.id);

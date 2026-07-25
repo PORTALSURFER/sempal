@@ -142,6 +142,26 @@ impl NativeAppState {
         }
         self.background.source_lifecycle_generations =
             self.background.source_processing.lifecycle_generations();
+        self.background
+            .source_processing_health
+            .retain(|source_id, health| {
+                self.background.source_lifecycle_generations.get(source_id)
+                    == Some(&health.lifecycle_generation)
+            });
+        if self
+            .background
+            .source_processing_progress
+            .as_ref()
+            .is_some_and(|progress| {
+                self.background
+                    .source_lifecycle_generations
+                    .get(&progress.source_id)
+                    != Some(&progress.lifecycle_generation)
+            })
+        {
+            self.background.source_processing_progress = None;
+            self.ui.chrome.job_details_open = false;
+        }
         if sources.is_empty() {
             self.library.source_watcher = None;
             return;
@@ -161,13 +181,14 @@ impl NativeAppState {
 
     pub(in crate::native_app) fn reconcile_sources_after_focus_regained(&self) {
         // Refocus is a correctness hint for changes made while Wavecrate was inactive, not proof
-        // that the watcher lost events. Re-arm the authoritative manifest audit so unchanged
-        // sources stop at their durable checkpoints and real deltas publish a revision-backed
-        // browser refresh. Treating every focus transition as watcher overflow queues one full
-        // scan per source and can make repeated app activation look like a self-feeding scan loop.
+        // that the watcher lost events. The supervisor evaluates durable watcher coverage, root
+        // identity, revision, and deadline gates; unchanged refocus stays a cheap no-op.
         self.background
             .source_processing
-            .request_manifest_audits("application_focus_regained");
+            .request_lifecycle_audit_probe(
+                crate::native_app::source_processing::SourceAuditLifecycleCause::FocusRegained,
+                &[],
+            );
     }
 
     pub(in crate::native_app) fn persist_user_configuration(
@@ -212,6 +233,7 @@ impl NativeAppState {
                 .current
                 .apply_interaction(WaveformInteraction::Frame);
             self.library.folder_browser.advance_copy_flash_frame();
+            self.library.folder_browser.advance_selection_flash_frame();
             self.library
                 .folder_browser
                 .advance_protected_source_error_flash_frame();
@@ -248,6 +270,7 @@ impl NativeAppState {
             .current
             .apply_interaction(WaveformInteraction::Frame);
         self.library.folder_browser.advance_copy_flash_frame();
+        self.library.folder_browser.advance_selection_flash_frame();
         self.library
             .folder_browser
             .advance_protected_source_error_flash_frame();
@@ -391,8 +414,13 @@ impl NativeAppState {
     pub(in crate::native_app) fn current_settings_core(&self) -> AppSettingsCore {
         let mut controls = self.ui.settings.persisted.controls.clone();
         controls.normalized_audition_enabled = self.audio.normalized_audition_enabled;
+        let audio_output = if self.audio.output_config_persist_pending {
+            self.ui.settings.persisted.audio_output.clone()
+        } else {
+            self.audio.output_config.clone()
+        };
         AppSettingsCore {
-            audio_output: self.audio.output_config.clone(),
+            audio_output,
             volume: self.audio.volume,
             controls,
             similarity: self.library.folder_browser.similarity_controls().clone(),

@@ -3,6 +3,7 @@ use std::time::Duration;
 mod classification;
 mod debounce;
 mod handle;
+mod journal;
 mod path_mapping;
 mod roots;
 mod state;

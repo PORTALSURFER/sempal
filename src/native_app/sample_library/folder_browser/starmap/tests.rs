@@ -12,6 +12,7 @@ fn test_starmap_item(file_id: &str, x: f32, y: f32) -> StarmapItem {
         color: ui::Rgba8::new(57, 187, 245, 220),
         selected: false,
         focused: false,
+        selection_flash: false,
         copy_flash: false,
         similarity_anchor: false,
         instant_audition_ready: true,
@@ -809,6 +810,43 @@ fn starmap_projection_marks_all_selected_list_items() {
     assert_eq!(selected_map_ids, vec![kick_id, snare_id.clone()]);
     assert_eq!(focused_map_ids, vec![snare_id]);
     assert!(!selected_map_ids.contains(&hat_id));
+}
+
+#[test]
+fn starmap_projection_marks_only_the_x_selected_item_for_flash() {
+    let root = tempfile::tempdir().expect("source root");
+    let kick = root.path().join("kick.wav");
+    let snare = root.path().join("snare.wav");
+    std::fs::write(&kick, []).expect("write kick");
+    std::fs::write(&snare, []).expect("write snare");
+    let kick_id = kick.to_string_lossy().to_string();
+    let snare_id = snare.to_string_lossy().to_string();
+    let mut browser =
+        FolderBrowserState::from_sample_sources(&[SampleSource::new(root.path().to_path_buf())]);
+    let tags_by_file = HashMap::new();
+    complete_test_starmap_layout(
+        &mut browser,
+        &tags_by_file,
+        &[kick_id.clone(), snare_id.clone()],
+    );
+    browser.flash_marked_item(kick_id.clone());
+
+    let items = browser.starmap_projection(StarmapProjection {
+        tags_by_file: &tags_by_file,
+        instant_audition_sample_paths: &HashSet::new(),
+        preview_audition_sample_paths: &HashSet::new(),
+    });
+
+    assert!(
+        items
+            .iter()
+            .any(|item| item.file_id == kick_id && item.selection_flash)
+    );
+    assert!(
+        items
+            .iter()
+            .any(|item| item.file_id == snare_id && !item.selection_flash)
+    );
 }
 
 #[test]

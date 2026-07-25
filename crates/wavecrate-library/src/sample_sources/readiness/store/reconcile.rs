@@ -189,6 +189,7 @@ struct StoredWork {
     content_generation: Option<String>,
     retry_at: Option<i64>,
     failure_kind: Option<String>,
+    failure_code: Option<String>,
     last_error: Option<String>,
     lease_expires_at: Option<i64>,
     created_at: i64,
@@ -285,7 +286,7 @@ fn load_work(
     let sql = format!(
         "SELECT readiness_scope_kind, readiness_scope_id, readiness_stage, status,
                 artifact_version, source_generation, content_generation, retry_at,
-                failure_kind, last_error, lease_expires_at, created_at
+                failure_kind, failure_code, last_error, lease_expires_at, created_at
          FROM analysis_jobs
          WHERE source_id = ?1
            AND readiness_managed = 1
@@ -315,9 +316,10 @@ fn load_work(
                 content_generation: row.get(6)?,
                 retry_at: row.get(7)?,
                 failure_kind: row.get(8)?,
-                last_error: row.get(9)?,
-                lease_expires_at: row.get(10)?,
-                created_at: row.get(11)?,
+                failure_code: row.get(9)?,
+                last_error: row.get(10)?,
+                lease_expires_at: row.get(11)?,
+                created_at: row.get(12)?,
             },
         );
     }
@@ -457,7 +459,9 @@ fn classify_target(
         SourceAvailability::Active => {}
     }
     match target.eligibility {
-        ReadinessEligibility::Unsupported => return ReadinessClassification::Unsupported,
+        ReadinessEligibility::Unsupported => {
+            return ReadinessClassification::Unsupported { code: None };
+        }
         ReadinessEligibility::Deleted => return ReadinessClassification::Deleted,
         ReadinessEligibility::Eligible => {}
     }
@@ -486,6 +490,7 @@ fn classify_matching_work(work: &StoredWork, now: i64) -> ReadinessClassificatio
             }
             _ => ReadinessClassification::RetryableFailure {
                 retry_at: now,
+                code: "lease_expired".to_string(),
                 reason: "lease_expired".to_string(),
             },
         },
@@ -495,15 +500,20 @@ fn classify_matching_work(work: &StoredWork, now: i64) -> ReadinessClassificatio
 }
 
 fn classify_failure(work: &StoredWork, now: i64) -> ReadinessClassification {
+    let code = work
+        .failure_code
+        .clone()
+        .unwrap_or_else(|| "readiness_work_failed".to_string());
     let reason = work
         .last_error
         .clone()
         .unwrap_or_else(|| "readiness_work_failed".to_string());
     match work.failure_kind.as_deref() {
-        Some("permanent") => ReadinessClassification::PermanentFailure { reason },
-        Some("unsupported") => ReadinessClassification::Unsupported,
+        Some("permanent") => ReadinessClassification::PermanentFailure { code, reason },
+        Some("unsupported") => ReadinessClassification::Unsupported { code: Some(code) },
         _ => ReadinessClassification::RetryableFailure {
             retry_at: work.retry_at.unwrap_or(now),
+            code,
             reason,
         },
     }
@@ -547,7 +557,7 @@ fn record_count(
         ReadinessClassification::Running { .. } => count.running += 1,
         ReadinessClassification::RetryableFailure { .. } => count.retryable += 1,
         ReadinessClassification::PermanentFailure { .. } => count.permanent += 1,
-        ReadinessClassification::Unsupported => count.unsupported += 1,
+        ReadinessClassification::Unsupported { .. } => count.unsupported += 1,
         ReadinessClassification::Offline | ReadinessClassification::Disabled => {
             count.offline += 1;
         }

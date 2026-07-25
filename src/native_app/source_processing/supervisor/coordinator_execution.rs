@@ -159,7 +159,7 @@ fn publish_candidate_start(
         state.last_progress_publish_at = Some(Instant::now());
         state.progress_visible = true;
     }
-    if matches!(&candidate.task, RuntimeTask::ManifestAudit) {
+    if matches!(&candidate.task, RuntimeTask::ManifestAudit { .. }) {
         let mut telemetry = shared.telemetry();
         telemetry.full_audits = telemetry.full_audits.saturating_add(1);
     }

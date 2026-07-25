@@ -7,9 +7,13 @@ use std::{
 use rusqlite::{Connection, Transaction};
 use std::fmt;
 
+use super::source_entry::SourceTraversalPolicy;
+
+mod content_audit;
 mod error;
 /// Persistent file operation journal for crash recovery.
 pub mod file_ops_journal;
+mod index_entries;
 mod open;
 mod open_profiles;
 /// Private rename-recovery metadata retained after immediate file pruning.
@@ -34,24 +38,32 @@ mod rating_tests;
 #[cfg(test)]
 mod role_contract_tests;
 
+pub use content_audit::{
+    ContentAuditCheckpoint, ContentAuditEntryState, ContentAuditForwardCandidate,
+    ContentAuditReport, ContentAuditRetryCandidate, ContentAuditSkipReason,
+};
 pub use error::SourceDbError;
 pub(crate) use open::SourceDatabaseOpenMode;
 #[cfg(test)]
 pub(crate) use open::open_source_database;
 #[cfg(debug_assertions)]
-pub use open::{test_reset_source_db_open_total_count, test_source_db_open_total_count};
+pub use open::test_source_db_open_total_count;
+#[cfg(debug_assertions)]
+pub use open::{TestSourceDbOpenCountGuard, test_scope_source_db_open_total_count};
 pub use open_profiles::SourceDatabaseConnectionRole;
 /// Metadata retained for a pruned row so later scans can recover rename state.
-pub use pending_renames::PendingRenameEntry;
+pub use pending_renames::{PendingRenameDiagnostics, PendingRenameEntry, PendingRenamePruneReport};
 pub use rename_metadata::RenameMetadataSnapshot;
 pub use types::{
-    BrowserFileMetadata, BrowserMetadataSnapshot, Rating, SampleCollection, SampleSoundType,
-    SourceManifestEntry, SourceTag, SourceTagUsage, WavEntry,
+    BrowserFileMetadata, BrowserMetadataCursor, BrowserMetadataPage, BrowserMetadataSnapshot,
+    Rating, SampleCollection, SampleSoundType, SourceIndexClassification, SourceIndexDiagnostic,
+    SourceIndexEntry, SourceIndexSnapshot, SourceManifestEntry, SourceTag, SourceTagUsage,
+    WavEntry,
 };
 pub use util::normalize_relative_path;
 pub use write::{
-    SourceCollectionWrite, SourceContentHashWrite, SourceFileWrite, SourceTagWrite,
-    SourceWriteCommand,
+    ManifestCommitResult, SourceCollectionWrite, SourceContentHashWrite, SourceFileWrite,
+    SourceTagWrite, SourceWriteCommand,
 };
 
 /// Hidden filename used for per-source databases.
@@ -62,6 +74,11 @@ pub const LEGACY_DB_FILE_NAME: &str = ".wavecrate_samples.db";
 pub const META_LAST_SCAN_COMPLETED_AT: &str = "last_scan_completed_at";
 /// Metadata key storing the last completed periodic source-manifest audit timestamp.
 pub const META_LAST_MANIFEST_AUDIT_AT: &str = "last_manifest_audit_at_v1";
+/// Metadata key storing the durable macOS filesystem-event coverage checkpoint.
+///
+/// The value is owned by the native source watcher. It is deliberately separate from manifest
+/// revisions: a watcher cursor proves what needs replaying, not that the manifest itself changed.
+pub const META_SOURCE_WATCHER_CHECKPOINT: &str = "source_watcher_checkpoint_v1";
 /// Metadata key for the last similarity-prep scan timestamp.
 /// Metadata key storing the last data revision cleaned by deferred maintenance.
 pub const META_DEFERRED_MAINTENANCE_REVISION: &str = "deferred_maintenance_revision_v1";
@@ -69,6 +86,14 @@ pub const META_DEFERRED_MAINTENANCE_REVISION: &str = "deferred_maintenance_revis
 pub const META_DEFERRED_MAINTENANCE_SCHEMA: &str = "deferred_maintenance_schema_v1";
 /// Metadata key storing the last revision that changed the ordered wav path set.
 pub const META_WAV_PATHS_REVISION: &str = "wav_paths_revision_v1";
+/// Metadata key storing the last revision that changed live wav filesystem identities.
+pub const META_WAV_IDENTITIES_REVISION: &str = "wav_identities_revision_v1";
+/// Metadata key storing a revision-fenced readiness diagnostic for duplicate file identities.
+pub const META_READINESS_DUPLICATE_IDENTITY: &str = "readiness_duplicate_identity_v1";
+/// Metadata key storing the revision of the index-only unsupported file set.
+pub const META_SOURCE_INDEX_REVISION: &str = "source_index_revision_v1";
+/// Metadata key for the persisted source traversal/visibility policy.
+pub const META_SOURCE_TRAVERSAL_POLICY: &str = "source_traversal_policy_v1";
 /// Env var that enables read-only source DB opening by default.
 pub const SOURCE_DB_READ_ONLY_ENV: &str = "WAVECRATE_SOURCE_DB_READ_ONLY";
 
@@ -104,11 +129,38 @@ pub struct SourceWriteBatch<'conn> {
     tx: Transaction<'conn>,
     db_path: PathBuf,
     paths_revision_dirty: bool,
+    identities_revision_dirty: bool,
+    index_revision_dirty: bool,
     manifest_touched_paths: BTreeSet<PathBuf>,
     telemetry_label: &'static str,
 }
 
 impl SourceDatabase {
+    /// Override this connection's SQLite busy timeout for deterministic contention tests.
+    #[cfg(feature = "test-support")]
+    pub fn set_busy_timeout_for_tests(&self, timeout: Duration) -> Result<(), SourceDbError> {
+        self.connection
+            .busy_timeout(timeout)
+            .map_err(SourceDbError::from)
+    }
+
+    /// Read the source traversal policy, defaulting to recursive inclusion for legacy sources.
+    pub fn source_traversal_policy(&self) -> Result<SourceTraversalPolicy, SourceDbError> {
+        Ok(self
+            .get_metadata(META_SOURCE_TRAVERSAL_POLICY)?
+            .as_deref()
+            .map(SourceTraversalPolicy::from_stored)
+            .unwrap_or_default())
+    }
+
+    /// Persist the source traversal policy used by full scans, audits, and targeted sync.
+    pub fn set_source_traversal_policy(
+        &self,
+        policy: SourceTraversalPolicy,
+    ) -> Result<(), SourceDbError> {
+        self.set_metadata(META_SOURCE_TRAVERSAL_POLICY, policy.as_str())
+    }
+
     /// Open a writable source database for general source-owned mutations.
     ///
     /// This preserves the complete schema and cleanup behavior used by the

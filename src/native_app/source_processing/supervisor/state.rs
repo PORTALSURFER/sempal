@@ -1,12 +1,14 @@
 #[cfg(test)]
 use super::AtomicUsize;
+#[cfg(test)]
+use super::StateMachinePublicationObservation;
 #[cfg(not(test))]
 use super::recovered_source_retirements;
 use super::{
     Arc, AtomicBool, AtomicU64, BTreeMap, BTreeSet, BudgetTracker, Condvar, ControlState,
     DatabaseWriterGate, Mutex, MutexGuard, Ordering, PriorityContext, ProcessingBudgets,
-    SampleSource, SourceProcessingEvent, SourceProcessingEventSink, SupervisorTelemetry,
-    sources_by_id,
+    SampleSource, SourceAuditLifecycleCause, SourceHealthPublicationOutcome, SourceProcessingEvent,
+    SourceProcessingEventSink, SourceProcessingHealthEvent, SupervisorTelemetry, sources_by_id,
 };
 
 #[derive(Clone)]
@@ -76,6 +78,11 @@ pub(super) struct Shared {
     pub(super) in_flight_work: Mutex<BTreeMap<(String, u64), usize>>,
     pub(super) synthetic_test_execution: AtomicBool,
     pub(super) event_sink: Option<Arc<dyn SourceProcessingEventSink>>,
+    pub(super) published_source_health: Mutex<BTreeMap<String, SourceProcessingHealthEvent>>,
+    #[cfg(test)]
+    pub(super) state_machine_publications: Mutex<Vec<StateMachinePublicationObservation>>,
+    #[cfg(test)]
+    pub(super) state_machine_reject_next_health_publication: AtomicBool,
     #[cfg(test)]
     pub(super) retirement_cleanup_blocked: AtomicBool,
     #[cfg(test)]
@@ -123,7 +130,11 @@ impl Shared {
         #[cfg(test)]
         let next_retirement_id = 1_u64;
         let dirty_sources = sources.keys().cloned().collect();
-        let force_manifest_audit_sources = sources.keys().cloned().collect();
+        let safety_probe_sources = sources.keys().cloned().collect();
+        #[cfg(not(test))]
+        let lifecycle_audits_deferred_until_watcher_ready = true;
+        #[cfg(test)]
+        let lifecycle_audits_deferred_until_watcher_ready = false;
         Self {
             source_replacement: Mutex::new(()),
             state: Mutex::new(ControlState {
@@ -132,20 +143,26 @@ impl Shared {
                 source_lifecycle_generations,
                 next_lifecycle_generation,
                 dirty_sources,
-                safety_probe_sources: BTreeSet::new(),
+                safety_probe_sources,
+                lifecycle_audits_deferred_until_watcher_ready,
+                deferred_lifecycle_audit_sources: BTreeSet::new(),
                 pending_readiness_deltas: BTreeMap::new(),
                 awaiting_foreground_refresh_sources: BTreeSet::new(),
-                force_manifest_audit_sources,
+                force_manifest_audit_sources: BTreeSet::new(),
                 force_reanalysis_sources: BTreeSet::new(),
                 quarantined_sources: BTreeSet::new(),
                 pending_retirements,
                 next_retirement_id,
                 wake_generation: 1,
-                wake_reason: "startup",
+                wake_reason: SourceAuditLifecycleCause::Startup.reason(),
                 playback_active: false,
                 foreground_active: false,
                 shutdown: false,
                 priority: PriorityContext::default(),
+                #[cfg(test)]
+                reject_next_delta_delivery: false,
+                #[cfg(test)]
+                reject_next_source_replacement: false,
             }),
             wake: Condvar::new(),
             retirement_wake: Condvar::new(),
@@ -160,6 +177,11 @@ impl Shared {
             in_flight_work: Mutex::new(BTreeMap::new()),
             synthetic_test_execution: AtomicBool::new(false),
             event_sink,
+            published_source_health: Mutex::new(BTreeMap::new()),
+            #[cfg(test)]
+            state_machine_publications: Mutex::new(Vec::new()),
+            #[cfg(test)]
+            state_machine_reject_next_health_publication: AtomicBool::new(false),
             #[cfg(test)]
             retirement_cleanup_blocked: AtomicBool::new(false),
             #[cfg(test)]
@@ -198,6 +220,55 @@ impl Shared {
             .is_some_and(|sink| sink.try_publish(event));
         drop(lifecycle_guard);
         published
+    }
+
+    pub(super) fn publish_source_health(&self, health: SourceProcessingHealthEvent) -> bool {
+        self.publish_source_health_outcome(health) == SourceHealthPublicationOutcome::Published
+    }
+
+    pub(super) fn publish_source_health_outcome(
+        &self,
+        health: SourceProcessingHealthEvent,
+    ) -> SourceHealthPublicationOutcome {
+        let control = self.control();
+        if !control.source_is_active(&health.lifecycle.source_id)
+            || control
+                .source_lifecycle_generations
+                .get(&health.lifecycle.source_id)
+                != Some(&health.lifecycle.generation)
+        {
+            return SourceHealthPublicationOutcome::Superseded;
+        }
+        let mut published_health = self
+            .published_source_health
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        if published_health.get(&health.lifecycle.source_id) == Some(&health) {
+            return SourceHealthPublicationOutcome::AlreadyPublished;
+        }
+        #[cfg(test)]
+        let reject_for_state_machine = self
+            .state_machine_reject_next_health_publication
+            .swap(false, Ordering::AcqRel);
+        #[cfg(not(test))]
+        let reject_for_state_machine = false;
+        let outcome = if reject_for_state_machine {
+            SourceHealthPublicationOutcome::Rejected
+        } else if let Some(sink) = &self.event_sink {
+            if sink.try_publish(SourceProcessingEvent::Health(health.clone())) {
+                SourceHealthPublicationOutcome::Published
+            } else {
+                SourceHealthPublicationOutcome::Rejected
+            }
+        } else {
+            SourceHealthPublicationOutcome::NoSink
+        };
+        if outcome == SourceHealthPublicationOutcome::Published {
+            published_health.insert(health.lifecycle.source_id.clone(), health);
+        }
+        drop(published_health);
+        drop(control);
+        outcome
     }
 
     pub(super) fn telemetry(&self) -> MutexGuard<'_, SupervisorTelemetry> {

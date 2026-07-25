@@ -423,6 +423,7 @@ fn running_lease_expiry_becomes_an_actionable_retry() {
         entry_for(&expired, "leased", ReadinessStage::AnalysisFeatures).classification,
         ReadinessClassification::RetryableFailure {
             retry_at: 50,
+            code: "lease_expired".to_string(),
             reason: "lease_expired".to_string(),
         }
     );
@@ -460,7 +461,7 @@ fn future_retry_waits_and_terminal_states_do_not_spin() {
         .execute(
             "UPDATE analysis_jobs
              SET status = 'failed', failure_kind = 'retryable', retry_at = 40,
-                 last_error = 'database busy'
+                 failure_code = 'sqlite_busy', last_error = 'database busy'
              WHERE readiness_scope_id = 'retry'",
             [],
         )
@@ -468,14 +469,16 @@ fn future_retry_waits_and_terminal_states_do_not_spin() {
     connection
         .execute(
             "UPDATE analysis_jobs SET status = 'failed', failure_kind = 'permanent',
-                 last_error = 'malformed audio' WHERE readiness_scope_id = 'permanent'",
+                 failure_code = 'malformed_audio', last_error = 'malformed audio'
+             WHERE readiness_scope_id = 'permanent'",
             [],
         )
         .expect("seed permanent failure");
     connection
         .execute(
             "UPDATE analysis_jobs SET status = 'failed', failure_kind = 'unsupported',
-                 last_error = 'unsupported format' WHERE readiness_scope_id = 'unsupported'",
+                 failure_code = 'decoder_unsupported', last_error = 'unsupported format'
+             WHERE readiness_scope_id = 'unsupported'",
             [],
         )
         .expect("seed unsupported failure");
@@ -484,14 +487,21 @@ fn future_retry_waits_and_terminal_states_do_not_spin() {
     assert_eq!(waiting.activity, ReadinessActivity::WaitingForRetry);
     assert!(waiting.deficits.is_empty());
     assert!(waiting.entries.iter().any(|entry| matches!(
-        entry.classification,
-        ReadinessClassification::PermanentFailure { .. }
+        &entry.classification,
+        ReadinessClassification::PermanentFailure { code, .. } if code == "malformed_audio"
+    )));
+    assert!(waiting.entries.iter().any(|entry| matches!(
+        &entry.classification,
+        ReadinessClassification::RetryableFailure { code, .. } if code == "sqlite_busy"
     )));
     assert!(!waiting.is_converged());
     assert!(!waiting.is_fully_ready());
     assert!(waiting.entries.iter().any(|entry| {
         entry.target.scope_id == "unsupported"
-            && entry.classification == ReadinessClassification::Unsupported
+            && entry.classification
+                == ReadinessClassification::Unsupported {
+                    code: Some("decoder_unsupported".to_string()),
+                }
     }));
     assert!(waiting.entries.iter().any(|entry| {
         entry.target.scope_id == "deleted"
@@ -548,7 +558,7 @@ fn offline_and_unsupported_targets_remain_observable_without_work() {
     let active = reconcile_readiness(&connection, SOURCE_ID, 3).expect("active snapshot");
     assert_eq!(
         entry_for(&active, "unsupported", ReadinessStage::AnalysisFeatures).classification,
-        ReadinessClassification::Unsupported
+        ReadinessClassification::Unsupported { code: None }
     );
     assert!(active.deficits.is_empty());
     assert!(active.is_fully_ready());

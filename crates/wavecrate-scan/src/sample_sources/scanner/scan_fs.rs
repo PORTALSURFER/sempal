@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     fs,
     io::Read,
     path::{Path, PathBuf},
@@ -6,17 +7,264 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+#[cfg(test)]
+use std::{cell::RefCell, collections::BTreeSet};
+
+use cap_fs_ext::{DirExt, OpenOptionsFollowExt};
+use cap_std::fs::{Dir, OpenOptions};
 use tracing::warn;
 use wavecrate_library::filesystem_identity::{
-    filesystem_change_marker, stable_filesystem_identity,
+    filesystem_change_marker, stable_filesystem_identity, stable_filesystem_identity_from_open_file,
+};
+use wavecrate_library::sample_sources::{
+    SourceEntryClassification, SourceEntryFileType, SourceFileClassification,
+    SourceIndexDiagnostic, SourceIndexEntry, SourceTraversalPolicy,
+    classify_source_entry_with_policy, is_rejected_source_file_path,
 };
 
-use crate::sample_sources::{SourceDatabase, is_supported_audio};
+use crate::sample_sources::SourceDatabase;
 
 use super::scan::ScanError;
-use super::scan::{SourceTreeFile, SourceTreeSnapshot};
+use super::scan::{DirectoryRepeatKind, SourceTreeDiagnostic, SourceTreeFile, SourceTreeSnapshot};
+use super::scan_capability::SourceRootCapability;
+use super::scan_index::{
+    inaccessible_index_entry, index_entry_from_file_facts, non_unicode_index_entry,
+};
 
 const MAX_LAYOUT_DIAGNOSTICS: usize = 16;
+
+#[cfg(test)]
+thread_local! {
+    static FORCED_DIRECTORY_READ_FAILURES: RefCell<BTreeSet<PathBuf>> = const { RefCell::new(BTreeSet::new()) };
+    static FORCED_DIRECTORY_ENTRY_FAILURES: RefCell<BTreeSet<PathBuf>> = const { RefCell::new(BTreeSet::new()) };
+    static FORCED_FILE_TYPE_FAILURES: RefCell<BTreeSet<PathBuf>> = const { RefCell::new(BTreeSet::new()) };
+    static FORCED_FILE_METADATA_FAILURES: RefCell<BTreeSet<PathBuf>> = const { RefCell::new(BTreeSet::new()) };
+    static FORCED_DIRECTORY_IDENTITIES: RefCell<BTreeMap<PathBuf, Option<String>>> = const { RefCell::new(BTreeMap::new()) };
+}
+
+/// A per-traversal directory identity set shared by full and targeted scans.
+#[derive(Default)]
+pub(super) struct VisitedDirectories {
+    identities: BTreeMap<String, PathBuf>,
+    diagnostics: Vec<SourceTreeDiagnostic>,
+}
+
+pub(super) enum DirectoryVisit {
+    New,
+    AlreadyVisited,
+    Repeated,
+    IdentityUnavailable,
+}
+
+impl VisitedDirectories {
+    pub(super) fn observe(
+        &mut self,
+        dir: &Dir,
+        absolute_path: &Path,
+        relative_path: &Path,
+    ) -> DirectoryVisit {
+        let identity = match directory_identity(dir, absolute_path) {
+            Ok(Some(identity)) => identity,
+            Ok(None) => {
+                self.record(SourceTreeDiagnostic::DirectoryIdentityUnavailable {
+                    path: relative_path.to_path_buf(),
+                    error: None,
+                });
+                return DirectoryVisit::IdentityUnavailable;
+            }
+            Err(error) => {
+                self.record(SourceTreeDiagnostic::DirectoryIdentityUnavailable {
+                    path: relative_path.to_path_buf(),
+                    error: Some(error.to_string()),
+                });
+                return DirectoryVisit::IdentityUnavailable;
+            }
+        };
+        if let Some(first_path) = self.identities.get(&identity) {
+            if first_path == relative_path {
+                return DirectoryVisit::AlreadyVisited;
+            }
+            let kind = if first_path.as_os_str().is_empty() || relative_path.starts_with(first_path)
+            {
+                DirectoryRepeatKind::Cycle
+            } else {
+                DirectoryRepeatKind::RepeatedTarget
+            };
+            self.record(SourceTreeDiagnostic::RepeatedDirectory {
+                path: relative_path.to_path_buf(),
+                first_path: first_path.clone(),
+                kind,
+            });
+            return DirectoryVisit::Repeated;
+        }
+        self.identities
+            .insert(identity, relative_path.to_path_buf());
+        DirectoryVisit::New
+    }
+
+    pub(super) fn record(&mut self, diagnostic: SourceTreeDiagnostic) {
+        if self.diagnostics.len() < MAX_LAYOUT_DIAGNOSTICS {
+            self.diagnostics.push(diagnostic);
+        }
+    }
+
+    pub(super) fn diagnostics(&self) -> &[SourceTreeDiagnostic] {
+        &self.diagnostics
+    }
+}
+
+/// Deterministically emulate an unreadable directory for scanner regression
+/// tests without depending on platform-specific permission behavior.
+#[cfg(test)]
+pub(crate) fn force_directory_read_failure(path: &Path) -> ForcedTraversalFailure {
+    ForcedTraversalFailure::new(path, ForcedFailureKind::DirectoryRead)
+}
+
+/// Deterministically emulate a directory iterator failure for scanner
+/// regression tests without depending on filesystem races.
+#[cfg(test)]
+pub(crate) fn force_directory_entry_failure(path: &Path) -> ForcedTraversalFailure {
+    ForcedTraversalFailure::new(path, ForcedFailureKind::DirectoryEntry)
+}
+
+/// Deterministically emulate an entry-type failure for scanner regression
+/// tests without depending on filesystem races.
+#[cfg(test)]
+pub(crate) fn force_file_type_failure(path: &Path) -> ForcedTraversalFailure {
+    ForcedTraversalFailure::new(path, ForcedFailureKind::FileType)
+}
+
+/// Deterministically emulate an unreadable file-metadata observation.
+#[cfg(test)]
+pub(crate) fn force_file_metadata_failure(path: &Path) -> ForcedTraversalFailure {
+    ForcedTraversalFailure::new(path, ForcedFailureKind::FileMetadata)
+}
+
+/// Deterministically inject a directory identity for traversal regression tests.
+#[cfg(test)]
+pub(crate) fn force_directory_identity(
+    path: &Path,
+    identity: Option<&str>,
+) -> ForcedTraversalFailure {
+    let path = path.to_path_buf();
+    FORCED_DIRECTORY_IDENTITIES.with(|identities| {
+        identities
+            .borrow_mut()
+            .insert(path.clone(), identity.map(str::to_owned));
+    });
+    ForcedTraversalFailure::new_directory_identity(path)
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ForcedFailureKind {
+    DirectoryRead,
+    DirectoryEntry,
+    FileType,
+    FileMetadata,
+    DirectoryIdentity,
+}
+
+#[cfg(test)]
+pub(crate) struct ForcedTraversalFailure {
+    path: PathBuf,
+    kind: ForcedFailureKind,
+}
+
+#[cfg(test)]
+impl ForcedTraversalFailure {
+    fn new(path: &Path, kind: ForcedFailureKind) -> Self {
+        let path = path.to_path_buf();
+        forced_failures(kind).with(|failures| {
+            failures.borrow_mut().insert(path.clone());
+        });
+        Self { path, kind }
+    }
+
+    #[cfg(test)]
+    fn new_directory_identity(path: PathBuf) -> Self {
+        Self {
+            path,
+            kind: ForcedFailureKind::DirectoryIdentity,
+        }
+    }
+}
+
+#[cfg(test)]
+impl Drop for ForcedTraversalFailure {
+    fn drop(&mut self) {
+        if self.kind == ForcedFailureKind::DirectoryIdentity {
+            FORCED_DIRECTORY_IDENTITIES.with(|identities| {
+                identities.borrow_mut().remove(&self.path);
+            });
+            return;
+        }
+        forced_failures(self.kind).with(|failures| {
+            failures.borrow_mut().remove(&self.path);
+        });
+    }
+}
+
+#[cfg(test)]
+fn forced_failures(
+    kind: ForcedFailureKind,
+) -> &'static std::thread::LocalKey<RefCell<BTreeSet<PathBuf>>> {
+    match kind {
+        ForcedFailureKind::DirectoryRead => &FORCED_DIRECTORY_READ_FAILURES,
+        ForcedFailureKind::DirectoryEntry => &FORCED_DIRECTORY_ENTRY_FAILURES,
+        ForcedFailureKind::FileType => &FORCED_FILE_TYPE_FAILURES,
+        ForcedFailureKind::FileMetadata => &FORCED_FILE_METADATA_FAILURES,
+        ForcedFailureKind::DirectoryIdentity => &FORCED_DIRECTORY_READ_FAILURES,
+    }
+}
+
+#[cfg(test)]
+pub(super) fn forced_directory_read_error(path: &Path) -> Option<std::io::Error> {
+    FORCED_DIRECTORY_READ_FAILURES.with(|failures| {
+        failures.borrow().contains(path).then(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "forced directory read failure",
+            )
+        })
+    })
+}
+
+#[cfg(test)]
+pub(super) fn forced_directory_entry_error(path: &Path) -> Option<std::io::Error> {
+    FORCED_DIRECTORY_ENTRY_FAILURES.with(|failures| {
+        failures.borrow().contains(path).then(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "forced directory entry failure",
+            )
+        })
+    })
+}
+
+#[cfg(test)]
+pub(super) fn forced_file_type_error(path: &Path) -> Option<std::io::Error> {
+    FORCED_FILE_TYPE_FAILURES.with(|failures| {
+        failures.borrow().contains(path).then(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "forced file type failure",
+            )
+        })
+    })
+}
+
+#[cfg(test)]
+fn forced_file_metadata_error(path: &Path) -> Option<std::io::Error> {
+    FORCED_FILE_METADATA_FAILURES.with(|failures| {
+        failures.borrow().contains(path).then(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "forced file metadata failure",
+            )
+        })
+    })
+}
 
 #[derive(Clone, Debug)]
 pub(super) struct FileFacts {
@@ -54,7 +302,9 @@ pub(super) fn ensure_root_dir(db: &SourceDatabase) -> Result<PathBuf, ScanError>
 }
 
 pub(super) fn visit_dir_with_cancel_check(
+    source_root: &SourceRootCapability,
     root: &Path,
+    policy: SourceTraversalPolicy,
     should_cancel: &mut impl FnMut() -> bool,
     visitor: &mut impl FnMut(&Path) -> Result<(), ScanError>,
 ) -> Result<SourceTreeSnapshot, ScanError> {
@@ -62,56 +312,80 @@ pub(super) fn visit_dir_with_cancel_check(
         directories: vec![PathBuf::new()],
         ..SourceTreeSnapshot::default()
     };
-    let mut stack = vec![(root.to_path_buf(), true)];
-    while let Some((dir, scan_audio)) = stack.pop() {
+    let root_dir = source_root.clone_root_dir()?;
+    let mut visited = VisitedDirectories::default();
+    if !matches!(
+        visited.observe(&root_dir, root, Path::new("")),
+        DirectoryVisit::New
+    ) {
+        record_uncertain_prefix(&mut snapshot, root, root);
+        snapshot
+            .diagnostics
+            .extend_from_slice(visited.diagnostics());
+        return Ok(snapshot);
+    }
+    let mut stack = vec![(root_dir, PathBuf::new())];
+    while let Some((dir, relative_dir)) = stack.pop() {
         if should_cancel() {
             return Err(ScanError::Canceled);
         }
-        let entries = match fs::read_dir(&dir) {
+        let absolute_dir = root.join(&relative_dir);
+        let entries = match read_dir(&dir, &absolute_dir) {
             Ok(entries) => entries,
-            Err(source) if dir != root => {
+            Err(source) if !relative_dir.as_os_str().is_empty() => {
                 warn!(
-                    dir = %dir.display(),
+                    dir = %absolute_dir.display(),
                     error = %source,
                     "Failed to read directory during scan"
                 );
                 record_layout_diagnostic(
                     &mut snapshot,
-                    format!("read directory {}: {source}", display_relative(root, &dir)),
+                    SourceTreeDiagnostic::DirectoryUnavailable {
+                        path: relative_dir.clone(),
+                        error: source.to_string(),
+                    },
                 );
+                record_uncertain_prefix(&mut snapshot, root, &absolute_dir);
                 continue;
             }
             Err(source) => {
                 return Err(ScanError::Io {
-                    path: dir.clone(),
+                    path: absolute_dir,
                     source,
                 });
             }
         };
         for entry_result in entries {
-            let entry = match entry_result {
+            let entry = match read_dir_entry(entry_result, &absolute_dir) {
                 Ok(entry) => entry,
                 Err(err) => {
                     warn!(
-                        dir = %dir.display(),
+                        dir = %absolute_dir.display(),
                         error = %err,
                         "Failed to read directory entry during scan"
                     );
                     record_layout_diagnostic(
                         &mut snapshot,
-                        format!(
-                            "read directory entry {}: {err}",
-                            display_relative(root, &dir)
-                        ),
+                        SourceTreeDiagnostic::DirectoryEntryUnavailable {
+                            path: relative_dir.clone(),
+                            error: err.to_string(),
+                        },
                     );
+                    record_uncertain_prefix(&mut snapshot, root, &absolute_dir);
                     continue;
                 }
             };
 
-            let path = entry.path();
-            let file_type = match entry.file_type() {
+            let name = entry.file_name();
+            let relative = relative_dir.join(&name);
+            let path = root.join(&relative);
+            let file_type = match read_file_type(&entry, &path) {
                 Ok(file_type) => file_type,
                 Err(err) => {
+                    if is_rejected_source_file_path(&relative) {
+                        record_uncertain_prefix(&mut snapshot, root, &path);
+                        continue;
+                    }
                     warn!(
                         path = %path.display(),
                         error = %err,
@@ -119,53 +393,99 @@ pub(super) fn visit_dir_with_cancel_check(
                     );
                     record_layout_diagnostic(
                         &mut snapshot,
-                        format!("read file type {}: {err}", display_relative(root, &path)),
+                        SourceTreeDiagnostic::EntryTypeUnavailable {
+                            path: relative.clone(),
+                            error: err.to_string(),
+                        },
                     );
+                    record_uncertain_prefix(&mut snapshot, root, &path);
+                    snapshot.index_entries.push(inaccessible_index_entry(
+                        relative,
+                        SourceIndexDiagnostic::EntryTypeUnavailable,
+                    ));
                     continue;
                 }
             };
-            if file_type.is_symlink() {
-                continue;
-            }
-            if file_type.is_dir() {
-                let relative = path
-                    .strip_prefix(root)
-                    .map(Path::to_path_buf)
-                    .map_err(|_| ScanError::InvalidRoot(path.clone()))?;
-                snapshot.directories.push(relative);
-                let hidden = path
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .is_some_and(|name| name.starts_with('.'));
-                stack.push((path, scan_audio && !hidden));
-                continue;
-            }
-            if file_type.is_file() {
-                if wavecrate_library::sample_sources::is_apple_double_sidecar(&path) {
-                    continue;
+            match classify_source_entry_with_policy(
+                &relative,
+                cap_source_entry_file_type(&file_type),
+                policy,
+            ) {
+                SourceEntryClassification::Directory { .. } => {
+                    match dir.open_dir_nofollow(Path::new(&name)) {
+                        Ok(child) => match visited.observe(&child, &path, &relative) {
+                            DirectoryVisit::New => {
+                                snapshot.directories.push(relative.clone());
+                                stack.push((child, relative));
+                            }
+                            DirectoryVisit::AlreadyVisited => {}
+                            DirectoryVisit::Repeated | DirectoryVisit::IdentityUnavailable => {
+                                record_uncertain_prefix(&mut snapshot, root, &path);
+                            }
+                        },
+                        Err(source) => {
+                            warn!(
+                                path = %path.display(),
+                                error = %source,
+                                "Failed to open directory during scan"
+                            );
+                            record_layout_diagnostic(
+                                &mut snapshot,
+                                SourceTreeDiagnostic::DirectoryUnavailable {
+                                    path: relative.clone(),
+                                    error: source.to_string(),
+                                },
+                            );
+                            if !dir
+                                .symlink_metadata(Path::new(&name))
+                                .is_ok_and(|metadata| metadata.is_symlink())
+                            {
+                                record_uncertain_prefix(&mut snapshot, root, &path);
+                            }
+                        }
+                    }
                 }
-                if is_supported_audio(&path) {
-                    if scan_audio {
+                classification @ SourceEntryClassification::File { .. } => {
+                    if classification.indexes_audio() && relative.to_str().is_some() {
                         visitor(&path)?;
-                    }
-                } else {
-                    match entry.metadata() {
-                        Ok(metadata) => snapshot.other_files.push(SourceTreeFile {
-                            relative_path: path
-                                .strip_prefix(root)
-                                .map(Path::to_path_buf)
-                                .map_err(|_| ScanError::InvalidRoot(path.clone()))?,
-                            file_size: metadata.len(),
-                        }),
-                        Err(err) => record_layout_diagnostic(
-                            &mut snapshot,
-                            format!(
-                                "read file metadata {}: {err}",
-                                display_relative(root, &path)
-                            ),
-                        ),
+                    } else if let Some(file_classification) = classification.file_classification()
+                        && (file_classification != SourceFileClassification::SupportedAudio
+                            || relative.to_str().is_none())
+                    {
+                        match source_index_entry(
+                            &dir,
+                            Path::new(&name),
+                            root,
+                            &relative,
+                            file_classification,
+                        ) {
+                            Ok(index_entry) => {
+                                if let Some(file_size) = index_entry.file_size {
+                                    snapshot.other_files.push(SourceTreeFile {
+                                        relative_path: relative,
+                                        file_size,
+                                    });
+                                }
+                                snapshot.index_entries.push(index_entry);
+                            }
+                            Err(err) => {
+                                record_layout_diagnostic(
+                                    &mut snapshot,
+                                    SourceTreeDiagnostic::FileMetadataUnavailable {
+                                        path: relative.clone(),
+                                        error: err.to_string(),
+                                    },
+                                );
+                                record_uncertain_prefix(&mut snapshot, root, &path);
+                                snapshot.index_entries.push(inaccessible_index_entry(
+                                    relative,
+                                    SourceIndexDiagnostic::MetadataUnavailable,
+                                ));
+                            }
+                        }
                     }
                 }
+                SourceEntryClassification::Rejected(_) => {}
             }
         }
     }
@@ -173,35 +493,141 @@ pub(super) fn visit_dir_with_cancel_check(
     snapshot
         .other_files
         .sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+    snapshot
+        .index_entries
+        .sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+    snapshot
+        .diagnostics
+        .extend_from_slice(visited.diagnostics());
+    snapshot.diagnostics.truncate(MAX_LAYOUT_DIAGNOSTICS);
+    snapshot.uncertain_prefixes.sort();
     Ok(snapshot)
 }
 
-fn record_layout_diagnostic(snapshot: &mut SourceTreeSnapshot, diagnostic: String) {
+fn source_index_entry(
+    parent: &Dir,
+    name: &Path,
+    root: &Path,
+    relative_path: &Path,
+    classification: SourceFileClassification,
+) -> Result<SourceIndexEntry, std::io::Error> {
+    let path = root.join(relative_path);
+    #[cfg(test)]
+    if let Some(error) = forced_file_metadata_error(&path) {
+        return Err(error);
+    }
+    let mut options = OpenOptions::new();
+    options.read(true).follow(cap_fs_ext::FollowSymlinks::No);
+    let metadata = parent.open_with(name, &options)?.into_std().metadata()?;
+    if !metadata.file_type().is_file() {
+        return Err(std::io::Error::other(
+            "entry changed type during metadata inspection",
+        ));
+    }
+    let modified = metadata.modified()?;
+    let modified_ns = system_time_to_unix_nanos(modified);
+    if let Some(entry) = index_entry_from_file_facts(
+        relative_path.to_path_buf(),
+        classification,
+        metadata.len(),
+        modified_ns,
+        stable_filesystem_identity(&path, &metadata),
+    ) {
+        return Ok(entry);
+    }
+    if classification == SourceFileClassification::SupportedAudio
+        && relative_path.to_str().is_none()
+    {
+        return Ok(non_unicode_index_entry(
+            relative_path.to_path_buf(),
+            Some(metadata.len()),
+            Some(modified_ns),
+            stable_filesystem_identity(&path, &metadata),
+        ));
+    }
+    Err(std::io::Error::other(
+        "supported audio is not an index-only entry",
+    ))
+}
+
+fn record_uncertain_prefix(snapshot: &mut SourceTreeSnapshot, root: &Path, path: &Path) {
+    let Ok(relative) = path.strip_prefix(root) else {
+        return;
+    };
+    let relative = relative.to_path_buf();
+    if !snapshot.uncertain_prefixes.contains(&relative) {
+        snapshot.uncertain_prefixes.push(relative);
+    }
+}
+
+fn read_dir(dir: &Dir, path: &Path) -> Result<cap_std::fs::ReadDir, std::io::Error> {
+    #[cfg(test)]
+    if let Some(error) = forced_directory_read_error(path) {
+        return Err(error);
+    }
+    #[cfg(not(test))]
+    let _ = path;
+    dir.entries()
+}
+
+fn directory_identity(dir: &Dir, _path: &Path) -> Result<Option<String>, std::io::Error> {
+    #[cfg(test)]
+    if let Some(identity) =
+        FORCED_DIRECTORY_IDENTITIES.with(|identities| identities.borrow().get(_path).cloned())
+    {
+        return Ok(identity);
+    }
+    let file = dir.try_clone()?.into_std_file();
+    Ok(stable_filesystem_identity_from_open_file(&file))
+}
+
+fn read_file_type(
+    entry: &cap_std::fs::DirEntry,
+    _path: &Path,
+) -> Result<cap_std::fs::FileType, std::io::Error> {
+    #[cfg(test)]
+    if let Some(error) = forced_file_type_error(_path) {
+        return Err(error);
+    }
+    entry.file_type()
+}
+
+fn read_dir_entry(
+    entry: Result<cap_std::fs::DirEntry, std::io::Error>,
+    _directory: &Path,
+) -> Result<cap_std::fs::DirEntry, std::io::Error> {
+    #[cfg(test)]
+    if let Some(error) = forced_directory_entry_error(_directory) {
+        return Err(error);
+    }
+    entry
+}
+
+fn record_layout_diagnostic(snapshot: &mut SourceTreeSnapshot, diagnostic: SourceTreeDiagnostic) {
     if snapshot.diagnostics.len() < MAX_LAYOUT_DIAGNOSTICS {
         snapshot.diagnostics.push(diagnostic);
     }
 }
 
-fn display_relative(root: &Path, path: &Path) -> String {
-    path.strip_prefix(root)
-        .unwrap_or(path)
-        .display()
-        .to_string()
-}
-
+#[cfg(test)]
 pub(super) fn read_facts(root: &Path, path: &Path) -> Result<FileFacts, ScanError> {
     let relative = strip_relative(root, path)?;
+    #[cfg(test)]
+    if let Some(source) = forced_file_metadata_error(path) {
+        return Err(ScanError::Io {
+            path: path.to_path_buf(),
+            source,
+        });
+    }
     let meta = path.metadata().map_err(|source| ScanError::Io {
         path: path.to_path_buf(),
         source,
     })?;
-    let modified_ns = to_nanos(
-        &meta.modified().map_err(|source| ScanError::Io {
+    let modified_ns =
+        system_time_to_unix_nanos(meta.modified().map_err(|source| ScanError::Io {
             path: path.to_path_buf(),
             source,
-        })?,
-        path,
-    )?;
+        })?);
     Ok(FileFacts {
         relative,
         size: meta.len(),
@@ -211,36 +637,131 @@ pub(super) fn read_facts(root: &Path, path: &Path) -> Result<FileFacts, ScanErro
     })
 }
 
-pub(super) fn is_supported_regular_audio_file(path: &Path) -> bool {
-    fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_file())
-        && is_supported_audio(path)
-}
-
-pub(super) fn is_supported_scannable_audio_file(root: &Path, relative_path: &Path) -> bool {
-    let hidden_ancestor = relative_path.parent().is_some_and(|parent| {
-        parent.components().any(|component| {
-            let std::path::Component::Normal(name) = component else {
-                return false;
-            };
-            name.to_str().is_some_and(|name| name.starts_with('.'))
-        })
-    });
-    !hidden_ancestor && is_supported_regular_audio_file(&root.join(relative_path))
-}
-
-/// Hash the entire file contents for change detection, honoring cancellation when requested.
-pub(super) fn compute_content_hash(
+/// Read facts from an already-open regular file.
+///
+/// Targeted watcher reconciliation uses this after opening through a
+/// capability-scoped, no-follow path. Keeping the descriptor through hashing
+/// ensures the object that was classified is the one whose contents are read.
+pub(super) fn read_facts_from_open_file(
+    root: &Path,
     path: &Path,
-    cancel: Option<&AtomicBool>,
-) -> Result<String, ScanError> {
-    let mut file = fs::File::open(path).map_err(|source| ScanError::Io {
+    file: &fs::File,
+) -> Result<FileFacts, ScanError> {
+    let relative = strip_relative(root, path)?;
+    #[cfg(test)]
+    if let Some(source) = forced_file_metadata_error(path) {
+        return Err(ScanError::Io {
+            path: path.to_path_buf(),
+            source,
+        });
+    }
+    let meta = file.metadata().map_err(|source| ScanError::Io {
         path: path.to_path_buf(),
         source,
     })?;
-    compute_content_hash_with_reader(path, &mut file, cancel)
+    let modified_ns =
+        system_time_to_unix_nanos(meta.modified().map_err(|source| ScanError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?);
+    Ok(FileFacts {
+        relative,
+        size: meta.len(),
+        modified_ns,
+        file_identity: {
+            #[cfg(windows)]
+            {
+                stable_filesystem_identity_from_open_file(file)
+            }
+            #[cfg(not(windows))]
+            {
+                stable_filesystem_identity(path, &meta)
+            }
+        },
+        change_marker: {
+            #[cfg(windows)]
+            {
+                filesystem_change_marker_from_open_file(file)
+            }
+            #[cfg(not(windows))]
+            {
+                filesystem_change_marker(path, &meta)
+            }
+        },
+    })
 }
 
-fn compute_content_hash_with_reader(
+#[cfg(windows)]
+fn stable_filesystem_identity_from_open_file(file: &fs::File) -> Option<String> {
+    use std::os::windows::io::AsRawHandle;
+    use windows::Win32::{
+        Foundation::HANDLE,
+        Storage::FileSystem::{BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle},
+    };
+
+    let mut information = BY_HANDLE_FILE_INFORMATION::default();
+    unsafe { GetFileInformationByHandle(HANDLE(file.as_raw_handle()), &mut information) }.ok()?;
+    let file_index =
+        (u64::from(information.nFileIndexHigh) << 32) | u64::from(information.nFileIndexLow);
+    let creation_time = (u64::from(information.ftCreationTime.dwHighDateTime) << 32)
+        | u64::from(information.ftCreationTime.dwLowDateTime);
+    Some(format!(
+        "windows:{}:{}:{}",
+        information.dwVolumeSerialNumber, file_index, creation_time
+    ))
+}
+
+#[cfg(windows)]
+fn filesystem_change_marker_from_open_file(file: &fs::File) -> Option<String> {
+    use std::os::windows::io::AsRawHandle;
+    use windows::Win32::{
+        Foundation::HANDLE,
+        Storage::FileSystem::{FILE_BASIC_INFO, FileBasicInfo, GetFileInformationByHandleEx},
+    };
+
+    let mut information = FILE_BASIC_INFO::default();
+    unsafe {
+        GetFileInformationByHandleEx(
+            HANDLE(file.as_raw_handle()),
+            FileBasicInfo,
+            (&mut information as *mut FILE_BASIC_INFO).cast(),
+            std::mem::size_of::<FILE_BASIC_INFO>() as u32,
+        )
+    }
+    .ok()?;
+    (information.ChangeTime != 0).then(|| format!("windows:{}", information.ChangeTime))
+}
+
+pub(super) fn is_supported_scannable_audio_file(
+    root: &Path,
+    relative_path: &Path,
+    policy: SourceTraversalPolicy,
+) -> bool {
+    let absolute_path = root.join(relative_path);
+    fs::symlink_metadata(&absolute_path).is_ok_and(|metadata| {
+        let file_type = metadata.file_type();
+        classify_source_entry_with_policy(relative_path, source_entry_file_type(&file_type), policy)
+            .indexes_audio()
+    })
+}
+
+fn source_entry_file_type(file_type: &fs::FileType) -> SourceEntryFileType {
+    SourceEntryFileType::from_no_followed_type(
+        file_type.is_dir(),
+        file_type.is_file(),
+        file_type.is_symlink(),
+    )
+}
+
+fn cap_source_entry_file_type(file_type: &cap_std::fs::FileType) -> SourceEntryFileType {
+    SourceEntryFileType::from_no_followed_type(
+        file_type.is_dir(),
+        file_type.is_file(),
+        file_type.is_symlink(),
+    )
+}
+
+pub(super) fn compute_content_hash_with_reader(
     path: &Path,
     reader: &mut impl Read,
     cancel: Option<&AtomicBool>,
@@ -277,13 +798,31 @@ fn strip_relative(root: &Path, path: &Path) -> Result<PathBuf, ScanError> {
     Err(ScanError::InvalidRoot(path.to_path_buf()))
 }
 
-fn to_nanos(time: &SystemTime, path: &Path) -> Result<i64, ScanError> {
-    let duration = time
-        .duration_since(UNIX_EPOCH)
-        .map_err(|_| ScanError::Time {
-            path: path.to_path_buf(),
-        })?;
-    Ok(duration.as_nanos().min(i64::MAX as u128) as i64)
+/// Convert a filesystem timestamp to the signed nanoseconds stored by the scanner.
+///
+/// The conversion preserves every representable nanosecond, including values before
+/// the Unix epoch, and clamps timestamps outside the signed `i64` range.
+fn system_time_to_unix_nanos(time: SystemTime) -> i64 {
+    const NANOS_PER_SECOND: u128 = 1_000_000_000;
+    const MIN_MAGNITUDE: u128 = i64::MAX as u128 + 1;
+
+    match time.duration_since(UNIX_EPOCH) {
+        Ok(duration) => {
+            let nanos = u128::from(duration.as_secs()) * NANOS_PER_SECOND
+                + u128::from(duration.subsec_nanos());
+            nanos.min(i64::MAX as u128) as i64
+        }
+        Err(error) => {
+            let duration = error.duration();
+            let nanos = u128::from(duration.as_secs()) * NANOS_PER_SECOND
+                + u128::from(duration.subsec_nanos());
+            if nanos >= MIN_MAGNITUDE {
+                i64::MIN
+            } else {
+                -(nanos as i64)
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -291,6 +830,49 @@ mod tests {
     use super::*;
     use std::io;
     use std::sync::atomic::AtomicBool;
+
+    #[test]
+    fn system_time_to_unix_nanos_preserves_epoch_and_negative_nanoseconds() {
+        assert_eq!(system_time_to_unix_nanos(UNIX_EPOCH), 0);
+        assert_eq!(
+            system_time_to_unix_nanos(UNIX_EPOCH - std::time::Duration::from_nanos(1)),
+            -1
+        );
+        assert_eq!(
+            system_time_to_unix_nanos(UNIX_EPOCH + std::time::Duration::from_nanos(1)),
+            1
+        );
+    }
+
+    #[test]
+    fn system_time_to_unix_nanos_preserves_exact_i64_bounds() {
+        let max = UNIX_EPOCH + std::time::Duration::from_nanos(i64::MAX as u64);
+        let min = UNIX_EPOCH - std::time::Duration::from_nanos(i64::MAX as u64 + 1);
+
+        assert_eq!(system_time_to_unix_nanos(min), i64::MIN);
+        assert_eq!(system_time_to_unix_nanos(max), i64::MAX);
+    }
+
+    #[test]
+    fn system_time_to_unix_nanos_saturates_both_overflow_directions() {
+        let above_max = UNIX_EPOCH + std::time::Duration::from_nanos(i64::MAX as u64 + 1);
+        let below_min = UNIX_EPOCH - std::time::Duration::from_nanos(i64::MAX as u64 + 2);
+
+        assert_eq!(system_time_to_unix_nanos(above_max), i64::MAX);
+        assert_eq!(system_time_to_unix_nanos(below_min), i64::MIN);
+    }
+
+    #[test]
+    fn system_time_to_unix_nanos_orders_timestamps_across_zero() {
+        let before = system_time_to_unix_nanos(UNIX_EPOCH - std::time::Duration::from_nanos(1));
+        let epoch = system_time_to_unix_nanos(UNIX_EPOCH);
+        let after = system_time_to_unix_nanos(UNIX_EPOCH + std::time::Duration::from_nanos(1));
+
+        assert!(before < epoch);
+        assert!(epoch < after);
+        assert_eq!(before + 1, epoch);
+        assert_eq!(epoch + 1, after);
+    }
 
     struct CancelingReader {
         remaining: usize,
@@ -349,5 +931,47 @@ mod tests {
         };
 
         assert!(!facts.same_content_snapshot(&facts));
+    }
+
+    #[test]
+    fn injected_directory_identities_distinguish_cycles_repeats_and_fallback() {
+        use cap_fs_ext::ambient_authority;
+
+        let temp = tempfile::tempdir().unwrap();
+        let child_path = temp.path().join("child");
+        std::fs::create_dir(&child_path).unwrap();
+        let root_dir =
+            cap_std::fs::Dir::open_ambient_dir(temp.path(), ambient_authority()).unwrap();
+        let child_dir = root_dir.open_dir("child").unwrap();
+        let _root_identity = force_directory_identity(temp.path(), Some("root"));
+        let _child_identity = force_directory_identity(&child_path, Some("root"));
+
+        let mut visited = VisitedDirectories::default();
+        assert!(matches!(
+            visited.observe(&root_dir, temp.path(), Path::new("")),
+            DirectoryVisit::New
+        ));
+        assert!(matches!(
+            visited.observe(&child_dir, &child_path, Path::new("child")),
+            DirectoryVisit::Repeated
+        ));
+        assert!(matches!(
+            visited.diagnostics(),
+            [SourceTreeDiagnostic::RepeatedDirectory {
+                kind: DirectoryRepeatKind::Cycle,
+                ..
+            }]
+        ));
+
+        drop(_child_identity);
+        let _unsupported = force_directory_identity(&child_path, None);
+        assert!(matches!(
+            visited.observe(&child_dir, &child_path, Path::new("child")),
+            DirectoryVisit::IdentityUnavailable
+        ));
+        assert!(matches!(
+            visited.diagnostics().last(),
+            Some(SourceTreeDiagnostic::DirectoryIdentityUnavailable { error: None, .. })
+        ));
     }
 }

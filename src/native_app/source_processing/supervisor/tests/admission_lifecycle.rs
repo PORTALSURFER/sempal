@@ -348,7 +348,7 @@ fn background_scan_registration_cannot_readd_source_removed_behind_fence() {
 }
 
 #[test]
-fn watcher_ready_rearms_authoritative_manifest_audits() {
+fn watcher_ready_requests_only_a_gated_lifecycle_probe() {
     let (_directory, source) = unhashed_source("watcher-ready-audit");
     let mut supervisor = SourceProcessingSupervisor::dormant();
     supervisor
@@ -358,23 +358,35 @@ fn watcher_ready_rearms_authoritative_manifest_audits() {
         let mut control = supervisor.shared.control();
         control.force_manifest_audit_sources.clear();
         control.dirty_sources.clear();
+        control.safety_probe_sources.clear();
     }
 
-    supervisor.request_manifest_audits("source_watcher_ready");
+    supervisor.request_lifecycle_audit_probe(
+        SourceAuditLifecycleCause::WatcherReady,
+        &[source.id.as_str().to_string()],
+    );
 
     let control = supervisor.shared.control();
     assert!(
-        control
+        !control
             .force_manifest_audit_sources
-            .contains(source.id.as_str())
+            .contains(source.id.as_str()),
+        "watcher readiness must not force a full audit when durable coverage is current"
     );
     assert!(control.dirty_sources.contains(source.id.as_str()));
+    assert!(control.safety_probe_sources.contains(source.id.as_str()));
+    assert!(
+        control
+            .deferred_lifecycle_audit_sources
+            .contains(source.id.as_str()),
+        "watcher-ready must retain a source whose unavailable fallback still needs a fresh audit barrier"
+    );
     drop(control);
     assert_eq!(supervisor.shutdown()["joined"], true);
 }
 
 #[test]
-fn focus_regain_rearms_revisioned_audits_instead_of_assuming_watcher_overflow() {
+fn repeated_focus_regain_requests_never_force_manifest_audits() {
     let (_directory, source) = unhashed_source("focus-regained-audit");
     let mut supervisor = SourceProcessingSupervisor::dormant();
     supervisor
@@ -384,24 +396,29 @@ fn focus_regain_rearms_revisioned_audits_instead_of_assuming_watcher_overflow() 
         let mut control = supervisor.shared.control();
         control.force_manifest_audit_sources.clear();
         control.dirty_sources.clear();
+        control.safety_probe_sources.clear();
     }
 
-    supervisor.request_manifest_audits("application_focus_regained");
-
-    let control = supervisor.shared.control();
-    assert!(
-        control
-            .force_manifest_audit_sources
-            .contains(source.id.as_str()),
-        "refocus must enter the revisioned manifest path"
-    );
-    assert!(control.dirty_sources.contains(source.id.as_str()));
-    drop(control);
+    for _ in 0..10 {
+        supervisor.request_lifecycle_audit_probe(SourceAuditLifecycleCause::FocusRegained, &[]);
+        let mut control = supervisor.shared.control();
+        assert!(
+            !control
+                .force_manifest_audit_sources
+                .contains(source.id.as_str()),
+            "refocus must remain gated by durable health rather than force a traversal"
+        );
+        assert!(control.dirty_sources.contains(source.id.as_str()));
+        assert!(control.safety_probe_sources.contains(source.id.as_str()));
+        // Model a current durable no-op probe before the next focus transition.
+        control.dirty_sources.clear();
+        control.safety_probe_sources.clear();
+    }
     assert_eq!(supervisor.shutdown()["joined"], true);
 }
 
 #[test]
-fn watcher_ready_request_survives_older_in_flight_audit_completion() {
+fn watcher_ready_probe_coalesces_after_an_older_probe_was_captured() {
     let (_directory, source) = unhashed_source("watcher-ready-in-flight-audit");
     let mut supervisor = SourceProcessingSupervisor::dormant();
     supervisor
@@ -409,33 +426,26 @@ fn watcher_ready_request_survives_older_in_flight_audit_completion() {
         .expect("configure source");
     {
         let mut control = supervisor.shared.control();
-        // Model the coordinator having already captured the original
-        // startup audit request and started its candidate.
+        // Model the coordinator having already captured the original startup
+        // probe and started its candidate.
         control.dirty_sources.clear();
-        assert!(
-            control
-                .force_manifest_audit_sources
-                .contains(source.id.as_str())
-        );
+        control.safety_probe_sources.clear();
+        control.force_manifest_audit_sources.clear();
     }
 
-    supervisor.request_manifest_audits("source_watcher_ready");
-    clear_satisfied_manifest_audit_request(&supervisor.shared, source.id.as_str());
+    supervisor.request_lifecycle_audit_probe(SourceAuditLifecycleCause::WatcherReady, &[]);
 
     {
         let mut control = supervisor.shared.control();
         assert!(control.dirty_sources.contains(source.id.as_str()));
         assert!(
-            control
-                .force_manifest_audit_sources
-                .contains(source.id.as_str()),
-            "the older audit must not erase the watcher-ready closing audit"
+            control.safety_probe_sources.contains(source.id.as_str()),
+            "the watcher-ready probe must survive an older captured lifecycle probe"
         );
-        // Once the coordinator captures that newer dirty request, its own
-        // successful audit may satisfy and clear the force flag.
+        assert!(!control.force_manifest_audit_sources.contains(source.id.as_str()));
         control.dirty_sources.remove(source.id.as_str());
+        control.safety_probe_sources.remove(source.id.as_str());
     }
-    clear_satisfied_manifest_audit_request(&supervisor.shared, source.id.as_str());
     assert!(
         !supervisor
             .shared
@@ -443,6 +453,32 @@ fn watcher_ready_request_survives_older_in_flight_audit_completion() {
             .force_manifest_audit_sources
             .contains(source.id.as_str())
     );
+    assert_eq!(supervisor.shutdown()["joined"], true);
+}
+
+#[test]
+fn watcher_history_gap_forces_only_the_affected_source_audit() {
+    let (_first_directory, first) = unhashed_source("watcher-history-gap-first");
+    let (_second_directory, second) = unhashed_source("watcher-history-gap-second");
+    let mut supervisor = SourceProcessingSupervisor::dormant();
+    supervisor
+        .replace_sources(vec![first.clone(), second.clone()])
+        .expect("configure sources");
+    {
+        let mut control = supervisor.shared.control();
+        control.dirty_sources.clear();
+        control.safety_probe_sources.clear();
+        control.force_manifest_audit_sources.clear();
+    }
+
+    supervisor.request_source_manifest_audit(first.id.as_str(), "watcher_history_gap");
+
+    let control = supervisor.shared.control();
+    assert!(control.force_manifest_audit_sources.contains(first.id.as_str()));
+    assert!(control.dirty_sources.contains(first.id.as_str()));
+    assert!(!control.force_manifest_audit_sources.contains(second.id.as_str()));
+    assert!(!control.dirty_sources.contains(second.id.as_str()));
+    drop(control);
     assert_eq!(supervisor.shutdown()["joined"], true);
 }
 

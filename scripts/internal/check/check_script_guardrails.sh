@@ -556,6 +556,13 @@ run_expect_exit_code \
   --help
 
 run_expect_exit_code \
+  "ci isolation-stress --help" \
+  0 \
+  "$ROOT_DIR" \
+  scripts/ci.sh isolation-stress \
+  --help
+
+run_expect_exit_code \
   "ci_quick --help" \
   0 \
   "$ROOT_DIR" \
@@ -589,6 +596,15 @@ run_cleanup_audit_fixture
 run_docs_index_fixture
 run_taste_invariants_fixture
 run_nextest_quick_profile_fixture
+
+run_expect_exit_code \
+  "parallel isolation runner unit tests" \
+  0 \
+  "$ROOT_DIR" \
+  python3 \
+  -m \
+  unittest \
+  scripts/internal/ci/test_parallel_isolation_stress.py
 
 run_expect_exit_code \
   "validation watchdog fixtures" \

@@ -52,6 +52,21 @@ impl NativeAppState {
                 }
                 self.finish_similarity_readiness_advanced(source_id, context);
             }
+            GuiMessage::SourceProcessingHealth(health) => {
+                if !self.library.folder_browser.source_exists(&health.source_id)
+                    || self
+                        .background
+                        .source_lifecycle_generations
+                        .get(&health.source_id)
+                        != Some(&health.lifecycle_generation)
+                {
+                    return;
+                }
+                self.background
+                    .source_processing_health
+                    .insert(health.source_id.clone(), health);
+                context.repaint(ui::RepaintScope::Projection);
+            }
             GuiMessage::SourceProcessingProgress(progress) => {
                 let source_is_current = if progress.source_id.is_empty() {
                     !progress.active
@@ -73,6 +88,7 @@ impl NativeAppState {
                 if !source_is_current {
                     return;
                 }
+                let worker_progress_visible_before = self.worker_progress_indicator_visible();
                 if !progress.active {
                     self.background.source_processing_progress = None;
                     self.ui.chrome.job_details_open = false;
@@ -80,7 +96,11 @@ impl NativeAppState {
                     self.background.source_processing_progress = Some(progress);
                 }
                 context.repaint(if self.starmap_retained_scene_active() {
-                    ui::RepaintScope::PaintOnly
+                    if worker_progress_visible_before != self.worker_progress_indicator_visible() {
+                        ui::RepaintScope::Surface
+                    } else {
+                        ui::RepaintScope::PaintOnly
+                    }
                 } else {
                     ui::RepaintScope::Projection
                 });
@@ -106,19 +126,31 @@ impl NativeAppState {
                 paths,
                 overflowed,
                 source_root_available,
+                journal_checkpoint_event_id,
             } => {
                 self.refresh_source_after_filesystem_change(
                     source_id,
                     paths,
                     overflowed,
                     source_root_available,
+                    journal_checkpoint_event_id,
                     context,
                 );
             }
-            GuiMessage::SourceWatcherReady => {
+            GuiMessage::SourceWatcherReady {
+                deferred_audit_sources,
+            } => {
                 self.background
                     .source_processing
-                    .request_manifest_audits("source_watcher_ready");
+                    .request_lifecycle_audit_probe(
+                    crate::native_app::source_processing::SourceAuditLifecycleCause::WatcherReady,
+                    &deferred_audit_sources,
+                );
+            }
+            GuiMessage::SourceWatcherJournalGap { source_id, reason } => {
+                self.background
+                    .source_processing
+                    .request_source_manifest_audit(&source_id, reason);
             }
             GuiMessage::SourceFilesystemSyncFinished(result) => {
                 self.finish_source_filesystem_sync(result, context);
@@ -134,6 +166,20 @@ impl NativeAppState {
                     committed_delta,
                     context,
                 );
+            }
+            GuiMessage::SourceManifestAuditFinished {
+                source_id,
+                lifecycle_generation,
+                complete,
+            } => {
+                let source_is_current = self.library.folder_browser.source_exists(&source_id)
+                    && self.background.source_lifecycle_generations.get(&source_id)
+                        == Some(&lifecycle_generation);
+                if source_is_current {
+                    if let Some(watcher) = self.library.source_watcher.as_ref() {
+                        watcher.finish_journal_barrier_audit(source_id, complete);
+                    }
+                }
             }
             GuiMessage::NormalizationProgress(progress) => {
                 self.apply_normalization_progress(progress);

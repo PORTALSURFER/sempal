@@ -873,6 +873,7 @@ struct StarmapDenseOverviewExactItem {
     y: f32,
     color: ui::Rgba8,
     selected: bool,
+    selection_flash: bool,
     copy_flash: bool,
     similarity_anchor: bool,
 }
@@ -915,7 +916,7 @@ fn build_dense_overview_paint(
     let mut cells = BTreeMap::<StarmapDenseOverviewCellKey, StarmapDenseOverviewAccumulator>::new();
     let mut exact_items = Vec::new();
     for item in items {
-        if item.selected || item.copy_flash || item.similarity_anchor {
+        if item.selected || item.selection_flash || item.copy_flash || item.similarity_anchor {
             exact_items.push(StarmapDenseOverviewExactItem::from_item(item));
             continue;
         }
@@ -966,7 +967,7 @@ fn paint_dense_overview_exact_item(
     item: &StarmapDenseOverviewExactItem,
     viewport: StarmapViewport,
 ) {
-    if !item.selected && !item.copy_flash && !item.similarity_anchor {
+    if !item.selected && !item.selection_flash && !item.copy_flash && !item.similarity_anchor {
         return;
     }
     let center = dense_overview_exact_item_center(bounds, *item, viewport);
@@ -974,6 +975,9 @@ fn paint_dense_overview_exact_item(
         return;
     }
     let color = item.color;
+    if item.selection_flash {
+        paint_selection_flash_item(primitives, widget_id, center);
+    }
     if item.copy_flash {
         paint_copy_flash_item(primitives, widget_id, center, color);
     }
@@ -1000,6 +1004,9 @@ fn queue_or_paint_item(
         return;
     }
     let color = starmap_item_color(item);
+    if item.selection_flash {
+        paint_selection_flash_item(primitives, widget_id, center);
+    }
     if item.copy_flash {
         paint_copy_flash_item(primitives, widget_id, center, color);
     }
@@ -1060,6 +1067,25 @@ fn paint_copy_flash_item(
         MAP_SELECTED_SIZE + 7.0,
         ui::Rgba8::new(245, 245, 245, 235),
         1.25,
+    );
+}
+
+fn paint_selection_flash_item(primitives: &mut Vec<PaintPrimitive>, widget_id: u64, center: Point) {
+    let color = crate::native_app::app_chrome::palette::ACCENT;
+    paint_diamond(
+        primitives,
+        widget_id,
+        center,
+        MAP_SELECTED_OUTER_GLOW_SIZE + 8.0,
+        color.with_alpha(92),
+    );
+    stroke_diamond(
+        primitives,
+        widget_id,
+        center,
+        MAP_SELECTED_SIZE + 10.0,
+        color.with_alpha(245),
+        1.5,
     );
 }
 
@@ -1320,6 +1346,7 @@ impl StarmapDenseOverviewExactItem {
             y: item.y,
             color: starmap_item_color(item),
             selected: item.selected,
+            selection_flash: item.selection_flash,
             copy_flash: item.copy_flash,
             similarity_anchor: item.similarity_anchor,
         }

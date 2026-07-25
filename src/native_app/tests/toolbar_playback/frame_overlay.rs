@@ -389,6 +389,25 @@ fn copy_flash_frame_refreshes_projection_while_countdown_changes() {
 }
 
 #[test]
+fn selection_flash_frame_refreshes_projection_while_countdown_changes() {
+    let (mut state, _source_root, selected_file) =
+        native_app_state_with_temp_sample("selection-flash.wav");
+    state
+        .library
+        .folder_browser
+        .flash_marked_item(selected_file);
+
+    let before = state.capture_frame_surface_inputs();
+    state.advance_frame(&mut radiant::prelude::UiUpdateContext::default());
+
+    assert_eq!(
+        state.frame_scope_since(before),
+        RepaintScope::Projection,
+        "selection flash should refresh browser chrome without recomputing layout"
+    );
+}
+
+#[test]
 fn normalization_progress_frame_uses_paint_only_when_progress_is_stable() {
     let mut state = gui_state_for_span_tests();
     state.background.normalization_progress = Some(
@@ -660,6 +679,203 @@ fn scene_source_processing_frame_uses_paint_only_repaint_scope() {
         command.repaint_scope(),
         Some(RepaintScope::PaintOnly),
         "source-processing animation must not rebuild the full library projection"
+    );
+}
+
+#[test]
+fn retained_starmap_worker_plan_tracks_source_rail_and_global_anchor_visibility() {
+    let (mut state, _source_root, _selected_file) =
+        native_app_state_with_temp_sample("retained-worker-anchors.wav");
+    state.ui.chrome.sample_browser_display = crate::native_app::app::SampleBrowserDisplayMode::Map;
+    crate::native_app::test_support::sample_browser::complete_starmap_layout_for_selected_source(
+        &mut state,
+    );
+    crate::native_app::test_support::sample_browser::prepare_sample_browser_view(&mut state);
+    let source_id = state
+        .library
+        .folder_browser
+        .selected_source_id()
+        .to_string();
+    state.waveform.cache.active_folder_warm_folder_id = None;
+    state.waveform.cache.active_folder_warm_total = 0;
+    assert!(
+        !state.worker_progress_indicator_visible(),
+        "fixture must start without another aggregate worker"
+    );
+    state
+        .background
+        .source_lifecycle_generations
+        .insert(source_id.clone(), 0);
+    state.ui.chrome.starmap_audition_drag =
+        Some(crate::native_app::app::StarmapAuditionDragState {
+            last_hit_file_id: Some(String::from("/samples/kick.wav")),
+            last_position: radiant::gui::types::Point::new(50.0, 50.0),
+            modifiers: radiant::widgets::PointerModifiers::default(),
+        });
+    let theme = radiant::theme::ThemeTokens::default();
+    let mut runtime = native_runtime_for_tests(state, Vector2::new(900.0, 620.0));
+    let row_widget_id =
+        crate::native_app::app_chrome::library_browser::library_sidebar::source_row_widget_id(
+            &source_id,
+        );
+    let idle_frame = runtime.frame(&theme);
+    assert!(
+        idle_frame
+            .paint_plan
+            .first_widget_rect_by_priority([crate::native_app::ui::ids::SAMPLE_BROWSER_MAP_ID])
+            .is_some(),
+        "retained Starmap must have a real idle map plan before checking worker anchors"
+    );
+    assert!(
+        idle_frame
+            .paint_plan
+            .first_widget_rect_by_priority([row_widget_id])
+            .is_some(),
+        "the source row must be present before checking its processing rail"
+    );
+    assert!(
+        idle_frame
+            .paint_plan
+            .first_widget_rect_by_priority([crate::native_app::ui::ids::WORKER_PROGRESS_ROOT_ID,])
+            .is_none(),
+        "an idle retained Starmap must not install the global progress anchor"
+    );
+
+    let start_command = runtime.dispatch_message(
+        crate::native_app::test_support::state::GuiMessage::SourceProcessingProgress(
+            crate::native_app::test_support::state::SourceProcessingProgress {
+                source_id: source_id.clone(),
+                lifecycle_generation: 0,
+                active: true,
+                source_row_active: true,
+                completed: 3,
+                total: 10,
+                stage: String::from("Analyzing audio"),
+                detail: String::from("retained-worker-anchors.wav"),
+            },
+        ),
+    );
+    assert_eq!(
+        start_command.surface_refresh_scope,
+        Some(RepaintScope::Surface),
+        "starting the first retained worker must refresh the global anchor topology"
+    );
+
+    let active_frame = runtime.frame(&theme);
+    assert!(
+        active_frame
+            .paint_plan
+            .first_widget_rect_by_priority([crate::native_app::ui::ids::WORKER_PROGRESS_ROOT_ID,])
+            .is_some(),
+        "an active source worker must install the global progress anchor"
+    );
+
+    let mut active_primitives = Vec::new();
+    runtime
+        .bridge_mut()
+        .state_mut()
+        .paint_source_processing_source_pulse(
+            TransientOverlayContext::new(
+                &active_frame.paint_plan,
+                Vector2::new(900.0, 620.0),
+                Duration::ZERO,
+            ),
+            &mut active_primitives,
+        );
+    assert!(
+        !active_primitives.is_empty(),
+        "an active source worker must paint its retained source rail"
+    );
+
+    let tick_command = runtime.dispatch_message(
+        crate::native_app::test_support::state::GuiMessage::SourceProcessingProgress(
+            crate::native_app::test_support::state::SourceProcessingProgress {
+                source_id: source_id.clone(),
+                lifecycle_generation: 0,
+                active: true,
+                source_row_active: true,
+                completed: 4,
+                total: 10,
+                stage: String::from("Analyzing audio"),
+                detail: String::from("retained-worker-anchors-tick.wav"),
+            },
+        ),
+    );
+    assert!(
+        tick_command.paint_only_requested,
+        "steady retained worker ticks must request paint-only repaint"
+    );
+    assert_eq!(
+        tick_command.surface_refresh_scope, None,
+        "steady retained worker ticks must reuse the retained plan"
+    );
+    let tick_frame = runtime.frame(&theme);
+    assert!(
+        tick_frame
+            .paint_plan
+            .first_widget_rect_by_priority([crate::native_app::ui::ids::WORKER_PROGRESS_ROOT_ID,])
+            .is_some(),
+        "a paint-only worker tick must retain the global progress anchor"
+    );
+    let mut tick_primitives = Vec::new();
+    runtime
+        .bridge_mut()
+        .state_mut()
+        .paint_source_processing_source_pulse(
+            TransientOverlayContext::new(
+                &tick_frame.paint_plan,
+                Vector2::new(900.0, 620.0),
+                Duration::from_millis(100),
+            ),
+            &mut tick_primitives,
+        );
+    assert!(
+        !tick_primitives.is_empty(),
+        "a paint-only worker tick must retain the source processing rail"
+    );
+
+    let finish_command = runtime.dispatch_message(
+        crate::native_app::test_support::state::GuiMessage::SourceProcessingProgress(
+            crate::native_app::test_support::state::SourceProcessingProgress {
+                source_id: source_id.clone(),
+                lifecycle_generation: 0,
+                active: false,
+                source_row_active: false,
+                completed: 10,
+                total: 10,
+                stage: String::from("Finished"),
+                detail: String::from("retained-worker-anchors.wav"),
+            },
+        ),
+    );
+    assert_eq!(
+        finish_command.surface_refresh_scope,
+        Some(RepaintScope::Surface),
+        "finishing the last retained worker must invalidate its global anchor"
+    );
+    let finished_frame = runtime.frame(&theme);
+    assert!(
+        finished_frame
+            .paint_plan
+            .first_widget_rect_by_priority([crate::native_app::ui::ids::WORKER_PROGRESS_ROOT_ID,])
+            .is_none(),
+        "finishing the last worker must remove the global progress anchor"
+    );
+    let mut finished_primitives = Vec::new();
+    runtime
+        .bridge_mut()
+        .state_mut()
+        .paint_source_processing_source_pulse(
+            TransientOverlayContext::new(
+                &finished_frame.paint_plan,
+                Vector2::new(900.0, 620.0),
+                Duration::ZERO,
+            ),
+            &mut finished_primitives,
+        );
+    assert!(
+        finished_primitives.is_empty(),
+        "finishing the source worker must remove its retained source rail"
     );
 }
 

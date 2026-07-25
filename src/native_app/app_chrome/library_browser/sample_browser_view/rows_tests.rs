@@ -63,6 +63,7 @@ fn active_similarity_anchor_keeps_sample_selection_and_focus_chrome() {
             selected: true,
             focused: true,
             focus_alpha: u8::MAX,
+            selection_flash: false,
             copy_flash: false,
             protected_source_error_flash: false,
             cut_pending: false,

@@ -106,11 +106,36 @@ pub(super) fn run_coordinator(shared: Arc<Shared>) {
             }
             let awaiting_foreground_refresh_sources =
                 control.awaiting_foreground_refresh_sources.clone();
-            let dirty_sources = std::mem::take(&mut control.dirty_sources)
-                .into_iter()
-                .filter(|source_id| !awaiting_foreground_refresh_sources.contains(source_id))
+            let lifecycle_audits_deferred = control.lifecycle_audits_deferred_until_watcher_ready;
+            let deferred_lifecycle_audit_sources = control.deferred_lifecycle_audit_sources.clone();
+            let pending_safety_probe_sources = std::mem::take(&mut control.safety_probe_sources);
+            let pending_dirty_sources = std::mem::take(&mut control.dirty_sources);
+            let deferred_sources = pending_dirty_sources
+                .iter()
+                .filter(|source_id| {
+                    (lifecycle_audits_deferred && pending_safety_probe_sources.contains(*source_id))
+                        || deferred_lifecycle_audit_sources.contains(*source_id)
+                })
+                .cloned()
                 .collect::<BTreeSet<_>>();
-            let safety_probe_sources = std::mem::take(&mut control.safety_probe_sources)
+            let dirty_sources = pending_dirty_sources
+                .into_iter()
+                .filter(|source_id| {
+                    !awaiting_foreground_refresh_sources.contains(source_id)
+                        && !deferred_sources.contains(source_id)
+                })
+                .collect::<BTreeSet<_>>();
+            if !deferred_sources.is_empty() {
+                control
+                    .dirty_sources
+                    .extend(deferred_sources.iter().cloned());
+                control.safety_probe_sources.extend(
+                    deferred_sources
+                        .intersection(&pending_safety_probe_sources)
+                        .cloned(),
+                );
+            }
+            let safety_probe_sources = pending_safety_probe_sources
                 .into_iter()
                 .filter(|source_id| dirty_sources.contains(source_id))
                 .collect::<BTreeSet<_>>();

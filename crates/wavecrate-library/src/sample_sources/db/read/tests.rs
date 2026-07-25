@@ -5,6 +5,8 @@ use tempfile::tempdir;
 
 use super::super::{DB_FILE_NAME, Rating, SampleCollection, SampleSoundType, SourceDatabase};
 
+use super::super::util::{EXACT_SUBTREE_PATH_PREDICATE, exact_subtree_path_bounds};
+
 #[test]
 fn browser_metadata_snapshot_reads_multi_collection_rows_coherently() {
     let dir = tempdir().unwrap();
@@ -39,6 +41,74 @@ fn browser_metadata_snapshot_reads_multi_collection_rows_coherently() {
             SampleCollection::new(3).unwrap()
         ]
     );
+}
+
+#[test]
+fn browser_metadata_page_is_keyset_paged_and_revision_fenced() {
+    let dir = tempdir().unwrap();
+    let db = SourceDatabase::open_for_source_write(dir.path()).unwrap();
+    for name in ["c.wav", "a.wav", "b.wav"] {
+        db.upsert_file(Path::new(name), 10, 5).unwrap();
+    }
+    let revision = db.get_revision().unwrap();
+    let first = db.browser_metadata_page(revision, None, 2).unwrap();
+    assert_eq!(
+        first
+            .files
+            .iter()
+            .map(|file| file.relative_path.clone())
+            .collect::<Vec<_>>(),
+        vec![PathBuf::from("a.wav"), PathBuf::from("b.wav")]
+    );
+    assert_eq!(first.files.len(), 2);
+    let second = db
+        .browser_metadata_page(revision, first.next_cursor.as_ref(), 2)
+        .unwrap();
+    assert_eq!(second.files.len(), 1);
+
+    db.set_tag(Path::new("a.wav"), Rating::KEEP_1).unwrap();
+    assert!(
+        db.browser_metadata_page(revision, second.next_cursor.as_ref(), 2)
+            .is_err()
+    );
+}
+
+#[test]
+fn browser_metadata_page_advances_past_invalid_raw_path_rows() {
+    let dir = tempdir().unwrap();
+    let db = SourceDatabase::open_for_source_write(dir.path()).unwrap();
+    for name in ["a.wav", "zz.wav"] {
+        db.upsert_file(Path::new(name), 10, 5).unwrap();
+    }
+    db.connection
+        .execute(
+            "INSERT INTO wav_files (path, file_size, modified_ns, extension)
+             VALUES (?1, 10, 5, 'wav')",
+            ["z/../broken.wav"],
+        )
+        .unwrap();
+    let revision = db.get_revision().unwrap();
+
+    let first = db.browser_metadata_page(revision, None, 2).unwrap();
+    assert_eq!(first.files.len(), 1);
+    assert_eq!(first.files[0].relative_path, Path::new("a.wav"));
+    assert_eq!(
+        first.next_cursor.as_ref().map(|cursor| cursor.as_str()),
+        Some("z/../broken.wav")
+    );
+
+    let second = db
+        .browser_metadata_page(revision, first.next_cursor.as_ref(), 2)
+        .unwrap();
+    assert_eq!(
+        second
+            .files
+            .iter()
+            .map(|file| file.relative_path.clone())
+            .collect::<Vec<_>>(),
+        vec![PathBuf::from("zz.wav")]
+    );
+    assert!(second.next_cursor.is_none());
 }
 
 #[test]
@@ -350,6 +420,133 @@ fn legacy_read_only_collection_query_falls_back_to_wav_files_column() {
 }
 
 #[test]
+fn subtree_file_reads_use_an_exact_binary_path_range() {
+    let dir = tempdir().unwrap();
+    let db = SourceDatabase::open_for_source_write(dir.path()).unwrap();
+    for path in [
+        "drum_kits%_!/inside.wav",
+        "drum_kits%_!/nested/deep.wav",
+        "drum_kitsX_YX!/outside.wav",
+        "Drum_kits%_!/case-distinct.wav",
+    ] {
+        db.upsert_file(Path::new(path), 10, 5).unwrap();
+    }
+
+    let paths = db
+        .list_files_under_path(Path::new("drum_kits%_!"))
+        .unwrap()
+        .into_iter()
+        .map(|entry| entry.relative_path)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        paths,
+        vec![
+            PathBuf::from("drum_kits%_!/inside.wav"),
+            PathBuf::from("drum_kits%_!/nested/deep.wav"),
+        ]
+    );
+
+    let (lower_bound, upper_bound) = exact_subtree_path_bounds("drum_kits%_!");
+    let explain_sql = format!(
+        "EXPLAIN QUERY PLAN SELECT path FROM wav_files WHERE {EXACT_SUBTREE_PATH_PREDICATE}"
+    );
+    let mut statement = db.connection.prepare(&explain_sql).unwrap();
+    let details = statement
+        .query_map(
+            rusqlite::params!["drum_kits%_!", lower_bound, upper_bound],
+            |row| row.get::<_, String>(3),
+        )
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert!(
+        details
+            .iter()
+            .any(|detail| detail.contains("path>? AND path<?")),
+        "expected the exact subtree predicate to use the path index, got {details:?}"
+    );
+}
+
+#[test]
+fn scoped_manifest_snapshot_reads_only_requested_exact_subtrees() {
+    let dir = tempdir().unwrap();
+    let db = SourceDatabase::open_for_source_write(dir.path()).unwrap();
+    for path in [
+        "drum_kits%_!/inside.wav",
+        "drum_kits%_!/nested/deep.wav",
+        "drum_kitsX_YX!/outside.wav",
+    ] {
+        db.upsert_file(Path::new(path), 10, 5).unwrap();
+    }
+
+    let (revision, entries) = db
+        .manifest_snapshot_with_revision_under_paths(&[PathBuf::from("drum_kits%_!")])
+        .unwrap();
+
+    assert_eq!(revision, db.get_revision().unwrap());
+    assert_eq!(
+        entries
+            .into_iter()
+            .map(|entry| entry.relative_path)
+            .collect::<Vec<_>>(),
+        vec![
+            PathBuf::from("drum_kits%_!/inside.wav"),
+            PathBuf::from("drum_kits%_!/nested/deep.wav"),
+        ]
+    );
+}
+
+#[test]
+fn recent_unretained_rename_destinations_report_bounded_overflow() {
+    let dir = tempdir().unwrap();
+    let db = SourceDatabase::open_for_source_write(dir.path()).unwrap();
+    db.connection
+        .execute(
+            "INSERT OR REPLACE INTO metadata (key, value)
+             VALUES ('targeted_scan_generation_v1', '2')",
+            [],
+        )
+        .unwrap();
+    for index in 0..3 {
+        db.connection
+            .execute(
+                "INSERT INTO pending_wav_rename_destinations
+                 (path, scan_generation, retained_hash)
+                 VALUES (?1, 1, NULL)",
+                params![format!("candidate-{index}.wav")],
+            )
+            .unwrap();
+    }
+
+    let (paths, overflow) = db.list_recent_unretained_rename_destinations(2).unwrap();
+
+    assert!(overflow);
+    assert_eq!(paths.len(), 2);
+}
+
+#[test]
+fn retained_rename_destinations_report_bounded_overflow() {
+    let dir = tempdir().unwrap();
+    let db = SourceDatabase::open_for_source_write(dir.path()).unwrap();
+    for index in 0..3 {
+        db.connection
+            .execute(
+                "INSERT INTO pending_wav_rename_destinations
+                 (path, scan_generation, retained_hash)
+                 VALUES (?1, 1, ?2)",
+                params![format!("retained-{index}.wav"), format!("hash-{index}")],
+            )
+            .unwrap();
+    }
+
+    let (paths, overflow) = db.list_retained_rename_destinations_bounded(2).unwrap();
+
+    assert!(overflow);
+    assert_eq!(paths.len(), 2);
+}
+
+#[test]
 fn legacy_read_only_database_without_pending_renames_returns_empty_list() {
     let dir = tempdir().unwrap();
     let connection = Connection::open(dir.path().join(DB_FILE_NAME)).unwrap();
@@ -404,6 +601,8 @@ fn legacy_read_only_pending_renames_project_optional_defaults() {
     assert_eq!(entry.modified_ns, 5);
     assert_eq!(entry.content_hash.as_deref(), Some("hash-a"));
     assert_eq!(entry.file_identity, None);
+    assert_eq!(entry.staged_generation, 0);
+    assert_eq!(entry.staged_at, None);
     assert_eq!(entry.metadata.tag, Rating::KEEP_1);
     assert!(entry.metadata.looped);
     assert!(entry.metadata.locked);
@@ -417,6 +616,16 @@ fn legacy_read_only_pending_renames_project_optional_defaults() {
         vec![SampleCollection::new(2).unwrap()]
     );
     assert!(!entry.metadata.tag_named);
+    assert_eq!(
+        db.pending_rename_diagnostics().unwrap(),
+        super::super::PendingRenameDiagnostics {
+            candidate_count: 1,
+            authoritative_generation: 0,
+            oldest_staged_generation: Some(0),
+            oldest_staged_at: None,
+            oldest_candidate_age_seconds: None,
+        }
+    );
 }
 
 #[test]

@@ -318,6 +318,15 @@ impl NativeAppState {
             );
             return;
         };
+        if result.toggled_selected {
+            self.library
+                .folder_browser
+                .flash_marked_item(result.toggled_id.clone());
+        } else {
+            self.library
+                .folder_browser
+                .clear_marked_item_flash(&result.toggled_id);
+        }
 
         if self.library.folder_browser.selected_file_id() != previous_focus.as_deref() {
             self.cancel_metadata_tag_entry();
@@ -589,6 +598,15 @@ impl NativeAppState {
             );
             return;
         };
+        if result.selected {
+            self.library
+                .folder_browser
+                .flash_marked_item(result.folder_id.clone());
+        } else {
+            self.library
+                .folder_browser
+                .clear_marked_item_flash(&result.folder_id);
+        }
         if let Some(index) = self.library.folder_browser.selected_folder_visible_index() {
             context.scroll_fixed_row_into_view(
                 FOLDER_TREE_LIST_ID,

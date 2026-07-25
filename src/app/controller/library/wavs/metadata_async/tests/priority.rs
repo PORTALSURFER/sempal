@@ -45,12 +45,14 @@ fn metadata_mutation_waits_behind_same_source_file_op_priority() {
         SourceDatabase::open_for_test_fixture_source_write(&source.root).expect("open source db");
     db.upsert_file(&relative_path, 1, 1)
         .expect("insert source row");
-    source_write_priority::begin_file_op_write_priority(&source.id);
-    let release_source_id = source.id.clone();
-    std::thread::spawn(move || {
+    let worker_source_id = source.id.clone();
+    let (active_tx, active_rx) = std::sync::mpsc::channel();
+    let priority_worker = std::thread::spawn(move || {
+        let _guard = source_write_priority::FileOpWritePriorityGuard::new(&worker_source_id);
+        active_tx.send(()).expect("signal active file-op priority");
         std::thread::sleep(Duration::from_millis(260));
-        source_write_priority::finish_file_op_write_priority(&release_source_id);
     });
+    active_rx.recv().expect("wait for active file-op priority");
 
     let result = run_metadata_mutation_job(MetadataMutationJob {
         request_id: 7,
@@ -70,4 +72,5 @@ fn metadata_mutation_waits_behind_same_source_file_op_priority() {
         db.user_tag_for_path(&relative_path).expect("read user tag"),
         Some(String::from("Vintage"))
     );
+    priority_worker.join().expect("priority worker");
 }

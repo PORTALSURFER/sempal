@@ -15,3 +15,6 @@ pub mod sample_sources;
 /// Optional SQLite extension loader shared by storage code.
 pub mod sqlite_ext;
 mod sqlite_wal;
+/// Process-global test runtime isolation helpers.
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_runtime;

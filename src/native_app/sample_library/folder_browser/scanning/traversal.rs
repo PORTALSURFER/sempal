@@ -7,7 +7,10 @@ use super::{
         path_helpers::{folder_label, path_id},
         scan_types::{FolderTreeRefreshRequest, FolderTreeRefreshResult},
     },
-    entry::{BrowserEntryKind, classify_path_without_following, read_sorted_entries},
+    entry::{
+        BrowserEntryKind, classify_path_without_following, read_sorted_entries,
+        source_traversal_policy,
+    },
     metadata::{SourceMetadataMap, rated_file_entry, source_rating_map},
 };
 
@@ -27,7 +30,9 @@ pub(in crate::native_app::sample_library::folder_browser) fn load_source_snapsho
             tracing::warn!(source = %root.display(), "{error}");
             SourceMetadataMap::new()
         });
-    let folder = load_folder(&root, &root, &ratings).unwrap_or_else(|| placeholder_folder(&root));
+    let policy = source_traversal_policy(&root, &database_root);
+    let folder =
+        load_folder(&root, &root, &ratings, policy).unwrap_or_else(|| placeholder_folder(&root));
     let missing_collection_snapshot =
         MissingCollectionSnapshot::from_source_metadata(&root, &folder, &ratings);
     LoadedSourceSnapshot {
@@ -50,8 +55,9 @@ pub(in crate::native_app::sample_library::folder_browser) fn placeholder_folder(
 pub(in crate::native_app) fn refresh_folder_tree_only(
     request: FolderTreeRefreshRequest,
 ) -> FolderTreeRefreshResult {
+    let policy = source_traversal_policy(&request.root, &request.database_root);
     let mut folder_count = 0;
-    let folder = load_folder_tree_only(&request.root, &mut folder_count)
+    let folder = load_folder_tree_only(&request.root, &request.root, policy, &mut folder_count)
         .unwrap_or_else(|| placeholder_folder(&request.root));
     FolderTreeRefreshResult {
         source_id: request.source_id,
@@ -74,19 +80,21 @@ pub(in crate::native_app::sample_library::folder_browser) fn load_folder_at_path
             tracing::warn!(source = %source_root.display(), "{error}");
             SourceMetadataMap::new()
         });
-    load_folder(path, source_root, &ratings)
+    let policy = source_traversal_policy(source_root, source_database_root);
+    load_folder(path, source_root, &ratings, policy)
 }
 
 pub(super) fn load_folder(
     path: &Path,
     source_root: &Path,
     ratings: &SourceMetadataMap,
+    policy: wavecrate_library::sample_sources::SourceTraversalPolicy,
 ) -> Option<FolderEntry> {
-    let entries = read_sorted_entries(path)?;
+    let entries = read_sorted_entries(path, source_root, policy)?;
     let children = entries
         .iter()
         .filter(|entry| entry.kind == BrowserEntryKind::Directory)
-        .filter_map(|entry| load_folder(&entry.path, source_root, ratings))
+        .filter_map(|entry| load_folder(&entry.path, source_root, ratings, policy))
         .collect::<Vec<_>>();
     let files = entries
         .iter()
@@ -101,13 +109,18 @@ pub(super) fn load_folder(
     })
 }
 
-fn load_folder_tree_only(path: &Path, folder_count: &mut usize) -> Option<FolderEntry> {
-    let entries = read_sorted_entries(path)?;
+fn load_folder_tree_only(
+    path: &Path,
+    source_root: &Path,
+    policy: wavecrate_library::sample_sources::SourceTraversalPolicy,
+    folder_count: &mut usize,
+) -> Option<FolderEntry> {
+    let entries = read_sorted_entries(path, source_root, policy)?;
     *folder_count += 1;
     let children = entries
         .iter()
         .filter(|entry| entry.kind == BrowserEntryKind::Directory)
-        .filter_map(|entry| load_folder_tree_only(&entry.path, folder_count))
+        .filter_map(|entry| load_folder_tree_only(&entry.path, source_root, policy, folder_count))
         .collect::<Vec<_>>();
     Some(FolderEntry {
         id: path_id(path),

@@ -152,7 +152,7 @@ Wavecrate should provide:
 21. A session-local undo/redo system for destructive edits, file operations, metadata operations, rating operations, and meaningful UI interaction state.
 22. Clean separation between Wavecrate product logic, Radiant GUI-library logic, reusable audio-engine logic, and persistence/indexing logic.
 23. Tests, diagnostics, and validation workflows that protect real user behavior, performance, and recovery guarantees.
-24. A cohesive editorial-terminal visual language: near-black charcoal surfaces, cool neutral dividers, warm off-white typography, and a restrained coral accent that keeps dense controls and waveform states legible without visual noise.
+24. A cohesive editorial-terminal visual language: near-black charcoal surfaces, cool neutral dividers, warm off-white typography, and a restrained coral accent that keeps dense controls and waveform states legible without visual noise. Spectral waveforms keep low energy in a deep blue-purple lane, mids in coral, and highs in bright cool ivory so frequency content remains distinguishable at a glance.
 
 ## Product Principles
 
@@ -177,7 +177,19 @@ Wavecrate should optimize for:
 
 The GUI thread is for UI work: input handling, selection state, lightweight view-model updates, rendering coordination, and applying completed results. It should remain non-blocking at all times. Any loading, decoding, file I/O, cache hydration, waveform preparation, audio analysis, edit rendering, database/index work, metadata writing, cleanup, logging flush, or other operation that can take noticeable time must be offloaded to background work with clear state handoff back to the UI. Blocking the GUI thread is acceptable only for operations that are proven trivial, bounded, and not practically offloadable. File-operation commands may derive lightweight intent from current UI state, but destination collision probing, file creation/copy/delete/metadata reads, and source database writes should happen behind a background or typed file-operation boundary.
 
+Audio host/device/sample-rate discovery and output-stream reconfiguration follow the same rule: UI handlers record the requested configuration and show pending state, while cancellable background work performs driver discovery and stream construction. Only the latest typed completion may update options, activate output, restart playback, or persist the confirmed configuration.
+
 Perceived stalls are product bugs. If a source scan, decode, rename, edit render, waveform update, BPM/grid metadata calculation, transient analysis, similarity analysis job, database/index update, logging flush, or metadata update can take noticeable time, it belongs off the GUI thread with clear state handoff back to the UI.
+
+Playback command submission and runtime event delivery are bounded,
+non-blocking handoffs. The configured playback queue capacity applies to both
+queues; repeated polls, retargets, play intents, volume, and gain updates
+coalesce, while stop, cancel, and shutdown admission takes precedence over
+disposable work. Runtime progress is lossy under pressure; terminal playback
+events evict progress and lower-priority cancellation events, and terminal
+capacity exhaustion remains non-blocking and bounded. Wavecrate applies a
+fixed per-frame event budget so recovery cannot turn one stalled-runtime
+backlog into an unbounded UI frame.
 
 Opportunistic metadata updates such as listen-history writes should never delay sample selection, validation, cache loading, or playback. They should use low-priority background work, short database busy timeouts, and skip/retry behavior when source databases are locked by higher-value work.
 
@@ -314,6 +326,19 @@ The source database should store information that belongs to that source and its
 - per-file metadata, ratings, global tag assignments, labels, generated-name inputs, listen history, and analysis state where those records belong to files in that source
 - reconciliation state for missing, moved, renamed, changed, unsupported, or failed files
 
+Pending rename metadata is retained by completed authoritative source generations, not by a
+wall-clock TTL. A targeted watcher batch may stage or consume candidates but never ages them.
+Quick-scan candidates remain eligible through two later successfully completed full-source
+enumerations; a partial traversal, cancellation, unavailable root, failed audit verification, or
+database failure does not advance that generation. A complete hard scan may remove an unmatched
+candidate immediately after current destinations have been reconciled. Pruning and authoritative
+generation publication are one source-database transaction, and unresolved deferred-hash
+destinations defer pruning. Rename reconciliation queries current destination candidates through
+indexed unique lookups capped at two source rows, so memory and lookup work do not scale with
+historical deletions. Aggregate diagnostics expose the retained count, authoritative and oldest
+candidate generations, oldest diagnostic staging time and age, destinations considered, and
+candidates pruned without per-file logging.
+
 Global application state should live in a user-level `.wavecrate` folder. On Windows, the initial target should be a conventional user config/home location such as `%USERPROFILE%\.wavecrate`, similar in spirit to `.cargo`, `.codex`, and other developer/user configuration folders. Future macOS and Linux support should map this same logical root to the platform's appropriate user config/home location.
 
 The global `.wavecrate` folder should contain app-wide state such as:
@@ -348,7 +373,7 @@ Waveform-cache publication and cache-limit maintenance share the single backgrou
 
 Configured source lifecycles also carry a runtime epoch distinct from the durable source identity. Removing or replacing a descriptor cancels that exact epoch, immediately closes new admission, purges its queued UI/readiness work, and lets the control-plane transition return without waiting for scans, hashing, finalization, or cleanup. Late work may not publish after its epoch is retired. A replacement that shares the same source database waits for the old epoch to drain before new processing admission; destructive retirement is suppressed when that database has already been re-added.
 
-The source-processing supervisor publishes progress, readiness advancement, manifest-audit handoff, retry/block state, and completion through one typed backend-neutral event sink. Every source-scoped event carries its configured lifecycle epoch and is rejected before delivery when that epoch is no longer current. The supervisor owns ordering and bounded progress throttling; native-app adapters own `GuiMessage` construction and user-facing stage/detail wording. Telemetry and non-GUI observers consume the semantic event model without depending on native presentation types.
+The source-processing supervisor publishes progress, readiness advancement, manifest-audit handoff, retry/block state, durable per-source health, and completion through one typed backend-neutral event sink. Every source-scoped event carries its configured lifecycle epoch and is rejected before delivery when that epoch is no longer current. Health is derived from the durable readiness snapshot plus runtime ownership, coalesced to one changed observation per source lifecycle, and retained after global progress becomes idle. The supervisor owns ordering and bounded progress throttling; native-app adapters own `GuiMessage` construction and user-facing stage/detail wording. Telemetry and non-GUI observers consume the semantic event model without depending on native presentation types.
 
 Source-readiness reconciliation progress is phase-specific and must not expose cancellation
 checkpoints or cumulative database row visits as completed product work. Manifest inspection is
@@ -399,6 +424,16 @@ For every current eligible file, the readiness stages are:
 
 This is exactly three file-scoped targets per current eligible file plus one source-scoped similarity target. Playback-cache residency is not a fifth readiness stage.
 
+Stable filesystem identity is an ownership key, not a uniqueness assertion over visible manifest
+paths. If two supported live paths are hard links to the same filesystem object, the current
+readiness executor must not collapse one path into a silently incomplete browser record. Until
+path-alias-aware analysis and browser projections are implemented, discovery records a bounded,
+actionable `duplicate_manifest_identity` terminal diagnostic containing the affected relative
+paths, parks that unchanged identity-membership revision without a five-second retry, and rechecks
+only after a supported live identity changes or an explicit manifest repair is requested. It remains
+parked if the duplicate condition persists. Distinct identities are never merged based on size,
+timestamps, or content hash.
+
 Each target and completion must carry the committed source generation, a non-empty file content generation or source-membership generation, and the stage's artifact-contract version. Desired-state publications also carry a per-source monotonic readiness revision; a writer whose revision is not newer than the persisted revision is stale even when its source generation is equal, so delayed lifecycle writers cannot reactivate an offline or disabled source. The source generation is a publication and diagnostic fence, not a blanket invalidation token for file-scoped artifacts: an unchanged stable file identity remains current across unrelated manifest changes when its stage version and stage-relevant content/path generation still match. Source-scoped similarity work must additionally match the current source generation and membership generation. A late completion may publish only when the values relevant to its scope still match the current desired target. Timestamps, total row counts, source-prep markers, or the existence of some artifacts are diagnostic inputs only; they must never make a source look ready when a current eligible identity lacks an exact artifact or when stale/deleted identities are still the only covered rows.
 
 The readiness classifier must distinguish current, pending, running with a lease, retryable failure with a retry deadline, permanent failure, unsupported terminal state, offline, disabled, deleted, and stale-by-generation. Unsupported, deleted, and permanent-failure targets remain observable but do not spin. Offline and disabled sources retain desired state without being scheduled until they become active and available. Expired leases and due retryable failures become actionable deficits after restart or worker interruption.
@@ -407,7 +442,7 @@ The source-processing execution boundary carries a typed failure class and stabl
 
 One revision-aware reconciler owns source completeness. Routine safety probes compare the durable manifest generation, accepted readiness generation, source availability, retry/lease deadlines, and an independently versioned artifact contract before reading file targets. A fully converged unchanged source must stop at that bounded checkpoint. Authoritative committed manifest changes carry created, changed, moved, and deleted identity deltas into readiness persistence; one generation step may update only those identities plus the source similarity target, while a missing checkpoint, generation gap, duplicate identity, or contract change falls back to a complete target publication. Similarity membership uses a durable order-independent cryptographic accumulator and member count so one identity can be added, removed, or replaced without hashing the complete manifest, while full publication remains the correctness fallback.
 
-Reconciliation compares desired targets with persisted artifacts and readiness-owned work, deduplicates deficits by source, scope identity, stage, version, and generation, and exposes per-source/per-stage counts, the accepted readiness revision, current work, retry/failure state, and diagnostic generations. It must not report idle while an actionable deficit exists. Source completeness is computed from the exact current eligible identity set plus the current source-level target, never from row counts or timestamps alone. Telemetry distinguishes cheap no-op safety probes, committed target-delta reconciliation, and explicit full manifest audits.
+Reconciliation compares desired targets with persisted artifacts and readiness-owned work, deduplicates deficits by source, scope identity, stage, version, and generation, and exposes per-source/per-stage counts, the accepted readiness revision, current work, retry/failure state, stable failure codes, and diagnostic generations. Fully ready, processing, retry-waiting, prerequisite-blocked, offline, disabled, terminally degraded, and reconciliation-failed sources remain distinguishable without keeping global progress active. It must not report idle while an actionable deficit exists. Source completeness is computed from the exact current eligible identity set plus the current source-level target, never from row counts or timestamps alone. Telemetry distinguishes cheap no-op safety probes, committed target-delta reconciliation, and explicit full manifest audits.
 
 Detection and execution stay off UI, render, and latency-sensitive read paths. UI and read paths may observe a side-effect-free readiness snapshot and request priority, repair, or retry, but they must not discover a missing artifact by directly enqueueing hidden work. Lifecycle writers publish committed desired generations and wake the background coordinator only after their authoritative transaction succeeds.
 
@@ -1290,7 +1325,13 @@ A broken or missing source should keep its source metadata and source database r
 
 Relinking should validate the chosen folder, reopen or reconcile the source database, and preserve metadata where file identity can be matched safely. Removing a broken source from Wavecrate should preserve audio files, the source database, reusable source artifacts, and safe content-addressed caches while asynchronously releasing volatile and path-owned derived state whose ownership can be proven.
 
-Scanning should be recursive by default. Wavecrate should skip hidden or system folders only when configured to do so, and it should avoid traversing dangerous or redundant filesystem structures such as cycles, inaccessible junctions, or repeated symlink targets. The authoritative scanner and native browser projection must classify source entries without following links: directory and file symlinks, junctions, and equivalent reparse-point links stay outside both the manifest and browser tree. Entry-type inspection failures should be logged and skipped without making the source unavailable or exposing paths beyond its configured root.
+Scanning should be recursive by default. Wavecrate should skip hidden or system folders only when configured to do so, and it should avoid traversing dangerous or redundant filesystem structures such as cycles, inaccessible junctions, or repeated symlink targets. Every recursive traversal generation must derive a stable directory identity from its opened no-follow descriptor and visit each identity at most once; the identity includes the Unix device or Windows volume so distinct devices are not collapsed, while bind mounts or repeated mount targets that resolve to an already visited identity are skipped. An identity that cannot be obtained on an unsupported platform or because descriptor metadata failed is a bounded, typed incomplete-scan diagnostic, not a path-string fallback. Repeated and identity-unavailable subtrees remain uncertain for missing-row reconciliation so they cannot cause destructive deletion. The authoritative scanner and native browser projection must classify source entries without following links: directory and file symlinks, junctions, and equivalent reparse-point links stay outside both the manifest and browser tree. Entry-type inspection failures should be logged and skipped without making the source unavailable or exposing paths beyond its configured root.
+
+Every scanner content-hash path, including full scans, periodic content audits, deferred hashing, exact-path hashing, and targeted watcher reconciliation, must open through a source-root capability without following the final component or any ancestor. Filesystem facts, content reads, and post-read revalidation must use the retained descriptor for one object, and the manifest path must still bind to that object immediately before publication. A path that disappears, becomes linked, or is replaced remains retired or retryable without reading the replacement target, and content reads must remain outside source-database writer ownership.
+
+On platforms that expose raw non-Unicode filenames, scanner classification must not let one such entry abort publication for the surrounding source. Supported audio with a non-Unicode relative path remains outside the normal sample manifest and is retained as a typed, lossless index-only diagnostic; other index-only classifications use the same lossless path identity. The encoding must preserve distinct raw names, round-trip across restart, and remain consistent for full scans, targeted sync, deletion, rename, and browser/index projections. Existing Unicode source paths retain their current readable database representation.
+
+Filesystem modification timestamps persisted by the scanner use signed Unix nanoseconds in the existing `i64` database units. Exact pre-epoch values, including nanoseconds immediately before the epoch, remain negative and preserve ordering across zero; timestamps outside the representable range saturate deterministically to `i64::MIN` or `i64::MAX`. Full scans, targeted scans, index-only entries, and descriptor revalidation share this conversion contract.
 
 The final scanner should not silently impose arbitrary product limits on folder depth, number of child folders, or number of files per source. Any defensive scan limit used to protect responsiveness should be explicit, configurable where practical, logged, and visible as a partial-scan warning with a clear rescan or settings path.
 
@@ -1327,11 +1368,19 @@ The watcher should cover ordinary source-folder changes, including:
 
 File-watch events are bounded, debounced hints and must be reconciled through the same source database rules as manual scans. Targeted sync, full scans, and deferred hashing publish a monotonic committed source revision plus structured created, changed, moved, and deleted identity deltas. Browser projection and readiness reconciliation may update only after that authoritative commit. The UI may show a short scanning/reconciling state while Wavecrate validates the change, but it should not wait for a full source rescan before showing committed additions, removals, folder changes, or stale/missing states.
 
+Watcher-targeted synchronization must scale with the changed subtree. Debounced paths are normalized once and an ancestor target subsumes its descendants before filesystem traversal, index reconciliation, or manifest reads. Targeted manifest reads use one revision-consistent exact-subtree boundary and retain only scoped rows; committed deltas use touched rows plus explicit rename evidence. Targeted completion and rename recovery use revision-fenced bounded commits and candidate-scoped reads. A revision gap, uncertain traversal, watcher overflow, or explicit authoritative request may choose the existing full-snapshot/full-traversal fallback; a targeted revision gap may instead return a typed stale result for retry. Ordinary one-file or one-directory changes must not load or clone the complete source manifest. Targeted telemetry records canonical scope count, manifest rows materialized, scoped query count, and elapsed synchronization time so regression thresholds can be checked at representative source sizes.
+
 Watcher ingress and per-source path accumulation must remain bounded. Events should coalesce by source and path; overflow, watcher restart, or irreducibly uncertain targeted sync must degrade to an authoritative background source scan while keeping the current browser usable and clearly indicating that reconciliation is in progress. One source-scoped causal plan coordinates targeted watcher paths and full-refresh causes: paths arriving during active work are deduplicated for one ordered follow-up, a pending full traversal subsumes compatible queued paths, and a full fallback waits for the active targeted commit before execution. Pending full refreshes must retain their typed cause, source lifecycle generation, and committed revision when one exists. An accepted scan may suppress a revision-backed refresh only when its authoritative snapshot covers that revision; unconditional watcher-loss, cancellation, and incomplete-sync recovery must remain queued. Convergence telemetry should record the cause, covered revision, lifecycle generation, queue age, suppression/coalescing result, and terminal idle transition. Watch roots must be tracked by platform filesystem identity as well as configured path so a directory or mounted volume replaced at the same path fences the retired watcher, re-registers the current object, and triggers authoritative reconciliation. Identity-read uncertainty must fail toward bounded, backoff-limited full reconciliation without turning Wavecrate-owned database metadata echoes into a scan loop. Watch roots must be re-established with bounded backoff after runtime failure, and missing roots must be detected and reconciled when they disappear or reappear. Backend construction and teardown are coordinator-owned lifecycle work: at most one unresolved initializer per backend and a fixed number of off-coordinator teardown workers may exist. A constructor or backend drop that does not return must fence its generation, retain its accounted slot, log the degraded state, and block additional recovery work of that kind rather than creating detached workers; native-to-polling fallback and full-manifest reconciliation remain available while capacity exists.
 
 Foreground source scans publish one typed, source-scoped lifecycle from queueing through source replacement, scan-capacity and database admission, scanning, persistence, projection application, retry, and terminal outcomes. A successful authoritative scan carries its exact committed identity delta through projection application into bounded readiness reconciliation; an unchanged delta is a no-op, while an incomplete traversal, revision mismatch, missing delta, or stale lifecycle chooses complete reconciliation instead of treating a partial delta as authoritative. Queue age, last meaningful progress age, lifecycle generation, current capacity owner, and retry count use monotonic runtime state and remain observable without flooding the UI with timer events. A healthy wait names its blocker; a nonterminal task with no meaningful change for the calibrated threshold becomes `Taking longer than expected` and exposes retry/cancel actions that still use the normal lifecycle and resource fences. User cancellation, source retirement or replacement, shutdown, panic, and dropped completion must never strand the visible scan owner. Stale progress and completion from a retired task or generation are ignored.
 
-Watcher delivery is not the correctness boundary. While Wavecrate is running, frequent source-processing safety activity should inspect only durable revisions, contracts, availability, and due deadlines when nothing changed. A separate infrequent authoritative audit of each active source manifest and a bounded rotating content sample repairs closed-app changes, dropped events, and same-size in-place edits without high-frequency full-manifest polling or UI-thread filesystem work.
+Watcher delivery is not the correctness boundary. While Wavecrate is running, frequent source-processing safety activity should inspect only durable revisions, contracts, availability, and due deadlines when nothing changed. A separate infrequent authoritative audit of each active source manifest repairs closed-app changes and dropped events without high-frequency full-manifest polling or UI-thread filesystem work. Manifest-traversal completion and content-verification coverage are separate durable facts: completing one traversal must not claim that its content slice completed.
+
+Interrupted manifest-audit checkpoints are resumable traversal candidates, not verification evidence. A resumed traversal must reopen every checkpointed path before excluding it from normal reconciliation; it must hash one bounded checkpoint slice at a time so same-size edits with restored modified times cannot retain a stale content identity. Completion remains due until all durable checkpoint candidates have been revalidated. Missing or renamed checkpointed paths remain eligible for ordinary missing and rename reconciliation. Checkpoint persistence, manifest publication, and completion timestamp publication must remain ordered so a crash can leave work due for retry but cannot publish a false complete audit.
+
+Content verification advances through a durable per-source rotation with a revisioned forward cursor and independently due retry entries. Each admitted slice derives an adaptive entry target from the 30-day coverage objective, then remains bounded by elapsed time, bytes read, a hard entry ceiling, source storage class, and current playback/foreground activity. Forward and retry planning use indexed cursor windows with explicit row limits proportional to that entry ceiling; an admitted slice must not load or clone the complete manifest or audit-state map. A skipped, unavailable, unsupported, failed, or concurrently changed entry retains a stable reason and retry deadline without preventing forward progress. Cancellation, shutdown, restart, source replacement, and root unavailability preserve committed entry checkpoints; legacy `source_content_audit_cursor_v1` state is imported as cursor progress but never treated as verification evidence.
+
+Per-source coverage telemetry reports the active rotation and checkpoint revision, verified and remaining entries/bytes, bytes read, retry scope, oldest-unverified age, projected rotation time, and the previous measured rotation time. A content delta may be published only after the hashed filesystem snapshot is revalidated and its authoritative source-database transaction commits. Diagnostic acceleration may raise the normal slice ceilings but must retain the same time, byte, lifecycle, identity, revision, and foreground-resource fences.
 
 When a file disappears, Wavecrate should retain metadata as unavailable state until reconciliation determines whether it was moved, renamed, deleted, or temporarily inaccessible. The UI should distinguish missing, unavailable, unsupported, and failed-to-scan files.
 
@@ -1379,6 +1428,8 @@ The sample browser should support:
 - visible distinction between selected, focused, playing, edited, locked, missing, and processing rows
 
 The focused row is the primary keyboard target. The selected set is the batch-operation target. The playing file may differ from the focused row during preview or handoff workflows, but the UI should make that clear.
+
+Marking a sample or folder with the `X` hotkey should briefly flash the marked item in the active browser view. Removing an item from the selected set should not show the positive marking flash.
 
 When multiple sample files are selected, Wavecrate should visually indicate metadata differences across the selection. Shared values should be shown normally, while fields with mixed values should show a clear mixed-state indicator rather than pretending all selected files share the focused file's metadata. This should apply to common metadata such as tags, label, prefix, BPM, Tuning/Scale, rating, temporary color collections, Playback Type, Sound Type, Character tags, and generated-name inputs where relevant.
 
@@ -1469,6 +1520,11 @@ The initial target is practical Windows-first file-based handoff, not deep DAW i
 Wavecrate should support clipboard-based audio handoff.
 
 When the user selects one or more supported sample files in the sample browser and presses copy, Wavecrate should place those files on the system clipboard in a format that DAWs and Explorer can consume as ordinary audio files.
+
+On Windows, the compatibility clipboard writer must open the clipboard with the
+current Wavecrate UI thread's active window as a non-null owner. It must close
+the clipboard on every post-open failure, including an `EmptyClipboard` failure,
+before returning the error.
 
 Playback-only unsupported audio files should not be eligible for Wavecrate's DAW/external audio handoff workflows, even when the original file path could technically be copied or dragged. Wavecrate cannot guarantee DAW compatibility for unsupported formats, so clipboard and drag/drop audio handoff should stay limited to supported sample formats. Users may still reveal, rename, move, copy, or remove the unsupported file through filesystem-management actions where those actions are available.
 
@@ -2787,6 +2843,17 @@ Updater behavior is intentionally conservative:
 * Windows release installs are manual by design
 * development-only overrides belong behind explicit env vars
 * updater failures should preserve the installed app rather than forcing risky writes
+* a staged update is not committed until every destination swap succeeds; failures
+  before that boundary must roll back and remain fatal
+* once every swap succeeds, failure to remove disposable `.old` or `.new` siblings is
+  a warning-bearing committed outcome and must not prevent the relaunch attempt
+* post-commit cleanup diagnostics retain each affected path and error, while a later
+  cleanup attempt may act only on `.old` or `.new` siblings reconstructed from
+  manifest destinations under a newly validated install root
+* transaction-remnant cleanup removes symlinks rather than following them, and the
+  next update run retries safe remnant cleanup before staging the same destination
+* relaunch failure remains independent and fatal even when the committed update also
+  carries cleanup warnings
 
 See `docs/TROUBLESHOOTING.md` and `docs/ENV_VARS.md` for diagnostics and overrides.
 

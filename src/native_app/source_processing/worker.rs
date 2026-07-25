@@ -59,6 +59,7 @@ pub(super) enum SourceProcessingFailureClass {
     Retryable,
     Permanent,
     Unsupported,
+    Cancelled,
 }
 
 /// Stable execution-failure code persisted independently from display text.
@@ -69,6 +70,13 @@ pub(super) enum SourceProcessingFailureCode {
     SqliteBusy,
     WorkerProcessFailed,
     WorkerProtocol,
+    ScannerIo,
+    ScannerStaleRevision,
+    ScannerIncomplete,
+    ScannerCancelled,
+    ScannerInvalidRoot,
+    ScannerTimeConversion,
+    SourceDatabaseRoot,
     ExecutionUnclassified,
 }
 
@@ -79,6 +87,13 @@ impl SourceProcessingFailureCode {
             Self::SqliteBusy => "sqlite_busy",
             Self::WorkerProcessFailed => "worker_process_failed",
             Self::WorkerProtocol => "worker_protocol",
+            Self::ScannerIo => "scanner_io",
+            Self::ScannerStaleRevision => "scanner_stale_revision",
+            Self::ScannerIncomplete => "scanner_incomplete",
+            Self::ScannerCancelled => "scanner_cancelled",
+            Self::ScannerInvalidRoot => "scanner_invalid_root",
+            Self::ScannerTimeConversion => "scanner_time_conversion",
+            Self::SourceDatabaseRoot => "source_database_root",
             Self::ExecutionUnclassified => "execution_unclassified",
         }
     }
@@ -96,7 +111,7 @@ pub(super) struct SourceProcessingFailure {
 }
 
 impl SourceProcessingFailure {
-    pub(super) const fn readiness_failure_classification(
+    pub(super) fn readiness_failure_classification(
         &self,
     ) -> wavecrate::sample_sources::readiness::ReadinessFailureClassification {
         match self.class {
@@ -108,6 +123,9 @@ impl SourceProcessingFailure {
             }
             SourceProcessingFailureClass::Unsupported => {
                 wavecrate::sample_sources::readiness::ReadinessFailureClassification::Unsupported
+            }
+            SourceProcessingFailureClass::Cancelled => {
+                unreachable!()
             }
         }
     }
@@ -132,6 +150,32 @@ impl SourceProcessingFailure {
             context: context.into(),
             source_error,
         }
+    }
+
+    fn retryable_with_source_error(
+        code: SourceProcessingFailureCode,
+        context: impl Into<String>,
+        source_error: impl Into<String>,
+    ) -> Self {
+        Self {
+            class: SourceProcessingFailureClass::Retryable,
+            code,
+            context: context.into(),
+            source_error: Some(source_error.into()),
+        }
+    }
+
+    fn cancelled() -> Self {
+        Self {
+            class: SourceProcessingFailureClass::Cancelled,
+            code: SourceProcessingFailureCode::ScannerCancelled,
+            context: "Source scanner cancelled".to_string(),
+            source_error: None,
+        }
+    }
+
+    pub(super) const fn is_cancelled(&self) -> bool {
+        matches!(self.class, SourceProcessingFailureClass::Cancelled)
     }
 }
 
@@ -168,6 +212,80 @@ impl From<rusqlite::Error> for SourceProcessingFailure {
             "Source database operation failed",
             Some(error.to_string()),
         )
+    }
+}
+
+impl From<wavecrate::app_dirs::AppDirError> for SourceProcessingFailure {
+    fn from(error: wavecrate::app_dirs::AppDirError) -> Self {
+        match error {
+            wavecrate::app_dirs::AppDirError::CreateDir { path, source } => {
+                Self::retryable_with_source_error(
+                    SourceProcessingFailureCode::SourceDatabaseRoot,
+                    "Source database root is temporarily unavailable",
+                    format!("{}: {source}", path.display()),
+                )
+            }
+            error => Self::permanent(
+                SourceProcessingFailureCode::SourceDatabaseRoot,
+                "Source database root could not be resolved",
+                Some(error.to_string()),
+            ),
+        }
+    }
+}
+
+impl From<wavecrate_scan::ScanError> for SourceProcessingFailure {
+    fn from(error: wavecrate_scan::ScanError) -> Self {
+        match error {
+            wavecrate_scan::ScanError::Canceled => Self::cancelled(),
+            wavecrate_scan::ScanError::StaleRevision { expected, actual } => Self::retryable(
+                SourceProcessingFailureCode::ScannerStaleRevision,
+                format!(
+                    "Source changed while completing deferred deep hash (expected revision {expected}, found {actual})"
+                ),
+            ),
+            wavecrate_scan::ScanError::TargetedRenameCandidateOverflow { limit } => {
+                Self::retryable_with_source_error(
+                    SourceProcessingFailureCode::ScannerIncomplete,
+                    "Targeted rename recovery requires an authoritative source rescan",
+                    format!("candidate limit {limit}"),
+                )
+            }
+            wavecrate_scan::ScanError::StaleRootGeneration { root } => {
+                Self::retryable_with_source_error(
+                    SourceProcessingFailureCode::ScannerIncomplete,
+                    "Source root changed while scanning",
+                    root.display().to_string(),
+                )
+            }
+            wavecrate_scan::ScanError::TraversalPolicyChanged => Self::retryable(
+                SourceProcessingFailureCode::ScannerStaleRevision,
+                "Source traversal policy changed while scanning",
+            ),
+            wavecrate_scan::ScanError::Incomplete { error, .. } => {
+                Self::retryable_with_source_error(
+                    SourceProcessingFailureCode::ScannerIncomplete,
+                    "Deferred deep hash did not complete",
+                    error,
+                )
+            }
+            wavecrate_scan::ScanError::Io { path, source } => Self::retryable_with_source_error(
+                SourceProcessingFailureCode::ScannerIo,
+                "Source file was unavailable while completing deferred deep hash",
+                format!("{}: {source}", path.display()),
+            ),
+            wavecrate_scan::ScanError::Db(error) => source_database_failure(error),
+            wavecrate_scan::ScanError::InvalidRoot(path) => Self::permanent(
+                SourceProcessingFailureCode::ScannerInvalidRoot,
+                "Source root is not available for deferred deep hash",
+                Some(path.display().to_string()),
+            ),
+            wavecrate_scan::ScanError::Time { path } => Self::permanent(
+                SourceProcessingFailureCode::ScannerTimeConversion,
+                "Source file timestamp could not be converted",
+                Some(path.display().to_string()),
+            ),
+        }
     }
 }
 

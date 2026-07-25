@@ -150,7 +150,7 @@ pub(super) fn publish_source_processing_progress(
 ) {
     let (completed, total) = match &candidate.task {
         RuntimeTask::Readiness(_) => (stats.progress_completed, stats.progress_total),
-        RuntimeTask::ManifestAudit => (0, 0),
+        RuntimeTask::ManifestAudit { .. } => (0, 0),
     };
     let (completed, total) = if total > 0 && completed < total {
         (completed, total)
@@ -165,7 +165,7 @@ pub(super) fn publish_source_processing_progress(
             stage: target.stage,
             relative_path: target.relative_path.clone(),
         },
-        RuntimeTask::ManifestAudit => SourceProcessingActivity::ManifestAudit {
+        RuntimeTask::ManifestAudit { .. } => SourceProcessingActivity::ManifestAudit {
             checked: None,
             relative_path: None,
         },
@@ -176,7 +176,7 @@ pub(super) fn publish_source_processing_progress(
                 candidate.source.id.as_str(),
                 lifecycle_generation,
             ),
-            source_row_active: !matches!(candidate.task, RuntimeTask::ManifestAudit),
+            source_row_active: !matches!(candidate.task, RuntimeTask::ManifestAudit { .. }),
             completed,
             total,
             activity,

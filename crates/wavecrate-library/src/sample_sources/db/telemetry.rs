@@ -11,10 +11,17 @@ use crate::diagnostics::{DbDebugEvent, emit_db_debug_event};
 use super::SourceDbError;
 
 #[cfg(debug_assertions)]
-type OpenTotalCounts = std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, usize>>;
+#[derive(Default)]
+struct OpenTotalTestState {
+    counts: std::collections::HashMap<std::path::PathBuf, usize>,
+    active_scopes: std::collections::HashSet<std::path::PathBuf>,
+}
 
 #[cfg(debug_assertions)]
-static SOURCE_DB_OPEN_TOTAL_COUNTS: std::sync::OnceLock<OpenTotalCounts> =
+type OpenTotalTestControls = (std::sync::Mutex<OpenTotalTestState>, std::sync::Condvar);
+
+#[cfg(debug_assertions)]
+static SOURCE_DB_OPEN_TOTAL_TEST_CONTROLS: std::sync::OnceLock<OpenTotalTestControls> =
     std::sync::OnceLock::new();
 
 const SLOW_SOURCE_DB_OPEN_STEP: Duration = Duration::from_millis(15);
@@ -171,27 +178,69 @@ pub(super) fn record_open_total(
 }
 
 #[cfg(debug_assertions)]
-fn test_open_total_counts() -> &'static OpenTotalCounts {
-    SOURCE_DB_OPEN_TOTAL_COUNTS
-        .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+fn test_open_total_controls() -> &'static OpenTotalTestControls {
+    SOURCE_DB_OPEN_TOTAL_TEST_CONTROLS.get_or_init(|| {
+        (
+            std::sync::Mutex::new(OpenTotalTestState::default()),
+            std::sync::Condvar::new(),
+        )
+    })
 }
 
 #[cfg(debug_assertions)]
 fn record_test_open_total(source_root: &Path) {
-    let mut counts = test_open_total_counts().lock().unwrap();
-    *counts.entry(source_root.to_path_buf()).or_insert(0) += 1;
+    let mut state = test_open_total_controls()
+        .0
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    *state.counts.entry(source_root.to_path_buf()).or_insert(0) += 1;
+}
+
+#[cfg(debug_assertions)]
+pub(super) fn acquire_open_total_count_scope(source_root: &Path) {
+    let (state, released) = test_open_total_controls();
+    let mut state = state
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    while state.active_scopes.contains(source_root) {
+        state = released
+            .wait(state)
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+    }
+    state.active_scopes.insert(source_root.to_path_buf());
+    state.counts.remove(source_root);
+}
+
+#[cfg(debug_assertions)]
+pub(super) fn release_open_total_count_scope(source_root: &Path) {
+    let (state, released) = test_open_total_controls();
+    let mut state = state
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    state.counts.remove(source_root);
+    let owned = state.active_scopes.remove(source_root);
+    drop(state);
+    debug_assert!(owned, "source DB open-count scope must own its root");
+    released.notify_all();
 }
 
 #[cfg(debug_assertions)]
 pub(super) fn reset_open_total_count(source_root: &Path) {
-    test_open_total_counts().lock().unwrap().remove(source_root);
+    test_open_total_controls()
+        .0
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .counts
+        .remove(source_root);
 }
 
 #[cfg(debug_assertions)]
 pub(super) fn open_total_count(source_root: &Path) -> usize {
-    test_open_total_counts()
+    test_open_total_controls()
+        .0
         .lock()
-        .unwrap()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .counts
         .get(source_root)
         .copied()
         .unwrap_or(0)
@@ -201,8 +250,10 @@ pub(super) fn open_total_count(source_root: &Path) -> usize {
 mod tests {
     use super::{
         SLOW_SOURCE_DB_OPEN_STEP, SLOW_SOURCE_DB_OPEN_TOTAL, SLOW_SOURCE_DB_OPEN_TOTAL_JOB_WORKER,
-        open_phase_success_threshold, open_total_success_threshold, slow_success_outcome,
+        open_phase_success_threshold, open_total_count, open_total_success_threshold,
+        record_test_open_total, slow_success_outcome,
     };
+    use std::path::{Path, PathBuf};
     use std::time::Duration;
 
     #[test]
@@ -257,5 +308,51 @@ mod tests {
             open_total_success_threshold("job_worker", false),
             SLOW_SOURCE_DB_OPEN_TOTAL_JOB_WORKER
         );
+    }
+
+    #[test]
+    fn open_total_count_scope_cleans_up_after_unwind() {
+        let root = Path::new("source-db-open-count-scope");
+        let unwind = std::panic::catch_unwind(|| {
+            let _scope = super::super::open::test_scope_source_db_open_total_count(root);
+            record_test_open_total(root);
+            assert_eq!(open_total_count(root), 1);
+            panic!("exercise source DB open-count cleanup");
+        });
+
+        assert!(unwind.is_err());
+        assert_eq!(open_total_count(root), 0);
+    }
+
+    #[test]
+    fn concurrent_same_root_open_total_count_scopes_are_isolated() {
+        let root = PathBuf::from("source-db-open-count-concurrent-scope");
+        let first_scope = super::super::open::test_scope_source_db_open_total_count(root.as_path());
+        record_test_open_total(root.as_path());
+        record_test_open_total(root.as_path());
+
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (acquired_tx, acquired_rx) = std::sync::mpsc::channel();
+        let worker_root = root.clone();
+        let worker = std::thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            let _scope = super::super::open::test_scope_source_db_open_total_count(&worker_root);
+            assert_eq!(open_total_count(&worker_root), 0);
+            record_test_open_total(&worker_root);
+            assert_eq!(open_total_count(&worker_root), 1);
+            acquired_tx.send(()).unwrap();
+        });
+
+        started_rx.recv().unwrap();
+        assert_eq!(open_total_count(root.as_path()), 2);
+        assert!(matches!(
+            acquired_rx.recv_timeout(Duration::from_millis(50)),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        ));
+
+        drop(first_scope);
+        acquired_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        worker.join().unwrap();
+        assert_eq!(open_total_count(root.as_path()), 0);
     }
 }

@@ -25,6 +25,9 @@ pub enum SourceDbError {
     /// Provided path contained disallowed components or was empty.
     #[error("Path contains invalid relative components: {0}")]
     InvalidRelativePath(PathBuf),
+    /// A relative path could not be represented without losing filesystem identity.
+    #[error("Path is not valid Unicode and cannot be persisted safely: {0}")]
+    NonUnicodeRelativePath(PathBuf),
     /// Database is locked or busy.
     #[error("Database is busy, please retry")]
     Busy,

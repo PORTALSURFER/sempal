@@ -150,17 +150,22 @@ fn parse_args_rejects_unknown_argument_with_help_text() {
 fn run_headless_with_passes_args_through_to_apply() {
     let args = sample_args();
     let captured = RefCell::new(None);
-    let plan = run_headless_with(args.clone(), |received| {
-        captured.replace(Some(received));
-        Ok(ApplyPlan {
-            release_tag: "v1.2.3".to_string(),
-            install_dir: sample_install_dir(),
-            relaunch: true,
-            copied_files: Vec::new(),
-            replaced_dirs: Vec::new(),
-            stale_removal_failures: Vec::new(),
-        })
-    })
+    let plan = run_headless_with(
+        args.clone(),
+        |received, _progress| {
+            captured.replace(Some(received));
+            Ok(ApplyPlan {
+                release_tag: "v1.2.3".to_string(),
+                install_dir: sample_install_dir(),
+                relaunch: true,
+                copied_files: Vec::new(),
+                replaced_dirs: Vec::new(),
+                post_commit_cleanup_failures: Vec::new(),
+                stale_removal_failures: Vec::new(),
+            })
+        },
+        |_| {},
+    )
     .expect("headless run");
 
     let received = captured
@@ -180,10 +185,35 @@ fn run_headless_with_passes_args_through_to_apply() {
 }
 
 #[test]
+fn run_headless_with_forwards_cleanup_warning_before_apply_error() {
+    let remnant = sample_install_dir().join("wavecrate.exe.old");
+    let expected_warning = format!(
+        "Warning: update committed but cleanup left {}: file is locked",
+        remnant.display()
+    );
+    let mut warnings = Vec::new();
+
+    let err = run_headless_with(
+        sample_args(),
+        |_, progress| {
+            progress(UpdateProgress::new(expected_warning.clone()));
+            Err(UpdateError::Invalid("relaunch blocked".to_string()))
+        },
+        |warning| warnings.push(warning),
+    )
+    .expect_err("relaunch failure must remain fatal");
+
+    assert!(err.contains("relaunch blocked"));
+    assert_eq!(warnings, vec![expected_warning]);
+}
+
+#[test]
 fn run_headless_with_returns_apply_errors_as_strings() {
-    let err = run_headless_with(sample_args(), |_| {
-        Err(UpdateError::Invalid("test failure".to_string()))
-    })
+    let err = run_headless_with(
+        sample_args(),
+        |_, _progress| Err(UpdateError::Invalid("test failure".to_string())),
+        |_| {},
+    )
     .unwrap_err();
 
     assert_eq!(err, "Invalid update: test failure");

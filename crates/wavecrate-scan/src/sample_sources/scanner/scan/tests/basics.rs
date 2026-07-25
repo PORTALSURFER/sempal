@@ -1,4 +1,7 @@
 use super::*;
+use crate::sample_sources::scanner::scan_fs::{
+    force_directory_entry_failure, force_directory_read_failure, force_file_type_failure,
+};
 
 #[test]
 fn scan_add_update_and_prune_missing() {
@@ -38,6 +41,108 @@ fn scan_add_update_and_prune_missing() {
     let rows = db.list_files().unwrap();
     assert_eq!(rows.len(), 1);
     assert!(!rows[0].missing);
+}
+
+#[test]
+fn full_scan_preserves_an_unreadable_subtree_and_recovers_its_real_deletion() {
+    let dir = tempdir().unwrap();
+    let protected = dir.path().join("protected");
+    std::fs::create_dir(&protected).unwrap();
+    std::fs::write(protected.join("kick.wav"), b"kick").unwrap();
+    let db = SourceDatabase::open_for_scan(dir.path()).unwrap();
+    scan_once(&db).unwrap();
+    db.set_tag(Path::new("protected/kick.wav"), Rating::KEEP_1)
+        .unwrap();
+
+    std::fs::remove_file(protected.join("kick.wav")).unwrap();
+    let failure = force_directory_read_failure(&protected);
+    let result = scan_once(&db);
+    let ScanError::Incomplete { committed, error } = result.unwrap_err() else {
+        panic!("an unreadable subtree must be retryable rather than authoritative");
+    };
+    assert!(error.contains("retry required"));
+    assert!(committed.committed_delta.deleted.is_empty());
+    assert!(
+        committed
+            .source_tree_snapshot
+            .as_ref()
+            .is_some_and(|snapshot| !snapshot.is_complete())
+    );
+    assert_eq!(
+        db.entry_for_path(Path::new("protected/kick.wav"))
+            .unwrap()
+            .expect("unobserved descendant must remain indexed")
+            .tag,
+        Rating::KEEP_1
+    );
+
+    drop(failure);
+    let recovered = scan_once(&db).expect("readable retry");
+    assert_eq!(recovered.missing, 1);
+    assert!(
+        db.entry_for_path(Path::new("protected/kick.wav"))
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
+fn full_scan_preserves_an_unenumerated_subtree_after_a_directory_entry_failure() {
+    let dir = tempdir().unwrap();
+    let protected = dir.path().join("protected");
+    std::fs::create_dir(&protected).unwrap();
+    std::fs::write(protected.join("kick.wav"), b"kick").unwrap();
+    // Keep one entry so the injected iterator failure is exercised after the
+    // indexed audio file disappears during the simulated outage.
+    std::fs::write(protected.join("notes.txt"), b"notes").unwrap();
+    let db = SourceDatabase::open_for_scan(dir.path()).unwrap();
+    scan_once(&db).unwrap();
+    db.set_tag(Path::new("protected/kick.wav"), Rating::KEEP_1)
+        .unwrap();
+
+    std::fs::remove_file(protected.join("kick.wav")).unwrap();
+    let failure = force_directory_entry_failure(&protected);
+    let result = scan_once(&db);
+    let ScanError::Incomplete { committed, .. } = result.unwrap_err() else {
+        panic!("directory iterator failure must be retryable");
+    };
+    assert!(committed.committed_delta.deleted.is_empty());
+    assert_eq!(
+        db.entry_for_path(Path::new("protected/kick.wav"))
+            .unwrap()
+            .unwrap()
+            .tag,
+        Rating::KEEP_1
+    );
+
+    drop(failure);
+    assert_eq!(scan_once(&db).unwrap().missing, 1);
+}
+
+#[test]
+fn full_scan_preserves_descendants_after_an_entry_type_failure() {
+    let dir = tempdir().unwrap();
+    let protected = dir.path().join("protected");
+    std::fs::create_dir(&protected).unwrap();
+    std::fs::write(protected.join("snare.wav"), b"snare").unwrap();
+    let db = SourceDatabase::open_for_scan(dir.path()).unwrap();
+    scan_once(&db).unwrap();
+
+    std::fs::remove_file(protected.join("snare.wav")).unwrap();
+    let failure = force_file_type_failure(&protected);
+    let result = scan_once(&db);
+    let ScanError::Incomplete { committed, .. } = result.unwrap_err() else {
+        panic!("entry type failure must be retryable");
+    };
+    assert!(committed.committed_delta.deleted.is_empty());
+    assert!(
+        db.entry_for_path(Path::new("protected/snare.wav"))
+            .unwrap()
+            .is_some()
+    );
+
+    drop(failure);
+    assert_eq!(scan_once(&db).unwrap().missing, 1);
 }
 
 #[test]
@@ -130,7 +235,7 @@ fn scan_ignores_non_wav_and_counts_nested() {
 }
 
 #[test]
-fn scan_tracks_dot_prefixed_wav_files_but_not_files_below_hidden_directories() {
+fn scan_includes_dot_prefixed_files_and_nested_hidden_audio_by_default() {
     let dir = tempdir().unwrap();
     let hidden = dir.path().join(".hidden");
     std::fs::create_dir(&hidden).unwrap();
@@ -140,12 +245,12 @@ fn scan_tracks_dot_prefixed_wav_files_but_not_files_below_hidden_directories() {
     let db = SourceDatabase::open_for_scan(dir.path()).unwrap();
     let stats = scan_once(&db).unwrap();
 
-    assert_eq!(stats.added, 1);
+    assert_eq!(stats.added, 2);
     assert!(db.entry_for_path(Path::new(".kick.wav")).unwrap().is_some());
     assert!(
         db.entry_for_path(Path::new(".hidden/ignored.wav"))
             .unwrap()
-            .is_none()
+            .is_some()
     );
 }
 
@@ -309,7 +414,14 @@ fn missing_stage_keeps_concurrently_restored_live_row() {
     let mut stats = ScanStats::default();
     let mut batch = db.write_batch().unwrap();
 
-    super::super::super::scan_diff::mark_missing(&db, &mut batch, [stale], &mut stats).unwrap();
+    super::super::super::scan_diff::mark_missing(
+        &db,
+        db.source_traversal_policy().unwrap(),
+        &mut batch,
+        [stale],
+        &mut stats,
+    )
+    .unwrap();
     batch.commit().unwrap();
 
     assert_eq!(stats.missing, 0);
@@ -342,13 +454,17 @@ fn missing_stage_prunes_path_replaced_by_directory() {
 }
 
 #[test]
-fn full_scan_prunes_tracked_files_below_hidden_directories() {
+fn configured_hidden_directory_exclusion_prunes_tracked_files() {
     let dir = tempdir().unwrap();
     let hidden = dir.path().join(".hidden");
     std::fs::create_dir(&hidden).unwrap();
     std::fs::write(hidden.join("one.wav"), b"hidden").unwrap();
     let db = SourceDatabase::open_for_scan(dir.path()).unwrap();
     db.upsert_file(Path::new(".hidden/one.wav"), 6, 1).unwrap();
+    db.set_source_traversal_policy(
+        wavecrate_library::sample_sources::SourceTraversalPolicy::exclude_hidden_directories(),
+    )
+    .unwrap();
 
     let stats = scan_once(&db).unwrap();
 
@@ -565,6 +681,166 @@ fn interrupted_manifest_audit_resumes_checked_paths_and_finishes_deletion_reconc
 }
 
 #[test]
+fn manifest_audit_progress_is_published_after_durable_checkpoint() {
+    let dir = tempdir().unwrap();
+    let relative = Path::new("missed.wav");
+    std::fs::write(dir.path().join(relative), b"missed watcher file").unwrap();
+    let db = SourceDatabase::open_for_scan(dir.path()).unwrap();
+    let mut progress = Vec::new();
+
+    audit_source_and_record_with_progress(&db, None, 0, 100, &mut |checked, path| {
+        let (checkpointed_paths, persisted_checked) = db
+            .begin_or_resume_manifest_audit_batch(101, usize::MAX)
+            .expect("read the checkpoint while publishing progress");
+        progress.push((
+            checked,
+            persisted_checked,
+            path.to_path_buf(),
+            checkpointed_paths,
+        ));
+    })
+    .expect("manifest audit should complete");
+
+    assert_eq!(progress.len(), 1);
+    let (checked, persisted_checked, path, checkpointed_paths) = &progress[0];
+    assert_eq!(*checked, 1);
+    assert_eq!(*persisted_checked, 1);
+    assert_eq!(path, relative);
+    assert_eq!(checkpointed_paths, &vec![relative.to_path_buf()]);
+}
+
+#[test]
+fn interrupted_manifest_audit_revalidates_a_checkpointed_file() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let dir = tempdir().unwrap();
+    for index in 0..70 {
+        std::fs::write(dir.path().join(format!("sample-{index:03}.wav")), b"x").unwrap();
+    }
+    let db = SourceDatabase::open_for_scan(dir.path()).unwrap();
+    let cancel = AtomicBool::new(false);
+
+    let first =
+        audit_source_and_record_with_progress(&db, Some(&cancel), 0, 100, &mut |checked, _| {
+            if checked >= 64 {
+                cancel.store(true, Ordering::Release);
+            }
+        });
+    assert!(matches!(first, Err(ScanError::Incomplete { .. })));
+
+    let checked = db
+        .begin_or_resume_manifest_audit(101)
+        .expect("load durable audit checkpoint");
+    assert_eq!(checked.len(), 64);
+    let relative = &checked[0];
+    let path = dir.path().join(relative);
+    let original_modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+    let original_entry = db
+        .entry_for_path(relative)
+        .unwrap()
+        .expect("checkpointed path is indexed");
+    let original_modified_ns = original_entry.modified_ns;
+    let original_hash = original_entry
+        .content_hash
+        .expect("small fixture is hashed during the quick scan");
+
+    std::fs::write(&path, b"y").unwrap();
+    let file = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+    file.set_times(std::fs::FileTimes::new().set_modified(original_modified))
+        .unwrap();
+    cancel.store(false, Ordering::Release);
+    let resumed = audit_source_and_record_with_progress(&db, Some(&cancel), 0, 200, &mut |_, _| {})
+        .expect("resume interrupted manifest audit");
+    let entry = db
+        .entry_for_path(relative)
+        .unwrap()
+        .expect("checkpointed path remains indexed");
+
+    assert_eq!(entry.file_size, 1);
+    assert_eq!(entry.modified_ns, original_modified_ns);
+    assert_ne!(entry.content_hash.as_deref(), Some(original_hash.as_str()));
+    assert_eq!(resumed.updated, 1);
+    assert!(resumed.content_changed >= 1);
+    assert!(
+        resumed
+            .committed_delta
+            .changed
+            .iter()
+            .any(|changed| changed.relative_path == *relative)
+    );
+    assert_eq!(
+        db.get_metadata(crate::sample_sources::db::META_LAST_MANIFEST_AUDIT_AT)
+            .unwrap()
+            .as_deref(),
+        Some("200")
+    );
+}
+
+#[test]
+fn interrupted_manifest_audit_revalidates_checkpointed_paths_in_bounded_slices() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let dir = tempdir().unwrap();
+    for index in 0..128 {
+        std::fs::write(dir.path().join(format!("sample-{index:03}.wav")), b"x").unwrap();
+    }
+    let db = SourceDatabase::open_for_scan(dir.path()).unwrap();
+    let cancel = AtomicBool::new(false);
+    let first =
+        audit_source_and_record_with_progress(&db, Some(&cancel), 0, 100, &mut |checked, _| {
+            if checked >= 128 {
+                cancel.store(true, Ordering::Release);
+            }
+        });
+    assert!(matches!(first, Err(ScanError::Incomplete { .. })));
+
+    let checked = db
+        .begin_or_resume_manifest_audit(101)
+        .expect("load durable audit checkpoint");
+    assert_eq!(checked.len(), 128);
+    let relative = &checked[0];
+    let path = dir.path().join(relative);
+    let original_hash = db
+        .entry_for_path(relative)
+        .unwrap()
+        .expect("checkpointed path is indexed")
+        .content_hash
+        .expect("small fixture is hashed during the quick scan");
+    std::fs::write(&path, b"y").unwrap();
+
+    let resumed = audit_source_and_record(&db, None, 0, 200);
+    assert!(matches!(resumed, Err(ScanError::Incomplete { .. })));
+    assert_eq!(
+        db.begin_or_resume_manifest_audit(201)
+            .expect("load remaining bounded checkpoint work")
+            .len(),
+        64
+    );
+    assert_ne!(
+        db.entry_for_path(relative)
+            .unwrap()
+            .unwrap()
+            .content_hash
+            .as_deref(),
+        Some(original_hash.as_str())
+    );
+    assert!(
+        db.get_metadata(crate::sample_sources::db::META_LAST_MANIFEST_AUDIT_AT)
+            .unwrap()
+            .is_none(),
+        "audit completion must remain pending while checkpoint slices remain"
+    );
+
+    audit_source_and_record(&db, None, 0, 300).expect("finish remaining checkpoint slice");
+    assert_eq!(
+        db.get_metadata(crate::sample_sources::db::META_LAST_MANIFEST_AUDIT_AT)
+            .unwrap()
+            .as_deref(),
+        Some("300")
+    );
+}
+
+#[test]
 fn cancellation_after_walk_skips_missing_reconciliation_and_completion_publish() {
     use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -669,11 +945,49 @@ fn bounded_manifest_audit_repairs_same_size_closed_app_edit() {
 }
 
 #[test]
+fn manifest_audit_keeps_an_unreadable_subtree_due_for_retry() {
+    let dir = tempdir().unwrap();
+    let protected = dir.path().join("protected");
+    std::fs::create_dir(&protected).unwrap();
+    std::fs::write(protected.join("kick.wav"), b"kick").unwrap();
+    let db = SourceDatabase::open_for_scan(dir.path()).unwrap();
+    scan_once(&db).unwrap();
+
+    std::fs::remove_file(protected.join("kick.wav")).unwrap();
+    let failure = force_directory_read_failure(&protected);
+    let result = audit_source_and_record(&db, None, 8, 1_234);
+    let ScanError::Incomplete { committed, error } = result.unwrap_err() else {
+        panic!("partial manifest audit must remain retryable");
+    };
+    assert!(error.contains("retry required"));
+    assert!(committed.committed_delta.deleted.is_empty());
+    assert!(
+        db.get_metadata(crate::sample_sources::db::META_LAST_MANIFEST_AUDIT_AT)
+            .unwrap()
+            .is_none()
+    );
+
+    drop(failure);
+    let recovered = audit_source_and_record(&db, None, 8, 1_234).unwrap();
+    assert_eq!(recovered.missing, 1);
+    assert_eq!(
+        db.get_metadata(crate::sample_sources::db::META_LAST_MANIFEST_AUDIT_AT)
+            .unwrap()
+            .as_deref(),
+        Some("1234")
+    );
+}
+
+#[test]
 fn manifest_audit_publishes_scan_repair_when_content_verification_is_cancelled() {
     let dir = tempdir().unwrap();
     let db = SourceDatabase::open_for_scan(dir.path()).unwrap();
     std::fs::write(dir.path().join("missed.wav"), b"missed watcher event").unwrap();
     let cancel = std::sync::atomic::AtomicBool::new(false);
+    let generation_before = db
+        .pending_rename_diagnostics()
+        .unwrap()
+        .authoritative_generation;
 
     let result = audit_source_and_record_with_post_scan_hook(&db, Some(&cancel), 8, 1_234, || {
         cancel.store(true, std::sync::atomic::Ordering::Release)
@@ -689,11 +1003,22 @@ fn manifest_audit_publishes_scan_repair_when_content_verification_is_cancelled()
         stats.committed_delta.created[0].relative_path,
         Path::new("missed.wav")
     );
-    assert!(
+    assert_eq!(
         db.get_metadata(crate::sample_sources::db::META_LAST_MANIFEST_AUDIT_AT)
             .unwrap()
-            .is_none(),
-        "incomplete verification must remain due for retry"
+            .as_deref(),
+        Some("1234"),
+        "manifest traversal completion is independent from content coverage"
+    );
+    let coverage = db.content_audit_report(1_234).unwrap();
+    assert_eq!(coverage.remaining_entries, 1);
+    assert_eq!(coverage.verified_entries, 0);
+    assert_eq!(
+        db.pending_rename_diagnostics()
+            .unwrap()
+            .authoritative_generation,
+        generation_before,
+        "failed audit verification must not authorize retention pruning"
     );
 }
 
@@ -704,6 +1029,10 @@ fn manifest_audit_publishes_unchanged_committed_revision_when_verification_is_ca
     let db = SourceDatabase::open_for_scan(dir.path()).unwrap();
     scan_once(&db).unwrap();
     let cancel = std::sync::atomic::AtomicBool::new(false);
+    let generation_before = db
+        .pending_rename_diagnostics()
+        .unwrap()
+        .authoritative_generation;
 
     let result = audit_source_and_record_with_post_scan_hook(&db, Some(&cancel), 8, 1_234, || {
         cancel.store(true, std::sync::atomic::Ordering::Release)
@@ -719,6 +1048,40 @@ fn manifest_audit_publishes_unchanged_committed_revision_when_verification_is_ca
         db.get_revision().unwrap()
     );
     assert!(committed.committed_delta.revision > 0);
+    assert_eq!(
+        db.pending_rename_diagnostics()
+            .unwrap()
+            .authoritative_generation,
+        generation_before
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn manifest_audit_root_swap_after_scan_returns_committed_checkpoint() {
+    let parent = tempdir().unwrap();
+    let root = parent.path().join("source");
+    std::fs::create_dir(&root).unwrap();
+    std::fs::write(root.join("known.wav"), b"known").unwrap();
+    let db = SourceDatabase::open_for_scan(&root).unwrap();
+
+    let old_root = parent.path().join("old-source");
+    let result = audit_source_and_record_with_pre_record_hook(&db, None, 0, 1_234, || {
+        std::fs::rename(&root, &old_root).unwrap();
+        std::fs::create_dir(&root).unwrap();
+    });
+    let ScanError::Incomplete { committed, error } = result.unwrap_err() else {
+        panic!("stale audit completion must return the committed checkpoint");
+    };
+
+    assert!(error.contains("Source root generation changed"));
+    assert_eq!(committed.committed_delta.created.len(), 1);
+    assert!(db.entry_for_path(Path::new("known.wav")).unwrap().is_some());
+    assert!(
+        db.get_metadata(crate::sample_sources::db::META_LAST_MANIFEST_AUDIT_AT)
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]

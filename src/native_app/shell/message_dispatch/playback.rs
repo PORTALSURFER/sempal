@@ -9,8 +9,14 @@ impl NativeAppState {
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
         match message {
+            GuiMessage::AudioOptionsRefreshFinished(completion) => {
+                self.finish_audio_options_refresh(completion)
+            }
+            GuiMessage::AudioOutputPersisted(completion) => {
+                self.finish_audio_output_persist(completion)
+            }
             GuiMessage::AudioPlayerOpenFinished(completion) => {
-                self.finish_audio_player_open(completion)
+                self.finish_audio_player_open(completion, context)
             }
             GuiMessage::PlaySelectedSample => self.play_selected_sample(context),
             GuiMessage::PlayFromCurrentPlayStart => self.play_from_current_play_start(context),

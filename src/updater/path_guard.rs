@@ -10,9 +10,6 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-#[cfg(test)]
-use std::sync::{Mutex, OnceLock};
-
 use super::UpdateError;
 
 /// Canonical, validated updater install root used to resolve update payload paths.
@@ -37,6 +34,14 @@ impl ValidatedInstallRoot {
 
     /// Return a validated child path rooted under this installation directory.
     pub(crate) fn child_path(&self, name: &str) -> Result<PathBuf, UpdateError> {
+        self.child_path_with_metadata(name, |path| fs::symlink_metadata(path))
+    }
+
+    fn child_path_with_metadata(
+        &self,
+        name: &str,
+        symlink_metadata: impl Fn(&Path) -> std::io::Result<fs::Metadata>,
+    ) -> Result<PathBuf, UpdateError> {
         let relative = sanitize_relative_path(name)?;
         let candidate = self.dir.join(relative);
         if !candidate.starts_with(&self.dir) {
@@ -45,12 +50,15 @@ impl ValidatedInstallRoot {
                 candidate.display()
             )));
         }
-        ensure_no_symlink_path(&candidate)?;
+        ensure_no_symlink_path(&candidate, symlink_metadata)?;
         Ok(candidate)
     }
 }
 
-fn ensure_no_symlink_path(path: &Path) -> Result<(), UpdateError> {
+fn ensure_no_symlink_path(
+    path: &Path,
+    symlink_metadata: impl Fn(&Path) -> std::io::Result<fs::Metadata>,
+) -> Result<(), UpdateError> {
     let mut current = PathBuf::new();
     for component in path.components() {
         match component {
@@ -101,22 +109,6 @@ fn allow_symlink_validation_errors() -> bool {
         .unwrap_or(false)
 }
 
-#[cfg(test)]
-fn symlink_metadata(path: &Path) -> std::io::Result<fs::Metadata> {
-    if let Some(hook) = SYMLINK_METADATA_HOOK.get()
-        && let Ok(guard) = hook.lock()
-        && let Some(hook) = *guard
-    {
-        return hook(path);
-    }
-    fs::symlink_metadata(path)
-}
-
-#[cfg(not(test))]
-fn symlink_metadata(path: &Path) -> std::io::Result<fs::Metadata> {
-    fs::symlink_metadata(path)
-}
-
 fn sanitize_relative_path(name: &str) -> Result<PathBuf, UpdateError> {
     let mut sanitized = PathBuf::new();
     let mut saw_component = false;
@@ -139,85 +131,14 @@ fn sanitize_relative_path(name: &str) -> Result<PathBuf, UpdateError> {
 }
 
 #[cfg(test)]
-type SymlinkMetadataHook = fn(&Path) -> std::io::Result<fs::Metadata>;
-
-#[cfg(test)]
-static SYMLINK_METADATA_HOOK: OnceLock<Mutex<Option<SymlinkMetadataHook>>> = OnceLock::new();
-
-#[cfg(test)]
-pub(super) fn updater_path_guard_test_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-}
-
-#[cfg(test)]
-struct SymlinkMetadataHookGuard {
-    prev: Option<SymlinkMetadataHook>,
-}
-
-#[cfg(test)]
-impl SymlinkMetadataHookGuard {
-    fn new(hook: Option<SymlinkMetadataHook>) -> Self {
-        let cell = SYMLINK_METADATA_HOOK.get_or_init(|| Mutex::new(None));
-        let mut guard = cell.lock().expect("symlink metadata hook lock");
-        let prev = std::mem::replace(&mut *guard, hook);
-        Self { prev }
-    }
-}
-
-#[cfg(test)]
-impl Drop for SymlinkMetadataHookGuard {
-    fn drop(&mut self) {
-        if let Some(cell) = SYMLINK_METADATA_HOOK.get() {
-            let mut guard = cell.lock().expect("symlink metadata hook lock");
-            *guard = self.prev;
-        }
-    }
-}
-
-#[cfg(test)]
 mod tests {
     use super::*;
     use std::io;
     use tempfile::tempdir;
-
-    struct EnvVarGuard {
-        key: String,
-        previous: Option<String>,
-    }
-
-    impl EnvVarGuard {
-        fn set(key: &str, value: &str) -> Self {
-            let previous = std::env::var(key).ok();
-            unsafe {
-                std::env::set_var(key, value);
-            }
-            Self {
-                key: key.to_string(),
-                previous,
-            }
-        }
-    }
-
-    impl Drop for EnvVarGuard {
-        fn drop(&mut self) {
-            if let Some(value) = self.previous.take() {
-                unsafe {
-                    std::env::set_var(&self.key, value);
-                }
-            } else {
-                unsafe {
-                    std::env::remove_var(&self.key);
-                }
-            }
-        }
-    }
+    use wavecrate_library::test_runtime::TestRuntimeGuard;
 
     #[test]
     fn ensure_child_path_rejects_parent_dir() {
-        let _lock = updater_path_guard_test_lock()
-            .lock()
-            .expect("updater test lock");
         let dir = tempdir().expect("tempdir");
         let root = ValidatedInstallRoot::new(dir.path()).expect("install root");
         let err = root
@@ -228,9 +149,6 @@ mod tests {
 
     #[test]
     fn ensure_child_path_rejects_absolute_path() {
-        let _lock = updater_path_guard_test_lock()
-            .lock()
-            .expect("updater test lock");
         let dir = tempdir().expect("tempdir");
         #[cfg(windows)]
         let name = "C:\\evil.txt";
@@ -243,10 +161,8 @@ mod tests {
 
     #[test]
     fn ensure_child_path_allows_relative_path() {
-        let _lock = updater_path_guard_test_lock()
-            .lock()
-            .expect("updater test lock");
-        let _guard = EnvVarGuard::set("WAVECRATE_UPDATER_ALLOW_SYMLINK_ERRORS", "1");
+        let mut runtime = TestRuntimeGuard::acquire();
+        runtime.set_var("WAVECRATE_UPDATER_ALLOW_SYMLINK_ERRORS", "1");
         let dir = tempdir().expect("tempdir");
         let root = ValidatedInstallRoot::new(dir.path()).expect("install root");
         let path = root.child_path("./ok/file.txt").expect("relative path");
@@ -260,9 +176,6 @@ mod tests {
     fn ensure_child_path_rejects_symlinked_component() {
         use std::os::unix::fs::symlink;
 
-        let _lock = updater_path_guard_test_lock()
-            .lock()
-            .expect("updater test lock");
         let dir = tempdir().expect("tempdir");
         let install = dir.path().join("install");
         let external = dir.path().join("external");
@@ -280,9 +193,8 @@ mod tests {
 
     #[test]
     fn ensure_child_path_fails_on_symlink_metadata_error() {
-        let _lock = updater_path_guard_test_lock()
-            .lock()
-            .expect("updater test lock");
+        let mut runtime = TestRuntimeGuard::acquire();
+        runtime.set_var("WAVECRATE_UPDATER_ALLOW_SYMLINK_ERRORS", "0");
         fn fail_metadata(_: &Path) -> io::Result<fs::Metadata> {
             Err(io::Error::new(
                 ErrorKind::PermissionDenied,
@@ -290,12 +202,10 @@ mod tests {
             ))
         }
 
-        let _env = EnvVarGuard::set("WAVECRATE_UPDATER_ALLOW_SYMLINK_ERRORS", "0");
-        let _guard = SymlinkMetadataHookGuard::new(Some(fail_metadata));
         let dir = tempdir().expect("tempdir");
         let root = ValidatedInstallRoot::new(dir.path()).expect("install root");
         let err = root
-            .child_path("ok/file.txt")
+            .child_path_with_metadata("ok/file.txt", fail_metadata)
             .expect_err("metadata failures must fail closed");
         assert!(
             err.to_string()

@@ -82,6 +82,7 @@ impl NativeAppState {
             | GuiMessage::StarmapLayoutLoaded(_)
             | GuiMessage::SimilarityScoresResolved(_)
             | GuiMessage::SimilarityReadinessAdvanced { .. }
+            | GuiMessage::SourceProcessingHealth(_)
             | GuiMessage::SourceProcessingProgress(_)
             | GuiMessage::FolderScanProgress(_)
             | GuiMessage::FolderScanDiscoveryBatch(_)
@@ -90,9 +91,11 @@ impl NativeAppState {
             | GuiMessage::FolderTreeRefreshFinished(_)
             | GuiMessage::SelectedFolderVerifyFinished(_)
             | GuiMessage::SourceFilesystemChanged { .. }
-            | GuiMessage::SourceWatcherReady
+            | GuiMessage::SourceWatcherReady { .. }
+            | GuiMessage::SourceWatcherJournalGap { .. }
             | GuiMessage::SourceFilesystemSyncFinished(_)
             | GuiMessage::SourceManifestAuditCommitted { .. }
+            | GuiMessage::SourceManifestAuditFinished { .. }
             | GuiMessage::NormalizationProgress(_)
             | GuiMessage::NormalizationFinished(_)
             | GuiMessage::SelectSampleWithModifiers { .. }
@@ -117,6 +120,8 @@ impl NativeAppState {
                 self.apply_sample_loading_dispatch(message, context);
             }
             GuiMessage::AudioPlayerOpenFinished(_)
+            | GuiMessage::AudioOptionsRefreshFinished(_)
+            | GuiMessage::AudioOutputPersisted(_)
             | GuiMessage::PlaySelectedSample
             | GuiMessage::PlayFromCurrentPlayStart
             | GuiMessage::PlayRandomSampleRange
@@ -342,6 +347,8 @@ fn gui_message_profile_label(message: &GuiMessage) -> &'static str {
         GuiMessage::PromoteStarmapAudition { .. } => "PromoteStarmapAudition",
         GuiMessage::SampleLoadFinished(_) => "SampleLoadFinished",
         GuiMessage::AudioPlayerOpenFinished(_) => "AudioPlayerOpenFinished",
+        GuiMessage::AudioOptionsRefreshFinished(_) => "AudioOptionsRefreshFinished",
+        GuiMessage::AudioOutputPersisted(_) => "AudioOutputPersisted",
         GuiMessage::LastPlayedPersistReady { .. } => "LastPlayedPersistReady",
         GuiMessage::LastPlayedPersisted(_) => "LastPlayedPersisted",
         GuiMessage::HarvestSeenPersisted(_) => "HarvestSeenPersisted",
@@ -363,9 +370,11 @@ fn gui_message_profile_label(message: &GuiMessage) -> &'static str {
         GuiMessage::FolderTreeRefreshFinished(_) => "FolderTreeRefreshFinished",
         GuiMessage::SelectedFolderVerifyFinished(_) => "SelectedFolderVerifyFinished",
         GuiMessage::SourceFilesystemChanged { .. } => "SourceFilesystemChanged",
-        GuiMessage::SourceWatcherReady => "SourceWatcherReady",
+        GuiMessage::SourceWatcherReady { .. } => "SourceWatcherReady",
+        GuiMessage::SourceWatcherJournalGap { .. } => "SourceWatcherJournalGap",
         GuiMessage::SourceFilesystemSyncFinished(_) => "SourceFilesystemSyncFinished",
         GuiMessage::SourceManifestAuditCommitted { .. } => "SourceManifestAuditCommitted",
+        GuiMessage::SourceManifestAuditFinished { .. } => "SourceManifestAuditFinished",
         GuiMessage::SourceProcessingProgress(_) => "SourceProcessingProgress",
         GuiMessage::NormalizationProgress(_) => "NormalizationProgress",
         GuiMessage::NormalizationFinished(_) => "NormalizationFinished",

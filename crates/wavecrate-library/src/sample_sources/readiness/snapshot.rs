@@ -20,16 +20,23 @@ pub enum ReadinessClassification {
     RetryableFailure {
         /// Earliest retry time.
         retry_at: i64,
+        /// Stable machine-readable failure code.
+        code: String,
         /// Stable diagnostic reason.
         reason: String,
     },
     /// The current generation cannot complete without a content or product change.
     PermanentFailure {
+        /// Stable machine-readable failure code.
+        code: String,
         /// Stable diagnostic reason.
         reason: String,
     },
     /// The stage is unsupported for this identity.
-    Unsupported,
+    Unsupported {
+        /// Stable machine-readable failure code when execution classified the input.
+        code: Option<String>,
+    },
     /// The configured source is temporarily unavailable.
     Offline,
     /// The configured source is disabled.
@@ -52,7 +59,7 @@ impl ReadinessClassification {
     pub(crate) fn is_terminal(&self) -> bool {
         matches!(
             self,
-            Self::PermanentFailure { .. } | Self::Unsupported | Self::Deleted
+            Self::PermanentFailure { .. } | Self::Unsupported { .. } | Self::Deleted
         )
     }
 }

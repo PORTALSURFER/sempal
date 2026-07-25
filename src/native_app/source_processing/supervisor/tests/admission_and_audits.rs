@@ -100,12 +100,12 @@ fn foreground_scan_admission_reserves_all_processing_capacity() {
         RuntimeCandidate {
             schedule: WorkCandidate::source(source.id.as_str(), ProcessingLane::Scan, 0, 0),
             source: source.clone(),
-            task: RuntimeTask::ManifestAudit,
+            task: RuntimeTask::ManifestAudit { accelerated: false },
         },
         RuntimeCandidate {
             schedule: WorkCandidate::source(source.id.as_str(), ProcessingLane::Hashing, 0, 0),
             source,
-            task: RuntimeTask::ManifestAudit,
+            task: RuntimeTask::ManifestAudit { accelerated: false },
         },
     ];
 
@@ -188,7 +188,10 @@ fn manifest_audit_is_scheduled_only_when_the_active_source_is_due() {
     };
     assert!(
         due.iter()
-            .any(|candidate| matches!(candidate.task, RuntimeTask::ManifestAudit))
+            .any(|candidate| matches!(
+                candidate.task,
+                RuntimeTask::ManifestAudit { accelerated: false }
+            ))
     );
 
     db.set_metadata(
@@ -208,7 +211,7 @@ fn manifest_audit_is_scheduled_only_when_the_active_source_is_due() {
     assert!(
         not_due
             .iter()
-            .all(|candidate| !matches!(candidate.task, RuntimeTask::ManifestAudit))
+            .all(|candidate| !matches!(candidate.task, RuntimeTask::ManifestAudit { .. }))
     );
 
     let Cancellable::Completed((forced, _)) = discover_source_candidates(
@@ -223,7 +226,10 @@ fn manifest_audit_is_scheduled_only_when_the_active_source_is_due() {
     assert!(
         forced
             .iter()
-            .any(|candidate| matches!(candidate.task, RuntimeTask::ManifestAudit))
+            .any(|candidate| matches!(
+                candidate.task,
+                RuntimeTask::ManifestAudit { accelerated: true }
+            ))
     );
 }
 
@@ -252,7 +258,7 @@ fn missing_manifest_identity_schedules_self_healing_audit_even_when_recent() {
     assert!(
         candidates
             .iter()
-            .any(|candidate| matches!(candidate.task, RuntimeTask::ManifestAudit))
+            .any(|candidate| matches!(candidate.task, RuntimeTask::ManifestAudit { .. }))
     );
 }
 
@@ -280,7 +286,7 @@ fn appledouble_sidecars_do_not_keep_manifest_audits_permanently_due() {
     assert!(
         candidates
             .iter()
-            .all(|candidate| !matches!(candidate.task, RuntimeTask::ManifestAudit))
+            .all(|candidate| !matches!(candidate.task, RuntimeTask::ManifestAudit { .. }))
     );
 }
 
@@ -355,7 +361,7 @@ fn scheduled_manifest_audit_does_not_recreate_source_removed_after_discovery() {
             now_epoch_seconds(),
         ),
         source,
-        task: RuntimeTask::ManifestAudit,
+        task: RuntimeTask::ManifestAudit { accelerated: false },
     };
     std::fs::remove_dir_all(&root).expect("remove source after scheduling");
 
@@ -365,6 +371,7 @@ fn scheduled_manifest_audit_does_not_recreate_source_removed_after_discovery() {
             0,
             &AtomicBool::new(false),
             &DatabaseWriterGate::default(),
+            ContentAuditActivity::default(),
             &mut |_| false,
         )
             .expect("unavailable audit is parked"),

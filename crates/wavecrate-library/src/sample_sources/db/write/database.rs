@@ -175,6 +175,8 @@ impl SourceDatabase {
             tx,
             db_path: self.db_path.clone(),
             paths_revision_dirty: false,
+            identities_revision_dirty: false,
+            index_revision_dirty: false,
             manifest_touched_paths: std::collections::BTreeSet::new(),
             telemetry_label: self.telemetry_label,
         })
@@ -193,6 +195,18 @@ impl SourceDatabase {
         conn: &rusqlite::Connection,
     ) -> Result<(), SourceDbError> {
         Self::bump_metadata_counter(conn, META_WAV_PATHS_REVISION)
+    }
+
+    pub(super) fn bump_wav_identities_revision(
+        conn: &rusqlite::Connection,
+    ) -> Result<(), SourceDbError> {
+        Self::bump_metadata_counter(conn, super::super::META_WAV_IDENTITIES_REVISION)
+    }
+
+    pub(super) fn bump_source_index_revision(
+        conn: &rusqlite::Connection,
+    ) -> Result<(), SourceDbError> {
+        Self::bump_metadata_counter(conn, super::super::META_SOURCE_INDEX_REVISION)
     }
 
     fn bump_metadata_counter(conn: &rusqlite::Connection, key: &str) -> Result<(), SourceDbError> {

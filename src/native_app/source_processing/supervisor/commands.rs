@@ -1,7 +1,26 @@
 use super::{
-    Arc, BTreeMap, CommittedSourceDelta, MAX_VISIBLE_PRIORITY_PATHS, SampleSource,
+    Arc, BTreeMap, CommittedSourceDelta, ControlState, MAX_VISIBLE_PRIORITY_PATHS, SampleSource,
     SourceProcessingBudgetHandle, SourceProcessingSupervisor, register_source_for_scan_locked,
 };
+
+/// Lifecycle hints that may require source-audit admission, but are not proof that a complete
+/// traversal is required. The durable readiness and watcher coverage gates decide that per source.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::native_app) enum SourceAuditLifecycleCause {
+    Startup,
+    WatcherReady,
+    FocusRegained,
+}
+
+impl SourceAuditLifecycleCause {
+    pub(super) fn reason(self) -> &'static str {
+        match self {
+            Self::Startup => "startup",
+            Self::WatcherReady => "source_watcher_ready",
+            Self::FocusRegained => "application_focus_regained",
+        }
+    }
+}
 
 impl SourceProcessingSupervisor {
     /// Admit a newly configured source before its first external scan starts.
@@ -32,27 +51,51 @@ impl SourceProcessingSupervisor {
         self.shared.control().source_lifecycle_generations.clone()
     }
 
-    /// Re-arm the authoritative source audits after the watcher stream is live.
+    /// Admit a cheap lifecycle health probe for every active source.
     ///
-    /// The initial audit and this watcher-ready request coalesce while an audit
-    /// is in flight. If it already completed, this request runs one final audit
-    /// that closes the gap between its snapshot and native event delivery.
-    pub(in crate::native_app) fn request_manifest_audits(&self, reason: &'static str) {
+    /// Lifecycle transitions are intentionally only hints. The discovery gate decides whether a
+    /// source needs a bounded manifest audit from durable revision, audit deadline, root identity,
+    /// or watcher-history evidence; unchanged startup, watcher-ready, and focus transitions stay
+    /// cheap no-ops.
+    pub(in crate::native_app) fn request_lifecycle_audit_probe(
+        &self,
+        cause: SourceAuditLifecycleCause,
+        deferred_source_ids: &[String],
+    ) {
         let mut control = self.shared.control();
-        let active_source_ids = control
-            .sources
-            .keys()
-            .filter(|source_id| control.source_is_active(source_id))
-            .cloned()
-            .collect::<Vec<_>>();
-        if active_source_ids.is_empty() {
+        if cause == SourceAuditLifecycleCause::WatcherReady {
+            // The source watcher emits this only after it has either replayed the durable journal
+            // or synchronously captured a per-source fallback-audit barrier.
+            control.lifecycle_audits_deferred_until_watcher_ready = false;
+            control.deferred_lifecycle_audit_sources = deferred_source_ids
+                .iter()
+                .filter(|source_id| control.source_is_active(source_id))
+                .cloned()
+                .collect();
+        }
+        control.mark_all_sources_for_safety_probe();
+        control.notify(cause.reason());
+        drop(control);
+        self.shared.wake.notify_one();
+    }
+
+    /// Force the bounded manifest-audit fallback for one source whose durable watcher coverage
+    /// has a proven gap. This is intentionally source-scoped; lifecycle hints must never turn an
+    /// unrelated healthy source into a full traversal.
+    pub(in crate::native_app) fn request_source_manifest_audit(
+        &self,
+        source_id: &str,
+        reason: &'static str,
+    ) {
+        let mut control = self.shared.control();
+        if !control.source_is_active(source_id) {
             return;
         }
         control
             .force_manifest_audit_sources
-            .extend(active_source_ids.iter().cloned());
-        control.dirty_sources.extend(active_source_ids);
-        control.notify(reason);
+            .insert(source_id.to_string());
+        control.deferred_lifecycle_audit_sources.remove(source_id);
+        control.mark_source_dirty(source_id, reason);
         drop(control);
         self.shared.wake.notify_one();
     }
@@ -139,15 +182,9 @@ impl SourceProcessingSupervisor {
             return;
         }
         let mut control = self.shared.control();
-        if !control.source_is_active(source_id) {
+        if !queue_source_delta(&mut control, source_id, delta, reason) {
             return;
         }
-        control
-            .pending_readiness_deltas
-            .entry(source_id.to_string())
-            .or_default()
-            .merge(delta);
-        control.mark_source_dirty(source_id, reason);
         drop(control);
         self.shared.wake.notify_one();
     }
@@ -300,4 +337,26 @@ impl SourceProcessingSupervisor {
         drop(control);
         self.shared.wake.notify_all();
     }
+}
+
+pub(super) fn queue_source_delta(
+    control: &mut ControlState,
+    source_id: &str,
+    delta: &CommittedSourceDelta,
+    reason: &'static str,
+) -> bool {
+    #[cfg(test)]
+    if std::mem::take(&mut control.reject_next_delta_delivery) {
+        return false;
+    }
+    if !control.source_is_active(source_id) {
+        return false;
+    }
+    control
+        .pending_readiness_deltas
+        .entry(source_id.to_string())
+        .or_default()
+        .merge(delta, reason);
+    control.mark_source_dirty(source_id, reason);
+    true
 }

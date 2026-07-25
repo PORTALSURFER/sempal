@@ -7,7 +7,7 @@ use crate::native_app::sample_library::folder_browser::commands::{
 };
 use crate::native_app::sample_library::folder_browser::scan::{
     FolderScanDiscoveryBatch, FolderTreeRefreshRequest, refresh_folder_tree_only,
-    scan_source_with_progress,
+    scan_source_with_progress, scan_source_with_progress_cancellable,
 };
 use crate::native_app::sample_library::folder_browser::test_support::{
     FolderDragPreview, MIN_FILE_COLUMN_WIDTH,

@@ -36,7 +36,8 @@ fn large_background_auto_rename_reuses_source_db_for_batch_execution() {
     const SAMPLE_COUNT: usize = 24;
     let (mut controller, source, paths) = large_auto_rename_fixture(SAMPLE_COUNT);
 
-    crate::sample_sources::db::test_reset_source_db_open_total_count(&source.root);
+    let _open_count_scope =
+        crate::sample_sources::db::test_scope_source_db_open_total_count(&source.root);
     BrowserController::new(&mut controller)
         .auto_rename_browser_sample_paths_background_for_tests(&paths)
         .expect("background auto rename should start");

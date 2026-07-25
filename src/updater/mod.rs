@@ -24,6 +24,7 @@ pub(super) use path_guard::ValidatedInstallRoot;
 
 pub use apply::{ApplyPlan, StaleRemovalFailure, UpdateManifest};
 pub use check::{UpdateCheckOutcome, UpdateCheckRequest};
+pub use fs_ops::PostCommitCleanupFailure;
 pub use github::ReleaseSummary;
 pub use public_catalog::{
     PUBLIC_RELEASE_CATALOG_URL, PUBLIC_RELEASE_PAGE_URL, PublicReleaseCheckRequest,

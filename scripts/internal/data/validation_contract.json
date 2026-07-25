@@ -14,6 +14,7 @@
       "scripts/internal/agent/run_agent_preflight.ps1",
       "scripts/internal/ci/devcheck.ps1",
       "scripts/internal/ci/ci_agent.ps1",
+      "scripts/internal/ci/ci_isolation_stress.ps1",
       "scripts/internal/ci/ci_quick.ps1",
       "scripts/internal/ci/ci_local.ps1",
       "scripts/internal/perf/run_perf_guard.ps1",
@@ -38,6 +39,7 @@
       "scripts/internal/validation/use_validation_target.sh",
       "scripts/internal/validation/test_validation_watchdog.sh",
       "scripts/ci.sh",
+      "scripts/internal/ci/ci_isolation_stress.sh",
       "scripts/internal/agent/install_agent_preflight_hooks.sh",
       "scripts/internal/check/check_file_size_budget.sh",
       "scripts/internal/check/check_docs_index.sh",
@@ -148,6 +150,16 @@
         "label": "Bash ci agent preserves legacy controller integration coverage",
         "path": "scripts/internal/ci/ci_agent.sh",
         "fragment": "--test controller_browser_integration --features legacy-controller"
+      },
+      {
+        "label": "PowerShell isolation stress lane uses the shared runner",
+        "path": "scripts/internal/ci/ci_isolation_stress.ps1",
+        "fragment": "parallel_isolation_stress.py"
+      },
+      {
+        "label": "Bash isolation stress lane uses the shared runner",
+        "path": "scripts/internal/ci/ci_isolation_stress.sh",
+        "fragment": "parallel_isolation_stress.py"
       },
       {
         "label": "PowerShell quick CI validates its package filter against discovered binaries",
