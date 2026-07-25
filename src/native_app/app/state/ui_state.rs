@@ -74,10 +74,10 @@ pub(in crate::native_app) struct ChromeUiState {
 ///
 /// It is intentionally kept with the transient UI state: the indicator is a
 /// presentation cue, not persisted browser or waveform data.
-#[derive(Default)]
 pub(in crate::native_app) struct OverflowFadeAnimations {
     transitions: BTreeMap<u64, OverflowFadeTransition>,
     last_updated_at: Duration,
+    pending_visibility_sample: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -89,6 +89,19 @@ struct OverflowFadeTransition {
 
 impl OverflowFadeAnimations {
     const TRANSITION_DURATION: Duration = Duration::from_millis(260);
+
+    /// Arm a one-shot paint request so a newly visible clipping sample gets a
+    /// chance to establish its transition before the normal animation cadence
+    /// takes over.
+    pub(in crate::native_app) fn arm(&mut self) {
+        self.pending_visibility_sample = true;
+    }
+
+    /// Consume the one-shot visibility sample at the beginning of an overlay
+    /// paint. Active transitions continue to request paint-only frames.
+    pub(in crate::native_app) fn consume_pending_visibility_sample(&mut self) {
+        self.pending_visibility_sample = false;
+    }
 
     /// Return the interpolated opacity and retarget it without a visual jump.
     pub(in crate::native_app) fn opacity(
@@ -165,10 +178,24 @@ impl OverflowFadeAnimations {
         self.transitions.contains_key(&fade_id)
     }
 
+    pub(in crate::native_app) fn frame_needed(&self) -> bool {
+        self.pending_visibility_sample || self.is_animating()
+    }
+
     pub(in crate::native_app) fn is_animating(&self) -> bool {
         self.transitions
             .values()
             .any(|transition| transition.is_animating(self.last_updated_at))
+    }
+}
+
+impl Default for OverflowFadeAnimations {
+    fn default() -> Self {
+        Self {
+            transitions: BTreeMap::new(),
+            last_updated_at: Duration::ZERO,
+            pending_visibility_sample: true,
+        }
     }
 }
 

@@ -9,6 +9,7 @@ use crate::native_app::ui::ids::{
 use radiant::prelude as ui;
 
 const APP_TRANSIENT_OVERLAY_KEY: u64 = 0x6170_705f_6f76_726c;
+const OVERFLOW_FADE_TRANSIENT_OVERLAY_KEY: u64 = 0x6f76_6572_6661_6465;
 const APP_FRAME_CLOCK_FPS: u32 = 60;
 
 pub(in crate::native_app) fn view(state: &NativeAppState) -> ui::View<GuiMessage> {
@@ -20,6 +21,7 @@ fn scene(state: &NativeAppState) -> ui::Scene<GuiMessage> {
         .shortcuts(default_gui_shortcuts(state))
         .frame_clock(frame_clock())
         .overlay(app_transient_overlay())
+        .overlay(overflow_fade_overlay())
 }
 
 fn frame_clock() -> ui::FrameClock<NativeAppState, GuiMessage> {
@@ -33,11 +35,16 @@ fn frame_clock() -> ui::FrameClock<NativeAppState, GuiMessage> {
 fn app_transient_overlay() -> ui::TransientOverlay<NativeAppState> {
     ui::TransientOverlay::new(APP_TRANSIENT_OVERLAY_KEY)
         .paint_only()
-        .when(|state: &mut NativeAppState| {
-            state.should_paint_app_transient_overlay()
-                || state.ui.chrome.overflow_fades.is_animating()
-        })
+        .when(|state: &mut NativeAppState| state.should_paint_app_transient_overlay())
         .paint(paint_app_transient_overlay)
+}
+
+fn overflow_fade_overlay() -> ui::TransientOverlay<NativeAppState> {
+    ui::TransientOverlay::new(OVERFLOW_FADE_TRANSIENT_OVERLAY_KEY)
+        .paint_only()
+        .fps(APP_FRAME_CLOCK_FPS)
+        .when(|state: &mut NativeAppState| state.ui.chrome.overflow_fades.frame_needed())
+        .paint(paint_overflow_fade_overlay)
 }
 
 fn paint_app_transient_overlay(
@@ -56,6 +63,29 @@ fn paint_app_transient_overlay(
         primitives,
     );
     paint_starmap_active_audition_overlay(state, context, primitives);
+}
+
+fn paint_overflow_fade_overlay(
+    state: &mut NativeAppState,
+    context: radiant::runtime::TransientOverlayContext<'_>,
+    primitives: &mut Vec<radiant::runtime::PaintPrimitive>,
+) {
+    state
+        .ui
+        .chrome
+        .overflow_fades
+        .consume_pending_visibility_sample();
+    if state.should_paint_app_transient_overlay() {
+        paint_app_transient_overlay(state, context, primitives);
+    } else {
+        paint_library_overflow_fades(state, context, primitives);
+        library_sidebar::paint_waveform_scroll_fades(
+            context,
+            &state.waveform.current,
+            &mut state.ui.chrome.overflow_fades,
+            primitives,
+        );
+    }
 }
 
 fn collection_overflow_fade_alpha(state: &NativeAppState) -> u8 {

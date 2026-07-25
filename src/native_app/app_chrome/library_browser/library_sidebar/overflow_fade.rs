@@ -863,4 +863,25 @@ mod tests {
             "a remounted waveform must fade in instead of popping at full opacity"
         );
     }
+
+    #[test]
+    fn overflow_fade_frame_request_arms_once_then_settles_after_transition() {
+        let mut animations = OverflowFadeAnimations::default();
+        assert!(animations.frame_needed());
+
+        animations.consume_pending_visibility_sample();
+        assert!(!animations.frame_needed());
+
+        animations.opacity(0xfeed, 110, Duration::ZERO);
+        assert!(animations.frame_needed());
+        animations.opacity(0xfeed, 110, Duration::from_millis(259));
+        assert!(animations.frame_needed());
+        animations.opacity(0xfeed, 110, Duration::from_millis(260));
+        assert!(!animations.frame_needed());
+
+        animations.arm();
+        assert!(animations.frame_needed());
+        animations.consume_pending_visibility_sample();
+        assert!(!animations.frame_needed());
+    }
 }
