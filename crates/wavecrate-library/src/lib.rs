@@ -18,3 +18,5 @@ mod sqlite_wal;
 /// Process-global test runtime isolation helpers.
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_runtime;
+/// Shared signed Unix timestamp conversion helpers.
+pub mod timestamps;

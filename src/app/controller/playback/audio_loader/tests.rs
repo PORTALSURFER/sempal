@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tempfile::{NamedTempFile, tempdir};
+use wavecrate_library::timestamps::system_time_to_unix_nanos;
 
 mod cache_and_stretch;
 mod decode_error;
@@ -109,12 +110,7 @@ fn test_metadata(byte_len: usize) -> FileMetadata {
 
 fn metadata_for_path(path: &Path) -> FileMetadata {
     let metadata = std::fs::metadata(path).expect("file metadata");
-    let modified_ns = metadata
-        .modified()
-        .expect("modified time")
-        .duration_since(std::time::SystemTime::UNIX_EPOCH)
-        .expect("modified time after epoch")
-        .as_nanos() as i64;
+    let modified_ns = system_time_to_unix_nanos(metadata.modified().expect("modified time"));
     FileMetadata {
         file_size: metadata.len(),
         modified_ns,

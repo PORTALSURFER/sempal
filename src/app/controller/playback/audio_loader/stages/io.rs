@@ -8,6 +8,7 @@ use std::{
     sync::atomic::AtomicU64,
     time::Instant,
 };
+use wavecrate_library::timestamps::system_time_to_unix_nanos;
 
 use super::super::telemetry::{
     StaleDropStage, audio_loader_telemetry_enabled, record_io_duration, record_read_bytes,
@@ -166,22 +167,12 @@ pub(super) fn load_io_stage(
 }
 
 fn file_metadata(full_path: &Path, fs_metadata: &Metadata) -> Result<FileMetadata, AudioLoadError> {
-    let modified_ns = fs_metadata
-        .modified()
-        .map_err(|err| {
-            AudioLoadError::Failed(format!(
-                "Missing modified time for {}: {err}",
-                full_path.display()
-            ))
-        })?
-        .duration_since(std::time::SystemTime::UNIX_EPOCH)
-        .map_err(|_| {
-            AudioLoadError::Failed(format!(
-                "File modified time is before epoch: {}",
-                full_path.display()
-            ))
-        })?
-        .as_nanos() as i64;
+    let modified_ns = system_time_to_unix_nanos(fs_metadata.modified().map_err(|err| {
+        AudioLoadError::Failed(format!(
+            "Missing modified time for {}: {err}",
+            full_path.display()
+        ))
+    })?);
     Ok(FileMetadata {
         file_size: fs_metadata.len(),
         modified_ns,

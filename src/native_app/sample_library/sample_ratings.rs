@@ -6,6 +6,7 @@ use std::{
 
 use radiant::prelude as ui;
 use wavecrate::sample_sources::{Rating, SourceDatabase};
+use wavecrate_library::timestamps::system_time_to_unix_nanos;
 
 use crate::native_app::app::{GuiMessage, NativeAppState, emit_gui_action};
 use crate::native_app::sample_library::file_actions::sample_path_label;
@@ -648,12 +649,11 @@ fn direction_label(delta: i8) -> &'static str {
 fn file_metadata(path: &Path) -> Result<(u64, i64), String> {
     let metadata = std::fs::metadata(path)
         .map_err(|err| format!("Failed to read {}: {err}", path.display()))?;
-    let modified_ns = metadata
-        .modified()
-        .map_err(|err| format!("Missing modified time for {}: {err}", path.display()))?
-        .duration_since(std::time::SystemTime::UNIX_EPOCH)
-        .map_err(|_| String::from("File modified time is before epoch"))?
-        .as_nanos() as i64;
+    let modified_ns = system_time_to_unix_nanos(
+        metadata
+            .modified()
+            .map_err(|err| format!("Missing modified time for {}: {err}", path.display()))?,
+    );
     Ok((metadata.len(), modified_ns))
 }
 

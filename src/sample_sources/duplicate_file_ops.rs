@@ -4,10 +4,10 @@ use std::{
     collections::HashSet,
     fs,
     path::{Path, PathBuf},
-    time::UNIX_EPOCH,
 };
 
 use crate::sample_sources::{HarvestDerivationOperation, SourceDatabase};
+use wavecrate_library::timestamps::system_time_to_unix_nanos;
 
 use super::harvest_file_ops;
 
@@ -282,12 +282,9 @@ fn register_fresh_duplicate(
 }
 
 fn metadata_modified_ns(metadata: &fs::Metadata) -> Result<i64, String> {
-    metadata
-        .modified()
-        .map_err(|err| format!("Duplicate metadata update failed: {err}"))?
-        .duration_since(UNIX_EPOCH)
-        .map_err(|_| String::from("Duplicate modified time is before epoch"))
-        .map(|duration| duration.as_nanos() as i64)
+    Ok(system_time_to_unix_nanos(metadata.modified().map_err(
+        |err| format!("Duplicate metadata update failed: {err}"),
+    )?))
 }
 
 fn next_available_reserved_whole_file_harvest_copy_path(

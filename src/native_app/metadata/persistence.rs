@@ -7,9 +7,9 @@ use crate::native_app::audio::playback::tagged_playback_mode_for_tag;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    time::SystemTime,
 };
 use wavecrate::sample_sources::{SourceDatabase, SourceDbError, db::SourceWriteBatch};
+use wavecrate_library::timestamps::system_time_to_unix_nanos;
 
 pub(super) fn persist_metadata_tag_assignment(
     request: MetadataTagPersistRequest,
@@ -264,9 +264,7 @@ fn file_metadata(path: &Path) -> Result<(u64, i64), String> {
         .map_err(|err| format!("Sample metadata unavailable for {}: {err}", path.display()))?;
     let modified_ns = metadata
         .modified()
-        .ok()
-        .and_then(|modified| modified.duration_since(SystemTime::UNIX_EPOCH).ok())
-        .and_then(|duration| i64::try_from(duration.as_nanos()).ok())
+        .map(system_time_to_unix_nanos)
         .unwrap_or_default();
     Ok((metadata.len(), modified_ns))
 }

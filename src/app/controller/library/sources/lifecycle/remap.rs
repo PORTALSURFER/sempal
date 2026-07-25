@@ -6,6 +6,7 @@ use crate::app::controller::jobs::JobMessage;
 use crate::app::controller::jobs::{SourceRemapJob, SourceRemapPreparedResult};
 #[cfg(not(test))]
 use crate::app::controller::state::runtime::PendingSourceRemap;
+use wavecrate_library::timestamps::system_time_to_unix_nanos;
 
 struct RemappedSource {
     index: usize,
@@ -724,11 +725,7 @@ fn reserve_empty_database_path(
             &metadata,
         ),
         len: metadata.len(),
-        modified_ns: metadata
-            .modified()
-            .ok()
-            .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|duration| duration.as_nanos()),
+        modified_ns: metadata.modified().ok().map(system_time_to_unix_nanos),
         is_symlink: false,
     })
 }
@@ -782,11 +779,7 @@ fn database_artifact_identity(
             ));
         }
     };
-    let modified_ns = metadata
-        .modified()
-        .ok()
-        .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|duration| duration.as_nanos());
+    let modified_ns = metadata.modified().ok().map(system_time_to_unix_nanos);
     Ok(Some(
         crate::app::controller::jobs::SourceRemapArtifactIdentity {
             stable_id: wavecrate_library::filesystem_identity::stable_filesystem_identity(

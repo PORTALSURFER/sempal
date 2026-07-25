@@ -9,7 +9,7 @@ use crate::sample_sources::{Rating, SampleSource, SourceDatabase, WavEntry};
 use rusqlite::params;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use wavecrate_library::timestamps::system_time_to_unix_nanos;
 
 /// Resolve the next clip-export path for one background worker request.
 pub(super) fn next_clip_export_path(
@@ -133,12 +133,11 @@ fn build_written_entry(
 ) -> Result<WavEntry, String> {
     let metadata = fs::metadata(source_root.join(&relative_path))
         .map_err(|err| format!("Failed to read saved clip: {err}"))?;
-    let modified_ns = metadata
-        .modified()
-        .map_err(|err| format!("Missing modified time for clip: {err}"))?
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .map_err(|_| "Clip modified time is before epoch".to_string())?
-        .as_nanos() as i64;
+    let modified_ns = system_time_to_unix_nanos(
+        metadata
+            .modified()
+            .map_err(|err| format!("Missing modified time for clip: {err}"))?,
+    );
     Ok(WavEntry {
         relative_path,
         file_size: metadata.len(),

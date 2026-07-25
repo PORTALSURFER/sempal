@@ -2,8 +2,8 @@ use super::super::DroppedSampleMetadata;
 use crate::sample_sources::db::file_ops_journal::{self, FileOpStage};
 use crate::sample_sources::{Rating, SourceDatabase};
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
 use tempfile::TempDir;
+use wavecrate_library::timestamps::system_time_to_unix_nanos;
 
 use super::super::super::move_transaction::{
     move_sample_file, prepare_staged_copy, prepare_staged_move,
@@ -72,13 +72,7 @@ impl DropTargetRecoveryFixture {
 }
 
 fn modified_ns(path: &Path) -> i64 {
-    std::fs::metadata(path)
-        .unwrap()
-        .modified()
-        .unwrap()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos() as i64
+    system_time_to_unix_nanos(std::fs::metadata(path).unwrap().modified().unwrap())
 }
 
 fn journal_entry(db: &SourceDatabase) -> file_ops_journal::FileOpJournalEntry {

@@ -3,6 +3,7 @@
 use crate::sample_sources::normalize_relative_path;
 use std::fs;
 use std::path::{Path, PathBuf};
+use wavecrate_library::timestamps::system_time_to_unix_nanos;
 
 pub(super) fn files_match(left: &Path, right: &Path) -> Result<bool, String> {
     let left_meta =
@@ -23,19 +24,11 @@ pub(super) fn files_match(left: &Path, right: &Path) -> Result<bool, String> {
     Ok(left_hash == right_hash)
 }
 
-pub(super) fn modified_nanos(path: &Path) -> Result<i128, String> {
+pub(super) fn modified_nanos(path: &Path) -> Result<i64, String> {
     let modified = fs::metadata(path)
         .and_then(|meta| meta.modified())
         .map_err(|err| format!("Failed to read modified time for {}: {err}", path.display()))?;
-    modified
-        .duration_since(std::time::SystemTime::UNIX_EPOCH)
-        .map(|duration| duration.as_nanos() as i128)
-        .map_err(|err| {
-            format!(
-                "Modified time is before Unix epoch for {}: {err}",
-                path.display()
-            )
-        })
+    Ok(system_time_to_unix_nanos(modified))
 }
 
 pub(super) fn source_relative(source_root: &Path, absolute: &Path) -> Result<PathBuf, String> {

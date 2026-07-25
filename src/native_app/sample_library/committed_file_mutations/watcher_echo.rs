@@ -3,6 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use wavecrate_library::timestamps::system_time_to_unix_nanos;
+
 const MAX_WATCHER_ECHO_HASH_BYTES: u64 = 8 * 1024 * 1024;
 
 use super::{ExpectedMutationPathState, FileMutationChange};
@@ -31,11 +33,7 @@ pub(super) fn capture_expected_path_state(path: &Path) -> ExpectedMutationPathSt
         }
         Ok(metadata) => ExpectedMutationPathState::Metadata {
             len: metadata.len(),
-            modified_ns: metadata
-                .modified()
-                .ok()
-                .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|duration| duration.as_nanos()),
+            modified_ns: metadata.modified().ok().map(system_time_to_unix_nanos),
             is_dir: metadata.is_dir(),
         },
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {

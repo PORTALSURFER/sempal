@@ -26,6 +26,7 @@ fn reconcile_copy_from_staged_file() {
     insert_entry(&target_db, &entry).unwrap();
     let staged_absolute = target_root.join(&staged_relative);
     std::fs::copy(&source_path, &staged_absolute).unwrap();
+    filetime::set_file_mtime(&staged_absolute, filetime::FileTime::from_unix_time(-1, 0)).unwrap();
     let (file_size, modified_ns) = file_identity(&staged_absolute);
     update_stage(
         &target_db,
@@ -54,6 +55,14 @@ fn reconcile_copy_from_staged_file() {
     assert_eq!(
         target_db.last_played_at_for_path(&target_relative).unwrap(),
         Some(123)
+    );
+    assert_eq!(
+        target_db
+            .entry_for_path(&target_relative)
+            .unwrap()
+            .unwrap()
+            .modified_ns,
+        -1_000_000_000
     );
     assert_no_journal_entries(&target_db);
 }

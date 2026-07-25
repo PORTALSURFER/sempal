@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tempfile::tempdir;
+use wavecrate_library::timestamps::system_time_to_unix_nanos;
 
 fn pump_background_jobs_until(
     controller: &mut AppController,
@@ -37,12 +38,7 @@ fn pump_background_jobs_until(
 
 fn written_entry(root: &Path, relative_path: &Path, tag: Rating) -> WavEntry {
     let metadata = std::fs::metadata(root.join(relative_path)).expect("selection export fixture");
-    let modified_ns = metadata
-        .modified()
-        .expect("modified time")
-        .duration_since(std::time::SystemTime::UNIX_EPOCH)
-        .expect("after epoch")
-        .as_nanos() as i64;
+    let modified_ns = system_time_to_unix_nanos(metadata.modified().expect("modified time"));
     WavEntry {
         relative_path: relative_path.to_path_buf(),
         file_size: metadata.len(),

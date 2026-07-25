@@ -6,6 +6,7 @@ use std::{
 
 use wavecrate::sample_sources::SourceDatabase;
 use wavecrate::selection::SelectionRange;
+use wavecrate_library::timestamps::system_time_to_unix_nanos;
 
 use crate::native_app::app::{PendingWaveformDestructiveEdit, WaveformDestructiveEditKind};
 use crate::native_app::waveform::{WaveformExtractionRequest, execute_waveform_extraction};
@@ -300,12 +301,7 @@ pub(super) fn restore_extracted_file_for_transaction(
 
 fn cache_content_identity(path: &Path) -> Option<String> {
     let metadata = fs::metadata(path).ok()?;
-    let modified_ns = metadata
-        .modified()
-        .ok()?
-        .duration_since(std::time::UNIX_EPOCH)
-        .ok()?
-        .as_nanos();
+    let modified_ns = system_time_to_unix_nanos(metadata.modified().ok()?);
     Some(format!("cache:{}:{modified_ns}", metadata.len()))
 }
 

@@ -3,8 +3,9 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    time::UNIX_EPOCH,
 };
+
+use wavecrate_library::timestamps::system_time_to_unix_nanos;
 
 /// Return whether a path currently exists.
 pub fn path_exists(path: &Path) -> bool {
@@ -42,11 +43,7 @@ pub fn file_identity_metadata(path: &Path) -> (Option<u64>, Option<i64>) {
     let Ok(metadata) = fs::metadata(path) else {
         return (None, None);
     };
-    let modified_ns = metadata
-        .modified()
-        .ok()
-        .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
-        .map(|duration| i64::try_from(duration.as_nanos()).unwrap_or(i64::MAX));
+    let modified_ns = metadata.modified().ok().map(system_time_to_unix_nanos);
     (Some(metadata.len()), modified_ns)
 }
 
