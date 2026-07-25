@@ -1,7 +1,19 @@
 use super::{
-    Arc, AtomicBool, DatabaseWriterGate, ExternalScanAdmission, ExternalScanRegistration, Ordering,
-    PathBuf, ProcessingLane, SampleSource, Shared, resolve_registered_source_for_scan_locked,
+    Arc, AtomicBool, CommittedSourceDelta, DatabaseWriterGate, ExternalScanAdmission,
+    ExternalScanRegistration, Ordering, PathBuf, ProcessingLane, SampleSource, Shared,
+    resolve_registered_source_for_scan_locked,
 };
+
+/// The typed handoff an external scan must make before releasing its source-processing budget.
+///
+/// A committed manifest mutation is visible to the supervisor either as its exact revision-aware
+/// delta or as an explicit full-reconciliation fallback. Keeping this ownership on the permit
+/// makes releasing capacity and publishing the mutation one ordered operation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::native_app) enum ExternalScanHandoff {
+    CommittedDelta(CommittedSourceDelta),
+    FullReconciliation { reason: &'static str },
+}
 
 #[derive(Clone)]
 pub(in crate::native_app) struct SourceProcessingBudgetHandle {
@@ -14,6 +26,7 @@ pub(in crate::native_app) struct SourceProcessingBudgetPermit {
     registration_id: u64,
     pub(super) lifecycle_generation: u64,
     pub(super) cancel: Arc<AtomicBool>,
+    handoff_registered: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -155,6 +168,7 @@ impl SourceProcessingBudgetHandle {
                     registration_id: admission_id,
                     lifecycle_generation,
                     cancel,
+                    handoff_registered: false,
                 };
                 if permit.should_cancel_now() {
                     permit.cancel.store(true, Ordering::Release);
@@ -233,6 +247,63 @@ impl SourceProcessingBudgetPermit {
         self.shared.database_writer.clone()
     }
 
+    /// Register the committed scan result before releasing the source-processing budget.
+    ///
+    /// This consumes the permit so callers cannot accidentally release capacity first and rely
+    /// on delayed GUI delivery to tell the supervisor what changed. If the exact delta cannot be
+    /// admitted for the current lifecycle, the handoff is conservatively promoted to a full
+    /// reconciliation while the permit is still owned.
+    pub(in crate::native_app) fn release_after_handoff(mut self, handoff: ExternalScanHandoff) {
+        self.register_handoff(handoff);
+        drop(self);
+    }
+
+    fn register_handoff(&mut self, handoff: ExternalScanHandoff) {
+        if self.handoff_registered {
+            return;
+        }
+        let source_id = self
+            .permit
+            .as_ref()
+            .map(|permit| permit.source_id().to_string());
+        let Some(source_id) = source_id else {
+            self.handoff_registered = true;
+            return;
+        };
+        let mut control = self.shared.control();
+        let current_generation = control
+            .source_lifecycle_generations
+            .get(&source_id)
+            .copied();
+        let current = control.source_is_active(&source_id)
+            && current_generation == Some(self.lifecycle_generation);
+        if current {
+            match handoff {
+                ExternalScanHandoff::CommittedDelta(delta) if !delta.is_empty() => {
+                    if !control.queue_source_delta(
+                        &source_id,
+                        &delta,
+                        "external_scan_committed_delta",
+                    ) {
+                        control.pending_readiness_deltas.remove(&source_id);
+                        control.cancel_source_work(&source_id);
+                        control
+                            .mark_source_dirty(&source_id, "external_scan_delta_handoff_fallback");
+                    }
+                }
+                ExternalScanHandoff::CommittedDelta(_) => {}
+                ExternalScanHandoff::FullReconciliation { reason } => {
+                    control.pending_readiness_deltas.remove(&source_id);
+                    control.cancel_source_work(&source_id);
+                    control.mark_source_dirty(&source_id, reason);
+                }
+            }
+        }
+        drop(control);
+        self.handoff_registered = true;
+        self.shared.wake.notify_one();
+    }
+
     fn should_cancel_now(&self) -> bool {
         if self.shared.cancel.load(Ordering::Acquire) {
             return true;
@@ -252,6 +323,13 @@ impl SourceProcessingBudgetPermit {
 
 impl Drop for SourceProcessingBudgetPermit {
     fn drop(&mut self) {
+        // A panic, cancellation, or early-return path that skipped the explicit handoff must still
+        // publish a conservative full reconciliation before capacity becomes available again.
+        if !self.handoff_registered {
+            self.register_handoff(ExternalScanHandoff::FullReconciliation {
+                reason: "external_scan_dropped_without_handoff",
+            });
+        }
         let registration = self
             .shared
             .external_scans()
@@ -274,20 +352,8 @@ impl Drop for SourceProcessingBudgetPermit {
             self.shared.wake.notify_one();
         }
         if let Some(permit) = self.permit.take() {
-            let source_id = permit.source_id().to_string();
             self.shared.budgets().release(permit);
             self.shared.budget_wake.notify_all();
-            let mut control = self.shared.control();
-            if control.source_is_active(&source_id)
-                && control.source_lifecycle_generations.get(&source_id)
-                    == Some(&self.lifecycle_generation)
-            {
-                control.cancel_source_work(&source_id);
-                control.mark_source_dirty(&source_id, "external_source_work_committed");
-            } else {
-                control.notify("external_budget_released");
-            }
-            drop(control);
             self.shared.wake.notify_one();
         }
     }

@@ -15,12 +15,29 @@ pub(super) struct PendingSourceRetirement {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(super) struct PendingReadinessDelta {
     pub(super) scope_ids: BTreeSet<String>,
+    pub(super) latest_manifest_revision: Option<u64>,
     #[cfg(test)]
     pub(super) state_machine_inputs: BTreeSet<(u64, &'static str)>,
 }
 
 impl PendingReadinessDelta {
-    pub(super) fn merge(&mut self, delta: &CommittedSourceDelta, reason: &'static str) {
+    pub(super) fn merge(
+        &mut self,
+        delta: &CommittedSourceDelta,
+        reason: &'static str,
+    ) -> PendingReadinessDeltaMerge {
+        if let Some(previous) = self.latest_manifest_revision {
+            if delta.revision < previous {
+                return PendingReadinessDeltaMerge::Stale;
+            }
+            if delta.revision > previous.saturating_add(1) {
+                return PendingReadinessDeltaMerge::RevisionGap;
+            }
+        }
+        self.latest_manifest_revision = Some(
+            self.latest_manifest_revision
+                .map_or(delta.revision, |previous| previous.max(delta.revision)),
+        );
         self.scope_ids.extend(
             delta
                 .created
@@ -35,11 +52,19 @@ impl PendingReadinessDelta {
         self.state_machine_inputs.insert((delta.revision, reason));
         #[cfg(not(test))]
         let _ = reason;
+        PendingReadinessDeltaMerge::Merged
     }
 
     pub(super) fn is_empty(&self) -> bool {
         self.scope_ids.is_empty()
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum PendingReadinessDeltaMerge {
+    Merged,
+    Stale,
+    RevisionGap,
 }
 
 #[cfg(test)]

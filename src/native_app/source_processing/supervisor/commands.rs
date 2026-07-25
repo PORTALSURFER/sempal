@@ -345,18 +345,5 @@ pub(super) fn queue_source_delta(
     delta: &CommittedSourceDelta,
     reason: &'static str,
 ) -> bool {
-    #[cfg(test)]
-    if std::mem::take(&mut control.reject_next_delta_delivery) {
-        return false;
-    }
-    if !control.source_is_active(source_id) {
-        return false;
-    }
-    control
-        .pending_readiness_deltas
-        .entry(source_id.to_string())
-        .or_default()
-        .merge(delta, reason);
-    control.mark_source_dirty(source_id, reason);
-    true
+    control.queue_source_delta(source_id, delta, reason)
 }

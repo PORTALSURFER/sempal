@@ -13,7 +13,9 @@ use crate::native_app::sample_library::source_prep::{
     CacheWarmIntent, MetadataRefreshIntent, ReadinessIntent, SourceFeedbackIntent,
     SourcePrepIntents, SourcePriorityIntent,
 };
-use crate::native_app::source_processing::manifest_delta_requires_browser_refresh;
+use crate::native_app::source_processing::{
+    ExternalScanHandoff, manifest_delta_requires_browser_refresh,
+};
 
 pub(in crate::native_app) const FILESYSTEM_SYNC_PREP_INTENTS: SourcePrepIntents =
     SourcePrepIntents {
@@ -163,12 +165,14 @@ impl NativeAppState {
                     renames_reconciled,
                     "Committed filesystem source delta"
                 );
-                self.background.source_processing.request_source_delta(
-                    &source_id,
-                    &delta,
-                    "filesystem_sync_committed_delta",
-                );
-                if !delta.is_empty() && incomplete_error.is_none() {
+                if !result.cancelled && incomplete_error.is_none() {
+                    self.background.source_processing.request_source_delta(
+                        &source_id,
+                        &delta,
+                        "filesystem_sync_committed_delta",
+                    );
+                }
+                if !result.cancelled && !delta.is_empty() && incomplete_error.is_none() {
                     self.ui.status.sample = format!("Synced {changed_count} filesystem change(s)");
                     self.queue_source_prep(
                         source_id.clone(),
@@ -541,7 +545,15 @@ impl NativeAppState {
                     },
                 );
                 result.journal_checkpoint_event_id = journal_checkpoint_event_id;
-                drop(permit);
+                let handoff = match &result.result {
+                    Ok(success) if !result.cancelled && success.incomplete_error.is_none() => {
+                        ExternalScanHandoff::CommittedDelta(success.committed_delta.clone())
+                    }
+                    _ => ExternalScanHandoff::FullReconciliation {
+                        reason: "targeted_source_sync_incomplete",
+                    },
+                };
+                permit.release_after_handoff(handoff);
                 result
             },
             GuiMessage::SourceFilesystemSyncFinished,
