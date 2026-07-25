@@ -227,10 +227,34 @@ impl SourceDatabaseOpenMode {
     }
 }
 
-/// Reset the debug-only source DB open counter used by regression tests.
+/// Owned scope for one source DB open counter used by regression tests.
 #[cfg(debug_assertions)]
-pub fn test_reset_source_db_open_total_count(root: &Path) {
-    telemetry::reset_open_total_count(root);
+pub struct TestSourceDbOpenCountGuard {
+    root: std::path::PathBuf,
+}
+
+#[cfg(debug_assertions)]
+impl Drop for TestSourceDbOpenCountGuard {
+    fn drop(&mut self) {
+        telemetry::release_open_total_count_scope(&self.root);
+    }
+}
+
+#[cfg(debug_assertions)]
+impl TestSourceDbOpenCountGuard {
+    /// Clear observations accumulated so far while retaining scope ownership.
+    pub fn reset(&self) {
+        telemetry::reset_open_total_count(&self.root);
+    }
+}
+
+/// Clear one source DB open counter for a scope and clear it again on drop.
+#[cfg(debug_assertions)]
+pub fn test_scope_source_db_open_total_count(root: &Path) -> TestSourceDbOpenCountGuard {
+    telemetry::acquire_open_total_count_scope(root);
+    TestSourceDbOpenCountGuard {
+        root: root.to_path_buf(),
+    }
 }
 
 /// Return the debug-only source DB open count used by regression tests.

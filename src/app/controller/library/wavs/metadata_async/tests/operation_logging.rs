@@ -77,7 +77,7 @@ fn source_metadata_job_logs_operation_path_remap_and_result() {
         .upsert_file(&new_relative, new_size, new_modified_ns)
         .expect("insert new row");
     batch.commit().expect("commit rename batch");
-    source_write_priority::record_completed_browser_rename(
+    let _rename_scope = source_write_priority::CompletedBrowserRenameTestGuard::new(
         &source.id,
         &old_relative,
         &new_relative,

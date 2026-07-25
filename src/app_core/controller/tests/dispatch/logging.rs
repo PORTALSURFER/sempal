@@ -2,6 +2,7 @@ use super::*;
 use std::io;
 use std::sync::{Arc, Mutex};
 use tracing_subscriber::fmt::MakeWriter;
+use wavecrate_library::test_runtime::TestRuntimeGuard;
 
 #[derive(Clone, Default)]
 struct SharedBuffer(Arc<Mutex<Vec<u8>>>);
@@ -33,34 +34,6 @@ impl io::Write for SharedBufferWriter {
     }
 }
 
-struct EnvVarGuard {
-    key: &'static str,
-    previous: Option<std::ffi::OsString>,
-}
-
-impl EnvVarGuard {
-    fn remove(key: &'static str) -> Self {
-        let previous = std::env::var_os(key);
-        // Tests in this module need the default incident-log policy, so keep
-        // the opt-in hot-path override absent for the captured scope.
-        unsafe {
-            std::env::remove_var(key);
-        }
-        Self { key, previous }
-    }
-}
-
-impl Drop for EnvVarGuard {
-    fn drop(&mut self) {
-        unsafe {
-            match self.previous.as_ref() {
-                Some(value) => std::env::set_var(self.key, value),
-                None => std::env::remove_var(self.key),
-            }
-        }
-    }
-}
-
 fn capture_debug_logs<F>(run: F) -> String
 where
     F: FnOnce(),
@@ -72,15 +45,16 @@ where
         .with_max_level(tracing::Level::DEBUG)
         .with_writer(buffer.clone())
         .finish();
-    crate::logging::set_debug_logging_enabled_for_tests(true);
-    tracing::subscriber::with_default(subscriber, run);
-    crate::logging::set_debug_logging_enabled_for_tests(false);
+    crate::logging::with_debug_logging_enabled_for_tests(true, || {
+        tracing::subscriber::with_default(subscriber, run);
+    });
     buffer.captured()
 }
 
 #[test]
 fn default_action_debug_log_suppresses_browser_view_start_scroll_bursts() {
-    let _hotpath_guard = EnvVarGuard::remove(crate::hotpath_telemetry::HOTPATH_TELEMETRY_ENV);
+    let mut runtime = TestRuntimeGuard::acquire();
+    runtime.remove_var(crate::hotpath_telemetry::HOTPATH_TELEMETRY_ENV);
     let mut controller = AppController::new(WaveformRenderer::new(16, 16), None);
 
     let captured = capture_debug_logs(|| {

@@ -2,6 +2,7 @@ use std::path::Path;
 
 use crate::sample_sources::SourceDatabase;
 use crate::sample_sources::db::{RenameMetadataSnapshot, SourceWriteBatch, WavEntry};
+use wavecrate_library::sample_sources::SourceTraversalPolicy;
 
 use super::scan::{
     ChangedSample, RenamedSample, ScanContext, ScanError, ScanMode, ScanStats, UpdatedSample,
@@ -15,13 +16,12 @@ pub(super) struct PreparedFile {
     pub(super) hash_required: bool,
     pub(super) needs_hash: bool,
     pub(super) requires_apply: bool,
+    pub(super) revalidate_checkpoint: bool,
     pub(super) identity_replaced: bool,
     pub(super) content_hash: Option<String>,
-    /// A targeted-sync descriptor opened through the source-root capability.
-    /// It is consumed during preparation so hashing cannot re-resolve a path
-    /// that was replaced by a link after classification.
-    pub(super) targeted_file: Option<std::fs::File>,
-    pub(super) targeted_handle_verified: bool,
+    /// A descriptor opened through the source-root capability and retained through apply.
+    pub(super) source_file: Option<std::fs::File>,
+    pub(super) source_handle_verified: bool,
 }
 
 pub(super) fn apply_diff(
@@ -35,6 +35,7 @@ pub(super) fn apply_diff(
         hash_required,
         needs_hash: _,
         requires_apply: _,
+        revalidate_checkpoint,
         identity_replaced,
         content_hash,
         ..
@@ -42,6 +43,7 @@ pub(super) fn apply_diff(
     let path = facts.relative.clone();
     let should_hash = hash_required;
     let _ = context.existing.remove(&path);
+    batch.remove_source_index_entry(&path)?;
     let existing = db.entry_for_path(&path)?;
     match existing {
         Some(entry)
@@ -53,16 +55,35 @@ pub(super) fn apply_diff(
             if entry.missing {
                 batch.set_missing(&path, false)?;
             }
-            if entry.content_hash.is_none() {
-                if should_hash {
-                    let hash = required_prepared_hash(content_hash);
+            if should_hash && (entry.content_hash.is_none() || revalidate_checkpoint) {
+                let hash = required_prepared_hash(content_hash);
+                let hash_changed = entry.content_hash.as_deref() != Some(hash.as_str());
+                if entry.content_hash.is_none() || hash_changed {
                     batch.upsert_file_with_hash(&path, facts.size, facts.modified_ns, &hash)?;
-                    context.stats.hashes_computed += 1;
-                } else {
-                    context.stats.hashes_pending += 1;
                 }
+                if hash_changed && entry.content_hash.is_some() {
+                    context.stats.updated += 1;
+                    context.stats.updated_samples.push(UpdatedSample {
+                        relative_path: path.clone(),
+                        file_size: facts.size,
+                        modified_ns: facts.modified_ns,
+                        content_hash: Some(hash.clone()),
+                    });
+                    context.stats.content_changed += 1;
+                    context.stats.changed_samples.push(ChangedSample {
+                        relative_path: path.clone(),
+                        file_size: facts.size,
+                        modified_ns: facts.modified_ns,
+                        content_hash: hash,
+                    });
+                }
+                context.stats.hashes_computed += 1;
+            } else if entry.content_hash.is_none() {
+                context.stats.hashes_pending += 1;
             }
-            batch.set_file_identity(&path, facts.file_identity.as_deref())?;
+            if context.committed_file_identity(&path) != facts.file_identity.as_deref() {
+                batch.set_file_identity(&path, facts.file_identity.as_deref())?;
+            }
         }
         Some(entry) => {
             let previous_hash = entry.content_hash.as_deref();
@@ -168,12 +189,13 @@ fn required_prepared_hash(content_hash: Option<String>) -> String {
 
 pub(super) fn mark_missing(
     db: &SourceDatabase,
+    policy: SourceTraversalPolicy,
     batch: &mut SourceWriteBatch<'_>,
     existing: impl IntoIterator<Item = WavEntry>,
     stats: &mut ScanStats,
 ) -> Result<(), ScanError> {
     for stale in existing {
-        if is_supported_scannable_audio_file(db.root(), &stale.relative_path) {
+        if is_supported_scannable_audio_file(db.root(), &stale.relative_path, policy) {
             continue;
         }
         let Some(leftover) = db.entry_for_path(&stale.relative_path)? else {

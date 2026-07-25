@@ -15,7 +15,7 @@ pub(crate) use migrations::table_columns;
 /// A matching stamp means the file has already passed the full schema-assurance
 /// path once. Current-stamped opens still run low-cost additive table/column
 /// repairs, but they skip index rebuilds and deferred cleanup work.
-pub(super) const SOURCE_DB_SCHEMA_VERSION: i64 = 10;
+pub(super) const SOURCE_DB_SCHEMA_VERSION: i64 = 11;
 
 /// Apply the full source-database schema, including deferred cleanup work.
 pub(super) fn apply_schema(connection: &Connection) -> Result<SchemaApplyOutcome, SourceDbError> {

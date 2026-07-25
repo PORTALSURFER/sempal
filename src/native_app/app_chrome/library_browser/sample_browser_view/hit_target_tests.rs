@@ -1,4 +1,5 @@
 use super::*;
+use crate::native_app::app_chrome::palette::SELECTION_FLASH_FILL;
 use radiant::gui::types::Point;
 use radiant::prelude::{self as ui, IntoView};
 use radiant::runtime::{SurfacePaintPlan, UiSurface};
@@ -26,6 +27,7 @@ fn sample_hit_target(
         selected,
         focused: false,
         focus_alpha: 0,
+        selection_flash: false,
         copy_flash: false,
         protected_source_error_flash: false,
         cut_pending: false,
@@ -56,6 +58,7 @@ fn sample_hit_target_with_focus_and_explicit_selection(
         selected,
         focused,
         focus_alpha: if focused { u8::MAX } else { 0 },
+        selection_flash: false,
         copy_flash: false,
         protected_source_error_flash: false,
         cut_pending: false,
@@ -74,7 +77,27 @@ fn sample_hit_target_with_copy_flash(selected: bool, cached: bool) -> UiSurface<
         selected,
         focused: false,
         focus_alpha: 0,
+        selection_flash: false,
         copy_flash: true,
+        protected_source_error_flash: false,
+        cut_pending: false,
+        drag_active: false,
+        drag_source: false,
+        cached,
+        missing: false,
+        hit_path: String::from("sample.wav"),
+        help_tooltips_enabled: false,
+    })
+}
+
+fn sample_hit_target_with_selection_flash(cached: bool) -> UiSurface<GuiMessage> {
+    sample_hit_target_with_model(SampleFileHitTargetModel {
+        file_id: "sample.wav",
+        selected: true,
+        focused: false,
+        focus_alpha: 0,
+        selection_flash: true,
+        copy_flash: false,
         protected_source_error_flash: false,
         cut_pending: false,
         drag_active: false,
@@ -92,6 +115,7 @@ fn sample_hit_target_with_cut_pending(selected: bool, cached: bool) -> UiSurface
         selected,
         focused: false,
         focus_alpha: 0,
+        selection_flash: false,
         copy_flash: false,
         protected_source_error_flash: false,
         cut_pending: true,
@@ -162,6 +186,7 @@ fn production_hit_target_derives_stable_input_identity_from_sample_row_key() {
             selected: false,
             focused: false,
             focus_alpha: 0,
+            selection_flash: false,
             copy_flash: false,
             protected_source_error_flash: false,
             cut_pending: false,
@@ -424,6 +449,29 @@ fn copied_rows_paint_flash_fill_without_selection_marker() {
     assert!(
         !plan.fill_rects().any(|fill| fill.color == CACHED_MARKER),
         "copy flash fill should not be interrupted by the cached marker"
+    );
+}
+
+#[test]
+fn x_marked_rows_paint_a_stronger_selection_flash() {
+    let bounds = ui::Rect::from_xy_size(10.0, 20.0, 120.0, 22.0);
+    let target = sample_hit_target_with_selection_flash(true);
+    let plan = sample_widget_plan(&target, bounds);
+
+    assert!(
+        plan.fill_rects()
+            .any(|fill| fill.color == SELECTION_FLASH_FILL),
+        "x-marked rows should paint the transient accent flash"
+    );
+    assert!(
+        plan.fill_rects().any(
+            |fill| fill.rect.min.x == bounds.min.x && fill.color == selected_row_marker().color
+        ),
+        "the flash must preserve the row's persistent selection marker"
+    );
+    assert!(
+        !plan.fill_rects().any(|fill| fill.color == CACHED_MARKER),
+        "the flash should not be interrupted by the cached marker"
     );
 }
 

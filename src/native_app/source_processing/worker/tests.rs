@@ -1,7 +1,48 @@
 use super::*;
+use std::path::PathBuf;
 use std::sync::{Arc, atomic::Ordering};
 use std::time::{Duration, Instant};
 use wavecrate::sample_sources::{SourceDatabase, SourceId};
+
+#[test]
+fn scanner_failures_preserve_retry_and_cancellation_policy() {
+    let unavailable = SourceProcessingFailure::from(wavecrate_scan::ScanError::Io {
+        path: PathBuf::from("unavailable.wav"),
+        source: std::io::Error::new(std::io::ErrorKind::NotFound, "temporarily unavailable"),
+    });
+    assert!(matches!(
+        unavailable.class,
+        SourceProcessingFailureClass::Retryable
+    ));
+    assert_eq!(unavailable.code.as_str(), "scanner_io");
+    assert_eq!(
+        unavailable.readiness_failure_classification(),
+        wavecrate::sample_sources::readiness::ReadinessFailureClassification::Retryable
+    );
+
+    let stale = SourceProcessingFailure::from(wavecrate_scan::ScanError::StaleRevision {
+        expected: 4,
+        actual: 5,
+    });
+    assert!(matches!(
+        stale.class,
+        SourceProcessingFailureClass::Retryable
+    ));
+    assert_eq!(stale.code.as_str(), "scanner_stale_revision");
+
+    let cancelled = SourceProcessingFailure::from(wavecrate_scan::ScanError::Canceled);
+    assert!(cancelled.is_cancelled());
+    assert_eq!(cancelled.code.as_str(), "scanner_cancelled");
+
+    let invalid_root = SourceProcessingFailure::from(wavecrate_scan::ScanError::InvalidRoot(
+        PathBuf::from("missing-source"),
+    ));
+    assert!(matches!(
+        invalid_root.class,
+        SourceProcessingFailureClass::Permanent
+    ));
+    assert_eq!(invalid_root.code.as_str(), "scanner_invalid_root");
+}
 
 #[test]
 fn cancelled_embedding_waiting_for_writer_does_not_publish() {

@@ -44,7 +44,7 @@ fn loaded_duration_metadata_job_follows_completed_browser_rename() {
         .remap_analysis_sample_identity(&old_relative, &new_relative)
         .expect("remap analysis identity");
     batch.commit().expect("commit rename batch");
-    source_write_priority::record_completed_browser_rename(
+    let _rename_scope = source_write_priority::CompletedBrowserRenameTestGuard::new(
         &source.id,
         &old_relative,
         &new_relative,

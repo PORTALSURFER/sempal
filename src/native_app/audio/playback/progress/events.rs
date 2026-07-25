@@ -12,6 +12,8 @@ use wavecrate::audio::{
     PlaybackRuntimeStarted, ResolvedOutput,
 };
 
+const MAX_PLAYBACK_RUNTIME_EVENTS_PER_FRAME: usize = 32;
+
 impl NativeAppState {
     pub(in crate::native_app) fn runtime_playback_origin_for_path(
         &self,
@@ -50,7 +52,10 @@ impl NativeAppState {
         let Some(events) = self.audio.playback_events.take() else {
             return;
         };
-        for event in events.try_iter() {
+        for event in events
+            .try_iter()
+            .take(MAX_PLAYBACK_RUNTIME_EVENTS_PER_FRAME)
+        {
             self.apply_playback_runtime_event(event);
         }
         if self.audio.playback_runtime.is_some() {

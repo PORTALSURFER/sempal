@@ -69,8 +69,3 @@ impl RenameLoopedMetadata {
 
 pub(crate) use auto_rename::run_sample_auto_rename_job;
 pub(super) use rename::perform_sample_rename;
-
-#[cfg(test)]
-pub(super) use provenance::{
-    RenameLoopedProvenanceLog, take_rename_looped_provenance_logs_for_tests,
-};

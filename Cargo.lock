@@ -6261,6 +6261,7 @@ dependencies = [
  "blake3",
  "cap-fs-ext",
  "cap-std",
+ "filetime",
  "libc",
  "tempfile",
  "thiserror 2.0.18",

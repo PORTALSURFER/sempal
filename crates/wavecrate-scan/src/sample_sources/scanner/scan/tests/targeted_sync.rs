@@ -1,5 +1,7 @@
 use super::*;
+use crate::sample_sources::scanner::scan_fs::force_directory_identity;
 use crate::sample_sources::scanner::scan_fs::force_directory_read_failure;
+use crate::sample_sources::scanner::{DirectoryRepeatKind, SourceTreeDiagnostic};
 use crate::sample_sources::scanner::{sync_paths, sync_paths_with_progress};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -21,6 +23,125 @@ fn targeted_sync_updates_only_requested_file() {
     assert_eq!(db.list_files().unwrap().len(), 2);
     assert_eq!(stats.committed_delta.changed.len(), 1);
     assert!(stats.committed_delta.revision > 0);
+}
+
+#[test]
+fn targeted_sync_manifest_work_is_bounded_to_the_changed_subtree() {
+    let dir = tempdir().unwrap();
+    let target = dir.path().join("target");
+    std::fs::create_dir(&target).unwrap();
+    std::fs::write(target.join("changed.wav"), b"before").unwrap();
+    for index in 0..256 {
+        std::fs::write(
+            dir.path().join(format!("unrelated-{index:03}.wav")),
+            b"other",
+        )
+        .unwrap();
+    }
+    let db = SourceDatabase::open_for_scan(dir.path()).unwrap();
+    scan_once(&db).unwrap();
+
+    std::fs::write(target.join("changed.wav"), b"after").unwrap();
+    let stats = sync_paths(&db, &[PathBuf::from("target/changed.wav")]).unwrap();
+
+    assert_eq!(stats.targeted_manifest_scope_count, 1);
+    assert_eq!(stats.targeted_manifest_query_count, 1);
+    assert_eq!(stats.targeted_manifest_rows_read, 1);
+    assert!(stats.targeted_sync_elapsed_us > 0);
+    assert_eq!(
+        stats
+            .manifest_before
+            .iter()
+            .map(|entry| entry.relative_path.clone())
+            .collect::<Vec<_>>(),
+        vec![PathBuf::from("target/changed.wav")]
+    );
+    assert_eq!(
+        stats
+            .manifest_after
+            .iter()
+            .map(|entry| entry.relative_path.clone())
+            .collect::<Vec<_>>(),
+        vec![PathBuf::from("target/changed.wav")]
+    );
+}
+
+#[test]
+fn targeted_sync_collapses_parent_and_descendant_targets() {
+    let dir = tempdir().unwrap();
+    let nested = dir.path().join("nested");
+    std::fs::create_dir(&nested).unwrap();
+    std::fs::write(nested.join("one.wav"), b"one").unwrap();
+    std::fs::write(nested.join("two.wav"), b"two").unwrap();
+    let db = SourceDatabase::open_for_scan(dir.path()).unwrap();
+    scan_once(&db).unwrap();
+
+    let stats = sync_paths(
+        &db,
+        &[PathBuf::from("nested"), PathBuf::from("nested/one.wav")],
+    )
+    .unwrap();
+
+    assert_eq!(stats.targeted_manifest_scope_count, 1);
+    assert_eq!(stats.targeted_manifest_query_count, 1);
+    assert_eq!(stats.total_files, 2);
+    assert_eq!(stats.manifest_before.len(), 2);
+    assert_eq!(stats.manifest_after.len(), 2);
+}
+
+#[test]
+fn targeted_sync_does_not_reconcile_wildcard_sibling_subtrees() {
+    let dir = tempdir().unwrap();
+    let target = dir.path().join("drum_kits%_!");
+    let sibling = dir.path().join("drumXkitsX_Y!");
+    std::fs::create_dir_all(&target).unwrap();
+    std::fs::create_dir_all(&sibling).unwrap();
+    std::fs::write(target.join("removed.wav"), b"removed").unwrap();
+    std::fs::write(sibling.join("unrelated.wav"), b"unrelated").unwrap();
+
+    let db = SourceDatabase::open_for_scan(dir.path()).unwrap();
+    scan_once(&db).unwrap();
+    std::fs::remove_file(target.join("removed.wav")).unwrap();
+
+    sync_paths(&db, &[PathBuf::from("drum_kits%_!")]).unwrap();
+
+    let rows = db.list_files().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        rows[0].relative_path,
+        Path::new("drumXkitsX_Y!/unrelated.wav")
+    );
+    assert!(!rows[0].missing);
+}
+
+#[cfg(unix)]
+#[test]
+fn targeted_sync_rejects_a_root_swap_before_commit() {
+    let parent = tempdir().unwrap();
+    let root = parent.path().join("source");
+    std::fs::create_dir(&root).unwrap();
+    let path = root.join("one.wav");
+    std::fs::write(&path, b"old").unwrap();
+    let db = SourceDatabase::open_for_scan(&root).unwrap();
+    scan_once(&db).unwrap();
+    let before = db.entry_for_path(Path::new("one.wav")).unwrap().unwrap();
+
+    let mut swapped = false;
+    let result = sync_paths_with_progress(&db, &[PathBuf::from("one.wav")], None, &mut |_, _| {
+        if !swapped {
+            swapped = true;
+            let old_root = parent.path().join("old-source");
+            std::fs::rename(&root, &old_root).unwrap();
+            std::fs::create_dir(&root).unwrap();
+            std::fs::write(root.join("one.wav"), b"new").unwrap();
+        }
+    });
+
+    assert!(matches!(result, Err(ScanError::StaleRootGeneration { .. })));
+    let after = db.entry_for_path(Path::new("one.wav")).unwrap().unwrap();
+    assert_eq!(after.file_size, before.file_size);
+    assert_eq!(after.modified_ns, before.modified_ns);
+    assert_eq!(after.content_hash, before.content_hash);
 }
 
 #[test]
@@ -104,6 +225,7 @@ fn targeted_sync_hides_confirmed_missing_file() {
     assert_eq!(stats.missing, 1);
     let rows = db.list_files().unwrap();
     assert_eq!(rows.len(), 1);
+    assert!(db.list_source_index_entries().unwrap().is_empty());
     assert_eq!(rows[0].relative_path, Path::new("two.wav"));
     assert_eq!(stats.committed_delta.deleted.len(), 1);
 }
@@ -127,6 +249,50 @@ fn targeted_sync_prunes_removed_folder_prefix() {
     let rows = db.list_files().unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].relative_path, Path::new("keep.wav"));
+}
+
+#[test]
+fn targeted_sync_reconciles_hidden_directory_policy_changes() {
+    let dir = tempdir().unwrap();
+    let hidden = dir.path().join(".hidden");
+    std::fs::create_dir_all(&hidden).unwrap();
+    std::fs::write(hidden.join("kick.wav"), b"kick").unwrap();
+    let db = SourceDatabase::open_for_scan(dir.path()).unwrap();
+
+    assert_eq!(scan_once(&db).unwrap().added, 1);
+    db.set_source_traversal_policy(
+        wavecrate_library::sample_sources::SourceTraversalPolicy::exclude_hidden_directories(),
+    )
+    .unwrap();
+    assert_eq!(
+        sync_paths(&db, &[PathBuf::from(".hidden")])
+            .unwrap()
+            .missing,
+        1
+    );
+    assert!(db.list_files().unwrap().is_empty());
+
+    db.set_source_traversal_policy(
+        wavecrate_library::sample_sources::SourceTraversalPolicy::include_hidden_directories(),
+    )
+    .unwrap();
+    assert_eq!(
+        sync_paths(&db, &[PathBuf::from(".hidden")]).unwrap().added,
+        1
+    );
+    assert_eq!(db.list_files().unwrap().len(), 1);
+
+    db.set_source_traversal_policy(
+        wavecrate_library::sample_sources::SourceTraversalPolicy::exclude_hidden_directories(),
+    )
+    .unwrap();
+    assert_eq!(
+        sync_paths(&db, &[PathBuf::from(".hidden")])
+            .unwrap()
+            .missing,
+        1
+    );
+    assert!(db.list_files().unwrap().is_empty());
 }
 
 #[test]
@@ -259,6 +425,7 @@ fn targeted_sync_ignores_appledouble_sidecars() {
     let rows = db.list_files().unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].relative_path, Path::new("drums/kick.wav"));
+    assert!(db.list_source_index_entries().unwrap().is_empty());
 }
 
 #[test]
@@ -293,6 +460,86 @@ fn targeted_sync_cancels_after_a_committed_batch_and_resumes_safely() {
         .expect("targeted sync must resume from the committed checkpoint");
     assert_eq!(resumed.total_files, 70);
     assert_eq!(db.count_files().unwrap(), 70);
+}
+
+#[test]
+fn targeted_sync_reconciles_each_directory_identity_once() {
+    let source = tempdir().unwrap();
+    let parent = source.path().join("parent");
+    let first = parent.join("first");
+    let second = parent.join("second");
+    std::fs::create_dir_all(&first).unwrap();
+    std::fs::create_dir_all(&second).unwrap();
+    std::fs::write(first.join("first.wav"), b"first").unwrap();
+    std::fs::write(second.join("second.wav"), b"second").unwrap();
+
+    let _first_identity = force_directory_identity(&first, Some("repeated-target"));
+    let _second_identity = force_directory_identity(&second, Some("repeated-target"));
+    let db = SourceDatabase::open_for_scan(source.path()).unwrap();
+    let ScanError::Incomplete { committed, .. } =
+        sync_paths(&db, &[PathBuf::from("parent")]).unwrap_err()
+    else {
+        panic!("an injected repeated subtree must return the committed partial result");
+    };
+    let stats = *committed;
+
+    assert_eq!(stats.total_files, 1);
+    assert!(
+        stats
+            .traversal_diagnostics
+            .iter()
+            .any(|diagnostic| matches!(
+                diagnostic,
+                SourceTreeDiagnostic::RepeatedDirectory {
+                    kind: DirectoryRepeatKind::RepeatedTarget,
+                    ..
+                }
+            ))
+    );
+}
+
+#[test]
+fn targeted_sync_processes_sibling_files_sharing_a_parent_target() {
+    let source = tempdir().unwrap();
+    let nested = source.path().join("nested");
+    std::fs::create_dir(&nested).unwrap();
+    std::fs::write(nested.join("first.wav"), b"first").unwrap();
+    std::fs::write(nested.join("second.wav"), b"second").unwrap();
+    let db = SourceDatabase::open_for_scan(source.path()).unwrap();
+
+    let stats = sync_paths(
+        &db,
+        &[
+            PathBuf::from("nested/first.wav"),
+            PathBuf::from("nested/second.wav"),
+        ],
+    )
+    .unwrap();
+
+    assert_eq!(stats.total_files, 2);
+    assert_eq!(db.count_files().unwrap(), 2);
+    assert!(stats.traversal_diagnostics.is_empty());
+}
+
+#[test]
+fn targeted_sync_rejects_a_file_below_a_repeated_ancestor() {
+    let source = tempdir().unwrap();
+    let alias = source.path().join("alias");
+    std::fs::create_dir(&alias).unwrap();
+    let target = alias.join("keep.wav");
+    std::fs::write(&target, b"keep").unwrap();
+    let db = SourceDatabase::open_for_scan(source.path()).unwrap();
+    scan_once(&db).unwrap();
+
+    let _root_identity = force_directory_identity(source.path(), Some("root-identity"));
+    let _alias_identity = force_directory_identity(&alias, Some("root-identity"));
+    let ScanError::Incomplete { .. } =
+        sync_paths(&db, &[PathBuf::from("alias/keep.wav")]).unwrap_err()
+    else {
+        panic!("a repeated targeted ancestor must return an incomplete scan");
+    };
+
+    assert_eq!(db.count_files().unwrap(), 1);
 }
 
 #[cfg(unix)]

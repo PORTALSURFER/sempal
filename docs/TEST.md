@@ -30,6 +30,37 @@ Use the lightest lane that still gives trustworthy coverage for the change.
    - macOS/Linux/WSL:
      `bash scripts/ci.sh local`
 
+### Opt-in parallel-isolation stress lane
+
+Use the normal `agent` lane for routine compile and broad library validation.
+Use the parallel-isolation stress lane after changing test runtime guards,
+process environment/current-directory handling, mutable global test controls,
+worker cleanup, or when investigating a failure that disappears on retry:
+
+- Windows PowerShell:
+  `powershell -ExecutionPolicy Bypass -File scripts/ci.ps1 isolation-stress -Iterations 5 -TestThreads 8`
+- macOS/Linux/WSL:
+  `bash scripts/ci.sh isolation-stress --iterations 5 --test-threads 8`
+
+This lane is deliberately not part of `scripts/ci.* agent`. It compiles the
+Wavecrate library harness once, proves that deliberately injected
+process-state and mutable-global-control leaks are detected, and then starts a
+fresh test-binary process for every bounded iteration. Each process uses the
+requested explicit libtest parallelism and a 15-minute default timeout. The
+lane stops at the first unexpected failure instead of retrying until green.
+
+Every process writes one compact JSONL record containing the test binary,
+iteration, parallelism, status, test name, failure class, and disposition. The
+metadata record separately identifies known quarantined coverage and its
+exclusion reason. Reports default to a timestamped file under
+`target/test-isolation-stress/`; pass `--output` on Bash or `-Output` on
+PowerShell to select a stable artifact path.
+
+Focused runner coverage, including report parsing, fresh-process invocation,
+timeouts, exit behavior, and injected-leak classification, is available with:
+
+`python3 -m unittest scripts/internal/ci/test_parallel_isolation_stress.py`
+
 ## Agent preflight and Git hooks
 
 `scripts/agent.sh preflight` / `scripts/agent.sh request` and their PowerShell

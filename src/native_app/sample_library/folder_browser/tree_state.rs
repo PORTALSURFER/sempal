@@ -57,8 +57,15 @@ impl FolderBrowserState {
         &self,
     ) -> Option<FolderVerifyRequest> {
         let folder = self.selected_folder()?;
+        let source = self
+            .source
+            .sources
+            .iter()
+            .find(|source| source.id == self.source.selected_source)?;
         Some(FolderVerifyRequest {
             source_id: self.source.selected_source.clone(),
+            source_root: source.root.clone(),
+            database_root: source.database_root.clone(),
             folder_path: std::path::PathBuf::from(&folder.id),
             cached_child_ids: folder
                 .children
@@ -309,6 +316,7 @@ impl FolderBrowserState {
             } else {
                 0
             },
+            selection_flash: self.marked_item_flash_active(&folder.id),
             drag_active,
             drag_source,
             drop_candidate,

@@ -48,8 +48,9 @@ pub(super) fn run_readiness_stage(
                     )
                     .map_err(SourceProcessingFailure::from)?;
                 if !has_content_hash {
-                    let database_root =
-                        source.database_root().map_err(|error| error.to_string())?;
+                    let database_root = source
+                        .database_root()
+                        .map_err(SourceProcessingFailure::from)?;
                     let db = SourceDatabase::open_for_background_job_with_database_root(
                         &source.root,
                         database_root,
@@ -60,7 +61,7 @@ pub(super) fn run_readiness_stage(
                         std::path::Path::new(relative_path),
                         Some(cancel),
                     )
-                    .map_err(|error| error.to_string())?;
+                    .map_err(SourceProcessingFailure::from)?;
                 }
                 let committed_content_hash = connection
                     .query_row(

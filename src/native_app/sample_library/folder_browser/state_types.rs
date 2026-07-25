@@ -510,6 +510,7 @@ pub(in crate::native_app) struct VisibleFolder {
     pub(in crate::native_app) selected: bool,
     pub(in crate::native_app) focused: bool,
     pub(in crate::native_app) focus_alpha: u8,
+    pub(in crate::native_app) selection_flash: bool,
     pub(in crate::native_app) drag_active: bool,
     pub(in crate::native_app) drag_source: bool,
     pub(in crate::native_app) drop_candidate: bool,

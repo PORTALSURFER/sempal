@@ -6,6 +6,8 @@ mod analysis_jobs;
 mod contract;
 #[path = "source_db_migration_tests/fixtures.rs"]
 mod fixtures;
+#[path = "source_db_migration_tests/index_entries.rs"]
+mod index_entries;
 #[path = "source_db_migration_tests/pending_rename.rs"]
 mod pending_rename;
 #[path = "source_db_migration_tests/samples.rs"]

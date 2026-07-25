@@ -68,7 +68,7 @@ fn analysis_metadata_rename_resolution_reuses_one_source_db_open() {
         .remap_analysis_sample_identity(&other_old_relative, &other_new_relative)
         .expect("remap other analysis identity");
     batch.commit().expect("commit rename batch");
-    source_write_priority::record_completed_browser_rename(
+    let _rename_scope = source_write_priority::CompletedBrowserRenameTestGuard::new(
         &source.id,
         &old_relative,
         &new_relative,
@@ -79,7 +79,8 @@ fn analysis_metadata_rename_resolution_reuses_one_source_db_open() {
         &other_new_relative,
     );
 
-    crate::sample_sources::db::test_reset_source_db_open_total_count(&source.root);
+    let _open_count_scope =
+        crate::sample_sources::db::test_scope_source_db_open_total_count(&source.root);
     let result = run_metadata_mutation_job(MetadataMutationJob {
         request_id: 19,
         source_id: source.id.clone(),

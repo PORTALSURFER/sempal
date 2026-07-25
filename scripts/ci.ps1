@@ -21,12 +21,13 @@ $psExe = (Get-Process -Id $PID).Path
 $commands = @{
   "smoke" = "devcheck.ps1"
   "agent" = "ci_agent.ps1"
+  "isolation-stress" = "ci_isolation_stress.ps1"
   "quick" = "ci_quick.ps1"
   "local" = "ci_local.ps1"
 }
 
 if ([string]::IsNullOrWhiteSpace($Command)) {
-  Write-Host "Usage: scripts/ci.ps1 <smoke|agent|quick|local> [args...]"
+  Write-Host "Usage: scripts/ci.ps1 <smoke|agent|quick|local|isolation-stress> [args...]"
   exit 0
 }
 

@@ -3,9 +3,9 @@ use super::*;
 #[test]
 fn fallback_get_migrates_legacy_key_file() {
     enable_mock_keyring();
-    let _env_guard = env_lock();
+    let mut runtime = env_lock();
     reset_cache();
-    allow_fallback();
+    allow_fallback(&mut runtime);
     let base = tempdir().unwrap();
     let _guard = app_dirs::ConfigBaseGuard::set(base.path().to_path_buf());
     let store = IssueTokenStore::new().unwrap();
@@ -21,17 +21,15 @@ fn fallback_get_migrates_legacy_key_file() {
 
     assert_eq!(store.fallback_get().unwrap().as_deref(), Some("tok_legacy"));
     assert!(!store.legacy_fallback_key_path().exists());
-
-    disallow_fallback();
 }
 
 #[test]
 fn corrupt_legacy_fallback_key_file_is_removed() {
     enable_mock_keyring();
-    let _env_guard = env_lock();
+    let mut runtime = env_lock();
     reset_cache();
-    allow_fallback();
-    clear_env_key();
+    allow_fallback(&mut runtime);
+    clear_env_key(&mut runtime);
     let base = tempdir().unwrap();
     let _guard = app_dirs::ConfigBaseGuard::set(base.path().to_path_buf());
     let store = IssueTokenStore::new().unwrap();
@@ -39,6 +37,4 @@ fn corrupt_legacy_fallback_key_file_is_removed() {
 
     assert_eq!(store.get_key_from_file().unwrap(), None);
     assert!(!store.legacy_fallback_key_path().exists());
-
-    disallow_fallback();
 }

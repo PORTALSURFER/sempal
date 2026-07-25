@@ -24,10 +24,12 @@ pub use playback_span_plan::{
 };
 pub use runtime::{
     PlaybackRequestId, PlaybackRuntime, PlaybackRuntimeCancellation, PlaybackRuntimeConfig,
-    PlaybackRuntimeEvent, PlaybackRuntimeGainNormalization, PlaybackRuntimeHandle,
-    PlaybackRuntimeMode, PlaybackRuntimeProgress, PlaybackRuntimeReplacePolicy,
-    PlaybackRuntimeRequest, PlaybackRuntimeSource, PlaybackRuntimeSpanUpdate,
-    PlaybackRuntimeStarted, PlaybackRuntimeStreamPolicy, PlaybackRuntimeSubmitError,
+    PlaybackRuntimeEvent, PlaybackRuntimeEventIter, PlaybackRuntimeEventReceiver,
+    PlaybackRuntimeEventRecvError, PlaybackRuntimeEventRecvTimeoutError,
+    PlaybackRuntimeGainNormalization, PlaybackRuntimeHandle, PlaybackRuntimeMode,
+    PlaybackRuntimeProgress, PlaybackRuntimeReplacePolicy, PlaybackRuntimeRequest,
+    PlaybackRuntimeSource, PlaybackRuntimeSpanUpdate, PlaybackRuntimeStarted,
+    PlaybackRuntimeStreamPolicy, PlaybackRuntimeSubmitError,
 };
 
 #[derive(Clone)]

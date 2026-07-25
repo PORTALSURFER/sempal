@@ -53,6 +53,8 @@ pub mod release_metadata;
 pub mod sample_sources;
 /// Selection math utilities.
 pub mod selection;
+#[cfg(test)]
+mod test_isolation_sentinels;
 /// Shared display formatting used across Wavecrate UI runtimes.
 mod ui_formatting;
 /// Optional SQLite extension loader.

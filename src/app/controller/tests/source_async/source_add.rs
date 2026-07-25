@@ -15,7 +15,8 @@ fn readding_known_source_prepares_database_off_controller_thread() {
     controller.remove_source(0);
     assert!(controller.library.sources.is_empty());
 
-    crate::sample_sources::db::test_reset_source_db_open_total_count(&source_path);
+    let _open_count_scope =
+        crate::sample_sources::db::test_scope_source_db_open_total_count(&source_path);
     with_source_add_async_enabled_for_tests(true, || {
         controller
             .add_source_from_path(source_path.clone())

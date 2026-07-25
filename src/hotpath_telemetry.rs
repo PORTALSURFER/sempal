@@ -12,9 +12,17 @@ use std::time::Duration;
 /// Environment variable used to toggle hot-path telemetry snapshots.
 pub(crate) const HOTPATH_TELEMETRY_ENV: &str = "WAVECRATE_HOTPATH_TELEMETRY";
 
-/// Resolve hot-path telemetry mode once and cache it in `state`.
+/// Resolve hot-path telemetry mode once and cache it in production.
+#[cfg(not(test))]
 pub(crate) fn enabled(state: &OnceLock<bool>) -> bool {
     *state.get_or_init(|| crate::env_flags::env_var_truthy(HOTPATH_TELEMETRY_ENV))
+}
+
+/// Keep telemetry disabled in unit tests so counters and environment changes
+/// cannot couple otherwise unrelated cases.
+#[cfg(test)]
+pub(crate) fn enabled(_state: &OnceLock<bool>) -> bool {
+    false
 }
 
 /// Add a duration in nanoseconds with saturating conversion to `u64`.

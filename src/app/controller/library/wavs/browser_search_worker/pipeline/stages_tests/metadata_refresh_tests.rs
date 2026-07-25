@@ -188,7 +188,7 @@ fn metadata_delta_refresh_reuses_same_source_db_connection_after_db_write() {
         .expect("expected queued search job generation")
         .generation;
     let mut cache = SearchWorkerCache::default();
-    crate::sample_sources::db::test_reset_source_db_open_total_count(&root);
+    let _open_count_scope = crate::sample_sources::db::test_scope_source_db_open_total_count(&root);
 
     assert!(ensure_search_cache_ready_for_job(
         &mut cache, &base_job, &source_id

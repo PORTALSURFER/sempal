@@ -74,7 +74,7 @@ pub(super) struct RuntimeCandidate {
     pub(super) task: RuntimeTask,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) struct SourceDiscoveryStats {
     pub(super) readiness_queue_depth: usize,
     pub(super) prerequisites_blocked: usize,

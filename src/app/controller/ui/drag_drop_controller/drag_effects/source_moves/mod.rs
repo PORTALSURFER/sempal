@@ -10,17 +10,3 @@ mod apply_result;
 mod plan;
 mod registration;
 mod worker;
-
-#[cfg(test)]
-use std::sync::{Mutex, MutexGuard, OnceLock};
-
-#[cfg(test)]
-static SOURCE_MOVE_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-
-#[cfg(test)]
-pub(super) fn source_move_test_guard() -> MutexGuard<'static, ()> {
-    SOURCE_MOVE_TEST_LOCK
-        .get_or_init(|| Mutex::new(()))
-        .lock()
-        .expect("source-move test lock poisoned")
-}

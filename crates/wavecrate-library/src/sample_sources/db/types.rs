@@ -297,6 +297,32 @@ pub struct BrowserMetadataSnapshot {
     pub files: Vec<BrowserFileMetadata>,
 }
 
+/// Opaque keyset cursor retaining the exact raw SQLite path key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrowserMetadataCursor(String);
+
+impl BrowserMetadataCursor {
+    pub(crate) fn from_raw(raw: String) -> Self {
+        Self(raw)
+    }
+
+    /// Borrow the raw SQLite path key for the next page query.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// One bounded, keyset-paged browser metadata result at an exact source revision.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrowserMetadataPage {
+    /// Source metadata revision observed by the page.
+    pub revision: u64,
+    /// Metadata rows in deterministic path order, including collection memberships.
+    pub files: Vec<BrowserFileMetadata>,
+    /// Opaque cursor to pass to the next page, or `None` when this is the final page.
+    pub next_cursor: Option<BrowserMetadataCursor>,
+}
+
 /// Authoritative identity facts for one live source-manifest row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceManifestEntry {
@@ -310,6 +336,106 @@ pub struct SourceManifestEntry {
     pub file_size: u64,
     /// Last modified timestamp in epoch nanoseconds.
     pub modified_ns: i64,
+}
+
+/// Durable classification for a file that is intentionally outside the supported sample manifest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SourceIndexClassification {
+    /// A recognized audio container that Wavecrate does not currently support.
+    UnsupportedAudio,
+    /// A regular file that is not recognized as audio.
+    UnsupportedNonAudio,
+    /// A source entry whose type or file facts could not be inspected safely.
+    Inaccessible,
+    /// Supported-format audio rejected by an explicit practical constraint.
+    PracticallyUnsupportedAudio,
+}
+
+impl SourceIndexClassification {
+    pub(crate) const fn token(self) -> &'static str {
+        match self {
+            Self::UnsupportedAudio => "unsupported_audio",
+            Self::UnsupportedNonAudio => "unsupported_non_audio",
+            Self::Inaccessible => "inaccessible",
+            Self::PracticallyUnsupportedAudio => "practically_unsupported_audio",
+        }
+    }
+
+    pub(crate) fn from_token(token: &str) -> Option<Self> {
+        match token {
+            "unsupported_audio" => Some(Self::UnsupportedAudio),
+            "unsupported_non_audio" => Some(Self::UnsupportedNonAudio),
+            "inaccessible" => Some(Self::Inaccessible),
+            "practically_unsupported_audio" => Some(Self::PracticallyUnsupportedAudio),
+            _ => None,
+        }
+    }
+}
+
+/// Bounded diagnostic attached to an index-only entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SourceIndexDiagnostic {
+    /// The filesystem entry type could not be inspected without following links.
+    EntryTypeUnavailable,
+    /// File size, modification time, or stable identity could not be inspected.
+    MetadataUnavailable,
+    /// A regular file could not be opened through the source-root boundary.
+    OpenUnavailable,
+    /// An explicit practical audio constraint rejected the file.
+    PracticalSupportLimit,
+    /// The file name is not Unicode and cannot become a normal sample row.
+    NonUnicodePath,
+}
+
+impl SourceIndexDiagnostic {
+    pub(crate) const fn token(self) -> &'static str {
+        match self {
+            Self::EntryTypeUnavailable => "entry_type_unavailable",
+            Self::MetadataUnavailable => "metadata_unavailable",
+            Self::OpenUnavailable => "open_unavailable",
+            Self::PracticalSupportLimit => "practical_support_limit",
+            Self::NonUnicodePath => "non_unicode_path",
+        }
+    }
+
+    pub(crate) fn from_token(token: &str) -> Option<Self> {
+        match token {
+            "entry_type_unavailable" => Some(Self::EntryTypeUnavailable),
+            "metadata_unavailable" => Some(Self::MetadataUnavailable),
+            "open_unavailable" => Some(Self::OpenUnavailable),
+            "practical_support_limit" => Some(Self::PracticalSupportLimit),
+            "non_unicode_path" => Some(Self::NonUnicodePath),
+            _ => None,
+        }
+    }
+}
+
+/// Restart-safe facts for one source file intentionally excluded from normal sample state.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceIndexEntry {
+    /// File path relative to the configured source root.
+    pub relative_path: PathBuf,
+    /// Typed reason this path is outside the supported sample manifest.
+    pub classification: SourceIndexClassification,
+    /// File size when metadata inspection succeeded.
+    pub file_size: Option<u64>,
+    /// Last modified timestamp in epoch nanoseconds when inspection succeeded.
+    pub modified_ns: Option<i64>,
+    /// Stable filesystem-object identity when available.
+    pub file_identity: Option<String>,
+    /// Bounded diagnostic category without host paths or unbounded error text.
+    pub diagnostic: Option<SourceIndexDiagnostic>,
+    /// Format-classification policy that produced this row.
+    pub format_policy_version: u32,
+}
+
+/// Coherent read projection of the durable index-only file set.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceIndexSnapshot {
+    /// Monotonic index-only revision, independent from the supported manifest revision.
+    pub revision: u64,
+    /// Index-only entries in deterministic path order.
+    pub entries: Vec<SourceIndexEntry>,
 }
 
 /// One normal library tag stored in a source database.

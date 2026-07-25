@@ -1,7 +1,12 @@
+#[cfg(unix)]
 #[test]
 fn unavailable_hash_path_backs_off_without_starving_later_files() {
+    use std::os::unix::fs::PermissionsExt;
+
     let directory = tempfile::tempdir().expect("temporary hash source");
+    let unavailable_path = directory.path().join("a-unavailable.wav");
     let good_path = directory.path().join("z-good.wav");
+    std::fs::write(&unavailable_path, [3_u8; 64]).expect("write temporarily unavailable sample");
     std::fs::write(&good_path, [7_u8; 64]).expect("write hashable sample");
     let source = SampleSource::new_with_id(
         SourceId::from_string("hash-fairness"),
@@ -13,7 +18,7 @@ fn unavailable_hash_path_backs_off_without_starving_later_files() {
     db.upsert_file(Path::new("z-good.wav"), 64, 1)
         .expect("insert good hash row");
     let database_root = source.database_root().expect("database root");
-    let connection = SourceDatabase::open_connection_with_role_and_database_root(
+    let mut connection = SourceDatabase::open_connection_with_role_and_database_root(
         &source.root,
         &database_root,
         SourceDatabaseConnectionRole::JobWorker,
@@ -27,69 +32,64 @@ fn unavailable_hash_path_backs_off_without_starving_later_files() {
                  WHERE path = 'z-good.wav';",
         )
         .expect("assign hash identities");
-    connection
-        .execute(
-            "INSERT INTO metadata (key, value) VALUES (?1, ?2)
-                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            params![META_LAST_MANIFEST_AUDIT_AT, now_epoch_seconds().to_string()],
-        )
-        .expect("mark the fixture manifest audit current");
+    let now = now_epoch_seconds();
+    assert!(publish_current_readiness_targets(&mut connection, source.id.as_str(), now)
+        .expect("publish readiness targets"));
+    let snapshot = reconcile_readiness(&connection, source.id.as_str(), now)
+        .expect("reconcile readiness targets");
+    persist_readiness_deficits(&mut connection, &snapshot.deficits, now)
+        .expect("persist readiness work");
+    let targets = snapshot
+        .entries
+        .iter()
+        .filter(|entry| entry.target.stage == ReadinessStage::IndexedIdentity)
+        .map(|entry| (entry.target.relative_path.clone(), entry.target.clone()))
+        .collect::<Vec<_>>();
+    let unavailable_target = targets
+        .iter()
+        .find(|(path, _)| path.as_deref() == Some("a-unavailable.wav"))
+        .expect("unavailable readiness target")
+        .1
+        .clone();
+    let good_target = targets
+        .iter()
+        .find(|(path, _)| path.as_deref() == Some("z-good.wav"))
+        .expect("healthy readiness target")
+        .1
+        .clone();
     drop(connection);
 
-    let mut supervisor =
-        SourceProcessingSupervisor::start_without_forced_manifest_audit(vec![source.clone()]);
-    let deadline = Instant::now() + Duration::from_secs(10);
-    loop {
-        let good_hashed = source
-            .open_db()
-            .expect("open hash source")
-            .entry_for_path(Path::new("z-good.wav"))
-            .expect("read good hash row")
-            .and_then(|entry| entry.content_hash)
-            .is_some();
-        let failure_recorded = SourceDatabase::open_connection_with_role_and_database_root(
-            &source.root,
-            &database_root,
-            SourceDatabaseConnectionRole::JobWorker,
-        )
-        .ok()
-        .and_then(|connection| {
-            connection
-                .query_row(
-                    "SELECT status
-                         FROM analysis_jobs
-                         WHERE readiness_managed = 1
-                           AND readiness_stage = 'indexed_identity'
-                           AND relative_path = 'a-unavailable.wav'",
-                    [],
-                    |row| row.get::<_, String>(0),
-                )
-                .optional()
-                .ok()
-                .flatten()
-        })
-        .as_deref()
-            == Some("failed");
-        if good_hashed && failure_recorded {
-            break;
-        }
-        if Instant::now() >= deadline {
-            let telemetry = supervisor.shared.telemetry();
-            panic!(
-                "hash fairness did not converge: good_hashed={good_hashed} \
-                     unavailable_status={failure_recorded} claimed={} completed={} failed={} \
-                     retried={} stale={} queue_depth={}",
-                telemetry.claimed,
-                telemetry.completed,
-                telemetry.failed,
-                telemetry.retried,
-                telemetry.stale,
-                telemetry.queue_depth,
-            );
-        }
-        thread::sleep(Duration::from_millis(20));
-    }
-    assert_eq!(supervisor.shutdown()["joined"], true);
+    std::fs::set_permissions(&unavailable_path, std::fs::Permissions::from_mode(0o000))
+        .expect("make deferred hash path unavailable");
+
+    let writer = DatabaseWriterGate::default();
+    let unavailable_outcome = execute_readiness_target(
+        &source,
+        &unavailable_target,
+        &AtomicBool::new(false),
+        &writer,
+    )
+    .expect("execute unavailable readiness target");
+    assert!(matches!(
+        unavailable_outcome,
+        ExecutionOutcome::Retried { .. }
+    ));
+
+    let good_outcome = execute_readiness_target(
+        &source,
+        &good_target,
+        &AtomicBool::new(false),
+        &writer,
+    )
+    .expect("execute healthy readiness target");
+    assert!(!matches!(good_outcome, ExecutionOutcome::Failed));
+    assert!(source
+        .open_db()
+        .expect("reopen hash source")
+        .entry_for_path(Path::new("z-good.wav"))
+        .expect("read good hash row")
+        .and_then(|entry| entry.content_hash)
+        .is_some());
 
     let connection = SourceDatabase::open_connection_with_role_and_database_root(
         &source.root,
@@ -97,21 +97,105 @@ fn unavailable_hash_path_backs_off_without_starving_later_files() {
         SourceDatabaseConnectionRole::JobWorker,
     )
     .expect("reopen hash database");
-    let failure: (String, Option<String>, Option<i64>, i64) = connection
+    let failure: (String, Option<String>, Option<String>, Option<i64>, i64) = connection
         .query_row(
-            "SELECT status, failure_kind, retry_at, attempts
+            "SELECT status, failure_kind, failure_code, retry_at, attempts
                  FROM analysis_jobs
                  WHERE readiness_managed = 1
                    AND readiness_stage = 'indexed_identity'
                    AND relative_path = 'a-unavailable.wav'",
             [],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
         )
         .expect("read durable hash failure");
     assert_eq!(failure.0, "failed");
     assert_eq!(failure.1.as_deref(), Some("retryable"));
-    assert!(failure.2.is_some());
-    assert_eq!(failure.3, 1);
+    assert_eq!(failure.2.as_deref(), Some("scanner_io"));
+    assert!(failure.3.is_some());
+    assert_eq!(failure.4, 1);
+
+    std::fs::set_permissions(&unavailable_path, std::fs::Permissions::from_mode(0o644))
+        .expect("restore deferred hash path");
+    connection
+        .execute(
+            "UPDATE analysis_jobs SET retry_at = ?1
+             WHERE readiness_managed = 1
+               AND readiness_stage = 'indexed_identity'
+               AND relative_path = 'a-unavailable.wav'",
+            [now_epoch_seconds().saturating_sub(1)],
+        )
+        .expect("make retry due");
+    drop(connection);
+
+    let restored_outcome = execute_readiness_target(
+        &source,
+        &unavailable_target,
+        &AtomicBool::new(false),
+        &writer,
+    )
+    .expect("retry restored readiness target");
+    assert!(!matches!(restored_outcome, ExecutionOutcome::Failed));
+    assert!(source
+        .open_db()
+        .expect("reopen restored hash source")
+        .entry_for_path(Path::new("a-unavailable.wav"))
+        .expect("read restored hash row")
+        .and_then(|entry| entry.content_hash)
+        .is_some());
+}
+
+#[test]
+fn cancelled_readiness_claim_returns_without_blocking_publication() {
+    let (_directory, source) = unhashed_source("cancelled-readiness-claim");
+    let database_root = source.database_root().expect("database root");
+    let mut connection = SourceDatabase::open_connection_with_role_and_database_root(
+        &source.root,
+        &database_root,
+        SourceDatabaseConnectionRole::JobWorker,
+    )
+    .expect("open readiness database");
+    let now = now_epoch_seconds();
+    assert!(publish_current_readiness_targets(&mut connection, source.id.as_str(), now)
+        .expect("publish readiness targets"));
+    let snapshot = reconcile_readiness(&connection, source.id.as_str(), now)
+        .expect("reconcile readiness targets");
+    persist_readiness_deficits(&mut connection, &snapshot.deficits, now)
+        .expect("persist readiness work");
+    let target = snapshot
+        .entries
+        .iter()
+        .find(|entry| entry.target.stage == ReadinessStage::IndexedIdentity)
+        .expect("indexed identity target")
+        .target
+        .clone();
+    drop(connection);
+
+    let outcome = execute_readiness_target(
+        &source,
+        &target,
+        &AtomicBool::new(true),
+        &DatabaseWriterGate::default(),
+    )
+    .expect("cancel readiness target");
+    assert_eq!(outcome, ExecutionOutcome::Cancelled);
+
+    let connection = SourceDatabase::open_connection_with_role_and_database_root(
+        &source.root,
+        &database_root,
+        SourceDatabaseConnectionRole::JobWorker,
+    )
+    .expect("reopen readiness database");
+    let state: (String, Option<String>, Option<String>) = connection
+        .query_row(
+            "SELECT status, failure_kind, failure_code
+             FROM analysis_jobs
+             WHERE readiness_managed = 1
+               AND readiness_stage = 'indexed_identity'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("read cancelled readiness work");
+    assert_eq!(state, ("pending".to_string(), Some("cancelled".to_string()), Some("cancelled".to_string())));
 }
 
 #[test]

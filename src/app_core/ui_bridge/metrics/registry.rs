@@ -1,11 +1,10 @@
 //! Process-lifetime bridge metrics registry and feature-flag state.
 
+#[cfg(all(feature = "native-bridge-metrics", not(test)))]
+use std::sync::OnceLock;
 #[cfg(feature = "native-bridge-metrics")]
 use std::{
-    sync::{
-        OnceLock,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::atomic::{AtomicU64, Ordering},
     time::Duration,
 };
 
@@ -14,9 +13,9 @@ pub(crate) const BRIDGE_PROFILE_INTERVAL: u64 = 240;
 #[cfg(not(feature = "native-bridge-metrics"))]
 pub(crate) const BRIDGE_PROFILE_INTERVAL: u64 = 1;
 
-#[cfg(feature = "native-bridge-metrics")]
+#[cfg(all(feature = "native-bridge-metrics", not(test)))]
 const BRIDGE_PROFILE_ENV: &str = "WAVECRATE_NATIVE_BRIDGE_PROFILE";
-#[cfg(feature = "native-bridge-metrics")]
+#[cfg(all(feature = "native-bridge-metrics", not(test)))]
 /// Enable runtime validation that cached projection-key snapshots stay in sync.
 const PROJECTION_KEY_ASSERT_ENV: &str = "WAVECRATE_NATIVE_BRIDGE_ASSERT_PROJECTION_SNAPSHOT";
 
@@ -154,29 +153,29 @@ impl BridgeMetrics {
 #[cfg(feature = "native-bridge-metrics")]
 /// Process-lifetime grouped counter registry used by bridge profiling hooks.
 pub(crate) static BRIDGE_METRICS: BridgeMetrics = BridgeMetrics::new();
-#[cfg(feature = "native-bridge-metrics")]
+#[cfg(all(feature = "native-bridge-metrics", not(test)))]
 static BRIDGE_PROFILE_ENABLED: OnceLock<bool> = OnceLock::new();
-#[cfg(feature = "native-bridge-metrics")]
+#[cfg(all(feature = "native-bridge-metrics", not(test)))]
 /// Cached projection-snapshot assertion mode resolved from environment.
 static PROJECTION_KEY_ASSERT_ENABLED: OnceLock<bool> = OnceLock::new();
 
-#[cfg(feature = "native-bridge-metrics")]
+#[cfg(all(feature = "native-bridge-metrics", not(test)))]
 pub(crate) fn bridge_profiling_enabled() -> bool {
     *BRIDGE_PROFILE_ENABLED.get_or_init(|| crate::env_flags::env_var_truthy(BRIDGE_PROFILE_ENV))
 }
-#[cfg(not(feature = "native-bridge-metrics"))]
+#[cfg(any(not(feature = "native-bridge-metrics"), test))]
 #[inline]
 pub(crate) fn bridge_profiling_enabled() -> bool {
     false
 }
 
-#[cfg(feature = "native-bridge-metrics")]
+#[cfg(all(feature = "native-bridge-metrics", not(test)))]
 /// Resolve whether projection-key snapshot assertions should run.
 pub(crate) fn projection_key_assertions_enabled() -> bool {
     *PROJECTION_KEY_ASSERT_ENABLED
         .get_or_init(|| crate::env_flags::env_var_truthy(PROJECTION_KEY_ASSERT_ENV))
 }
-#[cfg(not(feature = "native-bridge-metrics"))]
+#[cfg(any(not(feature = "native-bridge-metrics"), test))]
 #[inline]
 /// Disable projection-key assertions when bridge metrics are compiled out.
 pub(crate) fn projection_key_assertions_enabled() -> bool {

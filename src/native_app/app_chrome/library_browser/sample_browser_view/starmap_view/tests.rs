@@ -227,6 +227,34 @@ fn copied_starmap_nodes_paint_confirmation_glow() {
 }
 
 #[test]
+fn x_marked_starmap_nodes_paint_selection_confirmation_glow() {
+    let color = ui::Rgba8::new(255, 160, 80, 220);
+    let mut marked = starmap_item("/samples/marked.wav", 0.50, 0.50, color);
+    marked.selected = true;
+    marked.selection_flash = true;
+    let widget = StarmapWidget::new(vec![marked], StarmapViewport::default(), None);
+    let mut primitives = Vec::new();
+
+    widget.append_paint(
+        &mut primitives,
+        Rect::from_size(200.0, 100.0),
+        &LayoutOutput::default(),
+        &ThemeTokens::default(),
+    );
+
+    assert!(primitives.iter().any(|primitive| matches!(
+        primitive,
+        PaintPrimitive::FillPolygon(fill)
+            if fill.color == ACCENT.with_alpha(92)
+    )));
+    assert!(primitives.iter().any(|primitive| matches!(
+        primitive,
+        PaintPrimitive::StrokePolyline(stroke)
+            if stroke.color == ACCENT.with_alpha(245) && stroke.width == 1.5
+    )));
+}
+
+#[test]
 fn selected_starmap_nodes_paint_stronger_than_similarity_anchor() {
     let color = ui::Rgba8::new(57, 187, 245, 220);
     let mut selected = starmap_item("/samples/kick.wav", 0.25, 0.5, color);
@@ -1674,6 +1702,7 @@ fn starmap_item(file_id: &str, x: f32, y: f32, color: ui::Rgba8) -> StarmapItem 
         color,
         selected: false,
         focused: false,
+        selection_flash: false,
         copy_flash: false,
         similarity_anchor: false,
         instant_audition_ready: true,

@@ -49,6 +49,15 @@ impl<'connection> ReadinessView<'connection> {
         work::readiness_work_stats(self.connection, now)
     }
 
+    /// Read bounded queue and lease-recovery telemetry for one source.
+    pub fn source_work_stats(
+        &self,
+        source_id: &str,
+        now: i64,
+    ) -> Result<ReadinessWorkStats, ReadinessError> {
+        work::readiness_work_stats_for_source(self.connection, source_id, now)
+    }
+
     /// Check whether a prerequisite stage is terminally unsupported.
     pub fn stage_is_unsupported(
         &self,

@@ -6,17 +6,25 @@ use super::scan::{
     CommittedSourceDelta, ManifestIdentityDelta, MovedManifestIdentity, ScanError, ScanStats,
 };
 
-pub(super) fn capture_manifest(
-    database: &SourceDatabase,
-) -> Result<Vec<SourceManifestEntry>, ScanError> {
-    database.list_manifest_entries().map_err(ScanError::from)
-}
-
 pub(super) fn capture_manifest_with_revision(
     database: &SourceDatabase,
 ) -> Result<(u64, Vec<SourceManifestEntry>), ScanError> {
     database
         .manifest_snapshot_with_revision()
+        .map_err(ScanError::from)
+}
+
+pub(super) fn capture_manifest_under_paths_with_revision(
+    database: &SourceDatabase,
+    paths: &[std::path::PathBuf],
+) -> Result<(u64, Vec<SourceManifestEntry>), ScanError> {
+    let unicode_paths = paths
+        .iter()
+        .filter(|path| path.to_str().is_some())
+        .cloned()
+        .collect::<Vec<_>>();
+    database
+        .manifest_snapshot_with_revision_under_paths(&unicode_paths)
         .map_err(ScanError::from)
 }
 
@@ -29,6 +37,59 @@ pub(super) fn publish_committed_delta(
     stats.committed_delta = build_committed_delta(&before, &after, revision);
     stats.manifest_before = before;
     stats.manifest_after = after;
+}
+
+pub(super) fn publish_targeted_committed_delta(
+    stats: &mut ScanStats,
+    before: Vec<SourceManifestEntry>,
+    committed_snapshot: (u64, Vec<SourceManifestEntry>),
+) {
+    let (revision, after) = committed_snapshot;
+    stats.committed_delta =
+        build_targeted_committed_delta(&before, &after, revision, &stats.renamed_samples);
+    stats.manifest_before = before;
+    stats.manifest_after = after;
+}
+
+pub(super) fn build_targeted_committed_delta(
+    before: &[SourceManifestEntry],
+    after: &[SourceManifestEntry],
+    revision: u64,
+    renames: &[super::scan::RenamedSample],
+) -> CommittedSourceDelta {
+    let mut delta = build_committed_delta(before, after, revision);
+    for rename in renames {
+        if delta.moved.iter().any(|moved| {
+            moved.old_relative_path == rename.old_relative_path
+                && moved.new_relative_path == rename.new_relative_path
+        }) {
+            continue;
+        }
+        let Some(current) = after
+            .iter()
+            .find(|entry| entry.relative_path == rename.new_relative_path)
+        else {
+            continue;
+        };
+        delta
+            .created
+            .retain(|created| created.relative_path != rename.new_relative_path);
+        delta
+            .deleted
+            .retain(|deleted| deleted.relative_path != rename.old_relative_path);
+        delta.moved.push(MovedManifestIdentity {
+            identity: stable_identity(current, None),
+            old_relative_path: rename.old_relative_path.clone(),
+            new_relative_path: rename.new_relative_path.clone(),
+            content_generation: content_generation(current),
+        });
+    }
+    delta.moved.sort_by(|left, right| {
+        left.old_relative_path
+            .cmp(&right.old_relative_path)
+            .then_with(|| left.new_relative_path.cmp(&right.new_relative_path))
+    });
+    delta
 }
 
 pub(super) fn build_committed_delta(

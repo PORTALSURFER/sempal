@@ -394,6 +394,15 @@ impl<'connection> ReadinessStore<'connection> {
         work::readiness_work_stats(self.connection, now)
     }
 
+    /// Load bounded queue and lease-recovery telemetry for one source.
+    pub fn source_work_stats(
+        &mut self,
+        source_id: &str,
+        now: i64,
+    ) -> Result<ReadinessWorkStats, ReadinessError> {
+        work::readiness_work_stats_for_source(self.connection, source_id, now)
+    }
+
     /// Publish an independently produced artifact if its target is still current.
     pub fn publish_artifact(
         &mut self,

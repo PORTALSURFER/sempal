@@ -11,8 +11,6 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc::Sender,
 };
-#[cfg(test)]
-use std::sync::{Mutex, OnceLock};
 
 #[cfg(test)]
 mod tests;
@@ -20,32 +18,77 @@ mod transaction;
 
 use transaction::prepare_source_move_transaction;
 
-#[cfg(test)]
-type BeforeSourceMoveTargetDbStageHook = Box<dyn FnMut() -> Result<(), String> + Send>;
-#[cfg(test)]
-type BeforeSourceMoveFinalizeHook = Box<dyn FnMut() + Send>;
-#[cfg(test)]
-type AfterSourceMoveProgressHook = Box<dyn FnMut(usize) + Send>;
+trait SourceMoveHooks {
+    fn before_target_db_stage(&mut self) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn before_finalize(&mut self) {}
+
+    fn after_progress(&mut self, _completed: usize) {}
+}
+
+struct NoopSourceMoveHooks;
+
+impl SourceMoveHooks for NoopSourceMoveHooks {}
 
 #[cfg(test)]
-static BEFORE_SOURCE_MOVE_TARGET_DB_STAGE_HOOK: OnceLock<
-    Mutex<Option<BeforeSourceMoveTargetDbStageHook>>,
-> = OnceLock::new();
+#[derive(Default)]
+struct SourceMoveTestHooks {
+    before_target_db_stage: Option<Box<dyn FnMut() -> Result<(), String> + Send>>,
+    before_finalize: Option<Box<dyn FnMut() + Send>>,
+    after_progress: Option<Box<dyn FnMut(usize) + Send>>,
+}
+
 #[cfg(test)]
-static BEFORE_SOURCE_MOVE_FINALIZE_HOOK: OnceLock<Mutex<Option<BeforeSourceMoveFinalizeHook>>> =
-    OnceLock::new();
-#[cfg(test)]
-static AFTER_SOURCE_MOVE_PROGRESS_HOOK: OnceLock<Mutex<Option<AfterSourceMoveProgressHook>>> =
-    OnceLock::new();
+impl SourceMoveHooks for SourceMoveTestHooks {
+    fn before_target_db_stage(&mut self) -> Result<(), String> {
+        self.before_target_db_stage
+            .take()
+            .map_or(Ok(()), |mut hook| hook())
+    }
+
+    fn before_finalize(&mut self) {
+        if let Some(mut hook) = self.before_finalize.take() {
+            hook();
+        }
+    }
+
+    fn after_progress(&mut self, completed: usize) {
+        if let Some(hook) = self.after_progress.as_mut() {
+            hook(completed);
+        }
+    }
+}
 
 /// Execute a batch of cross-source sample moves in the background worker.
 pub(super) fn run_source_move_task(
     target_source_id: SourceId,
     target_root: PathBuf,
     requests: Vec<SourceMoveRequest>,
+    errors: Vec<String>,
+    cancel: Arc<AtomicBool>,
+    sender: Option<&Sender<FileOpMessage>>,
+) -> SourceMoveResult {
+    run_source_move_task_with_hooks(
+        target_source_id,
+        target_root,
+        requests,
+        errors,
+        cancel,
+        sender,
+        &mut NoopSourceMoveHooks,
+    )
+}
+
+fn run_source_move_task_with_hooks(
+    target_source_id: SourceId,
+    target_root: PathBuf,
+    requests: Vec<SourceMoveRequest>,
     mut errors: Vec<String>,
     cancel: Arc<AtomicBool>,
     sender: Option<&Sender<FileOpMessage>>,
+    hooks: &mut impl SourceMoveHooks,
 ) -> SourceMoveResult {
     let mut progress = SourceMoveProgress::new(sender);
     let mut moved = Vec::new();
@@ -87,10 +130,12 @@ pub(super) fn run_source_move_task(
             &mut source_dbs,
             request,
             &mut errors,
+            hooks,
         ) {
             moved.push(success);
         }
         progress.complete(detail);
+        hooks.after_progress(progress.completed);
     }
     SourceMoveResult {
         target_source_id,
@@ -117,8 +162,6 @@ impl<'a> SourceMoveProgress<'a> {
     fn complete(&mut self, detail: Option<String>) {
         self.completed = self.completed.saturating_add(1);
         report_progress(self.sender, self.completed, detail);
-        #[cfg(test)]
-        run_after_source_move_progress_hook(self.completed);
     }
 }
 
@@ -129,6 +172,7 @@ fn run_source_move_request(
     source_dbs: &mut HashMap<PathBuf, SourceDatabase>,
     request: SourceMoveRequest,
     errors: &mut Vec<String>,
+    hooks: &mut impl SourceMoveHooks,
 ) -> Option<SourceMoveSuccess> {
     let mut transaction =
         match prepare_source_move_transaction(target_root, target_db, source_dbs, request) {
@@ -138,13 +182,13 @@ fn run_source_move_request(
                 return None;
             }
         };
-    if !transaction.commit_target_db_stage(errors) {
+    if !transaction.commit_target_db_stage(errors, hooks) {
         return None;
     }
     if !transaction.commit_source_db_stage(errors) {
         return None;
     }
-    if !transaction.finalize_filesystem_stage(errors) {
+    if !transaction.finalize_filesystem_stage(errors, hooks) {
         return None;
     }
     Some(transaction.into_success(errors))
@@ -162,64 +206,5 @@ pub(super) fn report_progress(
             detail,
             item: None,
         });
-    }
-}
-
-#[cfg(test)]
-pub(super) fn set_before_source_move_target_db_stage_hook(
-    hook: Option<BeforeSourceMoveTargetDbStageHook>,
-) {
-    let hook_slot = BEFORE_SOURCE_MOVE_TARGET_DB_STAGE_HOOK.get_or_init(|| Mutex::new(None));
-    if let Ok(mut guard) = hook_slot.lock() {
-        *guard = hook;
-    }
-}
-
-#[cfg(test)]
-pub(super) fn set_before_source_move_finalize_hook(hook: Option<BeforeSourceMoveFinalizeHook>) {
-    let hook_slot = BEFORE_SOURCE_MOVE_FINALIZE_HOOK.get_or_init(|| Mutex::new(None));
-    if let Ok(mut guard) = hook_slot.lock() {
-        *guard = hook;
-    }
-}
-
-/// Test-only hook runner invoked immediately before the target-db stage begins.
-#[cfg(test)]
-pub(super) fn run_before_source_move_target_db_stage_hook() -> Result<(), String> {
-    if let Some(hook_slot) = BEFORE_SOURCE_MOVE_TARGET_DB_STAGE_HOOK.get()
-        && let Ok(mut guard) = hook_slot.lock()
-        && let Some(mut hook) = guard.take()
-    {
-        return hook();
-    }
-    Ok(())
-}
-
-#[cfg(test)]
-pub(super) fn run_before_source_move_finalize_hook() {
-    if let Some(hook_slot) = BEFORE_SOURCE_MOVE_FINALIZE_HOOK.get()
-        && let Ok(mut guard) = hook_slot.lock()
-        && let Some(mut hook) = guard.take()
-    {
-        hook();
-    }
-}
-
-/// Configure a test-only hook invoked after each completed source-move request.
-#[cfg(test)]
-pub(super) fn set_after_source_move_progress_hook(hook: Option<AfterSourceMoveProgressHook>) {
-    let hook_slot = AFTER_SOURCE_MOVE_PROGRESS_HOOK.get_or_init(|| Mutex::new(None));
-    if let Ok(mut guard) = hook_slot.lock() {
-        *guard = hook;
-    }
-}
-
-#[cfg(test)]
-fn run_after_source_move_progress_hook(completed: usize) {
-    if let Some(hook_slot) = AFTER_SOURCE_MOVE_PROGRESS_HOOK.get()
-        && let Ok(mut guard) = hook_slot.lock()
-        && let Some(hook) = guard.as_mut()
-    {
-        hook(completed);
     }
 }

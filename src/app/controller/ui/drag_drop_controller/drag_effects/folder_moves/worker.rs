@@ -10,8 +10,6 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc::Sender,
 };
-#[cfg(test)]
-use std::sync::{Mutex, OnceLock};
 
 /// Folder-level move worker implementation split from the sample-move worker.
 mod folder_move_task;
@@ -24,93 +22,57 @@ pub(super) fn run_folder_move_task(
     cancel: Arc<AtomicBool>,
     sender: Option<&Sender<FileOpMessage>>,
 ) -> FolderMoveResult {
-    folder_move_task::run_folder_move_task(request, cancel, sender)
+    folder_move_task::run_folder_move_task(request, cancel, sender, &mut NoopFolderMoveHooks)
 }
 
 #[cfg(test)]
-/// Optional one-shot hook used by tests to force deterministic timing around DB writes.
-type BeforeFolderMoveBatchHook = Box<dyn FnMut() + Send>;
+pub(super) fn run_folder_move_task_with_hooks(
+    request: FolderMoveRequest,
+    cancel: Arc<AtomicBool>,
+    sender: Option<&Sender<FileOpMessage>>,
+    hooks: &mut FolderMoveTestHooks,
+) -> FolderMoveResult {
+    folder_move_task::run_folder_move_task(request, cancel, sender, hooks)
+}
+
+pub(super) trait FolderMoveHooks {
+    fn before_folder_move_batch(&mut self) {}
+
+    fn before_folder_sample_batch(&mut self) {}
+
+    fn before_folder_sample_finalize(&mut self) {}
+}
+
+struct NoopFolderMoveHooks;
+
+impl FolderMoveHooks for NoopFolderMoveHooks {}
 
 #[cfg(test)]
-/// Optional one-shot hook used by tests to force deterministic timing around DB writes.
-type BeforeFolderSampleBatchHook = Box<dyn FnMut() + Send>;
+#[derive(Default)]
+pub(super) struct FolderMoveTestHooks {
+    pub(super) before_folder_move_batch: Option<Box<dyn FnMut() + Send>>,
+    pub(super) before_folder_sample_batch: Option<Box<dyn FnMut() + Send>>,
+    pub(super) before_folder_sample_finalize: Option<Box<dyn FnMut() + Send>>,
+}
 
 #[cfg(test)]
-/// Optional one-shot hook used by tests to force deterministic finalization failures.
-type BeforeFolderSampleFinalizeHook = Box<dyn FnMut() + Send>;
-
-#[cfg(test)]
-/// Global storage for the optional pre-batch hook used by folder-level move tests.
-static BEFORE_FOLDER_MOVE_BATCH_HOOK: OnceLock<Mutex<Option<BeforeFolderMoveBatchHook>>> =
-    OnceLock::new();
-
-#[cfg(test)]
-/// Global storage for the optional pre-batch hook used by folder-sample move tests.
-static BEFORE_FOLDER_SAMPLE_BATCH_HOOK: OnceLock<Mutex<Option<BeforeFolderSampleBatchHook>>> =
-    OnceLock::new();
-
-#[cfg(test)]
-/// Global storage for the optional pre-finalize hook used by folder-sample move tests.
-static BEFORE_FOLDER_SAMPLE_FINALIZE_HOOK: OnceLock<Mutex<Option<BeforeFolderSampleFinalizeHook>>> =
-    OnceLock::new();
-
-#[cfg(test)]
-/// Invoke and clear the one-shot pre-batch hook when tests configure one.
-fn run_before_folder_move_batch_hook() {
-    if let Some(hook_slot) = BEFORE_FOLDER_MOVE_BATCH_HOOK.get()
-        && let Ok(mut guard) = hook_slot.lock()
-        && let Some(mut hook) = guard.take()
-    {
-        hook();
+impl FolderMoveHooks for FolderMoveTestHooks {
+    fn before_folder_move_batch(&mut self) {
+        if let Some(mut hook) = self.before_folder_move_batch.take() {
+            hook();
+        }
     }
-}
 
-#[cfg(test)]
-/// Invoke and clear the one-shot pre-batch hook when tests configure one.
-fn run_before_folder_sample_batch_hook() {
-    if let Some(hook_slot) = BEFORE_FOLDER_SAMPLE_BATCH_HOOK.get()
-        && let Ok(mut guard) = hook_slot.lock()
-        && let Some(mut hook) = guard.take()
-    {
-        hook();
+    fn before_folder_sample_batch(&mut self) {
+        if let Some(mut hook) = self.before_folder_sample_batch.take() {
+            hook();
+        }
     }
-}
 
-#[cfg(test)]
-/// Invoke and clear the one-shot pre-finalize hook when tests configure one.
-fn run_before_folder_sample_finalize_hook() {
-    if let Some(hook_slot) = BEFORE_FOLDER_SAMPLE_FINALIZE_HOOK.get()
-        && let Ok(mut guard) = hook_slot.lock()
-        && let Some(mut hook) = guard.take()
-    {
-        hook();
-    }
-}
-
-/// Configure an optional test hook invoked immediately before folder-level DB writes.
-#[cfg(test)]
-pub(super) fn set_before_folder_move_batch_hook(hook: Option<BeforeFolderMoveBatchHook>) {
-    let hook_slot = BEFORE_FOLDER_MOVE_BATCH_HOOK.get_or_init(|| Mutex::new(None));
-    if let Ok(mut guard) = hook_slot.lock() {
-        *guard = hook;
-    }
-}
-
-/// Configure an optional test hook invoked immediately before folder-sample DB writes.
-#[cfg(test)]
-pub(super) fn set_before_folder_sample_batch_hook(hook: Option<BeforeFolderSampleBatchHook>) {
-    let hook_slot = BEFORE_FOLDER_SAMPLE_BATCH_HOOK.get_or_init(|| Mutex::new(None));
-    if let Ok(mut guard) = hook_slot.lock() {
-        *guard = hook;
-    }
-}
-
-/// Configure an optional test hook invoked immediately before folder-sample finalization.
-#[cfg(test)]
-pub(super) fn set_before_folder_sample_finalize_hook(hook: Option<BeforeFolderSampleFinalizeHook>) {
-    let hook_slot = BEFORE_FOLDER_SAMPLE_FINALIZE_HOOK.get_or_init(|| Mutex::new(None));
-    if let Ok(mut guard) = hook_slot.lock() {
-        *guard = hook;
+    fn before_folder_sample_finalize(&mut self) {
+        if let Some(mut hook) = self.before_folder_sample_finalize.take() {
+            hook();
+        }
     }
 }
 
@@ -119,9 +81,29 @@ pub(super) fn run_folder_sample_move_task(
     source_id: SourceId,
     source_root: PathBuf,
     requests: Vec<FolderSampleMoveRequest>,
+    errors: Vec<String>,
+    cancel: Arc<AtomicBool>,
+    sender: Option<&Sender<FileOpMessage>>,
+) -> FolderSampleMoveResult {
+    run_folder_sample_move_task_with_hooks(
+        source_id,
+        source_root,
+        requests,
+        errors,
+        cancel,
+        sender,
+        &mut NoopFolderMoveHooks,
+    )
+}
+
+pub(super) fn run_folder_sample_move_task_with_hooks(
+    source_id: SourceId,
+    source_root: PathBuf,
+    requests: Vec<FolderSampleMoveRequest>,
     mut errors: Vec<String>,
     cancel: Arc<AtomicBool>,
     sender: Option<&Sender<FileOpMessage>>,
+    hooks: &mut impl FolderMoveHooks,
 ) -> FolderSampleMoveResult {
     let mut moved = Vec::new();
     let mut completed = 0usize;
@@ -162,15 +144,13 @@ pub(super) fn run_folder_sample_move_task(
                 continue;
             }
         };
-        #[cfg(test)]
-        run_before_folder_sample_batch_hook();
+        hooks.before_folder_sample_batch();
         if !transaction.commit_db_stage(&mut errors) {
             completed += 1;
             report_progress(sender, completed, detail);
             continue;
         }
-        #[cfg(test)]
-        run_before_folder_sample_finalize_hook();
+        hooks.before_folder_sample_finalize();
         if !transaction.finalize_filesystem_stage(&mut errors) {
             completed += 1;
             report_progress(sender, completed, detail);

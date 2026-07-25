@@ -19,7 +19,7 @@ pub(in crate::native_app) use loading::{
     SamplePlaybackReady, SampleSelectionLoadState,
 };
 pub(in crate::native_app) use message::{
-    BrowserProjectionDelta, GuiMessage, MetadataMessage, SettingsMessage,
+    AudioOutputPersistResult, BrowserProjectionDelta, GuiMessage, MetadataMessage, SettingsMessage,
     SimilaritySettingsPersistResult, SourceFilesystemSyncResult, SourceFilesystemSyncSuccess,
     TrashMoveTarget, VolumeSettingsPersistResult,
 };
@@ -37,21 +37,22 @@ pub(in crate::native_app) use state::DEFAULT_VOLUME;
 #[cfg(test)]
 pub(in crate::native_app) use state::ReleaseUpdateStatus;
 pub(in crate::native_app) use state::{
-    AudioAppState, AudioOpenCompletion, AudioOpenTaskCompletion, BackgroundTaskState,
-    ChromeUiState, ClipboardHandoffTarget, CompletedTransientSamplePlayback, CutFileClipboard,
-    ExtractedFilePlaybackType, FolderScanWorkerEvent, LibraryAppState, MAX_BEAT_GUIDE_COUNT,
-    MIN_BEAT_GUIDE_COUNT, MetadataAppState, NativeAppState, PendingFolderDelete,
-    PendingPlaySelectionRetargetCycle, PendingPlaybackStart, PendingProtectedExtractionAction,
-    PendingProtectedExtractionTargetSource, PendingWaveformDestructiveEdit,
-    PlaybackSpanRetargetRejection, SampleBrowserDisplayMode, SamplePlaybackHistory,
-    SamplePlaybackIntent, SamplePlaybackNormalization, SamplePlaybackRequest,
-    SamplePlaybackSession, SamplePlaybackSessionState, SamplePlaybackSourceProbe,
-    SamplePlaybackVisibility, SettingsAppState, SourceFilesystemChangePlan, SourceRefreshCause,
-    SourceRefreshRequest, SourceScanFinish, SourceSelectionRequest, StarmapAuditionDragState,
-    StarmapViewport, StarmapViewportChange, StartupState, StatusState, UiAppState,
-    WaveformAppState, WaveformDestructiveEditKind, WaveformDestructiveEditPrompt,
-    WaveformDestructiveEditTarget, WaveformDestructiveEditUiContext, WaveformEditSelectionSnapshot,
-    WaveformPlaySelectionSnapshot, WaveformVisualSnapshot, run_folder_scan_worker,
+    AudioAppState, AudioOpenCompletion, AudioOpenTaskCompletion, AudioOptionsRefreshResult,
+    BackgroundTaskState, ChromeUiState, ClipboardHandoffTarget, CompletedTransientSamplePlayback,
+    CutFileClipboard, ExtractedFilePlaybackType, FolderScanWorkerEvent, LibraryAppState,
+    MAX_BEAT_GUIDE_COUNT, MIN_BEAT_GUIDE_COUNT, MetadataAppState, NativeAppState,
+    PendingFolderDelete, PendingPlaySelectionRetargetCycle, PendingPlaybackStart,
+    PendingProtectedExtractionAction, PendingProtectedExtractionTargetSource,
+    PendingWaveformDestructiveEdit, PlaybackSpanRetargetRejection, SampleBrowserDisplayMode,
+    SamplePlaybackHistory, SamplePlaybackIntent, SamplePlaybackNormalization,
+    SamplePlaybackRequest, SamplePlaybackSession, SamplePlaybackSessionState,
+    SamplePlaybackSourceProbe, SamplePlaybackVisibility, SettingsAppState,
+    SourceFilesystemChangePlan, SourceRefreshCause, SourceRefreshRequest, SourceScanFinish,
+    SourceSelectionRequest, StarmapAuditionDragState, StarmapViewport, StarmapViewportChange,
+    StartupState, StatusState, UiAppState, WaveformAppState, WaveformDestructiveEditKind,
+    WaveformDestructiveEditPrompt, WaveformDestructiveEditTarget, WaveformDestructiveEditUiContext,
+    WaveformEditSelectionSnapshot, WaveformPlaySelectionSnapshot, WaveformVisualSnapshot,
+    run_folder_scan_worker,
 };
 
 pub(super) use crate::native_app::app_chrome::scene::view;

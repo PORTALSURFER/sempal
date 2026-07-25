@@ -4,7 +4,7 @@ use super::{
     RuntimeCandidate, SOURCE_DISCOVERY_RETRY_SECONDS, SampleSource, Shared, SourceDatabase,
     SourceDatabaseConnectionRole, SourceDiscoveryStats, SourceHealthSummary, cancelled,
     discover_source_candidates_with_connection_and_progress, now_epoch_seconds,
-    readiness_safety_probe_is_current, source_health_summary, source_processing_schema_available,
+    readiness_safety_probe, source_health_summary, source_processing_schema_available,
 };
 
 pub(super) fn scheduler_candidate_indices(
@@ -270,12 +270,13 @@ pub(super) fn discover_source_candidates_with_progress(
             SourceDatabaseConnectionRole::BackgroundRead,
         ) {
             Ok(mut probe_connection) => {
-                if readiness_safety_probe_is_current(
+                let probe = readiness_safety_probe(
                     &mut probe_connection,
                     source,
                     now,
                     force_manifest_audit,
-                )? {
+                )?;
+                if probe.current && probe.earliest_deadline.is_none() {
                     tracing::debug!(
                         target: "wavecrate::source_processing",
                         event = "source_processing.safety_sweep_noop",
@@ -286,6 +287,15 @@ pub(super) fn discover_source_candidates_with_progress(
                         Vec::new(),
                         SourceDiscoveryStats {
                             cheap_noop_sweep: true,
+                            ..SourceDiscoveryStats::default()
+                        },
+                        None,
+                    )));
+                } else if probe.current {
+                    return Ok(Cancellable::Completed((
+                        Vec::new(),
+                        SourceDiscoveryStats {
+                            earliest_retry_at: probe.earliest_deadline,
                             ..SourceDiscoveryStats::default()
                         },
                         None,

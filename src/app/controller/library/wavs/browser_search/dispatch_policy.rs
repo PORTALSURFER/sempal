@@ -3,6 +3,7 @@
 use super::*;
 use crate::app::state::ProgressTaskKind;
 use std::collections::BTreeMap;
+#[cfg(not(test))]
 use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(test)]
@@ -177,15 +178,22 @@ impl AppController {
 
 /// Resolve the wav-entry threshold for switching browser search to async jobs.
 fn browser_search_offload_threshold() -> usize {
-    /// Cached parsed offload threshold for browser search jobs.
-    static OFFLOAD_THRESHOLD: OnceLock<usize> = OnceLock::new();
-    *OFFLOAD_THRESHOLD.get_or_init(|| {
-        std::env::var(SEARCH_OFFLOAD_THRESHOLD_ENV)
-            .ok()
-            .and_then(|value| value.trim().parse::<usize>().ok())
-            .filter(|threshold| *threshold > 0)
-            .unwrap_or(DEFAULT_SEARCH_OFFLOAD_THRESHOLD)
-    })
+    #[cfg(test)]
+    {
+        DEFAULT_SEARCH_OFFLOAD_THRESHOLD
+    }
+    #[cfg(not(test))]
+    {
+        /// Cached parsed offload threshold for browser search jobs.
+        static OFFLOAD_THRESHOLD: OnceLock<usize> = OnceLock::new();
+        *OFFLOAD_THRESHOLD.get_or_init(|| {
+            std::env::var(SEARCH_OFFLOAD_THRESHOLD_ENV)
+                .ok()
+                .and_then(|value| value.trim().parse::<usize>().ok())
+                .filter(|threshold| *threshold > 0)
+                .unwrap_or(DEFAULT_SEARCH_OFFLOAD_THRESHOLD)
+        })
+    }
 }
 
 /// Resolve whether browser interaction paths should use the async worker pipeline.

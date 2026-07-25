@@ -120,6 +120,8 @@ impl NativeAppState {
                 self.apply_sample_loading_dispatch(message, context);
             }
             GuiMessage::AudioPlayerOpenFinished(_)
+            | GuiMessage::AudioOptionsRefreshFinished(_)
+            | GuiMessage::AudioOutputPersisted(_)
             | GuiMessage::PlaySelectedSample
             | GuiMessage::PlayFromCurrentPlayStart
             | GuiMessage::PlayRandomSampleRange
@@ -345,6 +347,8 @@ fn gui_message_profile_label(message: &GuiMessage) -> &'static str {
         GuiMessage::PromoteStarmapAudition { .. } => "PromoteStarmapAudition",
         GuiMessage::SampleLoadFinished(_) => "SampleLoadFinished",
         GuiMessage::AudioPlayerOpenFinished(_) => "AudioPlayerOpenFinished",
+        GuiMessage::AudioOptionsRefreshFinished(_) => "AudioOptionsRefreshFinished",
+        GuiMessage::AudioOutputPersisted(_) => "AudioOutputPersisted",
         GuiMessage::LastPlayedPersistReady { .. } => "LastPlayedPersistReady",
         GuiMessage::LastPlayedPersisted(_) => "LastPlayedPersisted",
         GuiMessage::HarvestSeenPersisted(_) => "HarvestSeenPersisted",

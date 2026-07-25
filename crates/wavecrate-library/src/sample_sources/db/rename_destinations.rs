@@ -84,6 +84,129 @@ impl SourceDatabase {
             })
             .collect())
     }
+
+    /// List retained destinations with a bounded result and overflow signal.
+    pub fn list_retained_rename_destinations_bounded(
+        &self,
+        limit: usize,
+    ) -> Result<(Vec<PathBuf>, bool), SourceDbError> {
+        let query_limit = i64::try_from(limit.saturating_add(1)).unwrap_or(i64::MAX);
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT path
+                 FROM pending_wav_rename_destinations
+                 WHERE retained_hash IS NOT NULL
+                 ORDER BY path ASC
+                 LIMIT ?1",
+            )
+            .map_err(map_sql_error)?;
+        let rows = statement
+            .query_map(params![query_limit], |row| row.get::<_, String>(0))
+            .map_err(map_sql_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(map_sql_error)?;
+        let overflow = rows.len() > limit;
+        Ok((
+            rows.into_iter()
+                .take(limit)
+                .filter_map(|path| match parse_relative_path_from_db(&path) {
+                    Ok(path) => Some(path),
+                    Err(error) => {
+                        tracing::warn!(%error, "Skipping invalid bounded retained rename destination path");
+                        None
+                    }
+                })
+                .collect(),
+            overflow,
+        ))
+    }
+
+    /// List up to two live retained destinations for one pending source path.
+    /// Two live matches are sufficient to preserve the rename ambiguity rule;
+    /// limiting the result keeps targeted recovery bounded.
+    pub fn list_retained_rename_destinations_for_pending_path(
+        &self,
+        pending_path: &Path,
+    ) -> Result<Vec<PathBuf>, SourceDbError> {
+        let path = normalize_relative_path(pending_path)?;
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT destination.path
+                 FROM pending_wav_rename_destinations AS destination
+                 JOIN pending_wav_renames AS pending
+                   ON pending.content_hash = destination.retained_hash
+                 JOIN wav_files AS live
+                   ON live.path = destination.path AND live.missing = 0
+                 WHERE pending.path = ?1
+                   AND destination.retained_hash IS NOT NULL
+                 ORDER BY destination.path ASC
+                 LIMIT 2",
+            )
+            .map_err(map_sql_error)?;
+        let rows = statement
+            .query_map(params![path], |row| row.get::<_, String>(0))
+            .map_err(map_sql_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(map_sql_error)?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|path| match parse_relative_path_from_db(&path) {
+                Ok(path) => Some(path),
+                Err(error) => {
+                    tracing::warn!(%error, "Skipping invalid retained rename destination path");
+                    None
+                }
+            })
+            .collect())
+    }
+
+    /// List unretained destinations from the immediately preceding scan generation.
+    /// The result contains at most `limit + 1` rows so callers can route overflow
+    /// to authoritative recovery without materializing the complete carry-over set.
+    pub fn list_recent_unretained_rename_destinations(
+        &self,
+        limit: usize,
+    ) -> Result<(Vec<PathBuf>, bool), SourceDbError> {
+        let generation = self
+            .get_metadata(TARGETED_SCAN_GENERATION_KEY)?
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(0);
+        let previous = generation.saturating_sub(1);
+        let query_limit = i64::try_from(limit.saturating_add(1)).unwrap_or(i64::MAX);
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT path
+                 FROM pending_wav_rename_destinations
+                 WHERE retained_hash IS NULL AND scan_generation = ?1
+                 ORDER BY path ASC
+                 LIMIT ?2",
+            )
+            .map_err(map_sql_error)?;
+        let rows = statement
+            .query_map(params![previous as i64, query_limit], |row| {
+                row.get::<_, String>(0)
+            })
+            .map_err(map_sql_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(map_sql_error)?;
+        let overflow = rows.len() > limit;
+        Ok((
+            rows.into_iter()
+                .take(limit)
+                .filter_map(|path| match parse_relative_path_from_db(&path) {
+                    Ok(path) => Some(path),
+                    Err(error) => {
+                        tracing::warn!(%error, "Skipping invalid recent rename destination path");
+                        None
+                    }
+                })
+                .collect(),
+            overflow,
+        ))
+    }
 }
 
 impl SourceWriteBatch<'_> {

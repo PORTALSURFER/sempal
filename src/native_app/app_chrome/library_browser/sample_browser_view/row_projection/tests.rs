@@ -28,6 +28,7 @@ fn visible_row(file: &FileEntry) -> VisibleSampleRow<'_> {
         selected: false,
         focused: false,
         focus_alpha: 0,
+        selection_flash: false,
         copy_flash: false,
         protected_source_error_flash: false,
         drag_active: false,

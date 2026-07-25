@@ -18,8 +18,9 @@ pub mod library {
 pub use scan_state::ScanTracker;
 pub use scanner::{
     ChangedSample, CommittedSourceDelta, ContentAuditActivity, ContentAuditBudget,
-    ContentAuditStorage, ManifestIdentityDelta, MovedManifestIdentity, RenamedSample, ScanError,
-    ScanMode, ScanStats, SourceTreeFile, SourceTreeSnapshot, UpdatedSample,
+    ContentAuditStorage, DirectoryRepeatKind, ManifestIdentityDelta, MovedManifestIdentity,
+    RenamedSample, ScanError, ScanMode, ScanStats, SourceTreeDiagnostic, SourceTreeFile,
+    SourceTreeSnapshot, UpdatedSample,
 };
 pub use wavecrate_library::sample_sources::normalize_relative_path;
 pub use wavecrate_library::sample_sources::{

@@ -50,6 +50,26 @@ pub struct ContentAuditEntryState {
     pub bytes_read: u64,
 }
 
+/// One path in a bounded forward cursor window plus its current audit disposition.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ContentAuditForwardCandidate {
+    /// Current live manifest entry.
+    pub entry: SourceManifestEntry,
+    /// Whether the current snapshot still requires a forward verification attempt.
+    pub needs_verification: bool,
+    /// Whether independently scheduled retry state owns the next attempt for this path.
+    pub retry_pending: bool,
+}
+
+/// One row in the bounded due-retry frontier.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ContentAuditRetryCandidate {
+    /// Durable path used for retry rotation and stale-state cleanup.
+    pub relative_path: PathBuf,
+    /// Current live supported manifest entry, or `None` when the retry state is stale.
+    pub entry: Option<SourceManifestEntry>,
+}
+
 impl ContentAuditEntryState {
     /// Return whether this state verifies the entry's current snapshot in `rotation_id`.
     pub fn verifies(&self, entry: &SourceManifestEntry, rotation_id: i64) -> bool {
@@ -241,12 +261,242 @@ impl SourceDatabase {
             .collect())
     }
 
+    /// Select a bounded forward window after the durable cursor, wrapping once at the end.
+    pub fn content_audit_forward_candidates(
+        &self,
+        rotation_id: i64,
+        cursor: &str,
+        limit: usize,
+    ) -> Result<Vec<ContentAuditForwardCandidate>, SourceDbError> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let mut candidates = self.content_audit_forward_window(rotation_id, cursor, limit, true)?;
+        if candidates.len() < limit {
+            let remaining = limit - candidates.len();
+            candidates.extend(self.content_audit_forward_window(
+                rotation_id,
+                cursor,
+                remaining,
+                false,
+            )?);
+        }
+        Ok(candidates)
+    }
+
+    /// Select a bounded due-retry frontier and rotate it after the durable retry cursor.
+    pub fn content_audit_retry_candidates(
+        &self,
+        retry_cursor: &str,
+        now: i64,
+        limit: usize,
+    ) -> Result<Vec<ContentAuditRetryCandidate>, SourceDbError> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let pool_limit = limit.saturating_mul(2);
+        let sql = "SELECT wav.path, wav.file_identity, wav.content_hash,
+                    wav.file_size, wav.modified_ns, wav.extension, wav.missing
+             FROM source_content_audit_entries AS audit
+                  INDEXED BY idx_source_content_audit_retry_due
+             LEFT JOIN wav_files AS wav ON wav.path = audit.path
+             WHERE audit.skip_reason IS NOT NULL
+               AND COALESCE(audit.retry_at, 0) <= ?1
+             ORDER BY COALESCE(audit.retry_at, 0) ASC, audit.path ASC
+             LIMIT ?2"
+            .to_string();
+        let mut statement = self.connection.prepare(&sql).map_err(map_sql_error)?;
+        let rows = statement
+            .query_map(
+                params![now, i64::try_from(pool_limit).unwrap_or(i64::MAX)],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                        row.get::<_, Option<i64>>(3)?,
+                        row.get::<_, Option<i64>>(4)?,
+                        row.get::<_, Option<String>>(5)?,
+                        row.get::<_, Option<i64>>(6)?,
+                    ))
+                },
+            )
+            .map_err(map_sql_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(map_sql_error)?;
+        let mut candidates = rows
+            .into_iter()
+            .filter_map(
+                |(
+                    path,
+                    file_identity,
+                    content_hash,
+                    file_size,
+                    modified_ns,
+                    extension,
+                    missing,
+                )| {
+                    let relative_path = parse_relative_path_from_db(&path).ok()?;
+                    let entry = (missing == Some(0)
+                        && extension
+                            .as_deref()
+                            .is_some_and(|extension| extension.eq_ignore_ascii_case("wav"))
+                        && crate::sample_sources::is_supported_audio(&relative_path))
+                    .then(|| SourceManifestEntry {
+                        relative_path: relative_path.clone(),
+                        file_identity,
+                        content_hash,
+                        file_size: file_size.unwrap_or_default().max(0) as u64,
+                        modified_ns: modified_ns.unwrap_or_default(),
+                    });
+                    Some(ContentAuditRetryCandidate {
+                        relative_path,
+                        entry,
+                    })
+                },
+            )
+            .collect::<Vec<_>>();
+        candidates.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+        let start = candidates
+            .iter()
+            .position(|entry| entry.relative_path.to_string_lossy().as_ref() > retry_cursor)
+            .unwrap_or(0);
+        candidates.rotate_left(start);
+        candidates.truncate(limit);
+        Ok(candidates)
+    }
+
+    fn content_audit_forward_window(
+        &self,
+        rotation_id: i64,
+        cursor: &str,
+        limit: usize,
+        after_cursor: bool,
+    ) -> Result<Vec<ContentAuditForwardCandidate>, SourceDbError> {
+        let comparison = if after_cursor { ">" } else { "<=" };
+        let filter = qualified_supported_audio_filter("wav");
+        let sql = format!(
+            "SELECT wav.path, wav.file_identity, wav.content_hash,
+                    wav.file_size, wav.modified_ns,
+                    CASE WHEN audit.verified_rotation IS ?2
+                              AND audit.verified_file_size IS wav.file_size
+                              AND audit.verified_modified_ns IS wav.modified_ns
+                              AND audit.verified_file_identity IS wav.file_identity
+                              AND audit.skip_reason IS NULL
+                         THEN 1 ELSE 0 END AS verified,
+                    CASE WHEN audit.skip_reason IS NOT NULL THEN 1 ELSE 0 END AS retry_pending
+             FROM wav_files AS wav
+                  INDEXED BY idx_source_content_audit_forward_path
+             LEFT JOIN source_content_audit_entries AS audit
+                    ON audit.path = wav.path
+             WHERE wav.path {comparison} ?1
+               AND {filter}
+               AND wav.missing = 0
+             ORDER BY wav.path ASC
+             LIMIT ?3"
+        );
+        let mut statement = self.connection.prepare(&sql).map_err(map_sql_error)?;
+        let rows = statement
+            .query_map(
+                params![
+                    cursor,
+                    rotation_id,
+                    i64::try_from(limit).unwrap_or(i64::MAX)
+                ],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get::<_, i64>(3)?.max(0) as u64,
+                        row.get(4)?,
+                        row.get::<_, i64>(5)? != 0,
+                        row.get::<_, i64>(6)? != 0,
+                    ))
+                },
+            )
+            .map_err(map_sql_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(map_sql_error)?;
+        Ok(rows
+            .into_iter()
+            .filter_map(
+                |(
+                    path,
+                    file_identity,
+                    content_hash,
+                    file_size,
+                    modified_ns,
+                    verified,
+                    retry_pending,
+                )| {
+                    parse_relative_path_from_db(&path)
+                        .ok()
+                        .map(|relative_path| ContentAuditForwardCandidate {
+                            entry: SourceManifestEntry {
+                                relative_path,
+                                file_identity,
+                                content_hash,
+                                file_size,
+                                modified_ns,
+                            },
+                            needs_verification: !verified && !retry_pending,
+                            retry_pending,
+                        })
+                },
+            )
+            .collect())
+    }
+
     /// Measure content-verification coverage against the current manifest.
     pub fn content_audit_report(&self, now: i64) -> Result<ContentAuditReport, SourceDbError> {
-        let manifest = self.list_manifest_entries()?;
         let revision = self.get_revision()?;
         let checkpoint = self.begin_or_resume_content_audit(now, revision)?;
-        let states = self.content_audit_entry_states()?;
+        let filter = qualified_supported_audio_filter("wav");
+        let coverage = self
+            .connection
+            .query_row(
+                &format!(
+                    "WITH coverage AS (
+                         SELECT wav.file_size,
+                                audit.skip_reason,
+                                CASE WHEN audit.verified_rotation IS ?1
+                                          AND audit.verified_file_size IS wav.file_size
+                                          AND audit.verified_modified_ns IS wav.modified_ns
+                                          AND audit.verified_file_identity IS wav.file_identity
+                                          AND audit.skip_reason IS NULL
+                                     THEN 1 ELSE 0 END AS verified
+                         FROM wav_files AS wav
+                         LEFT JOIN source_content_audit_entries AS audit
+                                ON audit.path = wav.path
+                         WHERE {filter} AND wav.missing = 0
+                     )
+                     SELECT COUNT(*),
+                            COALESCE(SUM(file_size), 0),
+                            COALESCE(SUM(verified), 0),
+                            COALESCE(SUM(CASE WHEN verified = 1 THEN file_size ELSE 0 END), 0),
+                            COALESCE(SUM(CASE WHEN verified = 0 THEN 1 ELSE 0 END), 0),
+                            COALESCE(SUM(CASE WHEN verified = 0 THEN file_size ELSE 0 END), 0),
+                            COALESCE(SUM(
+                                CASE WHEN verified = 0 AND skip_reason IS NOT NULL
+                                     THEN 1 ELSE 0 END
+                            ), 0)
+                     FROM coverage"
+                ),
+                [checkpoint.rotation_id],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?.max(0) as usize,
+                        row.get::<_, i64>(1)?.max(0) as u64,
+                        row.get::<_, i64>(2)?.max(0) as usize,
+                        row.get::<_, i64>(3)?.max(0) as u64,
+                        row.get::<_, i64>(4)?.max(0) as usize,
+                        row.get::<_, i64>(5)?.max(0) as u64,
+                        row.get::<_, i64>(6)?.max(0) as usize,
+                    ))
+                },
+            )
+            .map_err(map_sql_error)?;
         let mut report = ContentAuditReport {
             rotation_id: checkpoint.rotation_id,
             rotation_started_at: checkpoint.rotation_started_at,
@@ -254,28 +504,15 @@ impl SourceDatabase {
             cursor: checkpoint.cursor,
             retry_cursor: checkpoint.retry_cursor,
             retry_next: checkpoint.retry_next,
-            total_entries: manifest.len(),
-            total_bytes: manifest.iter().map(|entry| entry.file_size).sum(),
+            total_entries: coverage.0,
+            total_bytes: coverage.1,
+            verified_entries: coverage.2,
+            verified_bytes: coverage.3,
+            remaining_entries: coverage.4,
+            remaining_bytes: coverage.5,
+            skipped_retry_entries: coverage.6,
             ..ContentAuditReport::default()
         };
-        for entry in &manifest {
-            if states
-                .get(&entry.relative_path)
-                .is_some_and(|state| state.verifies(entry, checkpoint.rotation_id))
-            {
-                report.verified_entries += 1;
-                report.verified_bytes = report.verified_bytes.saturating_add(entry.file_size);
-            } else {
-                report.remaining_entries += 1;
-                report.remaining_bytes = report.remaining_bytes.saturating_add(entry.file_size);
-                if states
-                    .get(&entry.relative_path)
-                    .is_some_and(|state| state.skip_reason.is_some())
-                {
-                    report.skipped_retry_entries += 1;
-                }
-            }
-        }
         let persisted = self
             .connection
             .query_row(
@@ -313,6 +550,12 @@ impl SourceDatabase {
         }
         Ok(report)
     }
+}
+
+fn qualified_supported_audio_filter(alias: &str) -> String {
+    crate::sample_sources::supported_audio_where_clause()
+        .replace("extension", &format!("{alias}.extension"))
+        .replace("path", &format!("{alias}.path"))
 }
 
 impl SourceWriteBatch<'_> {
@@ -386,6 +629,18 @@ impl SourceWriteBatch<'_> {
                     reason.token(),
                     i64::try_from(bytes_read).unwrap_or(i64::MAX)
                 ],
+            )
+            .map_err(map_sql_error)?;
+        Ok(())
+    }
+
+    /// Remove retry state whose path is no longer a live supported manifest entry.
+    pub fn remove_stale_content_audit_entry(&mut self, path: &Path) -> Result<(), SourceDbError> {
+        let path = normalize_relative_path(path)?;
+        self.tx
+            .execute(
+                "DELETE FROM source_content_audit_entries WHERE path = ?1",
+                [path],
             )
             .map_err(map_sql_error)?;
         Ok(())
@@ -492,6 +747,9 @@ impl SourceWriteBatch<'_> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     use super::*;
 
     #[test]
@@ -543,5 +801,210 @@ mod tests {
         assert_eq!(report.rotation_started_at, 160);
         assert_eq!(report.last_rotation_completed_at, Some(160));
         assert_eq!(report.last_rotation_seconds, Some(60));
+    }
+
+    fn measure_vm_callbacks<T>(
+        database: &SourceDatabase,
+        operation: impl FnOnce() -> Result<T, SourceDbError>,
+    ) -> usize {
+        let callbacks = Arc::new(AtomicUsize::new(0));
+        let observed = Arc::clone(&callbacks);
+        database.connection.progress_handler(
+            100,
+            Some(move || {
+                observed.fetch_add(1, Ordering::Relaxed);
+                false
+            }),
+        );
+        operation().expect("bounded planning");
+        database
+            .connection
+            .progress_handler(0, None::<fn() -> bool>);
+        callbacks.load(Ordering::Relaxed)
+    }
+
+    fn forward_planning_vm_callbacks(total_entries: usize) -> usize {
+        let directory = tempfile::tempdir().expect("source");
+        let database =
+            SourceDatabase::open_for_source_write(directory.path()).expect("source database");
+        let transaction = database
+            .connection
+            .unchecked_transaction()
+            .expect("fixture transaction");
+        {
+            let mut insert_manifest = transaction
+                .prepare(
+                    "INSERT INTO wav_files (path, file_size, modified_ns, extension)
+                     VALUES (?1, 64, ?2, ?3)",
+                )
+                .expect("manifest insert");
+            for index in 0..total_entries {
+                let path = format!("sample-{index:06}.wav");
+                insert_manifest
+                    .execute(params![
+                        path,
+                        index as i64,
+                        if index == 0 { "wav" } else { "txt" }
+                    ])
+                    .expect("insert manifest row");
+            }
+        }
+        transaction.commit().expect("commit planning fixture");
+
+        let cursor = format!("sample-{:06}.wav", total_entries / 2);
+        measure_vm_callbacks(&database, || {
+            let candidates = database.content_audit_forward_candidates(1, &cursor, 1)?;
+            assert_eq!(candidates.len(), 1);
+            assert_eq!(
+                candidates[0].entry.relative_path,
+                Path::new("sample-000000.wav")
+            );
+            Ok(candidates)
+        })
+    }
+
+    fn retry_planning_vm_callbacks(total_entries: usize) -> (usize, usize) {
+        let directory = tempfile::tempdir().expect("source");
+        let database =
+            SourceDatabase::open_for_source_write(directory.path()).expect("source database");
+        let transaction = database
+            .connection
+            .unchecked_transaction()
+            .expect("fixture transaction");
+        {
+            let mut insert_manifest = transaction
+                .prepare(
+                    "INSERT INTO wav_files (path, file_size, modified_ns, extension)
+                     VALUES (?1, 64, ?2, ?3)",
+                )
+                .expect("manifest insert");
+            let mut insert_retry = transaction
+                .prepare(
+                    "INSERT INTO source_content_audit_entries (
+                         path, last_attempt_at, retry_at, skip_reason, attempts
+                     ) VALUES (?1, 1, ?2, 'unavailable', 1)",
+                )
+                .expect("retry insert");
+            for index in 0..total_entries {
+                let path = format!("sample-{index:06}.wav");
+                insert_manifest
+                    .execute(params![
+                        path,
+                        index as i64,
+                        if index + 1 == total_entries {
+                            "wav"
+                        } else {
+                            "txt"
+                        }
+                    ])
+                    .expect("insert manifest row");
+                insert_retry
+                    .execute(params![path, 1])
+                    .expect("insert retry row");
+            }
+        }
+        transaction.commit().expect("commit retry fixture");
+
+        let sparse_due = measure_vm_callbacks(&database, || {
+            let candidates = database.content_audit_retry_candidates("", 10, 1)?;
+            assert_eq!(candidates.len(), 1);
+            assert!(candidates.iter().all(|candidate| candidate.entry.is_none()));
+            Ok(candidates)
+        });
+        let none_due = measure_vm_callbacks(&database, || {
+            let candidates = database.content_audit_retry_candidates("", 0, 1)?;
+            assert!(candidates.is_empty());
+            Ok(candidates)
+        });
+        (sparse_due, none_due)
+    }
+
+    fn forward_audit_state_vm_callbacks(total_entries: usize) -> usize {
+        let directory = tempfile::tempdir().expect("source");
+        let database =
+            SourceDatabase::open_for_source_write(directory.path()).expect("source database");
+        let transaction = database
+            .connection
+            .unchecked_transaction()
+            .expect("fixture transaction");
+        {
+            let mut insert_manifest = transaction
+                .prepare(
+                    "INSERT INTO wav_files (path, file_size, modified_ns, extension)
+                     VALUES (?1, 64, ?2, 'wav')",
+                )
+                .expect("manifest insert");
+            let mut insert_audit = transaction
+                .prepare(
+                    "INSERT INTO source_content_audit_entries (
+                         path, verified_rotation, verified_file_size, verified_modified_ns,
+                         skip_reason
+                     ) VALUES (?1, 1, 64, ?2, ?3)",
+                )
+                .expect("audit insert");
+            for index in 0..total_entries {
+                let path = format!("sample-{index:06}.wav");
+                insert_manifest
+                    .execute(params![path, index as i64])
+                    .expect("insert manifest row");
+                insert_audit
+                    .execute(params![
+                        path,
+                        index as i64,
+                        (index % 2 == 1).then_some("unavailable")
+                    ])
+                    .expect("insert audit row");
+            }
+        }
+        transaction.commit().expect("commit audit-state fixture");
+
+        let cursor = format!("sample-{:06}.wav", total_entries / 2);
+        measure_vm_callbacks(&database, || {
+            let candidates = database.content_audit_forward_candidates(1, &cursor, 1)?;
+            assert_eq!(candidates.len(), 1);
+            assert!(!candidates[0].needs_verification);
+            Ok(candidates)
+        })
+    }
+
+    #[test]
+    fn content_audit_planning_stays_constant_at_large_manifest_scale() {
+        let forward_10k = forward_planning_vm_callbacks(10_000);
+        let forward_100k = forward_planning_vm_callbacks(100_000);
+        let forward_state_10k = forward_audit_state_vm_callbacks(10_000);
+        let forward_state_100k = forward_audit_state_vm_callbacks(100_000);
+        let (sparse_retry_10k, no_retry_10k) = retry_planning_vm_callbacks(10_000);
+        let (sparse_retry_100k, no_retry_100k) = retry_planning_vm_callbacks(100_000);
+
+        assert!(
+            forward_100k <= forward_10k.saturating_add(5)
+                && forward_state_100k <= forward_state_10k.saturating_add(5)
+                && sparse_retry_100k <= sparse_retry_10k.saturating_add(5)
+                && no_retry_100k <= no_retry_10k.saturating_add(5),
+            "bounded candidate planning must not scale with manifest rows: \
+             forward 10k={forward_10k}, 100k={forward_100k}; \
+             forward state 10k={forward_state_10k}, 100k={forward_state_100k}; \
+             sparse retry 10k={sparse_retry_10k}, 100k={sparse_retry_100k}; \
+             no retry 10k={no_retry_10k}, 100k={no_retry_100k}"
+        );
+        assert!(
+            [
+                forward_10k,
+                forward_100k,
+                forward_state_10k,
+                forward_state_100k,
+                sparse_retry_10k,
+                sparse_retry_100k,
+                no_retry_10k,
+                no_retry_100k,
+            ]
+            .into_iter()
+            .all(|callbacks| callbacks <= 50),
+            "one-entry planning exceeded the 5,000 SQLite VM-instruction ceiling: \
+             forward 10k={forward_10k}, 100k={forward_100k}; \
+             forward state 10k={forward_state_10k}, 100k={forward_state_100k}; \
+             sparse retry 10k={sparse_retry_10k}, 100k={sparse_retry_100k}; \
+             no retry 10k={no_retry_10k}, 100k={no_retry_100k} callbacks"
+        );
     }
 }

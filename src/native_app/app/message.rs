@@ -14,10 +14,11 @@ use crate::native_app::app::ExtractedFilePlaybackType;
 use crate::native_app::app::{
     ActiveFolderCacheWarmPlanProgress, ActiveFolderCacheWarmPlanResult,
     ActiveFolderCacheWarmProgress, ActiveFolderCacheWarmResult, AppSettingsTab,
-    AudioOpenTaskCompletion, FileMoveProgress, NormalizationProgress, NormalizationResult,
-    PreviewAuditionResult, PreviewAuditionWarmResult, SampleLoadPathValidation, SampleLoadResult,
-    SamplePlaybackReady, SourceProcessingHealth, SourceProcessingProgress, StarmapViewportChange,
-    WaveformCacheIndicatorRefreshResult, WaveformCacheWarmResult,
+    AudioOpenTaskCompletion, AudioOptionsRefreshResult, FileMoveProgress, NormalizationProgress,
+    NormalizationResult, PreviewAuditionResult, PreviewAuditionWarmResult,
+    SampleLoadPathValidation, SampleLoadResult, SamplePlaybackReady, SourceProcessingHealth,
+    SourceProcessingProgress, StarmapViewportChange, WaveformCacheIndicatorRefreshResult,
+    WaveformCacheWarmResult,
 };
 use crate::native_app::audio::playback_history::{
     LastPlayedPersistRequest, LastPlayedPersistResult,
@@ -172,6 +173,8 @@ pub(in crate::native_app) enum GuiMessage {
     ActiveFolderCacheWarmFinished(
         ui::KeyedTaskCompletion<ui::ResourceKey, ActiveFolderCacheWarmResult>,
     ),
+    AudioOptionsRefreshFinished(ui::TaskCompletion<AudioOptionsRefreshResult>),
+    AudioOutputPersisted(ui::TaskCompletion<AudioOutputPersistResult>),
     AudioPlayerOpenFinished(AudioOpenTaskCompletion),
     PlaySelectedSample,
     PlayFromCurrentPlayStart,
@@ -446,6 +449,18 @@ pub(in crate::native_app) struct BrowserProjectionDelta {
 pub(in crate::native_app) struct VolumeSettingsPersistResult {
     pub(in crate::native_app) persisted: AppSettingsCore,
     pub(in crate::native_app) result: Result<(), String>,
+}
+
+#[derive(Clone, Debug)]
+pub(in crate::native_app) struct AudioOutputPersistResult {
+    pub(in crate::native_app) persisted: AppSettingsCore,
+    pub(in crate::native_app) result: Result<(), String>,
+}
+
+impl PartialEq for AudioOutputPersistResult {
+    fn eq(&self, other: &Self) -> bool {
+        self.result == other.result && self.persisted.audio_output == other.persisted.audio_output
+    }
 }
 
 #[derive(Clone, Debug)]

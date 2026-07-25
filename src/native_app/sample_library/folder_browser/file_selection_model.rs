@@ -7,6 +7,7 @@ pub(super) struct FileSelectionModel {
     focused_id: Option<String>,
     selected_ids: HashSet<String>,
     explicit: bool,
+    keyboard_range: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -26,6 +27,7 @@ impl FileSelectionModel {
             focused_id,
             selected_ids,
             explicit,
+            keyboard_range: false,
         }
     }
 
@@ -39,6 +41,15 @@ impl FileSelectionModel {
 
     pub(super) fn explicit(&self) -> bool {
         self.explicit
+    }
+
+    pub(super) fn keyboard_range(&self) -> bool {
+        self.keyboard_range
+    }
+
+    pub(super) fn with_keyboard_range(mut self, keyboard_range: bool) -> Self {
+        self.keyboard_range = keyboard_range;
+        self
     }
 
     pub(super) fn active_ids(&self) -> HashSet<String> {
@@ -111,7 +122,8 @@ impl FileSelectionModel {
         extend: bool,
         visible_ids: &[String],
     ) -> Option<String> {
-        if self.explicit && !extend {
+        let marked_selection = self.explicit && !self.keyboard_range;
+        if marked_selection && !extend {
             return self.navigate_focus_preserving_selection(delta, visible_ids);
         }
 
@@ -123,6 +135,7 @@ impl FileSelectionModel {
         };
         self.apply_keyed_selection(selection);
         self.explicit = extend;
+        self.keyboard_range = extend && !marked_selection;
         Some(target)
     }
 
@@ -130,7 +143,7 @@ impl FileSelectionModel {
         if self.focused_id.as_deref() == Some(target.as_str()) {
             return None;
         }
-        if self.explicit {
+        if self.explicit && !self.keyboard_range {
             self.focused_id = Some(target.clone());
             return Some(target);
         }
@@ -139,6 +152,7 @@ impl FileSelectionModel {
         self.selected_ids.clear();
         self.selected_ids.insert(target.clone());
         self.explicit = false;
+        self.keyboard_range = false;
         Some(target)
     }
 
@@ -151,6 +165,7 @@ impl FileSelectionModel {
         self.selected_ids.clear();
         self.selected_ids.insert(target);
         self.explicit = false;
+        self.keyboard_range = false;
         changed
     }
 
@@ -254,6 +269,7 @@ impl FileSelectionModel {
         self.focused_id = selection.focused_key().cloned();
         self.selected_ids = selection.selected_keys().iter().cloned().collect();
         self.explicit = false;
+        self.keyboard_range = false;
     }
 }
 

@@ -176,7 +176,7 @@ mod tests {
         fs::write(&first, [1_u8, 2, 3, 4]).expect("write first sample");
         fs::write(&second, [5_u8, 6, 7, 8]).expect("write second sample");
 
-        source_db_test::test_reset_source_db_open_total_count(&source_root);
+        let open_count_scope = source_db_test::test_scope_source_db_open_total_count(&source_root);
         let first_request = LastPlayedPersistRequest {
             file_id: first.display().to_string(),
             source_root: source_root.clone(),
@@ -193,7 +193,7 @@ mod tests {
         };
 
         persist_last_played_inner(&first_request).expect("persist first");
-        source_db_test::test_reset_source_db_open_total_count(&source_root);
+        open_count_scope.reset();
         persist_last_played_inner(&second_request).expect("persist second");
 
         assert_eq!(

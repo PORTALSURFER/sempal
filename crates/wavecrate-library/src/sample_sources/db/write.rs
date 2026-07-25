@@ -14,6 +14,7 @@ pub use command::{
     SourceCollectionWrite, SourceContentHashWrite, SourceFileWrite, SourceTagWrite,
     SourceWriteCommand,
 };
+pub use transaction::ManifestCommitResult;
 
 #[cfg(test)]
 mod tests;

@@ -1,8 +1,10 @@
 use std::path::PathBuf;
 
-use rusqlite::{OptionalExtension, Params};
+use rusqlite::{OptionalExtension, Params, params_from_iter};
 
-use super::super::super::util::map_sql_error;
+use super::super::super::util::{
+    EXACT_SUBTREE_PATH_PREDICATE, exact_subtree_path_bounds, map_sql_error,
+};
 use super::super::super::{Rating, SourceDatabase, SourceDbError, SourceManifestEntry, WavEntry};
 use super::super::decode::{
     decode_path_row, decode_wav_entry_row, wav_file_has_column, wav_file_select_columns,
@@ -104,6 +106,100 @@ impl SourceDatabase {
         Ok((revision, entries))
     }
 
+    /// Fetch the committed live source manifest and revision for exact subtrees.
+    ///
+    /// The revision and rows are read from one SQLite snapshot. This is the
+    /// bounded counterpart to [`Self::manifest_snapshot_with_revision`] used by
+    /// watcher-targeted scans; it never materializes rows outside `paths`.
+    pub fn manifest_snapshot_with_revision_under_paths(
+        &self,
+        paths: &[std::path::PathBuf],
+    ) -> Result<(u64, Vec<SourceManifestEntry>), SourceDbError> {
+        let transaction = self
+            .connection
+            .unchecked_transaction()
+            .map_err(map_sql_error)?;
+        let revision = transaction
+            .query_row(
+                "SELECT value FROM metadata WHERE key = 'revision'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(map_sql_error)?
+            .map(|raw| raw.parse::<u64>().map_err(|_| SourceDbError::Unexpected))
+            .transpose()?
+            .unwrap_or_default();
+        if paths.is_empty() {
+            transaction.rollback().map_err(map_sql_error)?;
+            return Ok((revision, Vec::new()));
+        }
+
+        let mut normalized_paths = paths
+            .iter()
+            .map(|path| super::super::super::normalize_relative_path(path))
+            .collect::<Result<Vec<_>, _>>()?;
+        normalized_paths.sort();
+        normalized_paths.dedup();
+        let filter = wav_file_supported_audio_filter(self)?;
+        const PATHS_PER_QUERY: usize = 128;
+        let mut entries = Vec::new();
+        for chunk in normalized_paths.chunks(PATHS_PER_QUERY) {
+            let mut parameters = Vec::with_capacity(chunk.len() * 3);
+            let predicates = chunk
+                .iter()
+                .enumerate()
+                .map(|(index, path)| {
+                    let first = index * 3 + 1;
+                    let lower = format!("{path}/");
+                    let upper = format!("{path}0");
+                    parameters.push(path.clone());
+                    parameters.push(lower);
+                    parameters.push(upper);
+                    format!(
+                        "(path = ?{first} COLLATE BINARY OR \
+                         (path >= ?{} COLLATE BINARY AND path < ?{} COLLATE BINARY))",
+                        first + 1,
+                        first + 2
+                    )
+                })
+                .collect::<Vec<_>>();
+            let sql = format!(
+                "SELECT path, file_identity, content_hash, file_size, modified_ns
+                 FROM wav_files
+                 WHERE {filter} AND missing = 0 AND ({})
+                 ORDER BY path ASC",
+                predicates.join(" OR ")
+            );
+            let mut statement = transaction.prepare(&sql).map_err(map_sql_error)?;
+            let rows = statement
+                .query_map(params_from_iter(parameters.iter()), |row| {
+                    let Some(relative_path) = decode_path_row(
+                        row,
+                        "Skipping source manifest row with invalid relative path",
+                    )?
+                    else {
+                        return Ok(None);
+                    };
+                    Ok(Some(SourceManifestEntry {
+                        relative_path,
+                        file_identity: row.get(1)?,
+                        content_hash: row.get(2)?,
+                        file_size: row.get::<_, i64>(3)?.max(0) as u64,
+                        modified_ns: row.get(4)?,
+                    }))
+                })
+                .map_err(map_sql_error)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(map_sql_error)?;
+            entries.extend(rows.into_iter().flatten());
+        }
+        entries.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+        entries.dedup_by(|left, right| left.relative_path == right.relative_path);
+        transaction.rollback().map_err(map_sql_error)?;
+        Ok((revision, entries))
+    }
+
     /// Fetch the committed live source manifest in deterministic path order.
     pub fn list_manifest_entries(&self) -> Result<Vec<SourceManifestEntry>, SourceDbError> {
         let filter = wav_file_supported_audio_filter(self)?;
@@ -157,21 +253,34 @@ impl SourceDatabase {
 
     /// Fetch a bounded path-ordered batch that still needs a deep content hash.
     pub fn list_pending_hash_files(&self, limit: usize) -> Result<Vec<WavEntry>, SourceDbError> {
+        self.list_pending_hash_files_after(None, limit)
+    }
+
+    /// Fetch a bounded path-ordered batch after an optional durable in-process cursor.
+    pub fn list_pending_hash_files_after(
+        &self,
+        after: Option<&std::path::Path>,
+        limit: usize,
+    ) -> Result<Vec<WavEntry>, SourceDbError> {
         let filter = wav_file_supported_audio_filter(self)?;
         let columns = wav_file_select_columns(self)?;
+        let after = after
+            .map(super::super::super::normalize_relative_path)
+            .transpose()?;
         let sql = format!(
             "SELECT {columns}
              FROM wav_files
              WHERE {filter}
                AND missing = 0
                AND content_hash IS NULL
+               AND (?1 IS NULL OR path > ?1)
              ORDER BY path ASC
-             LIMIT ?1"
+             LIMIT ?2"
         );
         collect_wav_entries(
             self,
             &sql,
-            [i64::try_from(limit).unwrap_or(i64::MAX)],
+            rusqlite::params![after, i64::try_from(limit).unwrap_or(i64::MAX)],
             "Skipping pending hash row with invalid relative path",
         )
     }
@@ -182,20 +291,20 @@ impl SourceDatabase {
         path: &std::path::Path,
     ) -> Result<Vec<WavEntry>, SourceDbError> {
         let path_str = super::super::super::normalize_relative_path(path)?;
-        let prefix = format!("{path_str}/%");
+        let (lower_bound, upper_bound) = exact_subtree_path_bounds(&path_str);
         let filter = wav_file_supported_audio_filter(self)?;
         let columns = wav_file_select_columns(self)?;
         let sql = format!(
             "SELECT {columns}
              FROM wav_files
              WHERE {filter}
-               AND (path = ?1 OR path LIKE ?2)
+               AND {EXACT_SUBTREE_PATH_PREDICATE}
              ORDER BY path ASC"
         );
         collect_wav_entries(
             self,
             &sql,
-            rusqlite::params![path_str, prefix],
+            rusqlite::params![path_str, lower_bound, upper_bound],
             "Skipping wav row with invalid relative path during prefix lookup",
         )
     }

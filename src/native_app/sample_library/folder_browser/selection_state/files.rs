@@ -10,6 +10,7 @@ impl BrowserSelectionState {
         self.selected_file = None;
         self.selected_file_ids.clear();
         self.selected_file_ids_explicit = false;
+        self.selected_file_ids_keyboard_range = false;
     }
 
     pub(in crate::native_app::sample_library::folder_browser) fn active_file_ids(
@@ -66,6 +67,7 @@ impl BrowserSelectionState {
             selected_file: self.selected_file.clone(),
             selected_file_ids: self.selected_file_ids.clone(),
             selected_file_ids_explicit: self.selected_file_ids_explicit,
+            selected_file_ids_keyboard_range: self.selected_file_ids_keyboard_range,
             selected_collection: self.selected_collection,
             folder_before_collection: self.folder_before_collection.clone(),
         }
@@ -82,6 +84,7 @@ impl BrowserSelectionState {
         self.selected_file = snapshot.selected_file;
         self.selected_file_ids = snapshot.selected_file_ids;
         self.selected_file_ids_explicit = snapshot.selected_file_ids_explicit;
+        self.selected_file_ids_keyboard_range = snapshot.selected_file_ids_keyboard_range;
         self.selected_collection = snapshot.selected_collection;
         self.folder_before_collection = snapshot.folder_before_collection;
     }
@@ -222,6 +225,7 @@ impl BrowserSelectionState {
     ) {
         self.selected_file = Some(focused_id);
         self.selected_file_ids_explicit = selected_ids.len() > 1;
+        self.selected_file_ids_keyboard_range = false;
         self.selected_file_ids = selected_ids;
     }
 
@@ -231,11 +235,13 @@ impl BrowserSelectionState {
             self.selected_file_ids.clone(),
             self.selected_file_ids_explicit,
         )
+        .with_keyboard_range(self.selected_file_ids_keyboard_range)
     }
 
     fn apply_file_selection_model(&mut self, selection: FileSelectionModel) {
         self.selected_file = selection.focused_id().map(ToOwned::to_owned);
         self.selected_file_ids = selection.selected_ids().clone();
         self.selected_file_ids_explicit = selection.explicit();
+        self.selected_file_ids_keyboard_range = selection.keyboard_range();
     }
 }

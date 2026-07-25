@@ -4,11 +4,6 @@ use crate::audio::decoder::SymphoniaDecoder;
 use crate::waveform::peak_analysis::PeakAnalysisAccumulator;
 use crate::waveform::{DecodedWaveform, WaveformDecodeError, WaveformPeaks, WaveformRenderer};
 use std::sync::Arc;
-#[cfg(test)]
-use std::sync::atomic::{AtomicUsize, Ordering};
-
-#[cfg(test)]
-static SYMPHONIA_DECODE_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 impl WaveformRenderer {
     pub(super) fn load_decoded_via_symphonia(
@@ -17,9 +12,6 @@ impl WaveformRenderer {
         cache_token: u64,
         max_frames: usize,
     ) -> Result<DecodedWaveform, WaveformDecodeError> {
-        #[cfg(test)]
-        SYMPHONIA_DECODE_COUNT.fetch_add(1, Ordering::Relaxed);
-
         let owned: Arc<[u8]> = Arc::from(bytes.to_vec());
         let decoder =
             SymphoniaDecoder::from_bytes(owned).map_err(|error| WaveformDecodeError::Invalid {

@@ -1,4 +1,3 @@
-use super::super::source_move_test_guard;
 use super::*;
 use crate::app::controller::jobs::SourceMoveRequest;
 use crate::app::controller::test_support::write_test_wav;
@@ -9,10 +8,6 @@ use tempfile::tempdir;
 
 #[test]
 fn source_move_task_uses_unique_target_name_on_collision() {
-    let _guard = source_move_test_guard();
-    set_before_source_move_target_db_stage_hook(None);
-    set_before_source_move_finalize_hook(None);
-    set_after_source_move_progress_hook(None);
     let temp = tempdir().unwrap();
     let source_root = temp.path().join("source_a");
     let target_root = temp.path().join("source_b");
@@ -79,10 +74,6 @@ fn source_move_task_uses_unique_target_name_on_collision() {
 
 #[test]
 fn source_move_task_rolls_back_when_target_db_stage_fails() {
-    let _guard = source_move_test_guard();
-    set_before_source_move_target_db_stage_hook(None);
-    set_before_source_move_finalize_hook(None);
-    set_after_source_move_progress_hook(None);
     let temp = tempdir().unwrap();
     let source_root = temp.path().join("source_a");
     let target_root = temp.path().join("source_b");
@@ -92,11 +83,12 @@ fn source_move_task_rolls_back_when_target_db_stage_fails() {
     write_test_wav(&source_root.join("one.wav"), &[0.0, 0.1, -0.1]);
     let source_db = SourceDatabase::open_for_test_fixture_source_write(&source_root).unwrap();
     source_db.upsert_file(Path::new("one.wav"), 3, 1).unwrap();
-    set_before_source_move_target_db_stage_hook(Some(Box::new(|| {
-        Err("Simulated target DB failure".into())
-    })));
+    let mut hooks = SourceMoveTestHooks {
+        before_target_db_stage: Some(Box::new(|| Err("Simulated target DB failure".into()))),
+        ..Default::default()
+    };
 
-    let result = run_source_move_task(
+    let result = run_source_move_task_with_hooks(
         SourceId::from_string("target"),
         target_root.clone(),
         vec![SourceMoveRequest {
@@ -107,6 +99,7 @@ fn source_move_task_rolls_back_when_target_db_stage_fails() {
         Vec::new(),
         Arc::new(AtomicBool::new(false)),
         None,
+        &mut hooks,
     );
 
     assert!(source_root.join("one.wav").is_file());
@@ -121,10 +114,6 @@ fn source_move_task_rolls_back_when_target_db_stage_fails() {
 
 #[test]
 fn source_move_task_finalize_failure_rolls_back_dbs_file_and_journal() {
-    let _guard = source_move_test_guard();
-    set_before_source_move_target_db_stage_hook(None);
-    set_before_source_move_finalize_hook(None);
-    set_after_source_move_progress_hook(None);
     let temp = tempdir().unwrap();
     let source_root = temp.path().join("source_a");
     let target_root = temp.path().join("source_b");
@@ -144,11 +133,14 @@ fn source_move_task_finalize_failure_rolls_back_dbs_file_and_journal() {
         .unwrap();
 
     let target_blocker = target_root.join("one.wav");
-    set_before_source_move_finalize_hook(Some(Box::new(move || {
-        std::fs::create_dir(&target_blocker).unwrap();
-    })));
+    let mut hooks = SourceMoveTestHooks {
+        before_finalize: Some(Box::new(move || {
+            std::fs::create_dir(&target_blocker).unwrap();
+        })),
+        ..Default::default()
+    };
 
-    let result = run_source_move_task(
+    let result = run_source_move_task_with_hooks(
         SourceId::from_string("target"),
         target_root.clone(),
         vec![SourceMoveRequest {
@@ -159,8 +151,8 @@ fn source_move_task_finalize_failure_rolls_back_dbs_file_and_journal() {
         Vec::new(),
         Arc::new(AtomicBool::new(false)),
         None,
+        &mut hooks,
     );
-    set_before_source_move_finalize_hook(None);
 
     assert!(result.moved.is_empty());
     assert!(
@@ -206,10 +198,6 @@ fn source_move_task_finalize_failure_rolls_back_dbs_file_and_journal() {
 
 #[test]
 fn source_move_task_reports_progress_once_for_missing_file_request() {
-    let _guard = source_move_test_guard();
-    set_before_source_move_target_db_stage_hook(None);
-    set_before_source_move_finalize_hook(None);
-    set_after_source_move_progress_hook(None);
     let temp = tempdir().unwrap();
     let source_root = temp.path().join("source_a");
     let target_root = temp.path().join("source_b");
@@ -244,10 +232,6 @@ fn source_move_task_reports_progress_once_for_missing_file_request() {
 
 #[test]
 fn source_move_task_cancels_after_first_completed_request() {
-    let _guard = source_move_test_guard();
-    set_before_source_move_target_db_stage_hook(None);
-    set_before_source_move_finalize_hook(None);
-    set_after_source_move_progress_hook(None);
     let temp = tempdir().unwrap();
     let source_root = temp.path().join("source_a");
     let target_root = temp.path().join("source_b");
@@ -262,35 +246,44 @@ fn source_move_task_cancels_after_first_completed_request() {
     source_db.upsert_file(Path::new("two.wav"), 3, 1).unwrap();
     let cancel = Arc::new(AtomicBool::new(false));
     let cancel_for_hook = cancel.clone();
-    set_after_source_move_progress_hook(Some(Box::new(move |completed| {
-        if completed == 1 {
-            cancel_for_hook.store(true, Ordering::Relaxed);
-        }
-    })));
+    let hooks = SourceMoveTestHooks {
+        after_progress: Some(Box::new(move |completed| {
+            if completed == 1 {
+                cancel_for_hook.store(true, Ordering::Relaxed);
+            }
+        })),
+        ..Default::default()
+    };
 
-    let result = run_source_move_task(
-        SourceId::from_string("target"),
-        target_root.clone(),
-        vec![
-            SourceMoveRequest {
-                source_id: source.id.clone(),
-                source_root: source_root.clone(),
-                relative_path: PathBuf::from("one.wav"),
-            },
-            SourceMoveRequest {
-                source_id: source.id,
-                source_root: source_root.clone(),
-                relative_path: PathBuf::from("two.wav"),
-            },
-        ],
-        Vec::new(),
-        cancel,
-        None,
-    );
+    let target_root_for_worker = target_root.clone();
+    let source_root_for_worker = source_root.clone();
+    let worker = std::thread::spawn(move || {
+        let mut hooks = hooks;
+        run_source_move_task_with_hooks(
+            SourceId::from_string("target"),
+            target_root_for_worker,
+            vec![
+                SourceMoveRequest {
+                    source_id: source.id.clone(),
+                    source_root: source_root_for_worker.clone(),
+                    relative_path: PathBuf::from("one.wav"),
+                },
+                SourceMoveRequest {
+                    source_id: source.id,
+                    source_root: source_root_for_worker,
+                    relative_path: PathBuf::from("two.wav"),
+                },
+            ],
+            Vec::new(),
+            cancel,
+            None,
+            &mut hooks,
+        )
+    });
+    let result = worker.join().expect("source move worker");
 
     assert!(result.cancelled);
     assert_eq!(result.moved.len(), 1);
     assert!(target_root.join(&result.moved[0].target_relative).is_file());
     assert!(source_root.join("two.wav").is_file());
-    set_after_source_move_progress_hook(None);
 }

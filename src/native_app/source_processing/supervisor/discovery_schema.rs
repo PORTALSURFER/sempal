@@ -1,4 +1,154 @@
-use super::{ACTIVE_RECORDING_QUIET_SECONDS, BTreeSet, ReadinessStore, earliest_deadline, params};
+use super::{
+    ACTIVE_RECORDING_QUIET_SECONDS, BTreeSet, META_READINESS_DUPLICATE_IDENTITY, ReadinessStore,
+    earliest_deadline, params,
+};
+use rusqlite::OptionalExtension;
+
+const MAX_DUPLICATE_IDENTITY_GROUPS: usize = 8;
+const MAX_DUPLICATE_IDENTITY_PATHS: usize = 8;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct DuplicateIdentityDiagnostic {
+    pub(super) identity: String,
+    pub(super) paths: Vec<String>,
+}
+
+/// Return the durable duplicate-identity diagnostic only while it belongs to this identity
+/// revision. A changed identity revision invalidates the old terminal diagnosis automatically.
+pub(super) fn duplicate_identity_diagnostic_for_revision(
+    connection: &rusqlite::Connection,
+    identity_revision: i64,
+) -> Result<Option<Vec<DuplicateIdentityDiagnostic>>, String> {
+    let Some(raw) = connection
+        .query_row(
+            "SELECT value FROM metadata WHERE key = ?1",
+            [META_READINESS_DUPLICATE_IDENTITY],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+    else {
+        return Ok(None);
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return Ok(None);
+    };
+    if value
+        .get("identity_revision")
+        .and_then(serde_json::Value::as_i64)
+        != Some(identity_revision)
+    {
+        return Ok(None);
+    }
+    let Some(identities) = value
+        .get("identities")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return Ok(None);
+    };
+    let diagnostics = identities
+        .iter()
+        .filter_map(|identity| {
+            Some(DuplicateIdentityDiagnostic {
+                identity: identity.get("identity")?.as_str()?.to_string(),
+                paths: identity
+                    .get("paths")?
+                    .as_array()?
+                    .iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .map(str::to_string)
+                    .take(MAX_DUPLICATE_IDENTITY_PATHS)
+                    .collect(),
+            })
+        })
+        .filter(|diagnostic| !diagnostic.identity.is_empty() && diagnostic.paths.len() > 1)
+        .take(MAX_DUPLICATE_IDENTITY_GROUPS)
+        .collect::<Vec<_>>();
+    Ok((!diagnostics.is_empty()).then_some(diagnostics))
+}
+
+/// Find supported live manifest rows that share one stable filesystem identity.
+pub(super) fn find_duplicate_identity_diagnostics(
+    connection: &rusqlite::Connection,
+) -> Result<Vec<DuplicateIdentityDiagnostic>, String> {
+    let filter = wavecrate_library::sample_sources::supported_audio_where_clause();
+    let mut groups = connection
+        .prepare(&format!(
+            "SELECT file_identity
+             FROM wav_files
+             WHERE missing = 0
+               AND file_identity IS NOT NULL
+               AND TRIM(file_identity) != ''
+               AND {filter}
+             GROUP BY file_identity
+             HAVING COUNT(*) > 1
+             ORDER BY file_identity
+             LIMIT {MAX_DUPLICATE_IDENTITY_GROUPS}"
+        ))
+        .map_err(|error| error.to_string())?;
+    let identities = groups
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    drop(groups);
+
+    identities
+        .into_iter()
+        .map(|identity| {
+            let mut paths = connection
+                .prepare(&format!(
+                    "SELECT path FROM wav_files
+                     WHERE missing = 0 AND file_identity = ?1 AND {filter}
+                     ORDER BY path
+                     LIMIT ?2"
+                ))
+                .map_err(|error| error.to_string())?;
+            let paths = paths
+                .query_map(params![identity, MAX_DUPLICATE_IDENTITY_PATHS], |row| {
+                    row.get::<_, String>(0)
+                })
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?;
+            Ok(DuplicateIdentityDiagnostic { identity, paths })
+        })
+        .collect()
+}
+
+pub(super) fn persist_duplicate_identity_diagnostic(
+    connection: &rusqlite::Connection,
+    identity_revision: i64,
+    diagnostics: &[DuplicateIdentityDiagnostic],
+) -> Result<(), String> {
+    let value = serde_json::json!({
+        "identity_revision": identity_revision,
+        "identities": diagnostics.iter().map(|diagnostic| serde_json::json!({
+            "identity": diagnostic.identity,
+            "paths": diagnostic.paths,
+        })).collect::<Vec<_>>(),
+    });
+    connection
+        .execute(
+            "INSERT INTO metadata (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![META_READINESS_DUPLICATE_IDENTITY, value.to_string()],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+pub(super) fn clear_duplicate_identity_diagnostic(
+    connection: &rusqlite::Connection,
+) -> Result<(), String> {
+    connection
+        .execute(
+            "DELETE FROM metadata WHERE key = ?1",
+            [META_READINESS_DUPLICATE_IDENTITY],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
 
 #[derive(Debug, Default)]
 pub(super) struct ActiveRecordingDeferrals {

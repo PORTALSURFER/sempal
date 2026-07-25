@@ -5,7 +5,9 @@ use crate::native_app::app::GuiMessage;
 use crate::native_app::app_chrome::library_browser::library_sidebar::sidebar_row::SIDEBAR_ROW_STYLE;
 #[cfg(test)]
 use crate::native_app::app_chrome::palette::selected_row_palette;
-use crate::native_app::app_chrome::palette::{ACCENT, WavecrateTreeRowStyle};
+use crate::native_app::app_chrome::palette::{
+    ACCENT, WavecrateTreeRowStyle, selection_flash_palette,
+};
 use crate::native_app::sample_library::folder_browser::commands::FolderBrowserMessage;
 use crate::native_app::sample_library::folder_browser::model::VisibleFolder;
 use crate::native_app::sample_library::folder_browser::view_contract::{
@@ -113,6 +115,11 @@ fn standard_folder_row(folder: &VisibleFolder, id: String) -> ui::View<GuiMessag
         .guide_style(folder_tree_guide_style())
         .highlighted_label_color(folder_tree_highlighted_label_color(folder));
 
+    let row = if folder.selection_flash {
+        row.palette(selection_flash_palette(SIDEBAR_ROW_STYLE))
+    } else {
+        row
+    };
     let row = if folder.selected || folder.focused {
         row.label_color(ACCENT)
     } else if let Some(label_color) = folder_tree_label_color(folder) {

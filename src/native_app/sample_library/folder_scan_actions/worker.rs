@@ -149,6 +149,7 @@ impl NativeAppState {
                             request,
                             events,
                             cancel,
+                            None,
                             &UncoordinatedScanWriter,
                         );
                     };
@@ -184,6 +185,7 @@ impl NativeAppState {
                                 request,
                                 events,
                                 cancel,
+                                None,
                                 &UncoordinatedScanWriter,
                             );
                         }
@@ -220,13 +222,20 @@ impl NativeAppState {
                             request,
                             events,
                             cancel,
+                            Some(generation),
                             &UncoordinatedScanWriter,
                         );
                     };
                     let cancel = permit.cancel_token();
                     let scan_writer = permit.scan_writer();
                     let completion_events = events.clone();
-                    let mut result = run_folder_scan_worker(request, events, cancel, &scan_writer);
+                    let mut result = run_folder_scan_worker(
+                        request,
+                        events,
+                        cancel,
+                        Some(generation),
+                        &scan_writer,
+                    );
                     result.lifecycle_generation = Some(generation);
                     if result.scan.cancelled {
                         emit_lifecycle(
@@ -266,6 +275,7 @@ impl NativeAppState {
                             recovery_request,
                             recovery_events,
                             cancel,
+                            recovery_generation.get(),
                             &UncoordinatedScanWriter,
                         );
                         recovery.lifecycle_generation = recovery_generation.get();

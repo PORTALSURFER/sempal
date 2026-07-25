@@ -144,6 +144,15 @@ pub(super) fn execute_readiness_target(
                 .map_err(|error| error.to_string())?;
             Ok(execution_outcome_for_failure(outcome))
         }
+        Err(ref failure) if failure.is_cancelled() => {
+            cleanup_unpublished_readiness_output(&outcome);
+            cancel_claim(
+                &mut connection,
+                &claim,
+                &failure.context,
+                now_epoch_seconds(),
+            )
+        }
         Err(failure) => {
             let policy = ReadinessRetryPolicy::new(5, 5 * 60, READINESS_MAX_ATTEMPTS)
                 .expect("valid readiness retry policy");

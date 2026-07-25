@@ -1,15 +1,22 @@
 use std::path::Path;
 
 #[cfg(test)]
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
 #[cfg(test)]
 use std::sync::{Mutex, OnceLock};
 
 #[cfg(test)]
-fn fail_save_target() -> &'static Mutex<Option<PathBuf>> {
-    static TARGET: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
-    TARGET.get_or_init(|| Mutex::new(None))
+#[derive(Default)]
+struct FailSaveTargets {
+    next_token: u64,
+    armed: HashMap<PathBuf, u64>,
+}
+
+#[cfg(test)]
+fn fail_save_targets() -> &'static Mutex<FailSaveTargets> {
+    static TARGETS: OnceLock<Mutex<FailSaveTargets>> = OnceLock::new();
+    TARGETS.get_or_init(|| Mutex::new(FailSaveTargets::default()))
 }
 
 pub(super) fn replace_journal_file(tmp_path: &Path, path: &Path) -> Result<(), String> {
@@ -52,20 +59,79 @@ pub(crate) fn fail_save_before_replace(_path: &Path) -> Result<(), String> {
 
 #[cfg(test)]
 pub(crate) fn fail_save_before_replace(path: &Path) -> Result<(), String> {
-    let mut guard = fail_save_target()
+    let mut guard = fail_save_targets()
         .lock()
         .map_err(|_| "Delete journal test hook lock poisoned".to_string())?;
-    if guard.as_ref().is_some_and(|target| target == path) {
-        *guard = None;
+    if guard.armed.remove(path).is_some() {
         return Err("Injected delete journal save failure before replace".into());
     }
     Ok(())
 }
 
 #[cfg(test)]
-pub(crate) fn fail_next_save_before_replace_for_tests(path: PathBuf) {
-    let mut guard = fail_save_target()
+pub(crate) struct FailSaveBeforeReplaceGuard {
+    path: PathBuf,
+    token: u64,
+}
+
+#[cfg(test)]
+impl Drop for FailSaveBeforeReplaceGuard {
+    fn drop(&mut self) {
+        let mut targets = fail_save_targets()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if targets.armed.get(&self.path) == Some(&self.token) {
+            targets.armed.remove(&self.path);
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn fail_next_save_before_replace_for_tests(path: PathBuf) -> FailSaveBeforeReplaceGuard {
+    let mut guard = fail_save_targets()
         .lock()
         .expect("delete journal test hook lock");
-    *guard = Some(path);
+    assert!(
+        !guard.armed.contains_key(&path),
+        "delete journal failure already armed for {}",
+        path.display()
+    );
+    guard.next_token = guard.next_token.wrapping_add(1);
+    let token = guard.next_token;
+    guard.armed.insert(path.clone(), token);
+    FailSaveBeforeReplaceGuard { path, token }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn failure_scope_cleans_up_on_unwind_and_isolates_paths() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let first = dir.path().join("first.json");
+        let second = dir.path().join("second.json");
+
+        let unwind = std::panic::catch_unwind({
+            let first = first.clone();
+            move || {
+                let _failure = fail_next_save_before_replace_for_tests(first);
+                panic!("exercise failure-scope cleanup");
+            }
+        });
+        assert!(unwind.is_err());
+        assert!(fail_save_before_replace(&first).is_ok());
+
+        let _first_failure = fail_next_save_before_replace_for_tests(first.clone());
+        let _second_failure = fail_next_save_before_replace_for_tests(second.clone());
+        assert!(fail_save_before_replace(&first).is_err());
+        assert!(fail_save_before_replace(&second).is_err());
+
+        let consumed = fail_next_save_before_replace_for_tests(first.clone());
+        assert!(fail_save_before_replace(&first).is_err());
+        let successor = fail_next_save_before_replace_for_tests(first.clone());
+        drop(consumed);
+        assert!(fail_save_before_replace(&first).is_err());
+        drop(successor);
+    }
 }

@@ -342,8 +342,10 @@ fn x_toggle_marks_focused_folder_without_sample_focus() {
         .find(|folder| folder.id == drums_id)
         .expect("drums row should stay visible");
     assert!(root_row.selected);
+    assert!(root_row.selection_flash);
     assert!(!root_row.focused);
     assert!(!drums_row.selected);
+    assert!(!drums_row.selection_flash);
     assert!(drums_row.focused);
     assert!(state.ui.status.sample.contains("Marked"));
 
@@ -359,8 +361,10 @@ fn x_toggle_marks_focused_folder_without_sample_focus() {
         .find(|folder| folder.id == loops_id)
         .expect("loops row should stay visible");
     assert!(drums_row.selected);
+    assert!(drums_row.selection_flash);
     assert!(!drums_row.focused);
     assert!(!loops_row.selected);
+    assert!(!loops_row.selection_flash);
     assert!(loops_row.focused);
     assert!(state.ui.status.sample.contains("2 selected"));
 }

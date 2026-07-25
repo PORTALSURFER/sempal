@@ -53,6 +53,42 @@ fn file_keyboard_navigation_can_extend_audio_selection() {
 
     let _ = fs::remove_dir_all(root);
 }
+
+#[test]
+fn file_keyboard_navigation_clears_shift_range_after_shift_release() {
+    let root = temp_source_root("wavecrate-gui-file-keyboard-release-shift");
+    let drums = root.join("drums");
+    fs::create_dir_all(&drums).expect("create drums folder");
+    let hat = drums.join("hat.wav");
+    let kick = drums.join("kick.wav");
+    let snare = drums.join("snare.wav");
+    let tom = drums.join("tom.wav");
+    for file in [&hat, &kick, &snare, &tom] {
+        fs::write(file, [0_u8; 8]).expect("write wav");
+    }
+    let mut browser = FolderBrowserState::from_root(root.clone());
+    browser.activate_folder(path_id(&drums));
+    browser.select_file(path_id(&hat));
+
+    let tags_by_file = std::collections::HashMap::new();
+    assert_eq!(
+        browser.navigate_vertical_matching_tags(1, true, false, &tags_by_file),
+        Some(path_id(&kick))
+    );
+    assert_eq!(
+        browser.navigate_vertical_matching_tags(1, true, false, &tags_by_file),
+        Some(path_id(&snare))
+    );
+
+    assert_eq!(
+        browser.navigate_vertical_matching_tags(1, false, false, &tags_by_file),
+        Some(path_id(&tom))
+    );
+    assert_eq!(browser.selected_file_paths(), vec![tom.clone()]);
+
+    let _ = fs::remove_dir_all(root);
+}
+
 #[test]
 fn toggle_focused_sample_selection_marks_without_advancing() {
     let root = temp_source_root("wavecrate-gui-toggle-mark-stationary");
@@ -203,7 +239,11 @@ fn file_keyboard_navigation_preserves_toggle_marked_samples() {
         .expect("mark first sample");
     assert_eq!(browser.selected_file_id(), Some(path_id(&hat).as_str()));
 
-    assert_eq!(browser.navigate_vertical(1, false), Some(path_id(&kick)));
+    let tags_by_file = std::collections::HashMap::new();
+    assert_eq!(
+        browser.navigate_vertical_matching_tags(1, false, false, &tags_by_file),
+        Some(path_id(&kick))
+    );
     assert_eq!(browser.selected_file_paths(), vec![hat.clone()]);
 
     browser
@@ -216,7 +256,10 @@ fn file_keyboard_navigation_preserves_toggle_marked_samples() {
     );
     assert_eq!(browser.selected_file_id(), Some(path_id(&kick).as_str()));
 
-    assert_eq!(browser.navigate_vertical(1, false), Some(path_id(&snare)));
+    assert_eq!(
+        browser.navigate_vertical_matching_tags(1, false, false, &tags_by_file),
+        Some(path_id(&snare))
+    );
     assert_eq!(
         browser.selected_file_paths(),
         vec![hat.clone(), kick.clone()]

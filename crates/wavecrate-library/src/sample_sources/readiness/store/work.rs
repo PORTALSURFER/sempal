@@ -610,19 +610,44 @@ pub(crate) fn readiness_work_stats(
     connection: &Connection,
     now: i64,
 ) -> Result<ReadinessWorkStats, ReadinessError> {
+    readiness_work_stats_for_source_inner(connection, None, now)
+}
+
+/// Read readiness work stats for one source without loading its target set.
+pub(crate) fn readiness_work_stats_for_source(
+    connection: &Connection,
+    source_id: &str,
+    now: i64,
+) -> Result<ReadinessWorkStats, ReadinessError> {
+    readiness_work_stats_for_source_inner(connection, Some(source_id), now)
+}
+
+fn readiness_work_stats_for_source_inner(
+    connection: &Connection,
+    source_id: Option<&str>,
+    now: i64,
+) -> Result<ReadinessWorkStats, ReadinessError> {
+    let source_filter = source_id.map_or(String::new(), |_| {
+        String::from("\n           AND source.source_id = ?2")
+    });
+    let mut parameters = vec![rusqlite::types::Value::Integer(now)];
+    if let Some(source_id) = source_id {
+        parameters.push(rusqlite::types::Value::Text(source_id.to_string()));
+    }
     let values = connection.query_row(
-        "SELECT
+        &format!(
+            "SELECT
             COUNT(*),
             SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END),
             SUM(CASE WHEN status = 'running' AND lease_expires_at > ?1 THEN 1 ELSE 0 END),
             SUM(CASE WHEN status = 'running' AND (
                 lease_expires_at IS NULL OR lease_expires_at <= ?1
             ) THEN 1 ELSE 0 END),
-            SUM(CASE WHEN status = 'failed' AND failure_kind = 'retryable'
+            SUM(CASE WHEN status = 'failed' AND (failure_kind IS NULL OR failure_kind = 'retryable')
                 AND (retry_at IS NULL OR retry_at <= ?1) THEN 1 ELSE 0 END),
-            SUM(CASE WHEN status = 'failed' AND failure_kind = 'retryable'
+            SUM(CASE WHEN status = 'failed' AND (failure_kind IS NULL OR failure_kind = 'retryable')
                 AND retry_at > ?1 THEN 1 ELSE 0 END),
-            MIN(CASE WHEN status = 'failed' AND failure_kind = 'retryable'
+            MIN(CASE WHEN status = 'failed' AND (failure_kind IS NULL OR failure_kind = 'retryable')
                 AND retry_at > ?1 THEN retry_at ELSE NULL END),
             MIN(CASE WHEN status = 'running' AND lease_expires_at > ?1
                 THEN lease_expires_at ELSE NULL END),
@@ -660,8 +685,9 @@ pub(crate) fn readiness_work_stats(
            AND (
                target.scope_kind = 'file'
                OR job.source_generation = target.source_generation
-           )",
-        [now],
+           ){source_filter}",
+        ),
+        rusqlite::params_from_iter(parameters.iter()),
         |row| {
             Ok((
                 row.get::<_, i64>(0)?,

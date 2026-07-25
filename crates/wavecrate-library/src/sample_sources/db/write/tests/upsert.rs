@@ -4,6 +4,7 @@ use tempfile::tempdir;
 
 use super::super::super::{Rating, SampleCollection, SourceDatabase};
 use super::helpers::revision_value;
+use crate::sample_sources::SourceTraversalPolicy;
 
 #[test]
 fn upsert_wrapper_matches_batch_insert_contract() {
@@ -32,6 +33,23 @@ fn upsert_wrapper_matches_batch_insert_contract() {
     assert_eq!(single_rows[0].last_played_at, batch_rows[0].last_played_at);
     assert_eq!(revision_value(&single), 1);
     assert_eq!(revision_value(&batch_db), 1);
+}
+
+#[test]
+fn source_traversal_policy_defaults_to_include_and_persists() {
+    let dir = tempdir().unwrap();
+    let db = SourceDatabase::open_for_source_write(dir.path()).unwrap();
+
+    assert_eq!(
+        db.source_traversal_policy().unwrap(),
+        SourceTraversalPolicy::default()
+    );
+    db.set_source_traversal_policy(SourceTraversalPolicy::exclude_hidden_directories())
+        .unwrap();
+    assert_eq!(
+        db.source_traversal_policy().unwrap(),
+        SourceTraversalPolicy::exclude_hidden_directories()
+    );
 }
 
 #[test]

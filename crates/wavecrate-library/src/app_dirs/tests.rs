@@ -1,14 +1,20 @@
-use super::state::CONFIG_BASE_OVERRIDE;
+use super::state::{APP_ROOT_OVERRIDE, CONFIG_BASE_OVERRIDE};
 use super::*;
-use std::sync::{LazyLock, Mutex, MutexGuard};
+use crate::test_runtime::TestRuntimeGuard;
 use tempfile::tempdir;
 
-static APP_DIRS_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+fn app_dirs_test_lock() -> TestRuntimeGuard {
+    TestRuntimeGuard::acquire()
+}
 
-fn app_dirs_test_lock() -> MutexGuard<'static, ()> {
-    APP_DIRS_TEST_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+struct GlobalAppRootRestore(Option<std::path::PathBuf>);
+
+impl Drop for GlobalAppRootRestore {
+    fn drop(&mut self) {
+        *APP_ROOT_OVERRIDE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = self.0.take();
+    }
 }
 
 #[test]
@@ -154,4 +160,28 @@ fn rejects_invalid_profile_names() {
     let error = app_root_dir().expect_err("invalid profile should fail");
 
     assert!(matches!(error, AppDirError::InvalidProfileName { .. }));
+}
+
+#[test]
+fn scoped_config_base_does_not_clear_global_root_for_other_threads() {
+    let _lock = app_dirs_test_lock();
+    let global_parent = tempdir().unwrap();
+    let global_root = global_parent.path().join("global-root");
+    let previous = APP_ROOT_OVERRIDE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
+    let _restore = GlobalAppRootRestore(previous);
+    set_app_root_override(global_root.clone()).unwrap();
+
+    let scoped_base = tempdir().unwrap();
+    let scoped_guard = ConfigBaseGuard::set(scoped_base.path().to_path_buf());
+    let scoped_root = app_root_dir().unwrap();
+    let other_thread_root = std::thread::spawn(app_root_dir).join().unwrap().unwrap();
+
+    assert!(scoped_root.starts_with(scoped_base.path()));
+    assert_eq!(other_thread_root, global_root);
+
+    drop(scoped_guard);
+    assert_eq!(app_root_dir().unwrap(), global_root);
 }

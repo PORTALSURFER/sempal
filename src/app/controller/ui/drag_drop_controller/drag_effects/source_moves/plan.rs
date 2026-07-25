@@ -160,7 +160,6 @@ impl DragDropController<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::source_move_test_guard;
     use super::*;
     use crate::app::controller::AppController;
     use crate::app::controller::test_support::{sample_entry, write_test_wav};
@@ -171,7 +170,6 @@ mod tests {
 
     #[test]
     fn dropping_to_same_source_is_a_no_op() {
-        let _guard = source_move_test_guard();
         let temp = tempdir().unwrap();
         let source_root = temp.path().join("source_a");
         std::fs::create_dir_all(&source_root).unwrap();
@@ -197,7 +195,6 @@ mod tests {
 
     #[test]
     fn moving_multiple_samples_to_source_transfers_files() {
-        let _guard = source_move_test_guard();
         let temp = tempdir().unwrap();
         let source_root = temp.path().join("source_a");
         let target_root = temp.path().join("source_b");

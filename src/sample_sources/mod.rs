@@ -36,20 +36,22 @@ pub mod scanner {
 
 /// Per-source database helpers.
 pub mod db {
+    #[cfg(debug_assertions)]
+    pub use wavecrate_library::sample_sources::db::test_scope_source_db_open_total_count;
+    #[cfg(debug_assertions)]
+    pub use wavecrate_library::sample_sources::db::test_source_db_open_total_count;
     pub use wavecrate_library::sample_sources::db::{
         BrowserMetadataSnapshot, ContentAuditCheckpoint, ContentAuditEntryState,
         ContentAuditReport, ContentAuditSkipReason, DB_FILE_NAME, LEGACY_DB_FILE_NAME,
         META_DEFERRED_MAINTENANCE_REVISION, META_DEFERRED_MAINTENANCE_SCHEMA,
-        META_LAST_MANIFEST_AUDIT_AT, META_LAST_SCAN_COMPLETED_AT, META_WAV_PATHS_REVISION,
-        PendingRenameEntry, Rating, SOURCE_DB_READ_ONLY_ENV, SampleCollection, SampleSoundType,
-        SourceCollectionWrite, SourceContentHashWrite, SourceDatabase,
-        SourceDatabaseConnectionRole, SourceDatabaseWriteFence, SourceDbError, SourceFileWrite,
-        SourceTag, SourceTagUsage, SourceTagWrite, SourceWriteBatch, SourceWriteCommand, WavEntry,
-        file_ops_journal, normalize_relative_path, read, schema, tags, util, write,
-    };
-    #[cfg(debug_assertions)]
-    pub use wavecrate_library::sample_sources::db::{
-        test_reset_source_db_open_total_count, test_source_db_open_total_count,
+        META_LAST_MANIFEST_AUDIT_AT, META_LAST_SCAN_COMPLETED_AT,
+        META_READINESS_DUPLICATE_IDENTITY, META_SOURCE_TRAVERSAL_POLICY,
+        META_WAV_IDENTITIES_REVISION, META_WAV_PATHS_REVISION, PendingRenameEntry, Rating,
+        SOURCE_DB_READ_ONLY_ENV, SampleCollection, SampleSoundType, SourceCollectionWrite,
+        SourceContentHashWrite, SourceDatabase, SourceDatabaseConnectionRole,
+        SourceDatabaseWriteFence, SourceDbError, SourceFileWrite, SourceTag, SourceTagUsage,
+        SourceTagWrite, SourceWriteBatch, SourceWriteCommand, WavEntry, file_ops_journal,
+        normalize_relative_path, read, schema, tags, util, write,
     };
 }
 
@@ -98,6 +100,7 @@ pub use wavecrate_library::sample_sources::{
     SourceMetadataStorage, SourceRole, SourceTagWrite, SourceWriteCommand, WavEntry,
     database_path_for, default_primary_import_folder, normalize_path,
 };
+pub use wavecrate_library::sample_sources::{HiddenDirectoryPolicy, SourceTraversalPolicy};
 pub use wavecrate_scan::sample_sources::ScanTracker;
 pub use wavecrate_scan::sample_sources::{
     ChangedSample, CommittedSourceDelta, ManifestIdentityDelta, MovedManifestIdentity,

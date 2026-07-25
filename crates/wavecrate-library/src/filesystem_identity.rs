@@ -12,6 +12,15 @@ pub fn stable_filesystem_identity(path: &Path, metadata: &fs::Metadata) -> Optio
     stable_filesystem_identity_impl(path, metadata)
 }
 
+/// Return a stable identity for an object represented by an already-open file descriptor.
+///
+/// Directory traversal uses this form so identity is derived from the descriptor that was
+/// opened with the scanner's no-follow capability, rather than from a second path lookup.
+/// Unsupported platforms and identity lookup failures return `None`.
+pub fn stable_filesystem_identity_from_open_file(file: &fs::File) -> Option<String> {
+    stable_filesystem_identity_from_open_file_impl(file)
+}
+
 /// Return a platform marker that changes when the filesystem object is mutated.
 ///
 /// This is intentionally separate from modified time because callers use it to fence
@@ -40,6 +49,12 @@ fn stable_filesystem_identity_impl(_path: &Path, metadata: &fs::Metadata) -> Opt
 }
 
 #[cfg(unix)]
+fn stable_filesystem_identity_from_open_file_impl(file: &fs::File) -> Option<String> {
+    let metadata = file.metadata().ok()?;
+    stable_filesystem_identity_impl(Path::new(""), &metadata)
+}
+
+#[cfg(unix)]
 fn filesystem_change_marker_impl(_path: &Path, metadata: &fs::Metadata) -> Option<String> {
     use std::os::unix::fs::MetadataExt;
 
@@ -52,13 +67,10 @@ fn filesystem_change_marker_impl(_path: &Path, metadata: &fs::Metadata) -> Optio
 
 #[cfg(windows)]
 fn stable_filesystem_identity_impl(path: &Path, metadata: &fs::Metadata) -> Option<String> {
-    use std::os::windows::{fs::OpenOptionsExt, io::AsRawHandle};
-    use windows::Win32::{
-        Foundation::HANDLE,
-        Storage::FileSystem::{
-            BY_HANDLE_FILE_INFORMATION, FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES,
-            FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, GetFileInformationByHandle,
-        },
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows::Win32::Storage::FileSystem::{
+        FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ,
+        FILE_SHARE_WRITE,
     };
 
     let mut options = fs::OpenOptions::new();
@@ -70,6 +82,22 @@ fn stable_filesystem_identity_impl(path: &Path, metadata: &fs::Metadata) -> Opti
     }
 
     let file = options.open(path).ok()?;
+    stable_windows_identity(&file)
+}
+
+#[cfg(windows)]
+fn stable_filesystem_identity_from_open_file_impl(file: &fs::File) -> Option<String> {
+    stable_windows_identity(file)
+}
+
+#[cfg(windows)]
+fn stable_windows_identity(file: &fs::File) -> Option<String> {
+    use std::os::windows::io::AsRawHandle;
+    use windows::Win32::{
+        Foundation::HANDLE,
+        Storage::FileSystem::{BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle},
+    };
+
     let mut information = BY_HANDLE_FILE_INFORMATION::default();
     unsafe { GetFileInformationByHandle(HANDLE(file.as_raw_handle()), &mut information) }.ok()?;
     let file_index =
@@ -117,6 +145,11 @@ fn filesystem_change_marker_impl(path: &Path, metadata: &fs::Metadata) -> Option
 
 #[cfg(not(any(unix, windows)))]
 fn stable_filesystem_identity_impl(_path: &Path, _metadata: &fs::Metadata) -> Option<String> {
+    None
+}
+
+#[cfg(not(any(unix, windows)))]
+fn stable_filesystem_identity_from_open_file_impl(_file: &fs::File) -> Option<String> {
     None
 }
 

@@ -57,6 +57,16 @@ impl SourceHealthSummary {
             failure_codes: self.failure_codes,
         }
     }
+
+    #[cfg(test)]
+    pub(crate) fn retry_at_for_test(&self) -> Option<i64> {
+        self.retry_at
+    }
+
+    #[cfg(test)]
+    pub(crate) fn failure_codes_for_test(&self) -> &[String] {
+        &self.failure_codes
+    }
 }
 
 pub(super) fn source_health_summary(

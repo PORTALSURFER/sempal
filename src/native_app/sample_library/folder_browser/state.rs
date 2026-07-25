@@ -31,6 +31,8 @@ pub(in crate::native_app) struct FolderBrowserState {
     keyboard_focus_hold: Duration,
     keyboard_focus_alpha: u8,
     pub(super) pointer_focused_folder_id: Option<String>,
+    pub(super) selection_flash_item_id: Option<String>,
+    pub(super) selection_flash_frames: u8,
 }
 
 const KEYBOARD_FOCUS_HOLD: Duration = Duration::from_millis(800);
@@ -98,6 +100,8 @@ impl FolderBrowserState {
             keyboard_focus_hold: Duration::ZERO,
             keyboard_focus_alpha: 0,
             pointer_focused_folder_id: None,
+            selection_flash_item_id: None,
+            selection_flash_frames: 0,
         };
         state.refresh_missing_collection_state();
         state
@@ -127,6 +131,8 @@ impl FolderBrowserState {
             keyboard_focus_hold: Duration::ZERO,
             keyboard_focus_alpha: 0,
             pointer_focused_folder_id: None,
+            selection_flash_item_id: None,
+            selection_flash_frames: 0,
         }
     }
 

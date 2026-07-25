@@ -1,5 +1,5 @@
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     path::PathBuf,
     sync::{LazyLock, Mutex},
 };
@@ -22,6 +22,9 @@ thread_local! {
 }
 thread_local! {
     pub(super) static SCOPED_APP_ROOT_OVERRIDE: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+}
+thread_local! {
+    pub(super) static IGNORE_GLOBAL_APP_ROOT_OVERRIDE: Cell<bool> = const { Cell::new(false) };
 }
 thread_local! {
     pub(super) static SCOPED_PROFILE_OVERRIDE: RefCell<Option<ProfileSelection>> = const { RefCell::new(None) };

@@ -1,8 +1,8 @@
 use super::super::RuntimeIdentity;
 use super::*;
-use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+use std::{cell::Cell, fs};
 use tempfile::tempdir;
 
 const MACOS_TARGET: &str = "x86_64-apple-darwin";
@@ -63,9 +63,6 @@ fn relaunch_app_errors_when_executable_missing() {
 
 #[test]
 fn apply_files_and_dirs_keeps_running_executable_on_stage_failure() {
-    let _lock = crate::updater::path_guard::updater_path_guard_test_lock()
-        .lock()
-        .expect("updater test lock");
     let tmp = tempdir().unwrap();
     let install_dir = tmp.path().join("install");
     let root_dir = tmp.path().join("root");
@@ -97,10 +94,121 @@ fn apply_files_and_dirs_keeps_running_executable_on_stage_failure() {
 }
 
 #[test]
+fn committed_cleanup_failure_warns_and_still_attempts_relaunch() {
+    let tmp = tempdir().unwrap();
+    let install_dir = tmp.path().join("install");
+    let root_dir = tmp.path().join("root");
+    fs::create_dir_all(&install_dir).unwrap();
+    fs::create_dir_all(&root_dir).unwrap();
+
+    let executable = install_dir.join("wavecrate");
+    let old_path = install_dir.canonicalize().unwrap().join("wavecrate.old");
+    fs::write(&executable, "old-binary").unwrap();
+    fs::write(root_dir.join("wavecrate"), "new-binary").unwrap();
+    let manifest = UpdateManifest {
+        app: "wavecrate".to_string(),
+        channel: "stable".to_string(),
+        target: MACOS_TARGET.to_string(),
+        platform: MACOS_PLATFORM.to_string(),
+        arch: X86_64_ARCH.to_string(),
+        files: vec!["wavecrate".to_string()],
+    };
+    let args = UpdaterRunArgs {
+        repo: "owner/repo".to_string(),
+        identity: identity(UpdateChannel::Stable),
+        install_dir: install_dir.clone(),
+        relaunch: true,
+        requested_tag: Some("v1.2.3".to_string()),
+    };
+    let cleanup_path = old_path.clone();
+    let applied =
+        apply_files_and_dirs_with_commit(&install_dir, &root_dir, &manifest, |transaction| {
+            transaction.commit_with_cleanup_failure(cleanup_path)
+        })
+        .expect("post-commit cleanup failure must remain non-fatal");
+    let relaunch_attempted = Cell::new(false);
+    let mut messages = Vec::new();
+
+    let plan = finish_applied_update(
+        &args,
+        "v1.2.3".to_string(),
+        &manifest,
+        applied,
+        &mut |progress| messages.push(progress.message),
+        |received_install_dir, app, _manifest| {
+            relaunch_attempted.set(true);
+            assert_eq!(received_install_dir, install_dir);
+            assert_eq!(app, "wavecrate");
+            assert_eq!(fs::read_to_string(&executable).unwrap(), "new-binary");
+            Ok(())
+        },
+    )
+    .expect("committed update should return a warning-bearing plan");
+
+    assert!(relaunch_attempted.get());
+    assert_eq!(plan.post_commit_cleanup_failures.len(), 1);
+    assert_eq!(plan.post_commit_cleanup_failures[0].path, old_path);
+    assert!(messages.iter().any(|message| {
+        message.contains("Warning: update committed but cleanup left")
+            && message.contains("wavecrate.old")
+    }));
+    assert!(old_path.exists());
+}
+
+#[test]
+fn committed_cleanup_warning_is_reported_before_fatal_relaunch_failure() {
+    let tmp = tempdir().unwrap();
+    let install_dir = tmp.path().join("install");
+    fs::create_dir_all(&install_dir).unwrap();
+    let remnant = install_dir.join("wavecrate.old");
+    let args = UpdaterRunArgs {
+        repo: "owner/repo".to_string(),
+        identity: identity(UpdateChannel::Stable),
+        install_dir,
+        relaunch: true,
+        requested_tag: Some("v1.2.3".to_string()),
+    };
+    let applied = AppliedFilesPlan {
+        copied_files: vec!["wavecrate".to_string()],
+        replaced_dirs: Vec::new(),
+        post_commit_cleanup_failures: vec![PostCommitCleanupFailure {
+            path: remnant.clone(),
+            error: "file is locked".to_string(),
+        }],
+        stale_removal_failures: Vec::new(),
+    };
+    let mut messages = Vec::new();
+
+    let err = finish_applied_update(
+        &args,
+        "v1.2.3".to_string(),
+        &manifest("stable"),
+        applied,
+        &mut |progress| messages.push(progress.message),
+        |_install_dir, _app, _manifest| Err(UpdateError::Invalid("relaunch blocked".to_string())),
+    )
+    .expect_err("relaunch failure must remain fatal");
+
+    let expected_warning = format!(
+        "Warning: update committed but cleanup left {}: file is locked",
+        remnant.display()
+    );
+    assert!(err.to_string().contains("relaunch blocked"));
+    assert_eq!(messages.first(), Some(&expected_warning));
+    assert!(
+        messages
+            .iter()
+            .any(|message| message == "Relaunching app...")
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("Relaunch failed"))
+    );
+}
+
+#[test]
 fn apply_files_and_dirs_removes_stale_files_from_prior_manifest() {
-    let _lock = crate::updater::path_guard::updater_path_guard_test_lock()
-        .lock()
-        .expect("updater test lock");
     let tmp = tempdir().unwrap();
     let install_dir = tmp.path().join("install");
     let root_dir = tmp.path().join("root");
@@ -149,9 +257,6 @@ fn apply_files_and_dirs_removes_stale_files_from_prior_manifest() {
 
 #[test]
 fn apply_files_and_dirs_removes_stale_resources_dir() {
-    let _lock = crate::updater::path_guard::updater_path_guard_test_lock()
-        .lock()
-        .expect("updater test lock");
     let tmp = tempdir().unwrap();
     let install_dir = tmp.path().join("install");
     let root_dir = tmp.path().join("root");
@@ -202,9 +307,6 @@ fn apply_files_and_dirs_removes_stale_resources_dir() {
 #[cfg(unix)]
 #[test]
 fn apply_files_and_dirs_reports_stale_removal_failures() {
-    let _lock = crate::updater::path_guard::updater_path_guard_test_lock()
-        .lock()
-        .expect("updater test lock");
     let tmp = tempdir().unwrap();
     let install_dir = tmp.path().join("install");
     let root_dir = tmp.path().join("root");
@@ -250,8 +352,8 @@ fn apply_files_and_dirs_reports_stale_removal_failures() {
     fs::write(root_dir.join("update-manifest.json"), "new-manifest").unwrap();
     fs::write(root_dir.join("current.txt"), "new-current").unwrap();
 
-    let (_copied, _replaced, failures) =
-        apply_files_and_dirs(&install_dir, &root_dir, &next_manifest).unwrap();
+    let applied = apply_files_and_dirs(&install_dir, &root_dir, &next_manifest).unwrap();
+    let failures = applied.stale_removal_failures;
 
     if stale_file.exists() {
         let expected_stale_file = stale_file.canonicalize().unwrap_or(stale_file.clone());

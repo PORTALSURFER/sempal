@@ -28,10 +28,12 @@ impl NativeAppState {
                 self.toggle_audio_sample_rate_dropdown();
             }
             SettingsMessage::CloseAudioSettingsDropdowns => self.close_audio_settings_dropdowns(),
-            SettingsMessage::SetAudioOutputHost(host) => self.set_audio_output_host(host),
-            SettingsMessage::SetAudioOutputDevice(device) => self.set_audio_output_device(device),
+            SettingsMessage::SetAudioOutputHost(host) => self.set_audio_output_host(host, context),
+            SettingsMessage::SetAudioOutputDevice(device) => {
+                self.set_audio_output_device(device, context)
+            }
             SettingsMessage::SetAudioOutputSampleRate(sample_rate) => {
-                self.set_audio_output_sample_rate(sample_rate);
+                self.set_audio_output_sample_rate(sample_rate, context);
             }
             SettingsMessage::SetRatingDecayWeeks(weeks) => self.set_rating_decay_weeks(weeks),
             SettingsMessage::PickTrashFolder => self.pick_trash_folder(context),

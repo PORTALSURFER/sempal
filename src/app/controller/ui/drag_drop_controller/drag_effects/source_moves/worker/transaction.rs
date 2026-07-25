@@ -57,9 +57,12 @@ pub(super) fn prepare_source_move_transaction<'a>(
 
 impl SourceMoveTransaction<'_> {
     /// Commit the destination database stage or roll back the staged file on failure.
-    pub(super) fn commit_target_db_stage(&self, errors: &mut Vec<String>) -> bool {
-        #[cfg(test)]
-        if let Err(err) = super::run_before_source_move_target_db_stage_hook() {
+    pub(super) fn commit_target_db_stage(
+        &self,
+        errors: &mut Vec<String>,
+        hooks: &mut impl super::SourceMoveHooks,
+    ) -> bool {
+        if let Err(err) = hooks.before_target_db_stage() {
             report_staged_move_failure(errors, self.target_db, &self.prepared, err);
             return false;
         }
@@ -219,9 +222,12 @@ impl SourceMoveTransaction<'_> {
     }
 
     /// Rename the staged file into its final target location.
-    pub(super) fn finalize_filesystem_stage(&self, errors: &mut Vec<String>) -> bool {
-        #[cfg(test)]
-        super::run_before_source_move_finalize_hook();
+    pub(super) fn finalize_filesystem_stage(
+        &self,
+        errors: &mut Vec<String>,
+        hooks: &mut impl super::SourceMoveHooks,
+    ) -> bool {
+        hooks.before_finalize();
         if let Err(err) = std::fs::rename(
             &self.prepared.staged_absolute,
             &self.prepared.target_absolute,

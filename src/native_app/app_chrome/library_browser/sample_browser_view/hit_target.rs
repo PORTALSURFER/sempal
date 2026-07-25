@@ -4,6 +4,7 @@ use super::identity;
 use crate::native_app::app::GuiMessage;
 use crate::native_app::app_chrome::palette::{
     ListItemState, WavecrateListRowStyle, selected_row_marker, selected_row_palette,
+    selection_flash_palette,
 };
 
 const SAMPLE_ROW_STYLE: ui::WidgetStyle = ui::WidgetStyle::subtle(ui::WidgetTone::Accent);
@@ -76,6 +77,7 @@ pub(in crate::native_app) struct SampleFileHitTargetModel<'a> {
     pub(in crate::native_app) selected: bool,
     pub(in crate::native_app) focused: bool,
     pub(in crate::native_app) focus_alpha: u8,
+    pub(in crate::native_app) selection_flash: bool,
     pub(in crate::native_app) copy_flash: bool,
     pub(in crate::native_app) protected_source_error_flash: bool,
     pub(in crate::native_app) cut_pending: bool,
@@ -122,6 +124,7 @@ fn sample_file_hit_target_builder(
             model.cached
                 && !model.selected
                 && !model.focused
+                && !model.selection_flash
                 && !model.copy_flash
                 && !model.cut_pending,
             ui::DenseRowMarkerStyle::new(
@@ -140,6 +143,7 @@ fn sample_file_hit_target_builder(
 fn sample_file_row_policy(model: &SampleFileHitTargetModel<'_>) -> ui::DenseRowPolicy {
     let visual_state = radiant::widgets::InteractiveRowVisualStateParts {
         selected: model.selected
+            || model.selection_flash
             || model.copy_flash
             || model.protected_source_error_flash
             || model.cut_pending
@@ -204,6 +208,9 @@ fn sample_file_row_palette(model: &SampleFileHitTargetModel<'_>) -> Option<ui::D
                 .selected_hovered(CUT_PENDING_HOVER_FILL)
                 .interaction_fills(CUT_PENDING_HOVER_FILL, CUT_PENDING_HOVER_FILL),
         );
+    }
+    if model.selection_flash {
+        return Some(selection_flash_palette(SAMPLE_ROW_STYLE));
     }
     if model.selected {
         return Some(selected_row_palette(SAMPLE_ROW_STYLE));

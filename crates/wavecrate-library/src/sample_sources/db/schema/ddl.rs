@@ -64,6 +64,21 @@ const BASE_SCHEMA_SQL: &str = "CREATE TABLE IF NOT EXISTS metadata (
         collection INTEGER,
         file_identity TEXT
     );
+    CREATE TABLE IF NOT EXISTS source_index_entries (
+        path TEXT PRIMARY KEY,
+        path_encoding INTEGER NOT NULL DEFAULT 0,
+        classification TEXT NOT NULL CHECK(classification IN (
+            'unsupported_audio',
+            'unsupported_non_audio',
+            'inaccessible',
+            'practically_unsupported_audio'
+        )),
+        file_size INTEGER,
+        modified_ns INTEGER,
+        file_identity TEXT,
+        diagnostic TEXT,
+        format_policy_version INTEGER NOT NULL
+    ) WITHOUT ROWID;
     CREATE TABLE IF NOT EXISTS source_tags (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         normalized_text TEXT NOT NULL UNIQUE,
@@ -335,6 +350,17 @@ const INDEX_SQL: &str = "CREATE INDEX IF NOT EXISTS idx_wav_files_missing
          ON wav_files(path) WHERE missing != 0;
      CREATE INDEX IF NOT EXISTS idx_wav_files_extension
          ON wav_files(extension);
+     CREATE INDEX IF NOT EXISTS idx_source_index_entries_classification_path
+         ON source_index_entries(classification, path);
+     CREATE INDEX IF NOT EXISTS idx_source_content_audit_forward_path
+         ON wav_files(path)
+         WHERE missing = 0
+           AND extension IN ('wav')
+           AND path NOT GLOB '._*'
+           AND path NOT GLOB '*/._*';
+     CREATE INDEX IF NOT EXISTS idx_source_content_audit_retry_due
+         ON source_content_audit_entries(COALESCE(retry_at, 0), path)
+         WHERE skip_reason IS NOT NULL;
      CREATE INDEX IF NOT EXISTS idx_wav_file_tags_tag_id
          ON wav_file_tags(tag_id);
      CREATE INDEX IF NOT EXISTS idx_wav_file_collections_collection

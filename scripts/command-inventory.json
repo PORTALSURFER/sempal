@@ -37,12 +37,12 @@
     },
     {
       "path": "scripts/ci.ps1",
-      "role": "Validation lanes: smoke, agent, quick, and local.",
+      "role": "Validation lanes: smoke, agent, quick, local, and opt-in parallel test-isolation stress.",
       "windows_supported": true
     },
     {
       "path": "scripts/ci.sh",
-      "role": "Validation lanes: smoke, agent, quick, and local.",
+      "role": "Validation lanes: smoke, agent, quick, local, and opt-in parallel test-isolation stress.",
       "windows_supported": false
     },
     {
@@ -307,6 +307,10 @@
         {
           "name": "agent",
           "target": "ci_agent.ps1"
+        },
+        {
+          "name": "isolation-stress",
+          "target": "ci_isolation_stress.ps1"
         },
         {
           "name": "local",

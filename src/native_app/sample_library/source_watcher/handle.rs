@@ -889,6 +889,7 @@ fn publish_closed_app_journal_recovery(
         .zip(journal::recover_sources(sources, native_watcher))
     {
         match recovery {
+            #[cfg(target_os = "macos")]
             JournalRecovery::Changes { paths, event_id } if paths.is_empty() => {
                 journal::advance_after_reconciliation(sources, source.id.as_str(), event_id);
                 tracing::debug!(
@@ -896,6 +897,7 @@ fn publish_closed_app_journal_recovery(
                     "Durable source watcher journal found no closed-application changes"
                 );
             }
+            #[cfg(target_os = "macos")]
             JournalRecovery::Changes { paths, event_id } => {
                 tracing::info!(
                     source_id = source.id.as_str(),

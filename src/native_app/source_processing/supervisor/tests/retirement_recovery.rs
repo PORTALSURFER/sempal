@@ -179,6 +179,238 @@ fn discovery_progress_converged_safety_probe_is_a_silent_noop() {
 }
 
 #[test]
+fn safety_probe_recovers_durable_retry_and_lease_deadlines_after_restart() {
+    let (_directory, source) = unhashed_source("durable-readiness-deadlines");
+    let database_root = source.database_root().expect("database root");
+    let mut connection = SourceDatabase::open_connection_with_role_and_database_root(
+        &source.root,
+        &database_root,
+        SourceDatabaseConnectionRole::JobWorker,
+    )
+    .expect("open source database");
+    publish_current_readiness_targets(&mut connection, source.id.as_str(), 100)
+        .expect("publish readiness targets");
+    let snapshot = reconcile_readiness(&connection, source.id.as_str(), 100)
+        .expect("reconcile readiness targets");
+    let target = snapshot
+        .entries
+        .iter()
+        .find(|entry| entry.target.stage == ReadinessStage::IndexedIdentity)
+        .expect("indexed identity target")
+        .target
+        .clone();
+    persist_readiness_deficits(&mut connection, &snapshot.deficits, 100)
+        .expect("persist readiness work");
+    connection
+        .execute(
+            "UPDATE analysis_jobs
+             SET status = 'done', running_at = NULL, retry_at = NULL,
+                 failure_kind = NULL, failure_code = NULL, lease_expires_at = NULL
+             WHERE readiness_managed = 1",
+            [],
+        )
+        .expect("settle unrelated readiness work");
+    connection
+        .execute(
+            "UPDATE analysis_jobs
+             SET status = 'pending'
+             WHERE readiness_managed = 1
+               AND readiness_scope_id = ?1
+               AND readiness_stage = 'indexed_identity'",
+            [target.scope_id.as_str()],
+        )
+        .expect("retain one readiness job");
+    connection
+        .execute(
+            "INSERT INTO metadata (key, value) VALUES (?1, '100')
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [META_LAST_MANIFEST_AUDIT_AT],
+        )
+        .expect("persist recent manifest audit");
+    #[cfg(target_os = "macos")]
+    {
+        let metadata = std::fs::metadata(&source.root).expect("source root metadata");
+        let root_identity =
+            wavecrate_library::filesystem_identity::stable_filesystem_identity(&source.root, &metadata)
+                .expect("stable source root identity");
+        connection
+            .execute(
+                "INSERT INTO metadata (key, value) VALUES (?1, ?2)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                rusqlite::params![
+                    wavecrate_library::sample_sources::db::META_SOURCE_WATCHER_CHECKPOINT,
+                    serde_json::json!({ "root_identity": root_identity, "event_id": 1_u64 })
+                        .to_string(),
+                ],
+            )
+            .expect("persist durable watcher coverage");
+    }
+
+    let claim = claim_readiness_target(&mut connection, &target, 100, 50)
+        .expect("claim readiness target")
+        .expect("target is claimable");
+    drop(connection);
+
+    let Cancellable::Completed((candidates, stats, _health)) =
+        discover_source_candidates_with_progress(
+            &source,
+            101,
+            false,
+            false,
+            None,
+            true,
+            &AtomicBool::new(false),
+            &mut |_| panic!("future deadline probe must not materialize targets"),
+        )
+        .expect("probe future lease deadline")
+    else {
+        panic!("future deadline probe unexpectedly cancelled");
+    };
+    assert!(candidates.is_empty());
+    assert!(!stats.cheap_noop_sweep);
+    assert_eq!(stats.earliest_retry_at, Some(150));
+
+    let connection = SourceDatabase::open_connection_with_role_and_database_root(
+        &source.root,
+        &database_root,
+        SourceDatabaseConnectionRole::JobWorker,
+    )
+    .expect("reopen source database");
+    let claim_generation_before = claim.claim_generation;
+    connection
+        .execute(
+            "UPDATE analysis_jobs SET lease_expires_at = 99
+             WHERE readiness_managed = 1 AND readiness_claim_generation = ?1",
+            [claim_generation_before],
+        )
+        .expect("expire readiness lease");
+    drop(connection);
+
+    let Cancellable::Completed((candidates, stats, _health)) =
+        discover_source_candidates_with_progress(
+            &source,
+            101,
+            false,
+            false,
+            None,
+            true,
+            &AtomicBool::new(false),
+            &mut |_| {},
+        )
+        .expect("probe expired lease")
+    else {
+        panic!("expired lease probe unexpectedly cancelled");
+    };
+    assert!(!stats.cheap_noop_sweep);
+    assert!(!candidates.is_empty(), "expired lease must become candidate work");
+
+    let connection = SourceDatabase::open_connection_with_role_and_database_root(
+        &source.root,
+        &database_root,
+        SourceDatabaseConnectionRole::JobWorker,
+    )
+    .expect("reopen source database for null lease");
+    connection
+        .execute(
+            "UPDATE analysis_jobs
+             SET status = 'running', lease_expires_at = NULL
+             WHERE readiness_managed = 1",
+            [],
+        )
+        .expect("simulate compatibility-null running lease");
+    drop(connection);
+
+    let Cancellable::Completed((candidates, stats, _health)) =
+        discover_source_candidates_with_progress(
+            &source,
+            101,
+            false,
+            false,
+            None,
+            true,
+            &AtomicBool::new(false),
+            &mut |_| {},
+        )
+        .expect("probe compatibility-null lease")
+    else {
+        panic!("compatibility-null lease probe unexpectedly cancelled");
+    };
+    assert!(!stats.cheap_noop_sweep);
+    assert!(
+        !candidates.is_empty(),
+        "compatibility-null lease must become candidate work"
+    );
+
+    let connection = SourceDatabase::open_connection_with_role_and_database_root(
+        &source.root,
+        &database_root,
+        SourceDatabaseConnectionRole::JobWorker,
+    )
+    .expect("reopen source database for retry");
+    connection
+        .execute(
+            "UPDATE analysis_jobs
+             SET status = 'failed', failure_kind = NULL, failure_code = 'test_retry',
+                 retry_at = 250, lease_expires_at = NULL
+             WHERE readiness_managed = 1",
+            [],
+        )
+        .expect("park retryable readiness work");
+    drop(connection);
+
+    let Cancellable::Completed((candidates, stats, _health)) =
+        discover_source_candidates_with_progress(
+            &source,
+            101,
+            false,
+            false,
+            None,
+            true,
+            &AtomicBool::new(false),
+            &mut |_| panic!("future retry probe must not materialize targets"),
+        )
+        .expect("probe future retry deadline")
+    else {
+        panic!("future retry probe unexpectedly cancelled");
+    };
+    assert!(candidates.is_empty());
+    assert!(!stats.cheap_noop_sweep);
+    assert_eq!(stats.earliest_retry_at, Some(250));
+
+    let connection = SourceDatabase::open_connection_with_role_and_database_root(
+        &source.root,
+        &database_root,
+        SourceDatabaseConnectionRole::JobWorker,
+    )
+    .expect("reopen source database for due retry");
+    connection
+        .execute(
+            "UPDATE analysis_jobs SET retry_at = NULL WHERE readiness_managed = 1",
+            [],
+        )
+        .expect("make retry compatibility-null and due");
+    drop(connection);
+
+    let Cancellable::Completed((candidates, stats, _health)) =
+        discover_source_candidates_with_progress(
+            &source,
+            101,
+            false,
+            false,
+            None,
+            true,
+            &AtomicBool::new(false),
+            &mut |_| {},
+        )
+        .expect("probe due retry deadline")
+    else {
+        panic!("due retry probe unexpectedly cancelled");
+    };
+    assert!(!stats.cheap_noop_sweep);
+    assert!(!candidates.is_empty(), "due retry must become candidate work");
+}
+
+#[test]
 fn macos_safety_probe_requires_durable_watcher_coverage() {
     let (_directory, source) = unhashed_source(&format!(
         "missing-watcher-coverage-{}",

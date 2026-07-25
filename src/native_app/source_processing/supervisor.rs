@@ -18,15 +18,18 @@ use rusqlite::params;
 use serde_json::Value;
 use wavecrate::sample_sources::{
     SampleSource, SourceDatabase, SourceDatabaseConnectionRole, SourceMetadataStorage,
-    db::{META_LAST_MANIFEST_AUDIT_AT, META_WAV_PATHS_REVISION},
+    db::{
+        META_LAST_MANIFEST_AUDIT_AT, META_READINESS_DUPLICATE_IDENTITY,
+        META_WAV_IDENTITIES_REVISION, META_WAV_PATHS_REVISION,
+    },
     readiness::{
         ArtifactPublishOutcome, ClaimedReadinessWork, ReadinessActivity, ReadinessClassification,
         ReadinessDeltaPublicationOutcome, ReadinessEligibility, ReadinessFailureClassification,
         ReadinessFailureOutcome, ReadinessLeaseRenewalOutcome, ReadinessMembership,
         ReadinessProgress, ReadinessRetryPolicy, ReadinessScopeKind, ReadinessSnapshot,
         ReadinessStage, ReadinessStageCounts, ReadinessStore, ReadinessTarget,
-        ReadinessTargetDeltaPublication, ReadinessTargetPublication, ReadinessWorkMutationOutcome,
-        SourceAvailability,
+        ReadinessTargetDeltaPublication, ReadinessTargetPublication, ReadinessView,
+        ReadinessWorkMutationOutcome, SourceAvailability,
     },
     scanner::{
         CommittedSourceDelta, ContentAuditActivity, ContentAuditBudget, ContentAuditStorage,

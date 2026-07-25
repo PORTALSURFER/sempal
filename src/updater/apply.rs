@@ -12,9 +12,9 @@ use std::{
 use serde::Deserialize;
 
 use super::{
-    UpdateChannel, UpdateError, UpdateProgress, UpdaterRunArgs, ValidatedInstallRoot, archive,
-    expected_checksums_name, expected_checksums_signature_name, expected_zip_asset_name, fs_ops,
-    github,
+    PostCommitCleanupFailure, UpdateChannel, UpdateError, UpdateProgress, UpdaterRunArgs,
+    ValidatedInstallRoot, archive, expected_checksums_name, expected_checksums_signature_name,
+    expected_zip_asset_name, fs_ops, github,
 };
 
 mod archive_root;
@@ -101,6 +101,8 @@ pub struct ApplyPlan {
     pub copied_files: Vec<String>,
     /// Directories replaced during the update.
     pub replaced_dirs: Vec<String>,
+    /// Disposable `.old` or `.new` paths that remained after the update committed.
+    pub post_commit_cleanup_failures: Vec<PostCommitCleanupFailure>,
     /// Stale paths that could not be removed after applying the update.
     pub stale_removal_failures: Vec<StaleRemovalFailure>,
 }
@@ -114,9 +116,16 @@ pub struct StaleRemovalFailure {
     pub error: String,
 }
 
-/// Return type for `apply_files_and_dirs` to keep the tuple shape explicit.
-type ApplyFilesPlanResult =
-    Result<(Vec<String>, Vec<String>, Vec<StaleRemovalFailure>), UpdateError>;
+#[derive(Debug)]
+struct AppliedFilesPlan {
+    copied_files: Vec<String>,
+    replaced_dirs: Vec<String>,
+    post_commit_cleanup_failures: Vec<PostCommitCleanupFailure>,
+    stale_removal_failures: Vec<StaleRemovalFailure>,
+}
+
+/// Return type for `apply_files_and_dirs`.
+type ApplyFilesPlanResult = Result<AppliedFilesPlan, UpdateError>;
 
 /// Apply the selected update payload into the installation directory.
 /// Returns an [`ApplyPlan`] describing copied files, replaced directories, and stale
@@ -202,33 +211,62 @@ where
     }
 
     report(&mut progress, "Applying update transaction...");
-    let (copied_files, replaced_dirs, stale_removal_failures) =
-        apply_files_and_dirs(&args.install_dir, &root_dir, &manifest)?;
-    if !stale_removal_failures.is_empty() {
+    let applied = apply_files_and_dirs(&args.install_dir, &root_dir, &manifest)?;
+    finish_applied_update(
+        &args,
+        release.tag_name,
+        &manifest,
+        applied,
+        &mut progress,
+        relaunch_app,
+    )
+}
+
+fn finish_applied_update(
+    args: &UpdaterRunArgs,
+    release_tag: String,
+    manifest: &UpdateManifest,
+    applied: AppliedFilesPlan,
+    progress: &mut impl FnMut(UpdateProgress),
+    relaunch: impl FnOnce(&Path, &str, &UpdateManifest) -> Result<(), UpdateError>,
+) -> Result<ApplyPlan, UpdateError> {
+    for failure in &applied.post_commit_cleanup_failures {
         report(
-            &mut progress,
+            progress,
             format!(
-                "Warning: failed to remove {} stale paths",
-                stale_removal_failures.len()
+                "Warning: update committed but cleanup left {}: {}",
+                failure.path.display(),
+                failure.error
+            ),
+        );
+    }
+    for failure in &applied.stale_removal_failures {
+        report(
+            progress,
+            format!(
+                "Warning: failed to remove stale path {}: {}",
+                failure.path.display(),
+                failure.error
             ),
         );
     }
 
     if args.relaunch {
-        report(&mut progress, "Relaunching app...");
-        if let Err(err) = relaunch_app(&args.install_dir, &args.identity.app, &manifest) {
-            report(&mut progress, format!("Relaunch failed: {err}"));
+        report(progress, "Relaunching app...");
+        if let Err(err) = relaunch(&args.install_dir, &args.identity.app, manifest) {
+            report(progress, format!("Relaunch failed: {err}"));
             return Err(err);
         }
     }
 
     Ok(ApplyPlan {
-        release_tag: release.tag_name,
-        install_dir: args.install_dir,
+        release_tag,
+        install_dir: args.install_dir.clone(),
         relaunch: args.relaunch,
-        copied_files,
-        replaced_dirs,
-        stale_removal_failures,
+        copied_files: applied.copied_files,
+        replaced_dirs: applied.replaced_dirs,
+        post_commit_cleanup_failures: applied.post_commit_cleanup_failures,
+        stale_removal_failures: applied.stale_removal_failures,
     })
 }
 
@@ -240,6 +278,19 @@ fn apply_files_and_dirs(
     install_dir: &Path,
     root_dir: &Path,
     manifest: &UpdateManifest,
+) -> ApplyFilesPlanResult {
+    apply_files_and_dirs_with_commit(install_dir, root_dir, manifest, |transaction| {
+        transaction.commit()
+    })
+}
+
+fn apply_files_and_dirs_with_commit(
+    install_dir: &Path,
+    root_dir: &Path,
+    manifest: &UpdateManifest,
+    commit: impl FnOnce(
+        fs_ops::UpdateTransaction,
+    ) -> Result<fs_ops::TransactionCommitOutcome, UpdateError>,
 ) -> ApplyFilesPlanResult {
     let install_root = ValidatedInstallRoot::new(install_dir)?;
     let installed_manifest = load_installed_manifest(install_root.path())?;
@@ -265,11 +316,19 @@ fn apply_files_and_dirs(
         replaced_dirs.push("resources".to_string());
     }
 
-    transaction.commit()?;
+    let post_commit_cleanup_failures = match commit(transaction)? {
+        fs_ops::TransactionCommitOutcome::Committed => Vec::new(),
+        fs_ops::TransactionCommitOutcome::CommittedWithCleanupFailures(failures) => failures,
+    };
 
     let stale_removal_failures = remove_stale_paths(&stale_files, &install_root)?;
 
-    Ok((copied, replaced_dirs, stale_removal_failures))
+    Ok(AppliedFilesPlan {
+        copied_files: copied,
+        replaced_dirs,
+        post_commit_cleanup_failures,
+        stale_removal_failures,
+    })
 }
 
 fn channel_label(channel: UpdateChannel) -> &'static str {

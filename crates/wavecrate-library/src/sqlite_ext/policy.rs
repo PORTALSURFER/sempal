@@ -366,22 +366,16 @@ fn validate_extension_file(path: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_runtime::TestRuntimeGuard;
     use std::fs;
-    use std::sync::Mutex;
     use tempfile::tempdir;
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
-    #[cfg(feature = "sqlite-ext-unsafe")]
-    static CWD_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn missing_env_var_is_structured_noop() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        unsafe {
-            std::env::remove_var(SQLITE_EXT_ENV);
-            std::env::remove_var(SQLITE_EXT_ENABLE_ENV);
-            std::env::remove_var(SQLITE_EXT_UNSAFE_ENV);
-        }
+        let mut runtime = TestRuntimeGuard::acquire();
+        runtime.remove_var(SQLITE_EXT_ENV);
+        runtime.remove_var(SQLITE_EXT_ENABLE_ENV);
+        runtime.remove_var(SQLITE_EXT_UNSAFE_ENV);
 
         assert_eq!(
             extension_policy_from_env(),
@@ -391,12 +385,10 @@ mod tests {
 
     #[test]
     fn configured_extension_requires_explicit_enable_flag() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        unsafe {
-            std::env::set_var(SQLITE_EXT_ENV, "test_ext");
-            std::env::remove_var(SQLITE_EXT_ENABLE_ENV);
-            std::env::remove_var(SQLITE_EXT_UNSAFE_ENV);
-        }
+        let mut runtime = TestRuntimeGuard::acquire();
+        runtime.set_var(SQLITE_EXT_ENV, "test_ext");
+        runtime.remove_var(SQLITE_EXT_ENABLE_ENV);
+        runtime.remove_var(SQLITE_EXT_UNSAFE_ENV);
 
         assert_eq!(
             extension_policy_from_env(),
@@ -404,10 +396,6 @@ mod tests {
                 path: String::from("test_ext"),
             })
         );
-
-        unsafe {
-            std::env::remove_var(SQLITE_EXT_ENV);
-        }
     }
 
     #[test]
@@ -438,15 +426,13 @@ mod tests {
     #[cfg(feature = "sqlite-ext-unsafe")]
     #[test]
     fn unsafe_mode_uses_cwd_for_relative_paths() {
-        let _guard = CWD_LOCK.lock().unwrap();
+        let mut runtime = TestRuntimeGuard::acquire();
         let temp = tempdir().unwrap();
         let ext_path = temp.path().join("test_ext.so");
         fs::write(&ext_path, b"not a sqlite extension").unwrap();
 
-        let original_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(temp.path()).unwrap();
+        runtime.set_current_dir(temp.path()).unwrap();
         let resolved = resolve_extension_path("test_ext.so", None, true).unwrap();
-        std::env::set_current_dir(original_dir).unwrap();
 
         assert_eq!(resolved, ext_path.canonicalize().unwrap());
     }
@@ -454,12 +440,10 @@ mod tests {
     #[cfg(not(feature = "sqlite-ext-unsafe"))]
     #[test]
     fn unsafe_env_is_structured_unavailable_without_feature() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        unsafe {
-            std::env::set_var(SQLITE_EXT_ENV, "test_ext");
-            std::env::set_var(SQLITE_EXT_ENABLE_ENV, "1");
-            std::env::set_var(SQLITE_EXT_UNSAFE_ENV, "1");
-        }
+        let mut runtime = TestRuntimeGuard::acquire();
+        runtime.set_var(SQLITE_EXT_ENV, "test_ext");
+        runtime.set_var(SQLITE_EXT_ENABLE_ENV, "1");
+        runtime.set_var(SQLITE_EXT_UNSAFE_ENV, "1");
 
         assert_eq!(
             extension_policy_from_env(),
@@ -467,11 +451,5 @@ mod tests {
                 path: String::from("test_ext"),
             })
         );
-
-        unsafe {
-            std::env::remove_var(SQLITE_EXT_ENV);
-            std::env::remove_var(SQLITE_EXT_ENABLE_ENV);
-            std::env::remove_var(SQLITE_EXT_UNSAFE_ENV);
-        }
     }
 }

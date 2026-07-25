@@ -3,8 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 use wavecrate_library::sample_sources::{
-    SourceEntryFileType, SourceEntryKind, SourceEntryProbeError,
-    classify_path_without_following as classify_source_entry_path, classify_source_entry,
+    SourceDatabase, SourceEntryFileType, SourceEntryKind, SourceEntryProbeError,
+    SourceTraversalPolicy, classify_source_entry_with_policy,
 };
 
 use super::super::path_helpers::file_label;
@@ -20,7 +20,16 @@ pub(super) struct BrowserEntry {
 pub(in crate::native_app::sample_library::folder_browser) fn classify_path_without_following(
     path: &Path,
 ) -> Option<BrowserEntryKind> {
-    match classify_source_entry_path(path) {
+    classify_path_without_following_with_policy(path, SourceTraversalPolicy::default())
+}
+
+pub(in crate::native_app::sample_library::folder_browser) fn classify_path_without_following_with_policy(
+    path: &Path,
+    policy: SourceTraversalPolicy,
+) -> Option<BrowserEntryKind> {
+    match wavecrate_library::sample_sources::classify_path_without_following_with_policy(
+        path, policy,
+    ) {
         Ok(classification) => classification.visible_kind(),
         Err(SourceEntryProbeError::Missing) => None,
         Err(error) => {
@@ -34,8 +43,16 @@ pub(in crate::native_app::sample_library::folder_browser) fn classify_path_witho
     }
 }
 
-pub(super) fn read_sorted_entries(path: &Path) -> Option<Vec<BrowserEntry>> {
-    if classify_path_without_following(path) != Some(BrowserEntryKind::Directory) {
+pub(super) fn read_sorted_entries(
+    path: &Path,
+    source_root: &Path,
+    policy: SourceTraversalPolicy,
+) -> Option<Vec<BrowserEntry>> {
+    let relative_path = path.strip_prefix(source_root).unwrap_or(path);
+    if classify_source_entry_with_policy(relative_path, SourceEntryFileType::Directory, policy)
+        .visible_kind()
+        != Some(BrowserEntryKind::Directory)
+    {
         return None;
     }
     let read_dir = match fs::read_dir(path) {
@@ -65,12 +82,17 @@ pub(super) fn read_sorted_entries(path: &Path) -> Option<Vec<BrowserEntry>> {
             let entry_path = entry.path();
             match entry.file_type() {
                 Ok(file_type) => {
-                    classify_source_entry(&entry_path, source_entry_file_type(&file_type))
-                        .visible_kind()
-                        .map(|kind| BrowserEntry {
-                            path: entry_path,
-                            kind,
-                        })
+                    let relative_path = entry_path.strip_prefix(source_root).unwrap_or(&entry_path);
+                    classify_source_entry_with_policy(
+                        relative_path,
+                        source_entry_file_type(&file_type),
+                        policy,
+                    )
+                    .visible_kind()
+                    .map(|kind| BrowserEntry {
+                        path: entry_path,
+                        kind,
+                    })
                 }
                 Err(error) => {
                     tracing::warn!(
@@ -89,6 +111,12 @@ pub(super) fn read_sorted_entries(path: &Path) -> Option<Vec<BrowserEntry>> {
             .cmp(&file_label(&b.path).to_ascii_lowercase())
     });
     Some(entries)
+}
+
+pub(super) fn source_traversal_policy(root: &Path, database_root: &Path) -> SourceTraversalPolicy {
+    SourceDatabase::open_for_ui_read_with_database_root(root, database_root)
+        .and_then(|db| db.source_traversal_policy())
+        .unwrap_or_default()
 }
 
 fn source_entry_file_type(file_type: &FileType) -> SourceEntryFileType {

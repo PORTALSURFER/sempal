@@ -1,45 +1,14 @@
-use std::{
-    path::PathBuf,
-    sync::{Mutex, OnceLock},
-};
-
-static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+use std::path::PathBuf;
+use wavecrate_library::test_runtime::TestRuntimeGuard;
 
 pub struct WavecrateEnvGuard {
-    previous: Option<String>,
-    _lock: std::sync::MutexGuard<'static, ()>,
+    _runtime: TestRuntimeGuard,
 }
 
 impl WavecrateEnvGuard {
     pub fn set_config_home(path: PathBuf) -> Self {
-        let lock = ENV_LOCK
-            .get_or_init(|| Mutex::new(()))
-            .lock()
-            .unwrap_or_else(|err| err.into_inner());
-        let previous = std::env::var("WAVECRATE_CONFIG_HOME").ok();
-        // SAFETY: tests run under a global lock to prevent concurrent env mutations.
-        unsafe {
-            std::env::set_var("WAVECRATE_CONFIG_HOME", path);
-        }
-        Self {
-            previous,
-            _lock: lock,
-        }
-    }
-}
-
-impl Drop for WavecrateEnvGuard {
-    fn drop(&mut self) {
-        if let Some(value) = self.previous.take() {
-            // SAFETY: tests run under a global lock to prevent concurrent env mutations.
-            unsafe {
-                std::env::set_var("WAVECRATE_CONFIG_HOME", value);
-            }
-        } else {
-            // SAFETY: tests run under a global lock to prevent concurrent env mutations.
-            unsafe {
-                std::env::remove_var("WAVECRATE_CONFIG_HOME");
-            }
-        }
+        let mut runtime = TestRuntimeGuard::acquire();
+        runtime.set_var("WAVECRATE_CONFIG_HOME", path);
+        Self { _runtime: runtime }
     }
 }

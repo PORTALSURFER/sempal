@@ -34,6 +34,12 @@ use tracing_subscriber::{Registry, fmt, prelude::*};
 static LOG_GUARD: OnceLock<WorkerGuard> = OnceLock::new();
 static DEBUG_LOGGING_ENABLED: AtomicBool = AtomicBool::new(false);
 
+#[cfg(test)]
+thread_local! {
+    static TEST_DEBUG_LOGGING_OVERRIDE: std::cell::Cell<Option<bool>> =
+        const { std::cell::Cell::new(None) };
+}
+
 /// Errors that may occur while initializing logging.
 #[derive(Debug, thiserror::Error)]
 pub enum LoggingError {
@@ -145,6 +151,10 @@ where
 /// Rich action/database diagnostics should use this gate instead of treating a
 /// broad `RUST_LOG` override as product intent.
 pub fn debug_logging_enabled() -> bool {
+    #[cfg(test)]
+    if let Some(enabled) = TEST_DEBUG_LOGGING_OVERRIDE.with(std::cell::Cell::get) {
+        return enabled;
+    }
     DEBUG_LOGGING_ENABLED.load(Ordering::Relaxed)
 }
 
@@ -154,8 +164,23 @@ pub fn newest_log_file(dir: &Path) -> Result<Option<PathBuf>, LoggingError> {
 }
 
 #[cfg(test)]
-pub(crate) fn set_debug_logging_enabled_for_tests(enabled: bool) {
-    DEBUG_LOGGING_ENABLED.store(enabled, Ordering::Relaxed);
+pub(crate) fn with_debug_logging_enabled_for_tests<T>(enabled: bool, run: impl FnOnce() -> T) -> T {
+    struct Reset<'a> {
+        cell: &'a std::cell::Cell<Option<bool>>,
+        previous: Option<bool>,
+    }
+
+    impl Drop for Reset<'_> {
+        fn drop(&mut self) {
+            self.cell.set(self.previous);
+        }
+    }
+
+    TEST_DEBUG_LOGGING_OVERRIDE.with(|cell| {
+        let previous = cell.replace(Some(enabled));
+        let _reset = Reset { cell, previous };
+        run()
+    })
 }
 
 /// Install a panic hook that writes panic context and backtrace to logs.
@@ -190,6 +215,45 @@ pub fn install_panic_hook() {
         tracing::error!("panic backtrace:\n{:?}", Backtrace::force_capture());
         previous_hook(panic_info);
     }));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_logging_test_override_restores_nested_and_unwound_scopes() {
+        let baseline = debug_logging_enabled();
+        with_debug_logging_enabled_for_tests(!baseline, || {
+            assert_eq!(debug_logging_enabled(), !baseline);
+            with_debug_logging_enabled_for_tests(baseline, || {
+                assert_eq!(debug_logging_enabled(), baseline);
+            });
+            assert_eq!(debug_logging_enabled(), !baseline);
+
+            let unwind = std::panic::catch_unwind(|| {
+                with_debug_logging_enabled_for_tests(baseline, || {
+                    assert_eq!(debug_logging_enabled(), baseline);
+                    panic!("exercise test override restoration");
+                });
+            });
+            assert!(unwind.is_err());
+            assert_eq!(debug_logging_enabled(), !baseline);
+        });
+        assert_eq!(debug_logging_enabled(), baseline);
+    }
+
+    #[test]
+    fn debug_logging_test_override_is_thread_scoped() {
+        let baseline = debug_logging_enabled();
+        with_debug_logging_enabled_for_tests(!baseline, || {
+            assert_eq!(debug_logging_enabled(), !baseline);
+            assert_eq!(
+                std::thread::spawn(debug_logging_enabled).join().unwrap(),
+                baseline
+            );
+        });
+    }
 }
 
 fn build_timer() -> fmt::time::OffsetTime<time::format_description::BorrowedFormatItem<'static>> {

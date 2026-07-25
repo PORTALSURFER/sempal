@@ -1,8 +1,9 @@
+#[cfg(not(test))]
+use std::sync::OnceLock;
 use std::{
     fs::File,
     io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
-    sync::OnceLock,
     time::UNIX_EPOCH,
 };
 
@@ -10,8 +11,10 @@ use crate::native_app::app::{NativeAppState, WaveformState};
 
 const SAMPLE_IDENTITY_HASH_CHUNK: usize = 4096;
 const SAMPLE_IDENTITY_HASH_F32_CHUNK: usize = 64;
+#[cfg(not(test))]
 const SAMPLE_IDENTITY_DIAGNOSTICS_ENV: &str = "WAVECRATE_SAMPLE_IDENTITY_DIAGNOSTICS";
 
+#[cfg(not(test))]
 static SAMPLE_IDENTITY_DIAGNOSTICS_ENABLED: OnceLock<bool> = OnceLock::new();
 
 impl NativeAppState {
@@ -234,10 +237,16 @@ fn sample_identity_info_enabled() -> bool {
 }
 
 fn sample_identity_diagnostics_enabled() -> bool {
+    #[cfg(test)]
+    {
+        false
+    }
+    #[cfg(not(test))]
     *SAMPLE_IDENTITY_DIAGNOSTICS_ENABLED
         .get_or_init(|| env_var_truthy(SAMPLE_IDENTITY_DIAGNOSTICS_ENV))
 }
 
+#[cfg(not(test))]
 fn env_var_truthy(name: &str) -> bool {
     std::env::var(name)
         .ok()

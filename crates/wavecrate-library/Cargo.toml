@@ -25,6 +25,9 @@ toml = "0.8.19"
 tracing = "0.1.41"
 uuid = { version = "1.19.0", features = ["v4", "serde"] }
 
+[dev-dependencies]
+rusqlite = { version = "0.37.0", features = ["hooks"] }
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2.176"
 

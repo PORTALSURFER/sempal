@@ -11,6 +11,7 @@ pub(in crate::native_app) const COOL_SELECTION: Rgba8 = Rgba8::new(174, 176, 173
 pub(in crate::native_app) const PALE_MARKER: Rgba8 = Rgba8::new(231, 229, 223, 255);
 pub(in crate::native_app) const SELECTED_ROW_FILL: Rgba8 = ACCENT.with_alpha(8);
 pub(in crate::native_app) const SELECTED_ROW_HOVER_FILL: Rgba8 = ACCENT.with_alpha(16);
+pub(in crate::native_app) const SELECTION_FLASH_FILL: Rgba8 = ACCENT.with_alpha(88);
 pub(in crate::native_app) const SELECTED_ROW_MARKER_WIDTH: f32 = 2.0;
 pub(in crate::native_app) const FOCUSED_ROW_MARKER_WIDTH: f32 = 6.0;
 
@@ -46,6 +47,13 @@ pub(in crate::native_app) fn selected_row_palette(style: WidgetStyle) -> DenseRo
     // Pointer-down uses the focus outline instead of Radiant's opaque pressed
     // fill. A selected row falls back to its quiet persistent selection fill.
     palette.pressed = None;
+    palette
+}
+
+pub(in crate::native_app) fn selection_flash_palette(style: WidgetStyle) -> DenseRowPalette {
+    let mut palette = selected_row_palette(style);
+    palette.selected = Some(SELECTION_FLASH_FILL);
+    palette.selected_hovered = Some(SELECTION_FLASH_FILL);
     palette
 }
 
@@ -146,5 +154,15 @@ mod tests {
         assert_eq!(hover.color, PALE_MARKER.with_alpha(180));
         assert_eq!(focus.parts.width, FOCUSED_ROW_MARKER_WIDTH);
         assert_eq!(focus.color, PALE_MARKER);
+    }
+
+    #[test]
+    fn selection_flash_uses_a_stronger_accent_fill() {
+        let palette =
+            selection_flash_palette(WidgetStyle::subtle(radiant::prelude::WidgetTone::Accent));
+
+        assert_eq!(palette.selected, Some(SELECTION_FLASH_FILL));
+        assert_eq!(palette.selected_hovered, Some(SELECTION_FLASH_FILL));
+        assert!(SELECTION_FLASH_FILL.a > SELECTED_ROW_HOVER_FILL.a);
     }
 }
