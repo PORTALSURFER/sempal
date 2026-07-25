@@ -1,6 +1,7 @@
 use super::{
-    Arc, AtomicBool, BTreeMap, BTreeSet, Ordering, PendingReadinessDelta, PendingSourceRetirement,
-    PriorityContext, SampleSource, source_storage_identity_matches,
+    Arc, AtomicBool, BTreeMap, BTreeSet, CommittedSourceDelta, Ordering, PendingReadinessDelta,
+    PendingReadinessDeltaMerge, PendingSourceRetirement, PriorityContext, SampleSource,
+    source_storage_identity_matches,
 };
 
 pub(super) struct ControlState {
@@ -67,6 +68,37 @@ impl ControlState {
             self.dirty_sources.insert(source_id.to_string());
             self.notify(reason);
         }
+    }
+
+    pub(super) fn queue_source_delta(
+        &mut self,
+        source_id: &str,
+        delta: &CommittedSourceDelta,
+        reason: &'static str,
+    ) -> bool {
+        #[cfg(test)]
+        if std::mem::take(&mut self.reject_next_delta_delivery) {
+            return false;
+        }
+        if !self.source_is_active(source_id) {
+            return false;
+        }
+        let merge = self
+            .pending_readiness_deltas
+            .entry(source_id.to_string())
+            .or_default()
+            .merge(delta, reason);
+        if merge == PendingReadinessDeltaMerge::RevisionGap {
+            self.pending_readiness_deltas.remove(source_id);
+            self.cancel_source_work(source_id);
+            self.mark_source_dirty(source_id, "source_delta_revision_gap");
+            return false;
+        }
+        if merge == PendingReadinessDeltaMerge::Stale {
+            return true;
+        }
+        self.mark_source_dirty(source_id, reason);
+        true
     }
 
     pub(super) fn mark_all_sources_dirty(&mut self, reason: &'static str) {

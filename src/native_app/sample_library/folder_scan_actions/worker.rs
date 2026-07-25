@@ -15,7 +15,7 @@ use crate::native_app::{
         CacheWarmIntent, MetadataRefreshIntent, ReadinessIntent, SourceFeedbackIntent,
         SourcePrepIntents, SourcePriorityIntent,
     },
-    source_processing::SourceScanAdmissionState,
+    source_processing::{ExternalScanHandoff, SourceScanAdmissionState},
 };
 use wavecrate::sample_sources::config::{AppConfig, reserve_save_revision};
 use wavecrate_scan::sample_sources::scanner::UncoordinatedScanWriter;
@@ -245,7 +245,8 @@ impl NativeAppState {
                             Some(generation),
                         );
                     }
-                    drop(permit);
+                    let handoff = foreground_scan_handoff(&result.scan);
+                    permit.release_after_handoff(handoff);
                     result
                 }));
                 match outcome {
@@ -687,6 +688,26 @@ impl NativeAppState {
         self.sync_source_watcher();
         self.open_ready_audio_documents(context, started_at);
     }
+}
+
+fn foreground_scan_handoff(
+    scan: &crate::native_app::sample_library::folder_browser::scan::FolderScanResult,
+) -> ExternalScanHandoff {
+    if scan.cancelled
+        || !scan.source_root_available
+        || scan.source_db_error.is_some()
+        || scan.metadata_hydration.error().is_some()
+    {
+        return ExternalScanHandoff::FullReconciliation {
+            reason: "foreground_source_scan_incomplete",
+        };
+    }
+    scan.committed_delta.as_ref().map_or(
+        ExternalScanHandoff::FullReconciliation {
+            reason: "foreground_source_scan_missing_delta",
+        },
+        |delta| ExternalScanHandoff::CommittedDelta(delta.clone()),
+    )
 }
 
 fn classify_terminal_outcome(

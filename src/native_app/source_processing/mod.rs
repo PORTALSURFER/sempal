@@ -11,7 +11,8 @@ pub(in crate::native_app) use events::{
     SourceProcessingLifecycle, SourceProcessingProgressEvent,
 };
 pub(in crate::native_app) use supervisor::{
-    SourceAuditLifecycleCause, SourceProcessingSupervisor, SourceScanAdmissionState,
+    ExternalScanHandoff, SourceAuditLifecycleCause, SourceProcessingSupervisor,
+    SourceScanAdmissionState,
 };
 pub(in crate::native_app) use worker::run_internal_source_analysis_from_args;
 #[cfg(not(test))]

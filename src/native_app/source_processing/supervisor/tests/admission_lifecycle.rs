@@ -172,6 +172,176 @@ fn external_scan_release_invalidates_retained_source_generation() {
 }
 
 #[test]
+fn targeted_scan_handoff_is_registered_before_delayed_gui_delivery() {
+    let (_directory, source) = unhashed_source("targeted-scan-handoff");
+    let mut supervisor = SourceProcessingSupervisor::dormant();
+    supervisor
+        .replace_sources(vec![source.clone()])
+        .expect("configure source");
+    {
+        let mut control = supervisor.shared.control();
+        control.dirty_sources.clear();
+    }
+    let permit = supervisor
+        .budget_handle()
+        .acquire_scan(source.id.as_str())
+        .expect("admit targeted sync");
+    let delta = CommittedSourceDelta {
+        revision: 11,
+        changed: vec![wavecrate::sample_sources::scanner::ManifestIdentityDelta {
+            identity: String::from("targeted.wav"),
+            relative_path: PathBuf::from("targeted.wav"),
+            content_generation: String::from("generation-11"),
+            source_metadata_changed: false,
+        }],
+        ..CommittedSourceDelta::default()
+    };
+
+    permit.release_after_handoff(ExternalScanHandoff::CommittedDelta(delta.clone()));
+
+    let control = supervisor.shared.control();
+    let pending = control
+        .pending_readiness_deltas
+        .get(source.id.as_str())
+        .expect("targeted commit is owned before GUI delivery");
+    assert!(pending.scope_ids.contains("targeted.wav"));
+    assert!(control.dirty_sources.contains(source.id.as_str()));
+    drop(control);
+
+    // The delayed GUI completion may coalesce the same revision without widening the target set.
+    supervisor.request_source_delta(
+        source.id.as_str(),
+        &delta,
+        "delayed_targeted_gui_completion",
+    );
+    let control = supervisor.shared.control();
+    assert_eq!(
+        control
+            .pending_readiness_deltas
+            .get(source.id.as_str())
+            .expect("coalesced delta remains pending")
+            .scope_ids
+            .len(),
+        1
+    );
+    drop(control);
+    assert_eq!(supervisor.shutdown()["joined"], true);
+}
+
+#[test]
+fn foreground_scan_handoff_uses_full_fallback_before_capacity_release() {
+    let (_directory, source) = unhashed_source("foreground-scan-fallback");
+    let mut supervisor = SourceProcessingSupervisor::dormant();
+    supervisor
+        .replace_sources(vec![source.clone()])
+        .expect("configure source");
+    {
+        let mut control = supervisor.shared.control();
+        control.dirty_sources.clear();
+    }
+    let permit = supervisor
+        .budget_handle()
+        .acquire_scan(source.id.as_str())
+        .expect("admit foreground scan");
+
+    permit.release_after_handoff(ExternalScanHandoff::FullReconciliation {
+        reason: "foreground_scan_test_fallback",
+    });
+
+    let control = supervisor.shared.control();
+    assert!(control.dirty_sources.contains(source.id.as_str()));
+    assert!(!control
+        .pending_readiness_deltas
+        .contains_key(source.id.as_str()));
+    drop(control);
+    assert_eq!(supervisor.shutdown()["joined"], true);
+}
+
+#[test]
+fn foreground_scan_handoff_keeps_one_file_delta_bounded_before_gui_delivery() {
+    let (_directory, source) = unhashed_source("foreground-scan-delta");
+    let mut supervisor = SourceProcessingSupervisor::dormant();
+    supervisor
+        .replace_sources(vec![source.clone()])
+        .expect("configure source");
+    {
+        let mut control = supervisor.shared.control();
+        control.dirty_sources.clear();
+    }
+    let permit = supervisor
+        .budget_handle()
+        .acquire_scan(source.id.as_str())
+        .expect("admit foreground scan");
+    let delta = CommittedSourceDelta {
+        revision: 3,
+        created: vec![wavecrate::sample_sources::scanner::ManifestIdentityDelta {
+            identity: String::from("foreground.wav"),
+            relative_path: PathBuf::from("foreground.wav"),
+            content_generation: String::from("generation-3"),
+            source_metadata_changed: false,
+        }],
+        ..CommittedSourceDelta::default()
+    };
+
+    permit.release_after_handoff(ExternalScanHandoff::CommittedDelta(delta));
+
+    let control = supervisor.shared.control();
+    assert_eq!(
+        control
+            .pending_readiness_deltas
+            .get(source.id.as_str())
+            .expect("foreground commit is owned before GUI delivery")
+            .scope_ids,
+        [String::from("foreground.wav")].into_iter().collect()
+    );
+    drop(control);
+    assert_eq!(supervisor.shutdown()["joined"], true);
+}
+
+#[test]
+fn coalesced_scan_delta_revision_gap_promotes_to_full_reconciliation() {
+    let (_directory, source) = unhashed_source("scan-revision-gap");
+    let mut supervisor = SourceProcessingSupervisor::dormant();
+    supervisor
+        .replace_sources(vec![source.clone()])
+        .expect("configure source");
+    {
+        let mut control = supervisor.shared.control();
+        control.dirty_sources.clear();
+    }
+    let first = CommittedSourceDelta {
+        revision: 7,
+        changed: vec![wavecrate::sample_sources::scanner::ManifestIdentityDelta {
+            identity: String::from("first"),
+            relative_path: PathBuf::from("first.wav"),
+            content_generation: String::from("generation-7"),
+            source_metadata_changed: false,
+        }],
+        ..CommittedSourceDelta::default()
+    };
+    supervisor.request_source_delta(source.id.as_str(), &first, "first_scan_delta");
+    let gap = CommittedSourceDelta {
+        revision: 9,
+        changed: vec![wavecrate::sample_sources::scanner::ManifestIdentityDelta {
+            identity: String::from("gap"),
+            relative_path: PathBuf::from("gap.wav"),
+            content_generation: String::from("generation-9"),
+            source_metadata_changed: false,
+        }],
+        ..CommittedSourceDelta::default()
+    };
+    supervisor.request_source_delta(source.id.as_str(), &gap, "gap_scan_delta");
+
+    let control = supervisor.shared.control();
+    assert!(!control
+        .pending_readiness_deltas
+        .contains_key(source.id.as_str()));
+    assert!(control.dirty_sources.contains(source.id.as_str()));
+    drop(control);
+    assert_eq!(supervisor.shutdown()["joined"], true);
+}
+
+#[test]
 fn scan_registration_only_adds_absent_matching_sources() {
     let (_directory, source) = unhashed_source("scan-registration");
     let mut supervisor = SourceProcessingSupervisor::dormant();
