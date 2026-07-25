@@ -499,6 +499,18 @@ fn profile_revision_gated_readiness_sweeps_10k() {
             .expect("reconcile seeded profile")
             .is_fully_ready()
     );
+    #[cfg(target_os = "macos")]
+    seed_durable_watcher_checkpoint(&mut connection, &source);
+    let probe = readiness_safety_probe(&mut connection, &source, now_epoch_seconds(), false)
+        .expect("probe seeded revision-gated readiness");
+    assert!(
+        probe.current,
+        "seeded readiness safety probe must be current"
+    );
+    assert!(
+        probe.earliest_deadline.is_none(),
+        "seeded readiness safety probe must have no deadline"
+    );
     drop(connection);
 
     let mut supervisor =
