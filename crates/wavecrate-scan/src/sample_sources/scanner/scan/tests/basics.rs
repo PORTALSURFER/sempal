@@ -1089,6 +1089,39 @@ fn typed_manifest_audit_outcome_keeps_coverage_complete_when_content_pauses() {
 }
 
 #[test]
+fn typed_manifest_audit_outcome_retains_barrier_for_noncheckpoint_verification_error() {
+    let dir = tempdir().unwrap();
+    let db = SourceDatabase::open_for_scan(dir.path()).unwrap();
+    std::fs::write(dir.path().join("missed.wav"), b"missed watcher event").unwrap();
+    let displaced_parent = tempdir().unwrap();
+    let displaced = displaced_parent.path().join("displaced-root");
+    let source_root = dir.path().to_path_buf();
+
+    let outcome = audit_source_and_record_with_post_scan_hook_outcome(&db, None, 8, 1_234, || {
+        std::fs::rename(&source_root, &displaced).unwrap();
+        std::fs::create_dir(&source_root).unwrap();
+    })
+    .unwrap();
+
+    std::fs::remove_dir(&source_root).unwrap();
+    std::fs::rename(&displaced, &source_root).unwrap();
+
+    let ManifestAuditOutcome::Incomplete { committed, error } = outcome else {
+        panic!("non-checkpoint verification errors must retain the recovery barrier");
+    };
+    assert!(error.contains("generation changed"));
+    assert_eq!(committed.committed_delta.created.len(), 1);
+    assert!(committed.content_audit.is_none());
+    assert_eq!(
+        db.get_metadata(crate::sample_sources::db::META_LAST_MANIFEST_AUDIT_AT)
+            .unwrap()
+            .as_deref(),
+        Some("1234"),
+        "manifest repair may be durable, but the caller must retry the failed verification"
+    );
+}
+
+#[test]
 fn manifest_audit_publishes_unchanged_committed_revision_when_verification_is_cancelled() {
     let dir = tempdir().unwrap();
     std::fs::write(dir.path().join("known.wav"), b"known").unwrap();

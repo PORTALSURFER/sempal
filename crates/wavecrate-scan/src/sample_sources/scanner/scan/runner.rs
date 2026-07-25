@@ -355,9 +355,12 @@ fn audit_source_and_record_after_scan_outcome(
             tracing::warn!(
                 %error,
                 revision = stats.committed_delta.revision,
-                "Publishing committed manifest repair before retrying incomplete content audit"
+                "Retaining committed manifest repair before retrying failed content audit"
             );
-            content_incomplete = Some(error.to_string());
+            return Ok(ManifestAuditOutcome::Incomplete {
+                committed: stats,
+                error: error.to_string(),
+            });
         }
         Err(error) => return Err(error),
     }
