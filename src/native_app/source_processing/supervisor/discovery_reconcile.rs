@@ -571,6 +571,21 @@ pub(super) fn discover_source_candidates_with_connection_and_progress(
     if cancelled(cancel) {
         Ok(Cancellable::Cancelled)
     } else {
+        if readiness_source_exists {
+            stats.reconciled_manifest_revision = Some(
+                connection
+                    .query_row(
+                        "SELECT COALESCE(
+                            (SELECT CAST(value AS INTEGER) FROM metadata WHERE key = ?1),
+                            0
+                         )",
+                        [META_WAV_PATHS_REVISION],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .map_err(|error| error.to_string())?
+                    .max(0) as u64,
+            );
+        }
         Ok(Cancellable::Completed((candidates, stats, health)))
     }
 }

@@ -99,6 +99,18 @@ pub(super) fn discover_candidates(
                     telemetry.delta_reconciliations =
                         telemetry.delta_reconciliations.saturating_add(1);
                 }
+                let pending_revision = pending_readiness_deltas
+                    .get(source.id.as_str())
+                    .and_then(|pending| pending.latest_manifest_revision);
+                let mut control = shared.control();
+                if let Some(revision) = manifest_revision_to_accept(&stats, pending_revision) {
+                    control.accept_reconciled_manifest_revision(
+                        source.id.as_str(),
+                        in_flight_work.lifecycle_generation,
+                        revision,
+                    );
+                }
+                drop(control);
                 candidates.append(&mut source_candidates);
                 if !stats.cheap_noop_sweep {
                     source_stats.insert(source.id.as_str().to_string(), stats);
@@ -185,6 +197,17 @@ pub(super) fn discover_candidates(
         consumed_readiness_deltas,
         progress_published,
     )
+}
+
+pub(super) fn manifest_revision_to_accept(
+    stats: &SourceDiscoveryStats,
+    pending_revision: Option<u64>,
+) -> Option<u64> {
+    if stats.delta_reconciled {
+        pending_revision
+    } else {
+        stats.reconciled_manifest_revision
+    }
 }
 
 #[cfg(test)]

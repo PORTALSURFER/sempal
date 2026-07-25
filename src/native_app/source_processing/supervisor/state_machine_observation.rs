@@ -1,5 +1,5 @@
 use super::commands::queue_source_delta;
-use super::{BTreeSet, CommittedSourceDelta, SourceProcessingSupervisor};
+use super::{BTreeSet, CommittedSourceDelta, SourceDeltaQueueResult, SourceProcessingSupervisor};
 
 pub(super) struct StateMachineQueueObservation {
     pub(super) lifecycle_generation: u64,
@@ -31,9 +31,16 @@ impl SourceProcessingSupervisor {
             .get(source_id)
             .map(|pending| pending.scope_ids.clone())
             .unwrap_or_default();
+        let lifecycle_generation = control
+            .source_lifecycle_generations
+            .get(source_id)
+            .copied()?;
         let delivery_rejected = if reject_delivery_once {
             control.reject_next_delta_delivery = true;
-            !queue_source_delta(&mut control, source_id, delta, reason)
+            matches!(
+                queue_source_delta(&mut control, source_id, lifecycle_generation, delta, reason,),
+                SourceDeltaQueueResult::Rejected
+            )
         } else {
             false
         };
@@ -43,12 +50,8 @@ impl SourceProcessingSupervisor {
             .map(|pending| pending.scope_ids.clone())
             .unwrap_or_default();
         for _ in 0..repetitions {
-            queue_source_delta(&mut control, source_id, delta, reason);
+            queue_source_delta(&mut control, source_id, lifecycle_generation, delta, reason);
         }
-        let lifecycle_generation = control
-            .source_lifecycle_generations
-            .get(source_id)
-            .copied()?;
         let pending = control.pending_readiness_deltas.get(source_id)?;
         let observation = StateMachineQueueObservation {
             lifecycle_generation,

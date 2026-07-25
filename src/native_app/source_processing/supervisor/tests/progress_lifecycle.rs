@@ -428,6 +428,7 @@ fn periodic_manifest_audit_wakes_browser_projection_after_committed_repair() {
             SourceProcessingEvent::ManifestAuditCommitted {
                 lifecycle,
                 committed_delta,
+                ..
             } => Some((lifecycle, committed_delta)),
             _ => None,
         })
@@ -502,6 +503,7 @@ fn manifest_projection_handoff_defers_discovery_until_external_scan_releases() {
         if let SourceProcessingEvent::ManifestAuditCommitted {
             lifecycle,
             committed_delta,
+            ..
         } = event
             && lifecycle.source_id == source.id.as_str()
             && !committed_delta.created.is_empty()

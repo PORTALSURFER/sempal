@@ -611,6 +611,7 @@ fn profile_revision_gated_readiness_sweeps_10k() {
     let completions_before = supervisor.shared.telemetry().completed;
     supervisor.request_source_delta(
         source.id.as_str(),
+        supervisor.lifecycle_generations()[source.id.as_str()],
         &CommittedSourceDelta {
             revision: 1,
             changed: vec![ManifestIdentityDelta {

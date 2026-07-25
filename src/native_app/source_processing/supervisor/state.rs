@@ -147,6 +147,7 @@ impl Shared {
                 lifecycle_audits_deferred_until_watcher_ready,
                 deferred_lifecycle_audit_sources: BTreeSet::new(),
                 pending_readiness_deltas: BTreeMap::new(),
+                accepted_manifest_revisions: BTreeMap::new(),
                 awaiting_foreground_refresh_sources: BTreeSet::new(),
                 force_manifest_audit_sources: BTreeSet::new(),
                 force_reanalysis_sources: BTreeSet::new(),

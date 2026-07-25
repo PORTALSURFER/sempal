@@ -164,11 +164,13 @@ impl NativeAppState {
                 source_id,
                 lifecycle_generation,
                 committed_delta,
+                complete,
             } => {
                 self.finish_source_manifest_audit(
                     source_id,
                     lifecycle_generation,
                     committed_delta,
+                    complete,
                     context,
                 );
             }

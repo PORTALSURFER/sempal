@@ -1,7 +1,7 @@
 use super::{
-    Arc, AtomicBool, BTreeMap, BTreeSet, CommittedSourceDelta, Ordering, PendingReadinessDelta,
-    PendingReadinessDeltaMerge, PendingSourceRetirement, PriorityContext, SampleSource,
-    source_storage_identity_matches,
+    AcceptedManifestRevision, Arc, AtomicBool, BTreeMap, BTreeSet, CommittedSourceDelta, Ordering,
+    PendingReadinessDelta, PendingReadinessDeltaMerge, PendingSourceRetirement, PriorityContext,
+    SampleSource, source_storage_identity_matches,
 };
 
 pub(super) struct ControlState {
@@ -17,6 +17,7 @@ pub(super) struct ControlState {
     pub(super) lifecycle_audits_deferred_until_watcher_ready: bool,
     pub(super) deferred_lifecycle_audit_sources: BTreeSet<String>,
     pub(super) pending_readiness_deltas: BTreeMap<String, PendingReadinessDelta>,
+    pub(super) accepted_manifest_revisions: BTreeMap<String, AcceptedManifestRevision>,
     pub(super) awaiting_foreground_refresh_sources: BTreeSet<String>,
     pub(super) force_manifest_audit_sources: BTreeSet<String>,
     pub(super) force_reanalysis_sources: BTreeSet<String>,
@@ -73,15 +74,64 @@ impl ControlState {
     pub(super) fn queue_source_delta(
         &mut self,
         source_id: &str,
+        lifecycle_generation: u64,
         delta: &CommittedSourceDelta,
         reason: &'static str,
-    ) -> bool {
+    ) -> SourceDeltaQueueResult {
         #[cfg(test)]
         if std::mem::take(&mut self.reject_next_delta_delivery) {
-            return false;
+            return SourceDeltaQueueResult::Rejected;
         }
-        if !self.source_is_active(source_id) {
-            return false;
+        if !self.source_is_active(source_id)
+            || self.source_lifecycle_generations.get(source_id) != Some(&lifecycle_generation)
+        {
+            return SourceDeltaQueueResult::Rejected;
+        }
+        if let Some(fence) = self.accepted_manifest_revisions.get(source_id)
+            && fence.lifecycle_generation == lifecycle_generation
+            && (delta.revision <= fence.revision
+                || fence
+                    .recovery_floor
+                    .is_some_and(|floor| delta.revision <= floor))
+        {
+            return SourceDeltaQueueResult::Ignored;
+        }
+        if self
+            .accepted_manifest_revisions
+            .get(source_id)
+            .is_some_and(|fence| {
+                fence.lifecycle_generation == lifecycle_generation
+                    && fence.recovery_floor.is_none()
+                    && delta.revision > fence.revision.saturating_add(1)
+            })
+        {
+            self.pending_readiness_deltas.remove(source_id);
+            let fence = self
+                .accepted_manifest_revisions
+                .get_mut(source_id)
+                .expect("accepted revision was present");
+            fence.recovery_floor = Some(delta.revision);
+            self.cancel_source_work(source_id);
+            self.mark_source_dirty(source_id, "source_delta_revision_gap");
+            return SourceDeltaQueueResult::Fallback;
+        }
+        if self
+            .accepted_manifest_revisions
+            .get(source_id)
+            .is_some_and(|fence| {
+                fence.lifecycle_generation == lifecycle_generation && fence.recovery_floor.is_some()
+            })
+        {
+            self.pending_readiness_deltas.remove(source_id);
+            let fence = self
+                .accepted_manifest_revisions
+                .get_mut(source_id)
+                .expect("recovery floor was present");
+            fence.recovery_floor =
+                Some(fence.recovery_floor.unwrap_or_default().max(delta.revision));
+            self.cancel_source_work(source_id);
+            self.mark_source_dirty(source_id, "source_delta_recovery_pending");
+            return SourceDeltaQueueResult::Fallback;
         }
         let merge = self
             .pending_readiness_deltas
@@ -91,14 +141,54 @@ impl ControlState {
         if merge == PendingReadinessDeltaMerge::RevisionGap {
             self.pending_readiness_deltas.remove(source_id);
             self.cancel_source_work(source_id);
+            let fence = self
+                .accepted_manifest_revisions
+                .entry(source_id.to_string())
+                .or_insert(AcceptedManifestRevision {
+                    lifecycle_generation,
+                    ..AcceptedManifestRevision::default()
+                });
+            fence.lifecycle_generation = lifecycle_generation;
+            fence.recovery_floor =
+                Some(fence.recovery_floor.unwrap_or_default().max(delta.revision));
             self.mark_source_dirty(source_id, "source_delta_revision_gap");
-            return false;
+            return SourceDeltaQueueResult::Fallback;
         }
         if merge == PendingReadinessDeltaMerge::Stale {
-            return true;
+            return SourceDeltaQueueResult::Ignored;
         }
         self.mark_source_dirty(source_id, reason);
-        true
+        SourceDeltaQueueResult::Queued
+    }
+
+    pub(super) fn accept_reconciled_manifest_revision(
+        &mut self,
+        source_id: &str,
+        lifecycle_generation: u64,
+        revision: u64,
+    ) {
+        if !self.source_is_active(source_id)
+            || self.source_lifecycle_generations.get(source_id) != Some(&lifecycle_generation)
+        {
+            return;
+        }
+        let fence = self
+            .accepted_manifest_revisions
+            .entry(source_id.to_string())
+            .or_insert(AcceptedManifestRevision {
+                lifecycle_generation,
+                ..AcceptedManifestRevision::default()
+            });
+        if fence.lifecycle_generation != lifecycle_generation {
+            *fence = AcceptedManifestRevision {
+                lifecycle_generation,
+                revision,
+                recovery_floor: None,
+            };
+            return;
+        }
+        fence.revision = fence.revision.max(revision);
+        fence.recovery_floor = fence.recovery_floor.filter(|floor| *floor > fence.revision);
     }
 
     pub(super) fn mark_all_sources_dirty(&mut self, reason: &'static str) {
@@ -149,4 +239,12 @@ impl ControlState {
             })
             .collect();
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum SourceDeltaQueueResult {
+    Queued,
+    Ignored,
+    Fallback,
+    Rejected,
 }

@@ -105,6 +105,7 @@ pub(in crate::native_app) enum GuiMessage {
         source_id: String,
         lifecycle_generation: u64,
         committed_delta: wavecrate::sample_sources::scanner::CommittedSourceDelta,
+        complete: bool,
     },
     SourceManifestAuditFinished {
         source_id: String,

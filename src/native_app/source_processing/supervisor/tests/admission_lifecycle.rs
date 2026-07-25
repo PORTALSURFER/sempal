@@ -12,6 +12,7 @@ fn bounded_manifest_delta_preserves_unaffected_in_flight_generation() {
     };
     supervisor.request_source_delta(
         source.id.as_str(),
+        supervisor.lifecycle_generations()[source.id.as_str()],
         &CommittedSourceDelta {
             revision: 1,
             changed: vec![wavecrate::sample_sources::scanner::ManifestIdentityDelta {
@@ -84,8 +85,7 @@ fn unchanged_foreground_scan_release_does_not_request_generic_discovery() {
             .remove(source.id.as_str());
     }
 
-    supervisor
-        .finish_foreground_source_refresh(source.id.as_str(), "unchanged_foreground_scan");
+    supervisor.finish_foreground_source_refresh(source.id.as_str(), "unchanged_foreground_scan");
 
     let control = supervisor.shared.control();
     assert!(
@@ -211,6 +211,7 @@ fn targeted_scan_handoff_is_registered_before_delayed_gui_delivery() {
     // The delayed GUI completion may coalesce the same revision without widening the target set.
     supervisor.request_source_delta(
         source.id.as_str(),
+        supervisor.lifecycle_generations()[source.id.as_str()],
         &delta,
         "delayed_targeted_gui_completion",
     );
@@ -250,9 +251,11 @@ fn foreground_scan_handoff_uses_full_fallback_before_capacity_release() {
 
     let control = supervisor.shared.control();
     assert!(control.dirty_sources.contains(source.id.as_str()));
-    assert!(!control
-        .pending_readiness_deltas
-        .contains_key(source.id.as_str()));
+    assert!(
+        !control
+            .pending_readiness_deltas
+            .contains_key(source.id.as_str())
+    );
     drop(control);
     assert_eq!(supervisor.shutdown()["joined"], true);
 }
@@ -319,7 +322,12 @@ fn coalesced_scan_delta_revision_gap_promotes_to_full_reconciliation() {
         }],
         ..CommittedSourceDelta::default()
     };
-    supervisor.request_source_delta(source.id.as_str(), &first, "first_scan_delta");
+    supervisor.request_source_delta(
+        source.id.as_str(),
+        supervisor.lifecycle_generations()[source.id.as_str()],
+        &first,
+        "first_scan_delta",
+    );
     let gap = CommittedSourceDelta {
         revision: 9,
         changed: vec![wavecrate::sample_sources::scanner::ManifestIdentityDelta {
@@ -330,12 +338,19 @@ fn coalesced_scan_delta_revision_gap_promotes_to_full_reconciliation() {
         }],
         ..CommittedSourceDelta::default()
     };
-    supervisor.request_source_delta(source.id.as_str(), &gap, "gap_scan_delta");
+    supervisor.request_source_delta(
+        source.id.as_str(),
+        supervisor.lifecycle_generations()[source.id.as_str()],
+        &gap,
+        "gap_scan_delta",
+    );
 
     let control = supervisor.shared.control();
-    assert!(!control
-        .pending_readiness_deltas
-        .contains_key(source.id.as_str()));
+    assert!(
+        !control
+            .pending_readiness_deltas
+            .contains_key(source.id.as_str())
+    );
     assert!(control.dirty_sources.contains(source.id.as_str()));
     drop(control);
     assert_eq!(supervisor.shutdown()["joined"], true);
@@ -612,7 +627,11 @@ fn watcher_ready_probe_coalesces_after_an_older_probe_was_captured() {
             control.safety_probe_sources.contains(source.id.as_str()),
             "the watcher-ready probe must survive an older captured lifecycle probe"
         );
-        assert!(!control.force_manifest_audit_sources.contains(source.id.as_str()));
+        assert!(
+            !control
+                .force_manifest_audit_sources
+                .contains(source.id.as_str())
+        );
         control.dirty_sources.remove(source.id.as_str());
         control.safety_probe_sources.remove(source.id.as_str());
     }
@@ -644,9 +663,17 @@ fn watcher_history_gap_forces_only_the_affected_source_audit() {
     supervisor.request_source_manifest_audit(first.id.as_str(), "watcher_history_gap");
 
     let control = supervisor.shared.control();
-    assert!(control.force_manifest_audit_sources.contains(first.id.as_str()));
+    assert!(
+        control
+            .force_manifest_audit_sources
+            .contains(first.id.as_str())
+    );
     assert!(control.dirty_sources.contains(first.id.as_str()));
-    assert!(!control.force_manifest_audit_sources.contains(second.id.as_str()));
+    assert!(
+        !control
+            .force_manifest_audit_sources
+            .contains(second.id.as_str())
+    );
     assert!(!control.dirty_sources.contains(second.id.as_str()));
     drop(control);
     assert_eq!(supervisor.shutdown()["joined"], true);
@@ -685,6 +712,287 @@ fn external_admission_rejects_generation_captured_before_descriptor_replacement(
             .lifecycle_generation(old_source.id.as_str())
             .expect("replacement generation"),
         old_generation
+    );
+    assert_eq!(supervisor.shutdown()["joined"], true);
+}
+fn readiness_delta(revision: u64, identity: &str) -> CommittedSourceDelta {
+    CommittedSourceDelta {
+        revision,
+        changed: vec![wavecrate::sample_sources::scanner::ManifestIdentityDelta {
+            identity: identity.to_string(),
+            relative_path: PathBuf::from(format!("{identity}.wav")),
+            content_generation: format!("generation-{revision}"),
+            source_metadata_changed: false,
+        }],
+        ..CommittedSourceDelta::default()
+    }
+}
+
+#[test]
+fn full_reconciliation_accepts_durable_revision_when_delta_was_not_applied() {
+    let full_reconciliation = SourceDiscoveryStats {
+        delta_reconciled: false,
+        reconciled_manifest_revision: Some(7),
+        ..SourceDiscoveryStats::default()
+    };
+    assert_eq!(
+        manifest_revision_to_accept(&full_reconciliation, Some(5)),
+        Some(7),
+        "a complete full reconciliation must fence through its durable revision"
+    );
+
+    let delta_reconciliation = SourceDiscoveryStats {
+        delta_reconciled: true,
+        reconciled_manifest_revision: Some(7),
+        ..SourceDiscoveryStats::default()
+    };
+    assert_eq!(
+        manifest_revision_to_accept(&delta_reconciliation, Some(5)),
+        Some(5),
+        "an applied bounded delta retains its accepted delta revision"
+    );
+}
+
+#[test]
+fn accepted_manifest_revision_survives_delta_consumption_without_rescheduling() {
+    let (_directory, source) = unhashed_source("accepted-revision-consumption");
+    let mut supervisor = SourceProcessingSupervisor::dormant();
+    supervisor
+        .replace_sources(vec![source.clone()])
+        .expect("configure source");
+    let lifecycle_generation = supervisor.lifecycle_generations()[source.id.as_str()];
+    let delta = readiness_delta(4, "consumed");
+    {
+        let mut control = supervisor.shared.control();
+        assert_eq!(
+            control.queue_source_delta(
+                source.id.as_str(),
+                lifecycle_generation,
+                &delta,
+                "test_consumption",
+            ),
+            SourceDeltaQueueResult::Queued
+        );
+        control.accept_reconciled_manifest_revision(
+            source.id.as_str(),
+            lifecycle_generation,
+            delta.revision,
+        );
+        control.pending_readiness_deltas.remove(source.id.as_str());
+        control.dirty_sources.clear();
+        let wake_generation = control.wake_generation;
+        drop(control);
+        supervisor.request_source_delta(
+            source.id.as_str(),
+            lifecycle_generation,
+            &delta,
+            "delayed_consumption_completion",
+        );
+        let control = supervisor.shared.control();
+        assert_eq!(
+            control.accepted_manifest_revisions[source.id.as_str()].revision,
+            delta.revision
+        );
+        assert!(!control.dirty_sources.contains(source.id.as_str()));
+        assert!(
+            !control
+                .pending_readiness_deltas
+                .contains_key(source.id.as_str())
+        );
+        assert_eq!(control.wake_generation, wake_generation);
+    }
+    let next = readiness_delta(5, "newly-accepted");
+    supervisor.request_source_delta(
+        source.id.as_str(),
+        lifecycle_generation,
+        &next,
+        "new_accepted_revision",
+    );
+    {
+        let mut control = supervisor.shared.control();
+        assert!(
+            control
+                .pending_readiness_deltas
+                .contains_key(source.id.as_str())
+        );
+        control.accept_reconciled_manifest_revision(
+            source.id.as_str(),
+            lifecycle_generation,
+            next.revision,
+        );
+        assert_eq!(
+            control.accepted_manifest_revisions[source.id.as_str()].revision,
+            next.revision
+        );
+    }
+    let gap = readiness_delta(7, "post_consumption_gap");
+    supervisor.request_source_delta(
+        source.id.as_str(),
+        lifecycle_generation,
+        &gap,
+        "post_consumption_gap",
+    );
+    let control = supervisor.shared.control();
+    assert!(
+        !control
+            .pending_readiness_deltas
+            .contains_key(source.id.as_str())
+    );
+    assert_eq!(
+        control.accepted_manifest_revisions[source.id.as_str()].recovery_floor,
+        Some(gap.revision)
+    );
+    drop(control);
+    assert_eq!(supervisor.shutdown()["joined"], true);
+}
+
+#[test]
+fn gap_fallback_fences_delayed_revisions_until_recovery_is_reconciled() {
+    let (_directory, source) = unhashed_source("accepted-revision-gap");
+    let mut supervisor = SourceProcessingSupervisor::dormant();
+    supervisor
+        .replace_sources(vec![source.clone()])
+        .expect("configure source");
+    let lifecycle_generation = supervisor.lifecycle_generations()[source.id.as_str()];
+    let first = readiness_delta(7, "first-gap");
+    let gap = readiness_delta(9, "gap");
+    {
+        let mut control = supervisor.shared.control();
+        assert_eq!(
+            control.queue_source_delta(
+                source.id.as_str(),
+                lifecycle_generation,
+                &first,
+                "test_gap_first",
+            ),
+            SourceDeltaQueueResult::Queued
+        );
+        assert_eq!(
+            control.queue_source_delta(
+                source.id.as_str(),
+                lifecycle_generation,
+                &gap,
+                "test_gap_fallback",
+            ),
+            SourceDeltaQueueResult::Fallback
+        );
+        control.dirty_sources.clear();
+    }
+    supervisor.request_source_delta(
+        source.id.as_str(),
+        lifecycle_generation,
+        &first,
+        "delayed_gap_first",
+    );
+    supervisor.request_source_delta(
+        source.id.as_str(),
+        lifecycle_generation,
+        &gap,
+        "delayed_gap_completion",
+    );
+    {
+        let control = supervisor.shared.control();
+        let fence = &control.accepted_manifest_revisions[source.id.as_str()];
+        assert_eq!(
+            fence.revision, 0,
+            "recovery has not been durably reconciled"
+        );
+        assert_eq!(fence.recovery_floor, Some(gap.revision));
+        assert!(!control.dirty_sources.contains(source.id.as_str()));
+        assert!(
+            !control
+                .pending_readiness_deltas
+                .contains_key(source.id.as_str())
+        );
+    }
+    {
+        let mut control = supervisor.shared.control();
+        control.accept_reconciled_manifest_revision(
+            source.id.as_str(),
+            lifecycle_generation,
+            gap.revision,
+        );
+        assert_eq!(
+            control.accepted_manifest_revisions[source.id.as_str()].revision,
+            gap.revision
+        );
+        assert_eq!(
+            control.accepted_manifest_revisions[source.id.as_str()].recovery_floor,
+            None
+        );
+    }
+    assert_eq!(supervisor.shutdown()["joined"], true);
+}
+
+#[test]
+fn cancelled_reconciliation_does_not_advance_accepted_manifest_revision() {
+    let (_directory, source) = unhashed_source("accepted-revision-cancelled");
+    let mut supervisor = SourceProcessingSupervisor::dormant();
+    supervisor
+        .replace_sources(vec![source.clone()])
+        .expect("configure source");
+    let lifecycle_generation = supervisor.lifecycle_generations()[source.id.as_str()];
+    let delta = readiness_delta(5, "cancelled");
+    supervisor.request_source_delta(
+        source.id.as_str(),
+        lifecycle_generation,
+        &delta,
+        "cancelled_delta",
+    );
+    let mut control = supervisor.shared.control();
+    control.cancel_source_work(source.id.as_str());
+    assert!(
+        !control
+            .accepted_manifest_revisions
+            .contains_key(source.id.as_str())
+    );
+    assert!(
+        control
+            .pending_readiness_deltas
+            .contains_key(source.id.as_str())
+    );
+    drop(control);
+    assert_eq!(supervisor.shutdown()["joined"], true);
+}
+
+#[test]
+fn lifecycle_replacement_resets_manifest_revision_fence() {
+    let (_directory, source) = unhashed_source("accepted-revision-lifecycle");
+    let mut supervisor = SourceProcessingSupervisor::dormant();
+    supervisor
+        .replace_sources(vec![source.clone()])
+        .expect("configure source");
+    let old_generation = supervisor.lifecycle_generations()[source.id.as_str()];
+    {
+        let mut control = supervisor.shared.control();
+        control.accept_reconciled_manifest_revision(source.id.as_str(), old_generation, 12);
+    }
+    let replacement_directory = tempfile::tempdir().expect("replacement source root");
+    let replacement = SampleSource::new_with_id(
+        source.id.clone(),
+        replacement_directory.path().to_path_buf(),
+    );
+    supervisor
+        .replace_sources(vec![replacement])
+        .expect("replace source lifecycle");
+    let new_generation = supervisor.lifecycle_generations()[source.id.as_str()];
+    assert_ne!(new_generation, old_generation);
+    let control = supervisor.shared.control();
+    assert!(
+        !control
+            .accepted_manifest_revisions
+            .contains_key(source.id.as_str())
+    );
+    drop(control);
+    supervisor.request_source_delta(
+        source.id.as_str(),
+        old_generation,
+        &readiness_delta(12, "old-lifecycle"),
+        "delayed_old_lifecycle",
+    );
+    assert!(
+        !supervisor
+            .pending_source_delta_contains_identity_for_tests(source.id.as_str(), "old-lifecycle",)
     );
     assert_eq!(supervisor.shutdown()["joined"], true);
 }
