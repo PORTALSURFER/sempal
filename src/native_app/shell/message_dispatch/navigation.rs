@@ -96,9 +96,14 @@ impl NativeAppState {
                     .apply_file_view_window_change(change);
             }
             GuiMessage::FolderTreeWindowChanged(change) => {
-                self.library
-                    .folder_browser
-                    .apply_tree_view_window_change(change);
+                self.ui.chrome.overflow_fades.arm();
+                if let Some(change) = change {
+                    self.library
+                        .folder_browser
+                        .apply_tree_view_window_change(change);
+                } else {
+                    context.request_paint_only();
+                }
             }
             GuiMessage::CollapseSelectedFolder => {
                 self.collapse_selected_folder();

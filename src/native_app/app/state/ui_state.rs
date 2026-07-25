@@ -1,7 +1,7 @@
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::{BTreeMap, HashSet, VecDeque},
     path::PathBuf,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use radiant::widgets::PointerModifiers;
@@ -67,6 +67,151 @@ pub(in crate::native_app) struct ChromeUiState {
     pub(in crate::native_app) bpm_snap_enabled: bool,
     pub(in crate::native_app) beat_guides_enabled: bool,
     pub(in crate::native_app) beat_guide_count: u8,
+    pub(in crate::native_app) overflow_fades: OverflowFadeAnimations,
+}
+
+/// Lightweight transition state for paint-only clipping indicators.
+///
+/// It is intentionally kept with the transient UI state: the indicator is a
+/// presentation cue, not persisted browser or waveform data.
+pub(in crate::native_app) struct OverflowFadeAnimations {
+    transitions: BTreeMap<u64, OverflowFadeTransition>,
+    last_updated_at: Duration,
+    pending_visibility_sample: bool,
+}
+
+#[derive(Clone, Copy)]
+struct OverflowFadeTransition {
+    start_alpha: f32,
+    target_alpha: f32,
+    started_at: Duration,
+}
+
+impl OverflowFadeAnimations {
+    const TRANSITION_DURATION: Duration = Duration::from_millis(260);
+
+    /// Arm a one-shot paint request so a newly visible clipping sample gets a
+    /// chance to establish its transition before the normal animation cadence
+    /// takes over.
+    pub(in crate::native_app) fn arm(&mut self) {
+        self.pending_visibility_sample = true;
+    }
+
+    /// Consume the one-shot visibility sample at the beginning of an overlay
+    /// paint. Active transitions continue to request paint-only frames.
+    pub(in crate::native_app) fn consume_pending_visibility_sample(&mut self) {
+        self.pending_visibility_sample = false;
+    }
+
+    /// Return the interpolated opacity and retarget it without a visual jump.
+    pub(in crate::native_app) fn opacity(
+        &mut self,
+        fade_id: u64,
+        target_alpha: u8,
+        now: Duration,
+    ) -> u8 {
+        self.opacity_from(fade_id, target_alpha, 0, now)
+    }
+
+    /// Return the interpolated opacity, beginning a newly visible indicator
+    /// from `entry_alpha` rather than necessarily from transparent.
+    pub(in crate::native_app) fn opacity_from(
+        &mut self,
+        fade_id: u64,
+        target_alpha: u8,
+        entry_alpha: u8,
+        now: Duration,
+    ) -> u8 {
+        self.last_updated_at = now;
+        let target_alpha = f32::from(target_alpha);
+        if !self.transitions.contains_key(&fade_id) {
+            if target_alpha == 0.0 {
+                return 0;
+            }
+            let entry_alpha = f32::from(entry_alpha).min(target_alpha);
+            self.transitions.insert(
+                fade_id,
+                OverflowFadeTransition {
+                    start_alpha: entry_alpha,
+                    target_alpha,
+                    started_at: now,
+                },
+            );
+            return entry_alpha.round() as u8;
+        }
+        let (current_alpha, settled_at_zero) = {
+            let transition = self
+                .transitions
+                .get_mut(&fade_id)
+                .expect("overflow fade transition must exist");
+            let current_alpha = transition.alpha_at(now);
+            if (transition.target_alpha - target_alpha).abs() > f32::EPSILON {
+                transition.start_alpha = current_alpha;
+                transition.target_alpha = target_alpha;
+                transition.started_at = now;
+            }
+            let current_alpha = transition.alpha_at(now);
+            (
+                current_alpha,
+                target_alpha == 0.0 && !transition.is_animating(now),
+            )
+        };
+        if settled_at_zero {
+            self.transitions.remove(&fade_id);
+            return 0;
+        }
+        current_alpha.round().clamp(0.0, f32::from(u8::MAX)) as u8
+    }
+
+    /// Forget an indicator whose paint anchor has been removed from the view.
+    ///
+    /// It cannot animate out without bounds to draw into, and retaining its
+    /// settled target would make a later remount appear at full opacity.
+    pub(in crate::native_app) fn clear(&mut self, fade_id: u64) {
+        self.transitions.remove(&fade_id);
+    }
+
+    /// Whether this indicator currently owns a transition or settled paint
+    /// state. Callers use this to distinguish a newly clipped surface from a
+    /// directional change within an already clipped surface.
+    pub(in crate::native_app) fn contains(&self, fade_id: u64) -> bool {
+        self.transitions.contains_key(&fade_id)
+    }
+
+    pub(in crate::native_app) fn frame_needed(&self) -> bool {
+        self.pending_visibility_sample || self.is_animating()
+    }
+
+    pub(in crate::native_app) fn is_animating(&self) -> bool {
+        self.transitions
+            .values()
+            .any(|transition| transition.is_animating(self.last_updated_at))
+    }
+}
+
+impl Default for OverflowFadeAnimations {
+    fn default() -> Self {
+        Self {
+            transitions: BTreeMap::new(),
+            last_updated_at: Duration::ZERO,
+            pending_visibility_sample: true,
+        }
+    }
+}
+
+impl OverflowFadeTransition {
+    fn alpha_at(self, now: Duration) -> f32 {
+        let elapsed = now.saturating_sub(self.started_at);
+        let progress = (elapsed.as_secs_f32()
+            / OverflowFadeAnimations::TRANSITION_DURATION.as_secs_f32())
+        .clamp(0.0, 1.0);
+        let eased = progress * progress * (3.0 - 2.0 * progress);
+        self.start_alpha + (self.target_alpha - self.start_alpha) * eased
+    }
+
+    fn is_animating(self, now: Duration) -> bool {
+        now.saturating_sub(self.started_at) < OverflowFadeAnimations::TRANSITION_DURATION
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -181,6 +326,7 @@ impl ChromeUiState {
             bpm_snap_enabled: false,
             beat_guides_enabled: false,
             beat_guide_count: DEFAULT_BEAT_GUIDE_COUNT,
+            overflow_fades: OverflowFadeAnimations::default(),
         }
     }
 

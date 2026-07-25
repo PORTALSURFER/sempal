@@ -140,6 +140,32 @@ impl NativeAppState {
                     );
                 }
             }
+            FolderBrowserMessage::ResizeCollectionsPanel(message) => {
+                let before = self.library.folder_browser.collections_panel_height();
+                self.library
+                    .folder_browser
+                    .resize_collections_panel(message);
+                let after = self.library.folder_browser.collections_panel_height();
+                if (after - before).abs() > f32::EPSILON {
+                    self.ui.chrome.overflow_fades.arm();
+                }
+            }
+            FolderBrowserMessage::ResizeFilterPanel(message) => {
+                let before = self.library.folder_browser.filter_panel_height();
+                self.library.folder_browser.resize_filter_panel(message);
+                let after = self.library.folder_browser.filter_panel_height();
+                if (after - before).abs() > f32::EPSILON {
+                    self.ui.chrome.overflow_fades.arm();
+                }
+            }
+            FolderBrowserMessage::ResizeMetadataPanel(message) => {
+                let before = self.library.folder_browser.metadata_panel_height();
+                self.library.folder_browser.resize_metadata_panel(message);
+                let after = self.library.folder_browser.metadata_panel_height();
+                if (after - before).abs() > f32::EPSILON {
+                    self.ui.chrome.overflow_fades.arm();
+                }
+            }
             message => self.library.folder_browser.apply_message(message),
         }
     }

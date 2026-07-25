@@ -256,6 +256,11 @@ const REGISTERED_WIDGET_IDS: &[RegisteredWidgetId] = &[
     registered_widget_id!(MetadataTags, METADATA_TAG_INPUT_ID, "metadata_tags.input"),
     registered_widget_id!(
         MetadataTags,
+        METADATA_TAG_SCROLL_NODE_ID,
+        "metadata_tags.scroll"
+    ),
+    registered_widget_id!(
+        MetadataTags,
         METADATA_SIDEBAR_PANEL_ID,
         "metadata_tags.sidebar_panel"
     ),

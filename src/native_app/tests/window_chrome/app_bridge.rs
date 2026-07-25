@@ -1,5 +1,140 @@
 use super::*;
 
+fn paint_transient_overlay_at<Bridge>(
+    runtime: &mut SurfaceRuntime<Bridge, crate::native_app::test_support::state::GuiMessage>,
+    animation_time: std::time::Duration,
+) -> Vec<radiant::runtime::PaintPrimitive>
+where
+    Bridge: RuntimeBridge<crate::native_app::test_support::state::GuiMessage>,
+{
+    let frame = runtime.frame_with_default_theme();
+    let mut primitives = Vec::new();
+    runtime.host_paint_transient_overlay(
+        TransientOverlayContext::new(
+            &frame.paint_plan,
+            Vector2::new(900.0, 900.0),
+            animation_time,
+        ),
+        &mut primitives,
+    );
+    primitives
+}
+
+#[test]
+fn app_bridge_idle_vertical_scroll_starts_zero_entry_fade_on_paint_only_cadence() {
+    let root = temp_gui_root("wavecrate-app-bridge-overflow-fade-root");
+    fs::create_dir_all(&root).expect("create source root");
+    for index in 0..100 {
+        let folder = root.join(format!("folder_{index:02}"));
+        fs::create_dir_all(&folder).expect("create folder");
+        fs::write(folder.join("sample.wav"), []).expect("write sample");
+    }
+    let mut state = crate::native_app::test_support::state::NativeAppStateFixture::default()
+        .with_synthetic_waveform()
+        .with_sample_status("")
+        .with_folder_browser(
+            crate::native_app::test_support::state::FolderBrowserState::from_root(root.clone()),
+        )
+        .build();
+    crate::native_app::test_support::sample_browser::prepare_sample_browser_view(&mut state);
+    let bridge = radiant::app(state)
+        .view(crate::native_app::test_support::state::view)
+        .handle_message(|state, message, context| state.handle_message(message, context))
+        .into_bridge();
+    let mut runtime = SurfaceRuntime::new(bridge, Vector2::new(900.0, 900.0));
+    apply_strict_update_diagnostics(&mut runtime);
+    let _startup = paint_transient_overlay_at(&mut runtime, std::time::Duration::ZERO);
+    let baseline_activity = runtime.host_animation_activity();
+    let tree_rect = runtime
+        .layout()
+        .rects
+        .get(&crate::native_app::ui::ids::FOLDER_TREE_LIST_ID)
+        .copied()
+        .expect("folder tree list should be laid out");
+
+    assert!(runtime.wheel_or_scroll_at(tree_rect.center(), Vector2::new(0.0, 110.0)));
+    let zero_entry = paint_transient_overlay_at(&mut runtime, std::time::Duration::ZERO);
+    assert!(
+        !zero_entry.iter().any(|primitive| {
+            matches!(primitive, radiant::runtime::PaintPrimitive::FillPath(_))
+        })
+    );
+    assert_eq!(
+        runtime.host_animation_activity().needs_frame_message(),
+        baseline_activity.needs_frame_message(),
+        "overflow fades must not add a frame-message cadence"
+    );
+
+    let advancing = paint_transient_overlay_at(&mut runtime, std::time::Duration::from_millis(130));
+    assert!(
+        advancing.iter().any(|primitive| {
+            matches!(primitive, radiant::runtime::PaintPrimitive::FillPath(_))
+        })
+    );
+    assert_eq!(
+        runtime.host_animation_activity().needs_frame_message(),
+        baseline_activity.needs_frame_message(),
+        "advancing overflow fades must remain paint-only"
+    );
+
+    let _settled = paint_transient_overlay_at(&mut runtime, std::time::Duration::from_millis(260));
+    assert_eq!(
+        runtime.host_animation_activity().needs_frame_message(),
+        baseline_activity.needs_frame_message(),
+        "settled overflow fades must not leave a frame-message cadence"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn app_bridge_idle_waveform_zoom_starts_zero_entry_fade_on_paint_only_cadence() {
+    let mut state = gui_state_for_span_tests();
+    crate::native_app::test_support::sample_browser::prepare_sample_browser_view(&mut state);
+    let bridge = radiant::app(state)
+        .view(crate::native_app::test_support::state::view)
+        .handle_message(|state, message, context| state.handle_message(message, context))
+        .into_bridge();
+    let mut runtime = SurfaceRuntime::new(bridge, Vector2::new(900.0, 900.0));
+    apply_strict_update_diagnostics(&mut runtime);
+    let baseline_activity = runtime.host_animation_activity();
+    let waveform_rect = *runtime
+        .layout()
+        .rects
+        .get(&crate::native_app::test_support::waveform::WAVEFORM_WIDGET_ID)
+        .expect("waveform widget should be laid out");
+
+    assert!(runtime.wheel_or_scroll_at(waveform_rect.center(), Vector2::new(0.0, -40.0)));
+    let zero_entry = paint_transient_overlay_at(&mut runtime, std::time::Duration::ZERO);
+    assert!(
+        !zero_entry.iter().any(|primitive| {
+            matches!(primitive, radiant::runtime::PaintPrimitive::FillPath(_))
+        })
+    );
+    assert_eq!(
+        runtime.host_animation_activity().needs_frame_message(),
+        baseline_activity.needs_frame_message(),
+        "waveform fades must not add a frame-message cadence"
+    );
+    let advancing = paint_transient_overlay_at(&mut runtime, std::time::Duration::from_millis(130));
+    assert!(
+        advancing.iter().any(|primitive| {
+            matches!(primitive, radiant::runtime::PaintPrimitive::FillPath(_))
+        })
+    );
+    assert_eq!(
+        runtime.host_animation_activity().needs_frame_message(),
+        baseline_activity.needs_frame_message(),
+        "advancing waveform fades must remain paint-only"
+    );
+
+    let _settled = paint_transient_overlay_at(&mut runtime, std::time::Duration::from_millis(260));
+    assert_eq!(
+        runtime.host_animation_activity().needs_frame_message(),
+        baseline_activity.needs_frame_message(),
+        "settled waveform fades must not leave a frame-message cadence"
+    );
+}
+
 #[test]
 fn app_bridge_scene_routes_primary_waveform_selection_drag() {
     let state = gui_state_for_span_tests();

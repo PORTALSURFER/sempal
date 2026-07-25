@@ -95,6 +95,7 @@ impl NativeAppState {
         let started_at = Instant::now();
         let action = waveform_interaction_action(&message);
         let active_drag = self.waveform.current.active_drag_kind();
+        let clipping_signature_before = waveform_clipping_signature(self);
         let play_selection_before = self.play_selection_transaction_begin_snapshot(&message);
         let edit_selection_before = self.edit_selection_transaction_begin_snapshot(&message);
         let edit_fade_before = self.edit_fade_transaction_begin_snapshot(&message);
@@ -113,6 +114,10 @@ impl NativeAppState {
                 beat_count: self.ui.chrome.beat_guide_count,
             },
         );
+        if waveform_clipping_signature(self) != clipping_signature_before {
+            self.ui.chrome.overflow_fades.arm();
+            context.request_paint_only();
+        }
         self.queue_waveform_detail_refinement(context);
         if matches!(message, WaveformInteraction::FinishSampleSlide { .. })
             && let Some(frame_offset) = self
@@ -364,6 +369,22 @@ impl NativeAppState {
         if before.path == after.path && before.marks_changed(&after) {
             self.mark_harvest_touched_for_path(&after.path);
         }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct WaveformClippingSignature {
+    fully_zoomed_out: bool,
+    offset_fraction_bits: u32,
+    visible_fraction_bits: u32,
+}
+
+fn waveform_clipping_signature(state: &NativeAppState) -> WaveformClippingSignature {
+    let waveform = &state.waveform.current;
+    WaveformClippingSignature {
+        fully_zoomed_out: waveform.fully_zoomed_out(),
+        offset_fraction_bits: waveform.offset_fraction().to_bits(),
+        visible_fraction_bits: waveform.visible_fraction().to_bits(),
     }
 }
 

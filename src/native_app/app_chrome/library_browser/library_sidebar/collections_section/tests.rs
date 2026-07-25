@@ -289,3 +289,23 @@ fn collections_section_max_height_does_not_overflow_rows() {
         "collections list should not have vertical scroll overflow at max height"
     );
 }
+
+#[test]
+fn collections_overflow_fade_strength_tracks_the_clipped_height() {
+    let full_height = 240.0;
+
+    assert_eq!(collection_overflow_fade_alpha(full_height, full_height), 0);
+    assert_eq!(collection_overflow_fade_alpha(250.0, full_height), 0);
+    assert!(
+        collection_overflow_fade_alpha(full_height - 1.0, full_height) > 50,
+        "the first clipped pixel should already produce a visible cue"
+    );
+    assert!(
+        collection_overflow_fade_alpha(full_height - 6.0, full_height) > 200,
+        "the early clipping ramp should be visibly front-loaded"
+    );
+    assert_eq!(
+        collection_overflow_fade_alpha(full_height - 12.0, full_height),
+        u8::MAX
+    );
+}

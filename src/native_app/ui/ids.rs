@@ -143,6 +143,8 @@ pub(in crate::native_app) const AUTOMATION_SOURCE_ADD_BUTTON_ID: u64 = SOURCES.i
 pub(in crate::native_app) const RETAINED_SOURCE_ROW_INPUT_SCOPE: u64 = SOURCES.id(1);
 
 pub(in crate::native_app) const METADATA_TAG_INPUT_ID: u64 = METADATA_TAGS.id(7);
+/// Stable layout node id for the metadata tag field scroll viewport.
+pub(in crate::native_app) const METADATA_TAG_SCROLL_NODE_ID: u64 = METADATA_TAGS.id(12);
 #[cfg(test)]
 pub(in crate::native_app) const METADATA_SIDEBAR_PANEL_ID: u64 = METADATA_TAGS.id(8);
 #[cfg(test)]

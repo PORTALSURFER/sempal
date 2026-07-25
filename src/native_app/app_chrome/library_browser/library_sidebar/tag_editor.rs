@@ -1,11 +1,12 @@
 use radiant::prelude as ui;
 
-use crate::native_app::app::GuiMessage;
+use crate::native_app::app::{BrowserScrollSurface, GuiMessage};
 use crate::native_app::app_chrome::view_models::library_sidebar::TagEditorViewModel;
 use crate::native_app::sample_library::folder_browser::commands::FolderBrowserMessage;
 use crate::native_app::sample_library::folder_browser::view_contract::{
     SIDEBAR_PANEL_HEADER_CONTENT_SPACING, SIDEBAR_PANEL_HEADER_HEIGHT,
 };
+use crate::native_app::ui::ids as widget_ids;
 
 use super::edge_aligned_resize_panel;
 use super::tag_entry_layout::TAG_FIELD_LINE_GAP;
@@ -61,6 +62,10 @@ fn tag_entry_field(field: TagEditorFieldProjection) -> ui::View<GuiMessage> {
 
     if field.layout.requires_scroll {
         ui::scroll(content)
+            .id(widget_ids::METADATA_TAG_SCROLL_NODE_ID)
+            .on_scroll_update(|_| {
+                GuiMessage::BrowserScrollAccepted(BrowserScrollSurface::MetadataTags)
+            })
             .padding(3.0)
             .fill_width()
             .height(field.layout.field_height)

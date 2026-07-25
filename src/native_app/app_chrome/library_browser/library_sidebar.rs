@@ -9,6 +9,7 @@ mod collections_section;
 mod filter_section;
 mod folder_tree;
 mod harvest_family;
+mod overflow_fade;
 mod sidebar_row;
 mod source_section;
 mod tag_completion;
@@ -17,10 +18,14 @@ mod tag_entry_layout;
 #[cfg(test)]
 mod test_support;
 
+pub(in crate::native_app) use collections_section::collection_overflow_fade_alpha;
 use collections_section::collections_section;
 use filter_section::filter_section;
 use folder_tree::folder_tree_section;
 use harvest_family::harvest_family_section;
+pub(in crate::native_app) use overflow_fade::{
+    paint_vertical_scroll_overflow_fades, paint_waveform_scroll_fades,
+};
 use source_section::source_selector;
 use tag_editor::tag_editor_section;
 

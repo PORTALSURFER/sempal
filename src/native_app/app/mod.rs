@@ -19,9 +19,9 @@ pub(in crate::native_app) use loading::{
     SamplePlaybackReady, SampleSelectionLoadState,
 };
 pub(in crate::native_app) use message::{
-    AudioOutputPersistResult, BrowserProjectionDelta, GuiMessage, MetadataMessage, SettingsMessage,
-    SimilaritySettingsPersistResult, SourceFilesystemSyncResult, SourceFilesystemSyncSuccess,
-    TrashMoveTarget, VolumeSettingsPersistResult,
+    AudioOutputPersistResult, BrowserProjectionDelta, BrowserScrollSurface, GuiMessage,
+    MetadataMessage, SettingsMessage, SimilaritySettingsPersistResult, SourceFilesystemSyncResult,
+    SourceFilesystemSyncSuccess, TrashMoveTarget, VolumeSettingsPersistResult,
 };
 pub(in crate::native_app) use progress::{
     FileMoveProgress, NormalizationFailure, NormalizationHarvestDerivation, NormalizationProgress,
@@ -41,8 +41,8 @@ pub(in crate::native_app) use state::{
     BackgroundTaskState, ChromeUiState, ClipboardHandoffTarget, CompletedTransientSamplePlayback,
     CutFileClipboard, ExtractedFilePlaybackType, FolderScanWorkerEvent, LibraryAppState,
     MAX_BEAT_GUIDE_COUNT, MIN_BEAT_GUIDE_COUNT, MetadataAppState, NativeAppState,
-    PendingFolderDelete, PendingPlaySelectionRetargetCycle, PendingPlaybackStart,
-    PendingProtectedExtractionAction, PendingProtectedExtractionTargetSource,
+    OverflowFadeAnimations, PendingFolderDelete, PendingPlaySelectionRetargetCycle,
+    PendingPlaybackStart, PendingProtectedExtractionAction, PendingProtectedExtractionTargetSource,
     PendingWaveformDestructiveEdit, PlaybackSpanRetargetRejection, SampleBrowserDisplayMode,
     SamplePlaybackHistory, SamplePlaybackIntent, SamplePlaybackNormalization,
     SamplePlaybackRequest, SamplePlaybackSession, SamplePlaybackSessionState,

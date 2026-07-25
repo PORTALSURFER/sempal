@@ -42,6 +42,7 @@ pub(super) fn sample_browser_rows(
     )
     .row_height(SAMPLE_BROWSER_ROW_HEIGHT)
     .overscan_px(SAMPLE_BROWSER_ROW_HEIGHT * SAMPLE_BROWSER_OVERSCAN_ROWS as f32)
+    .retain_materialized_window()
     .on_window_changed(GuiMessage::SampleBrowserWindowChanged)
     .view()
     .without_chrome()
