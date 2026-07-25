@@ -88,6 +88,7 @@ impl NativeAppState {
                 if !source_is_current {
                     return;
                 }
+                let worker_progress_visible_before = self.worker_progress_indicator_visible();
                 if !progress.active {
                     self.background.source_processing_progress = None;
                     self.ui.chrome.job_details_open = false;
@@ -95,7 +96,11 @@ impl NativeAppState {
                     self.background.source_processing_progress = Some(progress);
                 }
                 context.repaint(if self.starmap_retained_scene_active() {
-                    ui::RepaintScope::PaintOnly
+                    if worker_progress_visible_before != self.worker_progress_indicator_visible() {
+                        ui::RepaintScope::Surface
+                    } else {
+                        ui::RepaintScope::PaintOnly
+                    }
                 } else {
                     ui::RepaintScope::Projection
                 });

@@ -179,7 +179,7 @@ fn source_processing_progress_refreshes_the_retained_details_projection() {
 }
 
 #[test]
-fn source_processing_progress_does_not_reproject_during_starmap_audition() {
+fn source_processing_progress_repaints_retained_worker_anchor_on_visibility_edges() {
     let mut state = NativeAppStateFixture::default().build();
     let source_id = state
         .library
@@ -217,8 +217,48 @@ fn source_processing_progress_does_not_reproject_during_starmap_audition() {
 
     assert_eq!(
         context.into_command().repaint_scope(),
+        Some(ui::RepaintScope::Surface),
+        "starting the aggregate worker during audition must install its retained anchor"
+    );
+
+    let mut tick_context = ui::UiUpdateContext::default();
+    state.handle_message(
+        GuiMessage::SourceProcessingProgress(crate::native_app::app::SourceProcessingProgress {
+            source_id: source_id.clone(),
+            lifecycle_generation: 0,
+            active: true,
+            source_row_active: true,
+            completed: 5,
+            total: 10,
+            stage: String::from("Preparing similarity"),
+            detail: String::from("hat.wav"),
+        }),
+        &mut tick_context,
+    );
+    assert_eq!(
+        tick_context.into_command().repaint_scope(),
         Some(ui::RepaintScope::PaintOnly),
-        "background progress must not rebuild the starmap scene during audition"
+        "steady aggregate worker ticks must remain paint-only during audition"
+    );
+
+    let mut finish_context = ui::UiUpdateContext::default();
+    state.handle_message(
+        GuiMessage::SourceProcessingProgress(crate::native_app::app::SourceProcessingProgress {
+            source_id: source_id.clone(),
+            lifecycle_generation: 0,
+            active: false,
+            source_row_active: false,
+            completed: 10,
+            total: 10,
+            stage: String::from("Building similarity layout"),
+            detail: String::from("Finalizing source"),
+        }),
+        &mut finish_context,
+    );
+    assert_eq!(
+        finish_context.into_command().repaint_scope(),
+        Some(ui::RepaintScope::Surface),
+        "finishing the last aggregate worker must remove its retained anchor"
     );
 
     state.ui.chrome.starmap_audition_drag = None;
@@ -248,8 +288,8 @@ fn source_processing_progress_does_not_reproject_during_starmap_audition() {
     );
     assert_eq!(
         active_session_context.into_command().repaint_scope(),
-        Some(ui::RepaintScope::PaintOnly),
-        "the retained scene must cover an audible starmap release session"
+        Some(ui::RepaintScope::Surface),
+        "a worker starting during an audible starmap release must install its global anchor"
     );
 
     state.audio.clear_sample_playback_session();
@@ -271,6 +311,70 @@ fn source_processing_progress_does_not_reproject_during_starmap_audition() {
         settled_context.into_command().repaint_scope(),
         Some(ui::RepaintScope::Projection),
         "normal progress projection must resume when the starmap session ends"
+    );
+}
+
+#[test]
+fn source_processing_progress_keeps_retained_repaint_paint_only_when_another_worker_is_visible() {
+    let mut state = NativeAppStateFixture::default().build();
+    let source_id = state
+        .library
+        .folder_browser
+        .defer_add_source_path(
+            std::path::PathBuf::from("/tmp/starmap-progress-shared-worker-source"),
+            false,
+        )
+        .expect("source registered");
+    state
+        .background
+        .source_lifecycle_generations
+        .insert(source_id.clone(), 0);
+    state.background.normalization_progress = Some(
+        crate::native_app::test_support::state::NormalizationProgress {
+            task_id: 1,
+            label: String::from("another worker"),
+            completed: 1,
+            total: 2,
+            work_completed: 1,
+            work_total: 2,
+            queued: 0,
+            detail: String::from("normalizing"),
+        },
+    );
+    state.ui.chrome.starmap_audition_drag =
+        Some(crate::native_app::app::StarmapAuditionDragState {
+            last_hit_file_id: Some(String::from("/samples/kick.wav")),
+            last_position: radiant::gui::types::Point::new(50.0, 50.0),
+            modifiers: radiant::widgets::PointerModifiers::default(),
+        });
+
+    let progress = |active, completed, detail| {
+        GuiMessage::SourceProcessingProgress(crate::native_app::app::SourceProcessingProgress {
+            source_id: source_id.clone(),
+            lifecycle_generation: 0,
+            active,
+            source_row_active: active,
+            completed,
+            total: 10,
+            stage: String::from("Preparing similarity"),
+            detail: String::from(detail),
+        })
+    };
+
+    let mut start_context = ui::UiUpdateContext::default();
+    state.handle_message(progress(true, 1, "start.wav"), &mut start_context);
+    assert_eq!(
+        start_context.into_command().repaint_scope(),
+        Some(ui::RepaintScope::PaintOnly),
+        "a source worker starting behind another aggregate worker must stay paint-only"
+    );
+
+    let mut finish_context = ui::UiUpdateContext::default();
+    state.handle_message(progress(false, 10, "finish.wav"), &mut finish_context);
+    assert_eq!(
+        finish_context.into_command().repaint_scope(),
+        Some(ui::RepaintScope::PaintOnly),
+        "a source worker finishing behind another aggregate worker must stay paint-only"
     );
 }
 
