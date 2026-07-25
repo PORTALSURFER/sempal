@@ -157,6 +157,74 @@ fn completion_from_removed_lifecycle_cannot_mutate_readded_source_state() {
 }
 
 #[test]
+fn final_similarity_layout_completion_wakes_durable_reconciliation() {
+    let directory = tempfile::tempdir().expect("temporary source");
+    let source = SampleSource::new_with_id(
+        SourceId::from_string("similarity-layout-refresh-source"),
+        directory.path().to_path_buf(),
+    );
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let shared = Arc::new(Shared::new(vec![source.clone()], Some(Arc::new(sender))));
+    let cancel = shared.control().source_work_cancels[source.id.as_str()].clone();
+    let in_flight = shared
+        .begin_in_flight_work(source.id.as_str(), &cancel)
+        .expect("begin similarity layout work");
+    let lifecycle_generation = in_flight.lifecycle_generation;
+    let target = ReadinessTarget::source(
+        source.id.as_str(),
+        ReadinessStage::SimilarityLayout,
+        "layout-v1",
+        1,
+        "layout-generation-1",
+    );
+    let candidate = RuntimeCandidate {
+        schedule: WorkCandidate::readiness(&target, 1),
+        source: source.clone(),
+        task: RuntimeTask::Readiness(target),
+    };
+    let permit = shared
+        .budgets()
+        .try_acquire(source.id.as_str(), ProcessingLane::Finalization)
+        .expect("reserve finalization budget");
+    let mut candidates = Vec::new();
+    let mut source_stats = BTreeMap::new();
+    let mut state = CoordinatorExecutionState {
+        next_retry_at: None,
+        pending_similarity_refresh_lifecycles: BTreeSet::new(),
+        last_similarity_refresh_publish_at: None,
+        active_progress_source: None,
+        last_progress_publish_at: None,
+        progress_visible: true,
+    };
+
+    handle_completion(
+        &shared,
+        &mut candidates,
+        &mut source_stats,
+        &mut state,
+        ExecutionResult {
+            candidate,
+            permit,
+            lifecycle_generation,
+            result: Ok(ExecutionOutcome::Completed),
+            elapsed_ms: 1.0,
+            in_flight,
+        },
+    );
+
+    let control = shared.control();
+    assert!(
+        control
+            .dirty_sources
+            .contains(source.id.as_str()),
+        "final similarity layout completion must request a fresh durable snapshot"
+    );
+    assert_eq!(control.wake_reason, "source_stage_progress");
+    drop(control);
+    assert!(receiver.try_recv().is_err());
+}
+
+#[test]
 fn lifecycle_fence_remains_held_until_event_delivery_finishes() {
     #[derive(Default)]
     struct BlockingSink {

@@ -222,7 +222,8 @@ pub(super) fn handle_completion(
             RuntimeTask::Readiness(ReadinessTarget {
                 stage: ReadinessStage::IndexedIdentity
                     | ReadinessStage::AnalysisFeatures
-                    | ReadinessStage::EmbeddingAspects,
+                    | ReadinessStage::EmbeddingAspects
+                    | ReadinessStage::SimilarityLayout,
                 ..
             }),
             Some(ExecutionOutcome::Completed),
