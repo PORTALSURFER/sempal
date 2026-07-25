@@ -6242,6 +6242,7 @@ dependencies = [
  "blake3",
  "cap-primitives",
  "directories",
+ "filetime",
  "libc",
  "rusqlite",
  "serde",

@@ -26,6 +26,7 @@ tracing = "0.1.41"
 uuid = { version = "1.19.0", features = ["v4", "serde"] }
 
 [dev-dependencies]
+filetime = "0.2.26"
 rusqlite = { version = "0.37.0", features = ["hooks"] }
 
 [target.'cfg(unix)'.dependencies]

@@ -272,3 +272,216 @@ fn reconcile_copy_defers_when_target_exists_and_journal_identity_is_incomplete()
         summary.errors
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn reconcile_copy_retains_staged_file_when_final_target_is_replaced_by_symlink() {
+    use std::os::unix::fs::symlink;
+
+    let temp = TempDir::new().unwrap();
+    let target_root = temp.path().join("target");
+    let outside = temp.path().join("outside.wav");
+    std::fs::create_dir_all(&target_root).unwrap();
+    write_wav(&outside);
+    let target_db = SourceDatabase::open_for_source_write(&target_root).unwrap();
+    let target_relative = PathBuf::from("copied.wav");
+    let staged_relative = staged_relative_for_target(&target_relative, "symlink").unwrap();
+    let entry = FileOpJournalEntry::new_copy(
+        String::from("copy-symlink-target"),
+        CopyJournalEntryInit {
+            target_relative: target_relative.clone(),
+            staged_relative: staged_relative.clone(),
+            tag: Rating::KEEP_1,
+            looped: false,
+            locked: false,
+            last_played_at: None,
+            last_curated_at: None,
+        },
+    )
+    .unwrap();
+    insert_entry(&target_db, &entry).unwrap();
+    let staged_absolute = target_root.join(&staged_relative);
+    write_wav(&staged_absolute);
+    let (file_size, modified_ns) = file_identity(&staged_absolute);
+    update_stage(
+        &target_db,
+        &entry.id,
+        FileOpStage::Staged,
+        Some(file_size),
+        Some(modified_ns),
+    )
+    .unwrap();
+    symlink(&outside, target_root.join(&target_relative)).unwrap();
+
+    let summary = reconcile_pending_ops(&target_db).unwrap();
+
+    assert_eq!(summary.completed, 0);
+    assert!(staged_absolute.exists());
+    assert!(target_root.join(&target_relative).read_link().is_ok());
+    assert_eq!(list_entries(&target_db).unwrap().entries.len(), 1);
+    assert_eq!(std::fs::read(&outside).unwrap(), vec![0; 16]);
+}
+
+#[cfg(unix)]
+#[test]
+fn reconcile_copy_retries_after_ancestor_symlink_replacement() {
+    use std::os::unix::fs::symlink;
+
+    let temp = TempDir::new().unwrap();
+    let target_root = temp.path().join("target");
+    let outside = temp.path().join("outside");
+    let moved_ancestor = temp.path().join("nested-moved");
+    std::fs::create_dir_all(target_root.join("nested")).unwrap();
+    std::fs::create_dir_all(&outside).unwrap();
+    let target_db = SourceDatabase::open_for_source_write(&target_root).unwrap();
+    let target_relative = PathBuf::from("nested/copied.wav");
+    let staged_relative = staged_relative_for_target(&target_relative, "ancestor").unwrap();
+    let entry = FileOpJournalEntry::new_copy(
+        String::from("copy-symlink-ancestor"),
+        CopyJournalEntryInit {
+            target_relative: target_relative.clone(),
+            staged_relative: staged_relative.clone(),
+            tag: Rating::KEEP_1,
+            looped: false,
+            locked: false,
+            last_played_at: None,
+            last_curated_at: None,
+        },
+    )
+    .unwrap();
+    insert_entry(&target_db, &entry).unwrap();
+    let staged_absolute = target_root.join(&staged_relative);
+    write_wav(&staged_absolute);
+    let (file_size, modified_ns) = file_identity(&staged_absolute);
+    update_stage(
+        &target_db,
+        &entry.id,
+        FileOpStage::Staged,
+        Some(file_size),
+        Some(modified_ns),
+    )
+    .unwrap();
+    std::fs::rename(target_root.join("nested"), &moved_ancestor).unwrap();
+    symlink(&outside, target_root.join("nested")).unwrap();
+
+    let deferred = reconcile_pending_ops(&target_db).unwrap();
+    assert_eq!(deferred.completed, 0);
+    assert_eq!(list_entries(&target_db).unwrap().entries.len(), 1);
+    assert!(
+        moved_ancestor
+            .join(staged_relative.file_name().unwrap())
+            .exists()
+    );
+
+    std::fs::remove_file(target_root.join("nested")).unwrap();
+    std::fs::rename(&moved_ancestor, target_root.join("nested")).unwrap();
+    let retried = reconcile_pending_ops(&target_db).unwrap();
+    assert_eq!(retried.completed, 1);
+    assert!(target_root.join(target_relative).exists());
+    assert_eq!(list_entries(&target_db).unwrap().entries.len(), 0);
+}
+
+#[cfg(unix)]
+#[test]
+fn reconcile_copy_retains_staged_file_when_ancestor_permission_is_uncertain() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp = TempDir::new().unwrap();
+    let target_root = temp.path().join("target");
+    let nested = target_root.join("nested");
+    std::fs::create_dir_all(&nested).unwrap();
+    let target_db = SourceDatabase::open_for_source_write(&target_root).unwrap();
+    let target_relative = PathBuf::from("nested/copied.wav");
+    let staged_relative = staged_relative_for_target(&target_relative, "permission").unwrap();
+    let entry = FileOpJournalEntry::new_copy(
+        String::from("copy-permission-uncertainty"),
+        CopyJournalEntryInit {
+            target_relative: target_relative.clone(),
+            staged_relative: staged_relative.clone(),
+            tag: Rating::KEEP_1,
+            looped: false,
+            locked: false,
+            last_played_at: None,
+            last_curated_at: None,
+        },
+    )
+    .unwrap();
+    insert_entry(&target_db, &entry).unwrap();
+    let staged_absolute = target_root.join(&staged_relative);
+    write_wav(&staged_absolute);
+    let (file_size, modified_ns) = file_identity(&staged_absolute);
+    update_stage(
+        &target_db,
+        &entry.id,
+        FileOpStage::Staged,
+        Some(file_size),
+        Some(modified_ns),
+    )
+    .unwrap();
+
+    let original_mode = std::fs::metadata(&nested).unwrap().permissions().mode();
+    std::fs::set_permissions(&nested, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::read_dir(&nested).is_ok() {
+        std::fs::set_permissions(&nested, std::fs::Permissions::from_mode(original_mode)).unwrap();
+        return;
+    }
+
+    let summary = reconcile_pending_ops(&target_db).unwrap();
+
+    std::fs::set_permissions(&nested, std::fs::Permissions::from_mode(original_mode)).unwrap();
+    assert_eq!(summary.completed, 0);
+    assert!(staged_absolute.exists());
+    assert_eq!(list_entries(&target_db).unwrap().entries.len(), 1);
+}
+
+#[test]
+fn reconcile_copy_rejects_same_size_and_mtime_regular_target_replacement() {
+    let temp = TempDir::new().unwrap();
+    let target_root = temp.path().join("target");
+    std::fs::create_dir_all(&target_root).unwrap();
+    let target_db = SourceDatabase::open_for_source_write(&target_root).unwrap();
+    let target_relative = PathBuf::from("copied.wav");
+    let staged_relative = staged_relative_for_target(&target_relative, "identity").unwrap();
+    let entry = FileOpJournalEntry::new_copy(
+        String::from("copy-identity-replacement"),
+        CopyJournalEntryInit {
+            target_relative: target_relative.clone(),
+            staged_relative: staged_relative.clone(),
+            tag: Rating::KEEP_1,
+            looped: false,
+            locked: false,
+            last_played_at: None,
+            last_curated_at: None,
+        },
+    )
+    .unwrap();
+    insert_entry(&target_db, &entry).unwrap();
+    let staged_absolute = target_root.join(&staged_relative);
+    write_wav(&staged_absolute);
+    let (file_size, modified_ns) = file_identity(&staged_absolute);
+    update_stage(
+        &target_db,
+        &entry.id,
+        FileOpStage::Staged,
+        Some(file_size),
+        Some(modified_ns),
+    )
+    .unwrap();
+    let target_absolute = target_root.join(&target_relative);
+    write_wav(&target_absolute);
+    filetime::set_file_mtime(
+        &target_absolute,
+        filetime::FileTime::from_unix_time(
+            modified_ns / 1_000_000_000,
+            (modified_ns % 1_000_000_000) as u32,
+        ),
+    )
+    .unwrap();
+
+    let summary = reconcile_pending_ops(&target_db).unwrap();
+
+    assert_eq!(summary.completed, 0);
+    assert!(staged_absolute.exists());
+    assert_eq!(list_entries(&target_db).unwrap().entries.len(), 1);
+    assert_eq!(std::fs::read(target_absolute).unwrap(), vec![0; 16]);
+}

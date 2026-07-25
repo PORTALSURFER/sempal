@@ -93,6 +93,12 @@ pub struct FileOpJournalEntry {
     pub file_size: Option<u64>,
     /// Recorded modified timestamp once filesystem work has completed.
     pub modified_ns: Option<i64>,
+    /// Stable identity of the staged/target file object.
+    pub file_identity: Option<String>,
+    /// Stable identity of the target source root.
+    pub target_root_identity: Option<String>,
+    /// Stable identity of the move source root.
+    pub source_root_identity: Option<String>,
     /// Stored keep/trash rating that should survive reconciliation.
     pub tag: Option<Rating>,
     /// Stored loop marker that should survive reconciliation.
@@ -162,6 +168,9 @@ impl FileOpJournalEntry {
             staged_relative: Some(init.staged_relative),
             file_size: None,
             modified_ns: None,
+            file_identity: None,
+            target_root_identity: None,
+            source_root_identity: None,
             tag: Some(init.tag),
             looped: Some(init.looped),
             locked: Some(init.locked),
@@ -183,6 +192,9 @@ impl FileOpJournalEntry {
             staged_relative: Some(init.staged_relative),
             file_size: None,
             modified_ns: None,
+            file_identity: None,
+            target_root_identity: None,
+            source_root_identity: None,
             tag: Some(init.tag),
             looped: Some(init.looped),
             locked: Some(init.locked),
