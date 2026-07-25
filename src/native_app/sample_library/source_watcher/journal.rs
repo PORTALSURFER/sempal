@@ -6,8 +6,10 @@
 //! filesystem identity, or any FSEvents history-loss flag fails closed to the existing bounded
 //! manifest audit.
 
+#[cfg(target_os = "macos")]
 use std::path::{Path, PathBuf};
 
+#[cfg(target_os = "macos")]
 use notify::EventKind;
 use serde::{Deserialize, Serialize};
 use wavecrate::sample_sources::{SampleSource, db::SourceDatabase};
@@ -27,8 +29,14 @@ pub(super) struct AuditBarrier(SourceWatcherCheckpoint);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum JournalRecovery {
-    Changes { paths: Vec<PathBuf>, event_id: u64 },
-    FullAudit { reason: &'static str },
+    #[cfg(target_os = "macos")]
+    Changes {
+        paths: Vec<PathBuf>,
+        event_id: u64,
+    },
+    FullAudit {
+        reason: &'static str,
+    },
 }
 
 /// Recover the changes made while the process was not observing a source root.
