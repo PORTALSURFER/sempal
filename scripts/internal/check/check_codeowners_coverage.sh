@@ -37,7 +37,6 @@ required_prefixes=(
   "/scripts/"
   "/docs/"
   "/manual/"
-  "/apps/"
   "/tools/"
   "/src/app_core/"
   "/src/app/"

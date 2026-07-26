@@ -43,7 +43,6 @@ try {
     "/scripts/",
     "/docs/",
     "/manual/",
-    "/apps/",
     "/tools/",
     "/src/app_core/",
     "/src/app/",

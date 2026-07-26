@@ -5,8 +5,7 @@
 # Checks:
 # - Required docs are referenced by path in `docs/README.md`
 # - Any `docs/*.md` path referenced in `docs/README.md` exists on disk
-# - `docs/README.md` points readers at `AGENTS.md` for repo workflow and
-#   indicates that planning/backlog live in Linear
+# - `docs/README.md` indicates that planning/backlog live in Linear
 
 set -euo pipefail
 
@@ -21,9 +20,6 @@ required=(
   "docs/TARGET.md"
   "docs/TROUBLESHOOTING.md"
 )
-required_non_doc_refs=(
-  "AGENTS.md"
-)
 required_phrases=(
   'Linear project `Wavecrate` under team `PORTALSURFER`'
 )
@@ -34,7 +30,7 @@ if [[ ! -f "$DOCS_README" ]]; then
 fi
 
 missing_refs=0
-for path in "${required[@]}" "${required_non_doc_refs[@]}" "${required_phrases[@]}"; do
+for path in "${required[@]}" "${required_phrases[@]}"; do
   if command -v rg >/dev/null 2>&1; then
     found_path=0
     rg -F -q "$path" "$DOCS_README" || found_path=1

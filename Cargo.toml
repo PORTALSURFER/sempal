@@ -1,7 +1,6 @@
 [workspace]
 members = [
     ".",
-    "apps/updater-helper",
     "crates/reson",
     "crates/wavecrate-analysis",
     "crates/wavecrate-library",

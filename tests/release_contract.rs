@@ -22,10 +22,6 @@ const RELEASE_PACKAGE_MANIFESTS: &[(&str, &str)] = &[
         include_str!("../crates/wavecrate-scan/Cargo.toml"),
     ),
     (
-        "wavecrate-updater-helper",
-        include_str!("../apps/updater-helper/Cargo.toml"),
-    ),
-    (
         "wavecrate-analysis-admin",
         include_str!("../tools/analysis-admin/Cargo.toml"),
     ),
@@ -68,7 +64,6 @@ const VERIFY_PORTALSURFER_UPLOAD_CATALOG_SCRIPT: &str =
     include_str!("../scripts/internal/release/verify_portalsurfer_upload_catalog.py");
 const VERIFY_PUBLISHED_RELEASE_SCRIPT: &str =
     include_str!("../scripts/internal/release/verify_published_release.py");
-const AGENT_DOCS: &str = include_str!("../AGENTS.md");
 const ENV_VAR_DOCS: &str = include_str!("../docs/ENV_VARS.md");
 const SCRIPTS_DOCS: &str = include_str!("../scripts/README.md");
 const TEST_DOCS: &str = include_str!("../docs/TEST.md");
@@ -490,7 +485,6 @@ fn release_surfaces_describe_supported_artifacts_without_setup_contracts() {
 #[test]
 fn release_lifecycle_docs_separate_rc_stabilization_from_stable_promotion() {
     for (surface, contents) in [
-        ("AGENTS.md", AGENT_DOCS),
         ("docs/ENV_VARS.md", ENV_VAR_DOCS),
         ("docs/TEST.md", TEST_DOCS),
         ("docs/TARGET.md", TARGET_DOCS),
@@ -506,10 +500,6 @@ fn release_lifecycle_docs_separate_rc_stabilization_from_stable_promotion() {
         );
     }
 
-    assert!(
-        AGENT_DOCS.contains("it never authorizes dispatching the stable release workflow"),
-        "AGENTS.md must not let ordinary approval dispatch stable"
-    );
     assert!(
         TEST_DOCS.contains("Continue normal PRs into `main`")
             && TEST_DOCS.contains("published as an RC"),

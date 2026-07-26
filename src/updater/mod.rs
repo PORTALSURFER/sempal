@@ -1,7 +1,7 @@
 //! Update-check and update-application helpers.
 //!
-//! This module is consumed both by the main app shell (to check for new releases)
-//! and by the optional `wavecrate-updater` helper binary (to apply updates).
+//! This module is consumed by the main app shell for release checks and update
+//! application orchestration.
 
 mod apply;
 mod archive;
@@ -67,7 +67,7 @@ pub struct RuntimeIdentity {
     pub arch: String,
 }
 
-/// Updater run configuration (used by `wavecrate-updater`).
+/// Update-application run configuration.
 #[derive(Debug, Clone)]
 pub struct UpdaterRunArgs {
     /// GitHub repository slug.

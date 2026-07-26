@@ -56,7 +56,7 @@ fn get_with_retry(url: &str) -> Result<ureq::Response, UpdateError> {
         || {
             http_client::agent()
                 .get(url)
-                .set("User-Agent", "wavecrate-updater")
+                .set("User-Agent", "wavecrate")
                 .call()
         },
         |err| match err {

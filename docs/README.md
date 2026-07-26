@@ -30,9 +30,6 @@ Machine-consumed check allowlists do not live here anymore. They now live under
 
 ## Live operational files
 
-- `AGENTS.md`
-  - repo-specific workflow rules, validation entrypoints, branch policy, and
-    repo-to-Linear project mapping
 - Planning and backlog
   - live in Linear project `Wavecrate` under team `PORTALSURFER`
 - Public docs build

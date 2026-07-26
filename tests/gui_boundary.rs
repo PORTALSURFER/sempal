@@ -106,26 +106,6 @@ fn source_processing_supervisor_uses_backend_neutral_events() {
 }
 
 #[test]
-fn agent_instructions_call_out_large_gui_import_lists() {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let source = fs::read_to_string(format!("{manifest_dir}/AGENTS.md"))
-        .expect("AGENTS.md should be readable");
-
-    for required in [
-        "large import lists are architecture signals",
-        "split the module by responsibility",
-        "move reusable",
-        "GUI behavior into Radiant",
-        "facade may wire",
-    ] {
-        assert!(
-            source.contains(required),
-            "AGENTS.md should preserve the GUI import hygiene rule: missing `{required}`"
-        );
-    }
-}
-
-#[test]
 fn sample_identity_fingerprints_require_wavecrate_debug_mode() {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let source = fs::read_to_string(format!(

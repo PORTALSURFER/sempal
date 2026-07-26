@@ -14,7 +14,6 @@
 /scripts/ @PORTALSURFER
 /docs/ @PORTALSURFER
 /manual/ @PORTALSURFER
-/apps/ @PORTALSURFER
 /tools/ @PORTALSURFER
 
 # Core application code (by responsibility buckets).
@@ -27,12 +26,9 @@
 /src/analysis/ @PORTALSURFER
 /src/sample_sources/ @PORTALSURFER
 /src/waveform/ @PORTALSURFER
-/src/companion_apps/ @PORTALSURFER
-
 /src/selection/ @PORTALSURFER
 /src/app_dirs/ @PORTALSURFER
 /src/updater/ @PORTALSURFER
-/apps/updater-helper/ @PORTALSURFER
 /src/logging.rs @PORTALSURFER
 /src/http_client.rs @PORTALSURFER
 /src/issue_gateway/ @PORTALSURFER

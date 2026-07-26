@@ -9,8 +9,7 @@ Ensures `docs/README.md` remains a reliable system-of-record landing page.
 Checks:
 - Required docs are referenced by path in `docs/README.md`
 - Any `docs/*.md` path referenced in `docs/README.md` exists on disk
-- `docs/README.md` points readers at `AGENTS.md` for repo workflow and
-  indicates that planning/backlog live in Linear
+- `docs/README.md` indicates that planning/backlog live in Linear
 #>
 
 $rootDir = (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
@@ -27,9 +26,6 @@ try {
     "docs/TARGET.md"
     "docs/TROUBLESHOOTING.md"
   )
-  $requiredNonDocRefs = @(
-    "AGENTS.md"
-  )
   $requiredPhrases = @(
     'Linear project `Wavecrate` under team `PORTALSURFER`'
   )
@@ -37,7 +33,7 @@ try {
   $text = Get-Content -LiteralPath $docsReadme -Raw
 
   $missingRefs = @()
-  foreach ($path in ($required + $requiredNonDocRefs)) {
+  foreach ($path in $required) {
     if (-not $text.Contains($path)) {
       $missingRefs += $path
     }
