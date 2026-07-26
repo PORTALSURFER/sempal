@@ -283,13 +283,23 @@ fn committed_file(path: &Path, owned_file: File) -> CommittedFile {
 }
 
 fn rename_requires_copy_fallback(error: &io::Error) -> bool {
-    error.kind() == ErrorKind::CrossesDevices
-        || error.kind() == ErrorKind::Unsupported
-        || cfg!(any(target_os = "linux", target_os = "android"))
-            && matches!(
-                error.raw_os_error(),
-                Some(libc::ENOSYS | libc::EINVAL | libc::EOPNOTSUPP)
-            )
+    matches!(
+        error.kind(),
+        ErrorKind::CrossesDevices | ErrorKind::Unsupported
+    ) || platform_rename_requires_copy_fallback(error)
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn platform_rename_requires_copy_fallback(error: &io::Error) -> bool {
+    matches!(
+        error.raw_os_error(),
+        Some(libc::ENOSYS | libc::EINVAL | libc::EOPNOTSUPP)
+    )
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
+fn platform_rename_requires_copy_fallback(_error: &io::Error) -> bool {
+    false
 }
 
 mod platform;

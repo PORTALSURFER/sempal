@@ -223,3 +223,34 @@ fn cross_device_fallback_commits_before_removing_the_source() {
     assert!(!source.exists());
     assert_eq!(fs::read(destination).unwrap(), b"source");
 }
+
+#[test]
+fn rename_fallback_accepts_unconditional_error_kinds() {
+    assert!(rename_requires_copy_fallback(&io::Error::from(
+        ErrorKind::CrossesDevices,
+    )));
+    assert!(rename_requires_copy_fallback(&io::Error::from(
+        ErrorKind::Unsupported,
+    )));
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+#[test]
+fn rename_fallback_accepts_linux_raw_errnos() {
+    for errno in [libc::ENOSYS, libc::EINVAL, libc::EOPNOTSUPP] {
+        let error = io::Error::from_raw_os_error(errno);
+        assert!(rename_requires_copy_fallback(&error));
+    }
+}
+
+#[test]
+fn rename_fallback_rejects_unrelated_errors() {
+    assert!(!rename_requires_copy_fallback(&io::Error::from(
+        ErrorKind::AlreadyExists,
+    )));
+    assert!(!rename_requires_copy_fallback(&io::Error::from(
+        ErrorKind::PermissionDenied,
+    )));
+    let unrelated_raw_error = io::Error::from_raw_os_error(i32::MAX);
+    assert!(!rename_requires_copy_fallback(&unrelated_raw_error));
+}
