@@ -26,6 +26,7 @@ pub(in crate::native_app) struct FolderBrowserState {
     pub(super) panel_layout: BrowserPanelLayoutState,
     pub(super) sample_list: SampleListState,
     scan_content_refresh_revision: Option<u64>,
+    background_content_refresh_revision: Option<u64>,
     prepared_audio_file_ids: HashSet<String>,
     deferred_scan_file_ids: HashSet<String>,
     /// Most recent keyboard or pointer focus activity. Pointer focus records
@@ -100,6 +101,7 @@ impl FolderBrowserState {
             panel_layout: BrowserPanelLayoutState::new(),
             sample_list: SampleListState::new(),
             scan_content_refresh_revision: None,
+            background_content_refresh_revision: None,
             prepared_audio_file_ids: HashSet::new(),
             deferred_scan_file_ids: HashSet::new(),
             keyboard_focus_shown_at: None,
@@ -134,6 +136,7 @@ impl FolderBrowserState {
             panel_layout: BrowserPanelLayoutState::new(),
             sample_list: SampleListState::new(),
             scan_content_refresh_revision: None,
+            background_content_refresh_revision: None,
             prepared_audio_file_ids: HashSet::new(),
             deferred_scan_file_ids: HashSet::new(),
             keyboard_focus_shown_at: None,
@@ -378,6 +381,7 @@ impl FolderBrowserState {
             aspect_scores_by_file,
         ));
         self.bump_file_content_revision();
+        self.mark_background_content_refresh_pending();
     }
 
     #[cfg(test)]
@@ -552,9 +556,14 @@ impl FolderBrowserState {
         let preserve_scan_refresh = self.scan_content_refresh_revision
             == Some(self.sample_list.content_revision)
             && self.visible_sample_window_needs_content_refresh();
+        let preserve_background_refresh = self.background_content_refresh_revision
+            == Some(self.sample_list.content_revision)
+            && self.visible_sample_window_needs_content_refresh();
         self.sample_list.bump_content_revision();
         self.scan_content_refresh_revision =
             preserve_scan_refresh.then_some(self.sample_list.content_revision);
+        self.background_content_refresh_revision =
+            preserve_background_refresh.then_some(self.sample_list.content_revision);
     }
 
     pub(super) fn mark_scan_content_refresh_pending(&mut self) {
@@ -573,6 +582,14 @@ impl FolderBrowserState {
         self.deferred_scan_file_ids.clear();
     }
 
+    pub(super) fn mark_background_content_refresh_pending(&mut self) {
+        self.background_content_refresh_revision = Some(self.sample_list.content_revision);
+    }
+
+    pub(super) fn clear_background_content_refresh_pending(&mut self) {
+        self.background_content_refresh_revision = None;
+    }
+
     pub(super) fn remember_prepared_audio_file_ids(&mut self) {
         self.prepared_audio_file_ids = self
             .selected_source_audio_files()
@@ -587,6 +604,11 @@ impl FolderBrowserState {
 
     pub(in crate::native_app) fn scan_content_refresh_pending(&self) -> bool {
         self.scan_content_refresh_revision == Some(self.sample_list.content_revision)
+            && self.visible_sample_window_needs_content_refresh()
+    }
+
+    pub(in crate::native_app) fn background_content_refresh_pending(&self) -> bool {
+        self.background_content_refresh_revision == Some(self.sample_list.content_revision)
             && self.visible_sample_window_needs_content_refresh()
     }
 

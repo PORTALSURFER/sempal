@@ -295,7 +295,20 @@ fn waveform_drag_defers_sample_browser_preparation(state: &NativeAppState) -> bo
             .library
             .folder_browser
             .visible_sample_window_needs_content_refresh()
-            || state.library.folder_browser.scan_content_refresh_pending())
+            || state.library.folder_browser.scan_content_refresh_pending()
+            || state
+                .library
+                .folder_browser
+                .background_content_refresh_pending())
+}
+
+fn browser_drag_defers_background_refresh(state: &NativeAppState) -> bool {
+    state
+        .library
+        .folder_browser
+        .background_content_refresh_pending()
+        && (state.library.folder_browser.drag_active()
+            || state.library.folder_browser.source_reorder_drag_active())
 }
 
 fn starmap_audition_drag_defers_sample_browser_preparation(state: &NativeAppState) -> bool {
@@ -309,6 +322,7 @@ fn starmap_audition_drag_defers_sample_browser_preparation(state: &NativeAppStat
 fn live_drag_defers_sample_browser_preparation(state: &NativeAppState) -> bool {
     waveform_drag_defers_sample_browser_preparation(state)
         || starmap_audition_drag_defers_sample_browser_preparation(state)
+        || browser_drag_defers_background_refresh(state)
 }
 
 #[cfg(test)]
@@ -395,6 +409,80 @@ mod tests {
             "extracted row should be visible before the active playmark drag ends"
         );
         assert!(waveform_drag_defers_sample_browser_preparation(&state));
+    }
+
+    #[test]
+    fn active_waveform_drag_defers_readiness_score_refresh_until_release() {
+        let root = tempfile::tempdir().expect("source root");
+        let source = root.path().join("source");
+        fs::create_dir_all(&source).expect("create source folder");
+        let original = source.join("original.wav");
+        fs::write(&original, [0_u8; 8]).expect("write original");
+        let mut state = NativeAppStateFixture::default()
+            .with_folder_browser(FolderBrowserState::from_root(source.clone()))
+            .with_synthetic_waveform()
+            .build();
+        prepare_sample_browser_view(&mut state);
+
+        state
+            .library
+            .folder_browser
+            .toggle_similarity_anchor(original.to_string_lossy().into_owned());
+        prepare_sample_browser_view(&mut state);
+        state.waveform.current.set_play_selection_range(0.2, 0.4);
+        state
+            .waveform
+            .current
+            .apply_interaction(WaveformInteraction::BeginSelectionMove {
+                kind: WaveformSelectionKind::Play,
+                visible_ratio: 0.25,
+            });
+
+        state
+            .library
+            .folder_browser
+            .set_similarity_scores_for_tests(
+                original.to_string_lossy().into_owned(),
+                [(original.to_string_lossy().into_owned(), 1.0)]
+                    .into_iter()
+                    .collect(),
+            );
+        assert!(
+            state
+                .library
+                .folder_browser
+                .background_content_refresh_pending()
+        );
+        assert!(waveform_drag_defers_sample_browser_preparation(&state));
+        prepare_sample_browser_view(&mut state);
+        assert!(
+            state
+                .library
+                .folder_browser
+                .background_content_refresh_pending(),
+            "readiness refresh must remain deferred during the active Playmark drag"
+        );
+
+        state
+            .waveform
+            .current
+            .apply_interaction(WaveformInteraction::FinishSelection {
+                visible_ratio: 0.45,
+            });
+        prepare_sample_browser_view(&mut state);
+        assert!(
+            !state
+                .library
+                .folder_browser
+                .background_content_refresh_pending()
+        );
+        let selection = state
+            .waveform
+            .current
+            .play_selection()
+            .expect("Playmark selection survives deferred refresh");
+        assert!((selection.start() - 0.4).abs() < 0.001);
+        assert!((selection.end() - 0.6).abs() < 0.001);
     }
 
     #[test]
