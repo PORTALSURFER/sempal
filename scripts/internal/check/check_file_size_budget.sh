@@ -3,7 +3,7 @@
 # Enforces a per-file line budget for Rust sources.
 #
 # By default, the script checks only added/modified Rust files in `src/`, `tests/`,
-# and `vendor/radiant/src` relative to a git diff range, plus any staged/unstaged
+# relative to a git diff range, plus any staged/unstaged
 # working tree changes. Known legacy exceptions live in `scripts/internal/check/allowlists/file_size_budget_allowlist.txt`.
 
 set -euo pipefail
@@ -26,14 +26,12 @@ CHECK_ALL=0
 COLLECTED_FILE_COUNT=0
 COLLECT_SCOPE=""
 PROJECT_TRACKED_PATHS=(src tests)
-VENDOR_REPO_PATH="vendor/radiant"
-VENDOR_SCOPE_PATH="src"
 
 usage() {
   cat <<'EOF'
 Usage: scripts/internal/check/check_file_size_budget.sh [--base <ref>] [--head <ref>] [--limit <n>] [--all]
 
-Checks Rust files under `src/`, `tests/`, and `vendor/radiant/src` and fails if any
+Checks Rust files under `src/` and `tests/` and fails if any
 non-allowlisted file exceeds the line budget.
 
 Default behavior:
@@ -100,73 +98,6 @@ git_has_commit() {
   wavecrate_git rev-parse --verify --quiet "$1^{commit}" >/dev/null 2>&1
 }
 
-repo_has_commit() {
-  local repo_path="$1"
-  local ref="$2"
-  [[ -n "$ref" ]] || return 1
-  wavecrate_git -C "$repo_path" rev-parse --verify --quiet "$ref^{commit}" >/dev/null 2>&1
-}
-
-repo_is_ready() {
-  local repo_path="$1"
-  [[ -d "$repo_path" ]] || return 1
-  wavecrate_git -C "$repo_path" rev-parse --is-inside-work-tree >/dev/null 2>&1
-}
-
-emit_vendor_working_tree_files() {
-  local vendor_src="$ROOT_DIR/$VENDOR_REPO_PATH/$VENDOR_SCOPE_PATH"
-  [[ -d "$vendor_src" ]] || return 0
-  find "$vendor_src" -type f -name '*.rs' -print \
-    | sed "s#^$ROOT_DIR/##" \
-    | sed 's#\\#/#g'
-}
-
-collect_vendor_files() {
-  local base="$1"
-  local head="$2"
-
-  if ! repo_is_ready "$VENDOR_REPO_PATH"; then
-    emit_vendor_working_tree_files
-    return
-  fi
-
-  if (( CHECK_ALL == 1 )); then
-    wavecrate_git -C "$VENDOR_REPO_PATH" ls-files -- "$VENDOR_SCOPE_PATH" \
-      | sed "s#^#$VENDOR_REPO_PATH/#"
-    return
-  fi
-
-  local pointer_changed=0
-  if [[ -n "$base" ]] && git_has_commit "$base" && git_has_commit "$head"; then
-    if wavecrate_git diff --name-only --diff-filter=AM "$base...$head" -- "$VENDOR_REPO_PATH" | grep -q .; then
-      pointer_changed=1
-    fi
-  elif git_has_commit "$head"; then
-    if wavecrate_git show --name-only --pretty=format: "$head" -- "$VENDOR_REPO_PATH" | grep -q .; then
-      pointer_changed=1
-    fi
-  fi
-
-  if (( pointer_changed == 1 )); then
-    wavecrate_git -C "$VENDOR_REPO_PATH" ls-files -- "$VENDOR_SCOPE_PATH" \
-      | sed "s#^#$VENDOR_REPO_PATH/#"
-    return
-  fi
-
-  if [[ -n "$base" ]] && repo_has_commit "$VENDOR_REPO_PATH" "$base" && repo_has_commit "$VENDOR_REPO_PATH" "$head"; then
-    wavecrate_git -C "$VENDOR_REPO_PATH" diff --name-only --diff-filter=AM "$base...$head" -- "$VENDOR_SCOPE_PATH" \
-      | sed "s#^#$VENDOR_REPO_PATH/#"
-  elif repo_has_commit "$VENDOR_REPO_PATH" "$head"; then
-    wavecrate_git -C "$VENDOR_REPO_PATH" show --name-only --pretty=format: "$head" -- "$VENDOR_SCOPE_PATH" \
-      | sed "s#^#$VENDOR_REPO_PATH/#"
-  fi
-
-  wavecrate_git -C "$VENDOR_REPO_PATH" diff --name-only --diff-filter=AM --cached -- "$VENDOR_SCOPE_PATH" \
-    | sed "s#^#$VENDOR_REPO_PATH/#"
-  wavecrate_git -C "$VENDOR_REPO_PATH" diff --name-only --diff-filter=AM -- "$VENDOR_SCOPE_PATH" \
-    | sed "s#^#$VENDOR_REPO_PATH/#"
-}
-
 collect_files() {
   local base="$1"
   local head="$2"
@@ -216,20 +147,13 @@ collect_files() {
     )
     staged_count="${#staged[@]}"
     unstaged_count="${#unstaged[@]}"
-    raw_files+=("${staged[@]}" "${unstaged[@]}")
+    raw_files+=("${staged[@]-}" "${unstaged[@]-}")
   fi
-
-  local -a vendor_files=()
-  while IFS= read -r path; do
-    vendor_files+=("$path")
-  done < <(collect_vendor_files "$base" "$head" || true)
-  raw_files+=("${vendor_files[@]}")
 
   local candidate
   for candidate in "${raw_files[@]}"; do
     [[ "$candidate" == src/* ]] && [[ "$candidate" == *.rs ]] && rust_files+=("$candidate")
     [[ "$candidate" == tests/* ]] && [[ "$candidate" == *.rs ]] && rust_files+=("$candidate")
-    [[ "$candidate" == vendor/radiant/src/* ]] && [[ "$candidate" == *.rs ]] && rust_files+=("$candidate")
   done
 
   local -a uniq_files=()

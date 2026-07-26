@@ -16,7 +16,7 @@ Then (unless -NoRun) launches:
 
 Defaults:
 - base ref: HEAD
-- worktree path: <repo>\.worktrees\<id>
+- paired paths: <repo>\.worktrees\<id>\wavecrate and <repo>\.worktrees\<id>\radiant
 #>
 
 param(
@@ -45,8 +45,10 @@ try {
   }
 
   if ([string]::IsNullOrWhiteSpace($Path)) {
-    $Path = Join-Path $rootDir (".worktrees\\" + $Name)
+    $Path = Join-Path $rootDir (".worktrees\\" + $Name + "\\wavecrate")
   }
+  $pairRoot = Split-Path -Parent $Path
+  $radiantPath = Join-Path $pairRoot "radiant"
 
   $branchId = Sanitize-BranchId $Name
   if ([string]::IsNullOrWhiteSpace($branchId)) {
@@ -57,12 +59,18 @@ try {
   if (Test-Path -LiteralPath $Path) {
     throw "[worktree_task] ERROR: worktree path already exists: $Path"
   }
+  if (Test-Path -LiteralPath $radiantPath) {
+    throw "[worktree_task] ERROR: paired Radiant path already exists: $radiantPath"
+  }
 
   Write-Host "[worktree_task] Creating worktree:"
   Write-Host ("[worktree_task]   branch={0}" -f $branch)
   Write-Host ("[worktree_task]   base={0}" -f $Base)
   Write-Host ("[worktree_task]   path={0}" -f $Path)
   git worktree add -b $branch $Path $Base
+  Write-Host "[worktree_task] Provisioning isolated Radiant sibling: $radiantPath"
+  & (Join-Path $Path "scripts/radiant.ps1") provision -Clean -Path $radiantPath
+  if ($LASTEXITCODE -ne 0) { throw "Radiant sibling provisioning failed" }
 
   Push-Location $Path
   try {
@@ -96,4 +104,3 @@ try {
 } finally {
   Pop-Location
 }
-

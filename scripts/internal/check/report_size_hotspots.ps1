@@ -51,36 +51,9 @@ function Get-RootTrackedFiles {
   return @($files)
 }
 
-function Get-VendorTrackedFiles {
-  param(
-    [string]$RepoPath,
-    [string[]]$Paths
-  )
-
-  $files = New-Object "System.Collections.Generic.HashSet[string]"
-  git -C $RepoPath rev-parse --is-inside-work-tree | Out-Null
-  if ($LASTEXITCODE -ne 0) {
-    return @()
-  }
-
-  foreach ($file in @(git -C $RepoPath ls-files -- $Paths)) {
-    if ($LASTEXITCODE -ne 0) {
-      throw "[size_hotspots] failed to enumerate tracked vendor files"
-    }
-    $path = Convert-ToRepoPath $file
-    if ([string]::IsNullOrWhiteSpace($path)) { continue }
-    [void]$files.Add((("{0}/{1}" -f $RepoPath, $path).Replace("\", "/")))
-  }
-  return @($files)
-}
-
 function Get-Scope {
   param([string]$File)
   if ($File.StartsWith("scripts/internal/")) { return "scripts/internal" }
-  if ($File.StartsWith("vendor/radiant/src/gui/")) { return "vendor/radiant gui" }
-  if ($File.StartsWith("vendor/radiant/src/application/layout_builders/")) {
-    return "vendor/radiant layout builders"
-  }
   return "other"
 }
 
@@ -95,11 +68,6 @@ try {
   foreach ($file in Get-RootTrackedFiles -Paths @("scripts/internal")) {
     $extension = [System.IO.Path]::GetExtension($file)
     if ($scriptExtensions.Contains($extension)) {
-      [void]$candidateFiles.Add($file)
-    }
-  }
-  foreach ($file in Get-VendorTrackedFiles -RepoPath "vendor/radiant" -Paths @("src/gui", "src/application/layout_builders")) {
-    if ($file.EndsWith(".rs")) {
       [void]$candidateFiles.Add($file)
     }
   }
@@ -121,7 +89,7 @@ try {
   Write-Host ""
   Write-Host ('- Timestamp (UTC): `{0}`' -f $timestampUtc)
   Write-Host ('- Limit: `{0}` lines' -f $Limit)
-  Write-Host '- Scopes: `scripts/internal`, `vendor/radiant/src/gui`, `vendor/radiant/src/application/layout_builders`'
+  Write-Host '- Scopes: `scripts/internal`'
   Write-Host ("- Entries: total={0} over={1}" -f $sorted.Count, $over.Count)
   Write-Host ""
 

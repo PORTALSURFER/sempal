@@ -3,7 +3,7 @@
 # Diff-aware guardrail for private + public Rust item docs.
 #
 # Fails when added Rust items (fn/struct/enum/trait/type/const/static/mod) in
-# src/ or vendor/radiant/src/ are missing nearby doc comments.
+# src/ files are missing nearby doc comments.
 
 set -euo pipefail
 
@@ -64,7 +64,7 @@ scan_diff() {
   local head_ref="$3"
   shift 3
 
-  wavecrate_git diff --unified=0 --diff-filter=AMR "$@" -- src vendor/radiant/src \
+  wavecrate_git diff --unified=0 --diff-filter=AMR "$@" -- src \
     | python3 scripts/internal/check/check_rust_private_docs_impl.py \
         --label "$label" \
         --source "$source" \

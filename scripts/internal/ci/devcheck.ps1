@@ -52,19 +52,21 @@ function Invoke-NativeStep {
 Push-Location $rootDir
 try {
   Enable-WavecrateCargoCache
+  $radiantDir = (& (Join-Path $rootDir 'scripts/radiant.ps1') locate | Where-Object { $_ -like 'RADIANT_DIR=*' } | ForEach-Object { $_.Substring(13) })
+  if (-not $radiantDir) { throw "Radiant sibling is missing or invalid" }
   Write-Host "[devcheck] branch policy"
   Invoke-NativeStep -Label "branch policy" -Command {
     & (Join-Path $rootDir "scripts/check.ps1") main-branch
   }
 
-  Write-Host "[devcheck] cargo check --manifest-path vendor/radiant/Cargo.toml"
-  Invoke-NativeStep -Label "cargo check --manifest-path vendor/radiant/Cargo.toml" -Command {
-    Invoke-WavecrateCargo check --manifest-path vendor/radiant/Cargo.toml
+  Write-Host "[devcheck] cargo check --manifest-path $radiantDir/Cargo.toml"
+  Invoke-NativeStep -Label "cargo check --manifest-path $radiantDir/Cargo.toml" -Command {
+    Invoke-WavecrateCargo check --manifest-path (Join-Path $radiantDir 'Cargo.toml')
   }
 
-  Write-Host "[devcheck] cargo check --manifest-path vendor/radiant/Cargo.toml --example generic_native --no-default-features"
-  Invoke-NativeStep -Label "cargo check --manifest-path vendor/radiant/Cargo.toml --example generic_native --no-default-features" -Command {
-    Invoke-WavecrateCargo check --manifest-path vendor/radiant/Cargo.toml --example generic_native --no-default-features
+  Write-Host "[devcheck] cargo check --manifest-path $radiantDir/Cargo.toml --example generic_native --no-default-features"
+  Invoke-NativeStep -Label "cargo check --manifest-path $radiantDir/Cargo.toml --example generic_native --no-default-features" -Command {
+    Invoke-WavecrateCargo check --manifest-path (Join-Path $radiantDir 'Cargo.toml') --example generic_native --no-default-features
   }
 
   if ($AppOnly) {

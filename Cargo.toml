@@ -13,6 +13,11 @@ members = [
 default-members = ["."]
 resolver = "3"
 
+[workspace.metadata.radiant]
+repository = "https://github.com/PORTALSURFER/radiant.git"
+revision = "14c2e70818d6c7fb78ff3f19b06b017e99bdcfa3"
+path = "../radiant"
+
 [package]
 name = "wavecrate"
 version = "0.19.1"
@@ -49,7 +54,7 @@ arboard = "3.6.1"
 pollster = "0.4.0"
 vello = "0.7.0"
 skrifa = "0.40.0"
-radiant = { path = "vendor/radiant" }
+radiant = { path = "../radiant" }
 open = "5.3.3"
 image = "0.25.9"
 raw-window-handle = "0.6"

@@ -30,7 +30,7 @@ code_vars_path="$tmp_dir/code_vars.txt"
 doc_vars_path="$tmp_dir/doc_vars.txt"
 
 (
-  rg -o --no-filename "WAVECRATE_[A-Z0-9_]+" src vendor/radiant/src scripts .github 2>/dev/null || true
+  rg -o --no-filename "WAVECRATE_[A-Z0-9_]+" src scripts .github 2>/dev/null || true
   rg -o --no-filename "\\bCPAL_ASIO_DIR\\b" README.md manual src scripts .github 2>/dev/null || true
   rg -o --no-filename "\\bRUST_LOG\\b" README.md manual src scripts .github 2>/dev/null || true
 ) | sort -u >"$code_vars_path"
@@ -87,4 +87,3 @@ if stale:
 else:
     print("None.")
 PY
-

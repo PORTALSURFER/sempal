@@ -72,6 +72,18 @@ failures=0
 
 echo "[bootstrap] repo: $ROOT_DIR"
 
+if (( VERIFY_ONLY == 1 )); then
+  if bash "$ROOT_DIR/scripts/radiant.sh" locate; then
+    echo "[bootstrap] Radiant sibling: available"
+  else
+    echo "[bootstrap] Radiant sibling: missing or invalid (run without --verify-only to provision)" >&2
+    failures=$((failures + 1))
+  fi
+else
+  echo "[bootstrap] Provisioning/checking the canonical Radiant sibling..."
+  bash "$ROOT_DIR/scripts/radiant.sh" provision
+fi
+
 if ! command -v git >/dev/null 2>&1; then
   echo "[bootstrap] ERROR: git not found on PATH" >&2
   exit 1

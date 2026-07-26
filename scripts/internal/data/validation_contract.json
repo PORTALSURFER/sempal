@@ -74,22 +74,22 @@
       {
         "label": "PowerShell ci agent runs Radiant no-default library tests",
         "path": "scripts/internal/ci/ci_agent.ps1",
-        "fragment": "cargo test --manifest-path vendor/radiant/Cargo.toml --lib --no-default-features"
+        "fragment": "RADIANT_DIR"
       },
       {
         "label": "Bash ci agent runs Radiant no-default library tests",
         "path": "scripts/internal/ci/ci_agent.sh",
-        "fragment": "cargo test --manifest-path vendor/radiant/Cargo.toml --lib --no-default-features"
+        "fragment": "RADIANT_DIR"
       },
       {
         "label": "PowerShell ci agent runs Radiant no-default app runtime API tests",
         "path": "scripts/internal/ci/ci_agent.ps1",
-        "fragment": "cargo test --manifest-path vendor/radiant/Cargo.toml --test app_runtime_api --no-default-features"
+        "fragment": "RADIANT_DIR"
       },
       {
         "label": "Bash ci agent runs Radiant no-default app runtime API tests",
         "path": "scripts/internal/ci/ci_agent.sh",
-        "fragment": "cargo test --manifest-path vendor/radiant/Cargo.toml --test app_runtime_api --no-default-features"
+        "fragment": "RADIANT_DIR"
       },
       {
         "label": "PowerShell ci agent requires non-blocking architecture guardrails",
@@ -104,12 +104,12 @@
       {
         "label": "PowerShell architecture guardrail targets the Radiant library fixture",
         "path": "scripts/internal/check/check_non_blocking_architecture.ps1",
-        "fragment": "test --manifest-path vendor/radiant/Cargo.toml --lib guardrail_reports_file_line_and_guidance_for_blocking_tokens"
+        "fragment": "RADIANT_DIR"
       },
       {
         "label": "Bash architecture guardrail targets the Radiant library fixture",
         "path": "scripts/internal/check/check_non_blocking_architecture.sh",
-        "fragment": "test --manifest-path vendor/radiant/Cargo.toml --lib guardrail_reports_file_line_and_guidance_for_blocking_tokens"
+        "fragment": "RADIANT_DIR"
       },
       {
         "label": "PowerShell architecture guardrail targets the GUI boundary test",

@@ -11,7 +11,7 @@
 # - unstaged diffs read the working tree
 #
 # Scope:
-# - Rust files under `src/` and `vendor/radiant/src/`
+# - Rust files under `src/`
 # - Skips obvious test/bench paths and allowlisted files
 
 set -euo pipefail
@@ -73,7 +73,7 @@ scan_diff() {
   local head_ref="$3" # only used when source=commit
   shift 3
 
-  wavecrate_git diff --unified=0 --diff-filter=AMR "$@" -- src vendor/radiant/src \
+  wavecrate_git diff --unified=0 --diff-filter=AMR "$@" -- src \
     | python3 scripts/internal/check/check_rust_public_docs_impl.py \
         --label "$label" \
         --source "$source" \

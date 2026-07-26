@@ -3,9 +3,9 @@
 Fast-forwards both development repos and runs Wavecrate in release sandbox mode.
 
 .DESCRIPTION
-Verifies that the main repo is on local `main` tracking `origin/main` and
-`vendor/radiant` is on local `main` tracking `origin/main`, requires both
-worktrees to be clean, pulls the latest remote commits, then delegates to
+Verifies that the main repo is on local `main` tracking `origin/main`,
+provisions the canonical Radiant sibling at its recorded revision, requires
+the Wavecrate worktree to be clean, then delegates to
 `scripts/run.ps1 sandbox`.
 
 This script accepts the same sandbox options as `scripts/run.ps1 sandbox`. Any
@@ -26,13 +26,12 @@ $ErrorActionPreference = "Stop"
 
 if ($Help) {
   Write-Host "Usage: scripts/internal/release/pull_and_run_release.ps1 [-Dir <path> | -Name <name> | -Temp] [-Clean] [-WriteDb] [-- <app args...>]"
-  Write-Host "Fast-forward the main repo and vendor/radiant from origin/main, then run scripts/run.ps1 sandbox."
-  Write-Host "Both repos must be clean and on their expected tracking branches."
+  Write-Host "Fast-forward Wavecrate, provision the pinned Radiant sibling, then run scripts/run.ps1 sandbox."
+  Write-Host "Wavecrate must be clean; the Radiant provisioning helper refuses dirty checkouts."
   exit 0
 }
 
 $rootDir = (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
-$radiantDir = Join-Path $rootDir "vendor/radiant"
 $runSandboxScript = Join-Path $rootDir "scripts/run.ps1"
 
 function Invoke-GitCommand {
@@ -140,7 +139,8 @@ if ($WriteDb) {
 }
 
 Sync-Repo -RepoPath $rootDir -Label "main" -ExpectedBranch "main" -ExpectedUpstream "origin/main"
-Sync-Repo -RepoPath $radiantDir -Label "vendor/radiant" -ExpectedBranch "main" -ExpectedUpstream "origin/main"
+& (Join-Path $rootDir 'scripts/radiant.ps1') provision -Clean
+if ($LASTEXITCODE -ne 0) { throw "Radiant sibling provisioning failed" }
 
 Write-Host "[pull_and_run_release] Starting release sandbox run"
 if ($args.Count -gt 0) {

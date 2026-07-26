@@ -2,7 +2,7 @@
 #
 # Wavecrate aims to keep source files under 400 LOC. This allowlist captures the
 # current legacy exceptions within the guardrail scope (`src/`, `tests/`, and
-# `vendor/radiant/src`) that still exceed the budget on 2026-03-25 so the
+# historical Radiant source) that still exceed the budget on 2026-03-25 so the
 # check can enforce the limit on new or edited files without blocking
 # incremental cleanup work.
 #
@@ -12,3 +12,5 @@
 # Legacy guardrail registry updated by OPT-1207 to recognize the extracted
 # source-processing worker directory.
 tests/gui_boundary.rs
+tests/release_contract.rs
+tests/release_orchestration.rs

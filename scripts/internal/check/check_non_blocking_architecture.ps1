@@ -26,6 +26,8 @@ if ($Help) {
 }
 
 $rootDir = (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
+$radiantDir = (& (Join-Path $rootDir 'scripts/radiant.ps1') locate | Where-Object { $_ -like 'RADIANT_DIR=*' } | ForEach-Object { $_.Substring(13) })
+if (-not $radiantDir) { throw "Radiant sibling is missing or invalid" }
 
 function Invoke-NativeStep {
   param(
@@ -47,11 +49,11 @@ try {
   Enable-WavecrateCargoCache
 
   Invoke-NativeStep -Label "Radiant synthetic blocking-token fixture" -Command {
-    Invoke-WavecrateCargo test --manifest-path vendor/radiant/Cargo.toml --lib guardrail_reports_file_line_and_guidance_for_blocking_tokens
+    Invoke-WavecrateCargo test --manifest-path (Join-Path $radiantDir 'Cargo.toml') --lib guardrail_reports_file_line_and_guidance_for_blocking_tokens
   }
 
   Invoke-NativeStep -Label "Radiant app/runtime/example guardrails" -Command {
-    Invoke-WavecrateCargo test --manifest-path vendor/radiant/Cargo.toml --test generic_surface_guardrails source_quality::runtime::commands_and_app
+    Invoke-WavecrateCargo test --manifest-path (Join-Path $radiantDir 'Cargo.toml') --test generic_surface_guardrails source_quality::runtime::commands_and_app
   }
 
   Invoke-NativeStep -Label "Wavecrate app-facing blocking guardrail" -Command {

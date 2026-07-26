@@ -11,7 +11,7 @@ Fails when added lines introduce forbidden patterns in non-test Rust sources:
 - `.expect(...)`
 
 Scope:
-- Rust files under `src/` and `vendor/radiant/src/`
+- Rust files under `src/`
 - Skips test/bench paths and allowlisted files
 #>
 
@@ -49,7 +49,7 @@ try {
   }
 
   function Should-CheckFile([string]$Path) {
-    return (($Path -like "src/*.rs") -or ($Path -like "src/*/*.rs") -or ($Path -like "src/*/*/*.rs") -or ($Path -like "src/*/*/*/*.rs") -or ($Path -like "src/*/*/*/*/*.rs") -or ($Path -like "src/*/*/*/*/*/*.rs") -or ($Path -like "src/*/*/*/*/*/*/*.rs") -or ($Path -like "src/*/*/*/*/*/*/*/*.rs") -or ($Path -like "vendor/radiant/src/*.rs") -or ($Path -like "vendor/radiant/src/*/*.rs") -or ($Path -like "vendor/radiant/src/*/*/*.rs") -or ($Path -like "vendor/radiant/src/*/*/*/*.rs") -or ($Path -like "vendor/radiant/src/*/*/*/*/*.rs") -or ($Path -like "vendor/radiant/src/*/*/*/*/*/*.rs") -or ($Path -like "vendor/radiant/src/*/*/*/*/*/*/*.rs"))
+    return (($Path -like "src/*.rs") -or ($Path -like "src/*/*.rs") -or ($Path -like "src/*/*/*.rs") -or ($Path -like "src/*/*/*.rs") -or ($Path -like "src/*/*/*/*.rs") -or ($Path -like "src/*/*/*/*/*.rs") -or ($Path -like "src/*/*/*/*/*/*.rs") -or ($Path -like "src/*/*/*/*/*/*/*.rs") -or ($Path -like "src/*/*/*/*/*/*/*/*.rs"))
   }
 
   function Is-TestishPath([string]$Path) {
@@ -110,7 +110,7 @@ try {
   function Scan-GitDiff([string]$Label, [string[]]$Args) {
     $lines = @()
     try {
-      $lines = git diff --unified=0 --diff-filter=AMR @Args -- src vendor/radiant/src
+      $lines = git diff --unified=0 --diff-filter=AMR @Args -- src
     } catch {
       $lines = @()
     }
@@ -130,4 +130,3 @@ try {
 } finally {
   Pop-Location
 }
-

@@ -42,6 +42,15 @@ function Write-BootstrapHint {
 $rootDir = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Write-Info "Repo: $rootDir"
 
+Write-Info "Checking canonical Radiant sibling..."
+try {
+  & (Join-Path $rootDir 'scripts/radiant.ps1') locate
+  if ($LASTEXITCODE -ne 0) { throw "Radiant locator failed" }
+  Write-Info "Radiant sibling: available"
+} catch {
+  Write-Err "Radiant sibling is missing or invalid; run scripts/bootstrap.ps1 to provision it"
+}
+
 $isWindowsHost = Get-PlatformFlag -Name "IsWindows" -Fallback ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT)
 $isMacOsHost = Get-PlatformFlag -Name "IsMacOS" -Fallback $false
 $isLinuxHost = Get-PlatformFlag -Name "IsLinux" -Fallback ((-not $isWindowsHost) -and (-not $isMacOsHost))

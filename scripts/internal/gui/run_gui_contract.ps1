@@ -20,6 +20,8 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "../use_cargo_cache.ps1")
 
 $rootDir = (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
+$radiantDir = (& (Join-Path $rootDir 'scripts/radiant.ps1') locate | Where-Object { $_ -like 'RADIANT_DIR=*' } | ForEach-Object { $_.Substring(13) })
+if (-not $radiantDir) { throw "Radiant sibling is missing or invalid" }
 
 function Invoke-GuiStep {
   param(
@@ -111,9 +113,9 @@ try {
     Invoke-WavecrateCargo test app_core::controller::tests::persistence_boundary::
   }
 
-  Write-Host "[gui-contract] cargo test --manifest-path vendor/radiant/Cargo.toml toolbar_hit_test_focuses_browser_search"
-  Invoke-GuiStep -Label "cargo test --manifest-path vendor/radiant/Cargo.toml toolbar_hit_test_focuses_browser_search" -Command {
-    Invoke-WavecrateCargo test --manifest-path vendor/radiant/Cargo.toml toolbar_hit_test_focuses_browser_search
+  Write-Host "[gui-contract] cargo test --manifest-path $radiantDir/Cargo.toml toolbar_hit_test_focuses_browser_search"
+  Invoke-GuiStep -Label "cargo test --manifest-path $radiantDir/Cargo.toml toolbar_hit_test_focuses_browser_search" -Command {
+    Invoke-WavecrateCargo test --manifest-path (Join-Path $radiantDir 'Cargo.toml') toolbar_hit_test_focuses_browser_search
   }
 } finally {
   Pop-Location

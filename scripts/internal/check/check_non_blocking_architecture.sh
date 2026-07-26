@@ -8,6 +8,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT_DIR"
+RADIANT_DIR="$(./scripts/radiant.sh locate | sed -n 's/^RADIANT_DIR=//p')"
 # shellcheck source=scripts/internal/use_cargo_cache.sh
 source "$ROOT_DIR/scripts/internal/use_cargo_cache.sh"
 wavecrate_enable_cargo_cache
@@ -42,10 +43,10 @@ run_step() {
 }
 
 run_step "Radiant synthetic blocking-token fixture" \
-  cargo test --manifest-path vendor/radiant/Cargo.toml --lib guardrail_reports_file_line_and_guidance_for_blocking_tokens
+  cargo test --manifest-path "$RADIANT_DIR/Cargo.toml" --lib guardrail_reports_file_line_and_guidance_for_blocking_tokens
 
 run_step "Radiant app/runtime/example guardrails" \
-  cargo test --manifest-path vendor/radiant/Cargo.toml --test generic_surface_guardrails source_quality::runtime::commands_and_app
+  cargo test --manifest-path "$RADIANT_DIR/Cargo.toml" --test generic_surface_guardrails source_quality::runtime::commands_and_app
 
 run_step "Wavecrate app-facing blocking guardrail" \
   cargo test -p wavecrate --no-default-features --test gui_boundary native_app_ui_update_paths_do_not_call_blocking_business_apis

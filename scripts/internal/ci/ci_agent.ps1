@@ -47,6 +47,8 @@ function Invoke-NativeStep {
 Push-Location $rootDir
 try {
   Enable-WavecrateCargoCache
+  $radiantDir = (& (Join-Path $rootDir 'scripts/radiant.ps1') locate | Where-Object { $_ -like 'RADIANT_DIR=*' } | ForEach-Object { $_.Substring(13) })
+  if (-not $radiantDir) { throw "Radiant sibling is missing or invalid" }
   Write-Host "[ci_agent] branch policy"
   Invoke-NativeStep -Label "branch policy" -Command {
     & (Join-Path $rootDir "scripts/check.ps1") main-branch
@@ -64,14 +66,14 @@ try {
     & (Join-Path $rootDir "scripts/check.ps1") readiness-executor-boundary
   }
 
-  Write-Host "[ci_agent] cargo test --manifest-path vendor/radiant/Cargo.toml --lib --no-default-features"
-  Invoke-NativeStep -Label "cargo test --manifest-path vendor/radiant/Cargo.toml --lib --no-default-features" -Command {
-    Invoke-WavecrateCargo test --manifest-path vendor/radiant/Cargo.toml --lib --no-default-features
+  Write-Host "[ci_agent] cargo test --manifest-path $radiantDir/Cargo.toml --lib --no-default-features"
+  Invoke-NativeStep -Label "cargo test --manifest-path $radiantDir/Cargo.toml --lib --no-default-features" -Command {
+    Invoke-WavecrateCargo test --manifest-path (Join-Path $radiantDir 'Cargo.toml') --lib --no-default-features
   }
 
-  Write-Host "[ci_agent] cargo test --manifest-path vendor/radiant/Cargo.toml --test app_runtime_api --no-default-features"
-  Invoke-NativeStep -Label "cargo test --manifest-path vendor/radiant/Cargo.toml --test app_runtime_api --no-default-features" -Command {
-    Invoke-WavecrateCargo test --manifest-path vendor/radiant/Cargo.toml --test app_runtime_api --no-default-features
+  Write-Host "[ci_agent] cargo test --manifest-path $radiantDir/Cargo.toml --test app_runtime_api --no-default-features"
+  Invoke-NativeStep -Label "cargo test --manifest-path $radiantDir/Cargo.toml --test app_runtime_api --no-default-features" -Command {
+    Invoke-WavecrateCargo test --manifest-path (Join-Path $radiantDir 'Cargo.toml') --test app_runtime_api --no-default-features
   }
 
   Write-Host "[ci_agent] cargo test -p wavecrate --test controller_browser_integration --features legacy-controller"

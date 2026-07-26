@@ -61,6 +61,25 @@ Push-Location $rootDir
 try {
   Write-Host "[bootstrap] repo: $rootDir"
 
+  $radiantScript = Join-Path $rootDir 'scripts/radiant.ps1'
+  try {
+    if ($verifyOnly) {
+      & $radiantScript locate
+      Write-Host "[bootstrap] Radiant sibling: available"
+    } else {
+      Write-Host "[bootstrap] Provisioning/checking the canonical Radiant sibling..."
+      & $radiantScript provision
+      if ($LASTEXITCODE -ne 0) { throw "Radiant sibling provisioning failed" }
+    }
+  } catch {
+    if ($verifyOnly) {
+      Write-Warning "[bootstrap] Radiant sibling: missing or invalid (run without -VerifyOnly to provision)"
+      $failures++
+    } else {
+      throw
+    }
+  }
+
   if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     throw "[bootstrap] ERROR: git not found on PATH"
   }

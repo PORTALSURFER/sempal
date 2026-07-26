@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# Report-only line-count guardrail for scripts/internal and high-risk Radiant
-# GUI modules. This intentionally exits successfully so existing debt is visible
+# Report-only line-count guardrail for scripts/internal. This intentionally exits
+# successfully so existing debt is visible
 # without blocking incremental cleanup work.
 
 set -euo pipefail
@@ -24,8 +24,7 @@ usage() {
   cat <<'EOF'
 Usage: scripts/internal/check/report_size_hotspots.sh [--limit <n>] [--top-files <n>]
 
-Prints a report-only line-count snapshot for scripts/internal and high-risk
-Radiant GUI modules.
+Prints a report-only line-count snapshot for scripts/internal.
 EOF
 }
 
@@ -56,8 +55,6 @@ scope_for_file() {
   local file="$1"
   case "$file" in
     scripts/internal/*) echo "scripts/internal" ;;
-    vendor/radiant/src/gui/*) echo "vendor/radiant gui" ;;
-    vendor/radiant/src/application/layout_builders/*) echo "vendor/radiant layout builders" ;;
     *) echo "other" ;;
   esac
 }
@@ -66,11 +63,6 @@ collect_files() {
   wavecrate_git ls-files -- scripts/internal \
     | grep -E '\.(ps1|sh|py|json|cmd)$' || true
 
-  if wavecrate_git -C vendor/radiant rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    wavecrate_git -C vendor/radiant ls-files -- src/gui src/application/layout_builders \
-      | grep -E '\.rs$' \
-      | sed 's#^#vendor/radiant/#' || true
-  fi
 }
 
 rows_file="$(mktemp)"
@@ -91,7 +83,7 @@ echo "# Size Hotspot Report"
 echo
 echo "- Timestamp (UTC): \`$timestamp_utc\`"
 echo "- Limit: \`$LIMIT\` lines"
-echo "- Scopes: \`scripts/internal\`, \`vendor/radiant/src/gui\`, \`vendor/radiant/src/application/layout_builders\`"
+echo "- Scopes: \`scripts/internal\`"
 echo "- Entries: total=$total over=$over"
 echo
 

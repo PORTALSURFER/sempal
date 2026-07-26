@@ -15,21 +15,11 @@ source "$ROOT_DIR/scripts/internal/setup_headless_audio.sh"
 # Tooling-only Linux fallback for headless perf hosts; not product support.
 wavecrate_setup_headless_audio "perf_guard"
 
-RADIANT_RUNTIME_FILE="$ROOT_DIR/vendor/radiant/src/gui_runtime/native_vello.rs"
-RADIANT_NESTED_RUNTIME_FILE="$ROOT_DIR/vendor/radiant/vendor/radiant/src/gui_runtime/native_vello.rs"
+RADIANT_DIR="$("$ROOT_DIR/scripts/radiant.sh" locate | sed -n 's/^RADIANT_DIR=//p')"
+RADIANT_RUNTIME_FILE="$RADIANT_DIR/src/gui_runtime/native_vello.rs"
 
 if [ ! -f "$RADIANT_RUNTIME_FILE" ]; then
-  echo "[perf_guard] runtime internals missing; initializing git submodules recursively"
-  git submodule update --init --recursive vendor/radiant >/dev/null
-fi
-
-if [ ! -f "$RADIANT_RUNTIME_FILE" ]; then
-  if [ -f "$RADIANT_NESTED_RUNTIME_FILE" ]; then
-    echo "[perf_guard] ERROR: detected nested radiant checkout at vendor/radiant/vendor/radiant; expected top-level vendor/radiant crate" >&2
-    echo "[perf_guard] ERROR: repin vendor/radiant to a commit where vendor/radiant/Cargo.toml has name = \"radiant\"" >&2
-  else
-    echo "[perf_guard] ERROR: missing runtime internals at $RADIANT_RUNTIME_FILE" >&2
-  fi
+  echo "[perf_guard] ERROR: missing runtime internals at $RADIANT_RUNTIME_FILE" >&2
   exit 1
 fi
 

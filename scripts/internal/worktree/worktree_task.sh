@@ -49,7 +49,7 @@ while (( $# > 0 )); do
       NAME="${2:-}"; shift 2 ;;
     --base)
       BASE_REF="${2:-}"; shift 2 ;;
-    --path)
+  --path)
       WORKTREE_PATH="${2:-}"; shift 2 ;;
     --skip-ci)
       SKIP_CI=1; shift ;;
@@ -75,8 +75,11 @@ if [[ -z "$NAME" ]]; then
 fi
 
 if [[ -z "$WORKTREE_PATH" ]]; then
-  WORKTREE_PATH="$ROOT_DIR/.worktrees/$NAME"
+  WORKTREE_PATH="$ROOT_DIR/.worktrees/$NAME/wavecrate"
 fi
+
+PAIR_ROOT="$(dirname "$WORKTREE_PATH")"
+RADIANT_PATH="$PAIR_ROOT/radiant"
 
 if ! command -v git >/dev/null 2>&1; then
   echo "[worktree_task] ERROR: git not found on PATH" >&2
@@ -94,12 +97,19 @@ if [[ -e "$WORKTREE_PATH" ]]; then
   echo "[worktree_task] ERROR: worktree path already exists: $WORKTREE_PATH" >&2
   exit 1
 fi
+if [[ -e "$RADIANT_PATH" ]]; then
+  echo "[worktree_task] ERROR: paired Radiant path already exists: $RADIANT_PATH" >&2
+  exit 1
+fi
 
 echo "[worktree_task] Creating worktree:"
 echo "[worktree_task]   branch=$branch"
 echo "[worktree_task]   base=$BASE_REF"
 echo "[worktree_task]   path=$WORKTREE_PATH"
 git worktree add -b "$branch" "$WORKTREE_PATH" "$BASE_REF"
+
+echo "[worktree_task] Provisioning isolated Radiant sibling: $RADIANT_PATH"
+(cd "$WORKTREE_PATH" && bash scripts/radiant.sh provision --clean --path "$RADIANT_PATH")
 
 echo "[worktree_task] Running bootstrap verification..."
 (cd "$WORKTREE_PATH" && bash scripts/bootstrap.sh --verify-only)
@@ -125,4 +135,3 @@ if (( RUN_TEMP == 1 )); then
 else
   (cd "$WORKTREE_PATH" && bash scripts/run.sh sandbox -- "$@")
 fi
-
