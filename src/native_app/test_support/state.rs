@@ -82,6 +82,7 @@ impl NativeAppStateFixture {
             metadata: MetadataAppState::from_settings(&self.persisted_settings),
             frame_surface_revision_tracker: Default::default(),
             playhead_frame_diagnostics: Default::default(),
+            scheduled_timer_messages: Vec::new(),
         }
     }
 }

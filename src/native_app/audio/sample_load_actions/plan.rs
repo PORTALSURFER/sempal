@@ -36,7 +36,7 @@ impl NativeAppState {
         context.after_latest(
             &mut self.background.deferred_sample_load_task,
             delay,
-            |ticket| GuiMessage::DeferredSampleLoad {
+            move |ticket| GuiMessage::DeferredSampleLoad {
                 ticket,
                 path,
                 autoplay,
