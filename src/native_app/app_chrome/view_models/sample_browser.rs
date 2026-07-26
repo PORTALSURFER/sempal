@@ -481,7 +481,8 @@ mod tests {
             .current
             .play_selection()
             .expect("Playmark selection survives deferred refresh");
-        assert!(selection.end() > selection.start());
+        assert!((selection.start() - 0.4).abs() < 0.001);
+        assert!((selection.end() - 0.6).abs() < 0.001);
     }
 
     #[test]
