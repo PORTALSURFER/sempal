@@ -383,6 +383,26 @@ mod tests {
     }
 
     #[test]
+    fn maps_retry_pending_health_to_retry_pending_ui_status() {
+        let GuiMessage::SourceProcessingHealth(health) =
+            map_event(SourceProcessingEvent::Health(SourceProcessingHealthEvent {
+                lifecycle: SourceProcessingLifecycle::new("source", 19),
+                state: SourceProcessingHealthState::WaitingForRetry,
+                source_generation: 0,
+                readiness_revision: 0,
+                stage_counts: std::collections::BTreeMap::new(),
+                retry_at: Some(123),
+                failure_codes: vec![String::from("discovery_retry_pending")],
+            }))
+        else {
+            panic!("expected mapped health");
+        };
+        assert_eq!(health.status, SourceProcessingHealthStatus::WaitingForRetry);
+        assert_eq!(health.retry_at, Some(123));
+        assert_eq!(health.failure_codes, ["discovery_retry_pending"]);
+    }
+
+    #[test]
     fn large_discovery_counts_keep_the_phase_unit_and_denominator() {
         let (stage, detail) = discovery_copy(
             crate::native_app::source_processing::SourceDiscoveryPhase::ComparingReadiness,
