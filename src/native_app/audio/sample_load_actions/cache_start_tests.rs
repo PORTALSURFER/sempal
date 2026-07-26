@@ -8,12 +8,21 @@ use std::{
     time::SystemTime,
 };
 
-fn after_messages(command: Command<GuiMessage>) -> Vec<GuiMessage> {
-    match command {
-        Command::After { message, .. } => vec![message],
-        Command::Batch(commands) => commands.into_iter().flat_map(after_messages).collect(),
-        _ => Vec::new(),
-    }
+fn after_messages(
+    state: &mut crate::native_app::test_support::state::NativeAppState,
+    command: Command<GuiMessage>,
+) -> Vec<GuiMessage> {
+    let timer_count = match &command {
+        Command::Timer(..) => 1,
+        Command::Batch(commands) => commands
+            .iter()
+            .filter(|command| matches!(command, Command::Timer(..)))
+            .count(),
+        _ => 0,
+    };
+    let messages = state.take_scheduled_timer_messages();
+    assert_eq!(messages.len(), timer_count);
+    messages
 }
 
 fn starmap_state_with_wav_files(
@@ -664,7 +673,7 @@ fn starmap_drag_instant_audition_schedules_stable_target_promotion() {
         "starmap_drag",
         &mut context,
     );
-    let delayed = after_messages(context.into_command());
+    let delayed = after_messages(&mut state, context.into_command());
 
     assert!(delayed.iter().any(|message| matches!(
         message,
@@ -687,5 +696,5 @@ fn non_starmap_instant_audition_does_not_schedule_stable_target_promotion() {
         &mut context,
     );
 
-    assert!(after_messages(context.into_command()).is_empty());
+    assert!(after_messages(&mut state, context.into_command()).is_empty());
 }

@@ -604,8 +604,18 @@ impl NativeAppState {
         context.after_latest(
             &mut self.background.starmap_audition_promotion_task,
             STARMAP_AUDITION_PROMOTION_DELAY,
-            |ticket| GuiMessage::PromoteStarmapAudition { ticket, path },
+            {
+                let scheduled_path = path.clone();
+                move |ticket| GuiMessage::PromoteStarmapAudition {
+                    ticket,
+                    path: scheduled_path,
+                }
+            },
         );
+        #[cfg(test)]
+        if let Some(ticket) = self.background.starmap_audition_promotion_task.active() {
+            self.record_scheduled_timer_message(GuiMessage::PromoteStarmapAudition { ticket, path });
+        }
     }
 
     fn promote_starmap_audition(

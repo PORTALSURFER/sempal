@@ -92,6 +92,8 @@ impl NativeAppState {
             metadata: MetadataAppState::from_settings(&config.core),
             frame_surface_revision_tracker: Default::default(),
             playhead_frame_diagnostics: Default::default(),
+            #[cfg(test)]
+            scheduled_timer_messages: Vec::new(),
         };
         emit_gui_action(
             "runtime.startup.load_default_state",

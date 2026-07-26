@@ -72,9 +72,20 @@ impl NativeAppState {
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
         self.audio.pending_last_played_persist = None;
-        context.after_latest(&mut self.audio.last_played_persist_task, delay, |ticket| {
-            GuiMessage::LastPlayedPersistReady { ticket, request }
-        });
+        #[cfg(test)]
+        let scheduled_request = request.clone();
+        context.after_latest(
+            &mut self.audio.last_played_persist_task,
+            delay,
+            move |ticket| GuiMessage::LastPlayedPersistReady { ticket, request },
+        );
+        #[cfg(test)]
+        if let Some(ticket) = self.audio.last_played_persist_task.active() {
+            self.record_scheduled_timer_message(GuiMessage::LastPlayedPersistReady {
+                ticket,
+                request: scheduled_request,
+            });
+        }
     }
 
     pub(in crate::native_app) fn start_last_played_persist(

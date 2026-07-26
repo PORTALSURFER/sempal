@@ -212,7 +212,8 @@ fn recording_sample_last_played_updates_row_and_persists_source_history() {
         Some("Today")
     );
 
-    let delayed = run_first_after(context.into_command()).expect("last played delayed command");
+    let delayed =
+        run_first_after(&mut state, context.into_command()).expect("last played delayed command");
     let mut context = radiant::prelude::UiUpdateContext::default();
     state.apply_message(delayed, &mut context);
     let message = run_first_perform(context.into_command()).expect("last played persist command");
@@ -1662,7 +1663,7 @@ fn starmap_audition_promotion_only_loads_latest_stable_target() {
 
     state.schedule_starmap_audition_promotion(first_id, &mut context);
     state.schedule_starmap_audition_promotion(second_id.clone(), &mut context);
-    let delayed = run_after_commands(context.into_command());
+    let delayed = run_after_commands(&mut state, context.into_command());
     assert_eq!(delayed.len(), 2);
 
     let mut stale_context = radiant::prelude::UiUpdateContext::default();
@@ -1710,7 +1711,7 @@ fn starmap_drag_duplicate_active_hit_preserves_pending_promotion() {
     let mut schedule_context = radiant::prelude::UiUpdateContext::default();
 
     state.schedule_starmap_audition_promotion(sample_id.clone(), &mut schedule_context);
-    let delayed = run_after_commands(schedule_context.into_command());
+    let delayed = run_after_commands(&mut state, schedule_context.into_command());
     assert_eq!(delayed.len(), 1);
 
     state.apply_message(
@@ -2029,7 +2030,7 @@ fn starmap_drag_release_preserves_loaded_last_played_sample_not_latest_hit() {
         &mut release_context,
     );
     let (delayed, perform_count) =
-        collect_after_commands_and_perform_count(release_context.into_command());
+        collect_after_commands_and_perform_count(&mut state, release_context.into_command());
 
     assert_eq!(state.waveform.current.path(), second.as_path());
     assert!(state.waveform.current.has_loaded_sample());
@@ -2340,7 +2341,7 @@ fn starmap_drag_finish_cancels_pending_promotion() {
     );
     let mut schedule_context = radiant::prelude::UiUpdateContext::default();
     state.schedule_starmap_audition_promotion(sample_id.clone(), &mut schedule_context);
-    let delayed = run_after_commands(schedule_context.into_command());
+    let delayed = run_after_commands(&mut state, schedule_context.into_command());
     assert_eq!(delayed.len(), 1);
     state.apply_message(
         crate::native_app::test_support::state::GuiMessage::UpdateStarmapAuditionDrag {
@@ -2658,7 +2659,7 @@ fn starmap_drag_latest_hit_advances_without_zero_delay_message() {
     let mut context = radiant::prelude::UiUpdateContext::default();
 
     state.advance_starmap_drag_audition_latest_immediately(&mut context);
-    let delayed = run_after_commands(context.into_command());
+    let delayed = run_after_commands(&mut state, context.into_command());
 
     assert_eq!(
         state.library.folder_browser.selected_file_id(),
@@ -2828,7 +2829,7 @@ fn rapid_last_played_records_only_latest_delayed_persist() {
         .select_file(second_path_string.clone());
     state.record_sample_last_played(second_path_string.clone(), &mut context);
 
-    let delayed = run_after_commands(context.into_command());
+    let delayed = run_after_commands(&mut state, context.into_command());
     assert_eq!(delayed.len(), 2);
     let mut stale_context = radiant::prelude::UiUpdateContext::default();
     state.apply_message(delayed[0].clone(), &mut stale_context);
@@ -2872,12 +2873,13 @@ fn active_playback_defers_last_played_disk_persist_until_idle() {
     state.record_sample_last_played(sample_path_string.clone(), &mut context);
     state.waveform.current.start_playback(0.25);
 
-    let delayed = run_first_after(context.into_command()).expect("last played delayed command");
+    let delayed =
+        run_first_after(&mut state, context.into_command()).expect("last played delayed command");
     let mut active_context = radiant::prelude::UiUpdateContext::default();
     state.apply_message(delayed, &mut active_context);
 
     let (retry_messages, perform_count) =
-        collect_after_commands_and_perform_count(active_context.into_command());
+        collect_after_commands_and_perform_count(&mut state, active_context.into_command());
     assert_eq!(
         perform_count, 0,
         "active playback should defer last-played persistence before DB work starts"
@@ -2935,7 +2937,8 @@ fn stop_playback_flushes_deferred_last_played_after_clearing_runtime_state() {
         error: None,
     };
 
-    let delayed = run_first_after(context.into_command()).expect("last played delayed command");
+    let delayed =
+        run_first_after(&mut state, context.into_command()).expect("last played delayed command");
     let mut active_context = radiant::prelude::UiUpdateContext::default();
     state.apply_message(delayed, &mut active_context);
     assert!(
@@ -2970,39 +2973,60 @@ fn stop_playback_flushes_deferred_last_played_after_clearing_runtime_state() {
 }
 
 fn run_first_after(
+    state: &mut crate::native_app::test_support::state::NativeAppState,
     command: Command<crate::native_app::test_support::state::GuiMessage>,
 ) -> Option<crate::native_app::test_support::state::GuiMessage> {
-    run_after_commands(command).into_iter().next()
+    run_after_commands(state, command).into_iter().next()
 }
 
 fn run_after_commands(
+    state: &mut crate::native_app::test_support::state::NativeAppState,
     command: Command<crate::native_app::test_support::state::GuiMessage>,
 ) -> Vec<crate::native_app::test_support::state::GuiMessage> {
-    match command {
-        Command::After { message, .. } => vec![message],
-        Command::Batch(commands) => commands.into_iter().flat_map(run_after_commands).collect(),
-        _ => Vec::new(),
-    }
+    let timer_count = count_timer_commands(&command);
+    let messages = state.take_scheduled_timer_messages();
+    assert_eq!(
+        messages.len(),
+        timer_count,
+        "every queued timer should have a test-visible mapped message"
+    );
+    messages
 }
 
 fn collect_after_commands_and_perform_count(
+    state: &mut crate::native_app::test_support::state::NativeAppState,
     command: Command<crate::native_app::test_support::state::GuiMessage>,
 ) -> (
     Vec<crate::native_app::test_support::state::GuiMessage>,
     usize,
 ) {
+    let timer_count = count_timer_commands(&command);
+    let delayed = state.take_scheduled_timer_messages();
+    assert_eq!(
+        delayed.len(),
+        timer_count,
+        "every queued timer should have a test-visible mapped message"
+    );
+    (delayed, count_perform_commands(&command))
+}
+
+fn count_timer_commands(
+    command: &Command<crate::native_app::test_support::state::GuiMessage>,
+) -> usize {
     match command {
-        Command::After { message, .. } => (vec![message], 0),
-        Command::Perform { .. } => (Vec::new(), 1),
-        Command::Batch(commands) => commands
-            .into_iter()
-            .map(collect_after_commands_and_perform_count)
-            .fold((Vec::new(), 0), |mut collected, (messages, count)| {
-                collected.0.extend(messages);
-                collected.1 += count;
-                collected
-            }),
-        _ => (Vec::new(), 0),
+        Command::Timer(..) => 1,
+        Command::Batch(commands) => commands.iter().map(count_timer_commands).sum(),
+        _ => 0,
+    }
+}
+
+fn count_perform_commands(
+    command: &Command<crate::native_app::test_support::state::GuiMessage>,
+) -> usize {
+    match command {
+        Command::Perform { .. } => 1,
+        Command::Batch(commands) => commands.iter().map(count_perform_commands).sum(),
+        _ => 0,
     }
 }
 

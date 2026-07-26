@@ -63,4 +63,22 @@ pub(in crate::native_app) struct NativeAppState {
         crate::native_app::audio::playback::FrameSurfaceRevisionTracker,
     pub(in crate::native_app) playhead_frame_diagnostics:
         crate::native_app::audio::playback::PlayheadFrameDiagnosticsState,
+    #[cfg(test)]
+    pub(in crate::native_app) scheduled_timer_messages: Vec<super::GuiMessage>,
+}
+
+#[cfg(test)]
+impl NativeAppState {
+    pub(in crate::native_app) fn record_scheduled_timer_message(
+        &mut self,
+        message: super::GuiMessage,
+    ) {
+        self.scheduled_timer_messages.push(message);
+    }
+
+    pub(in crate::native_app) fn take_scheduled_timer_messages(
+        &mut self,
+    ) -> Vec<super::GuiMessage> {
+        std::mem::take(&mut self.scheduled_timer_messages)
+    }
 }
