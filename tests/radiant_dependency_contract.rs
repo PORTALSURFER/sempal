@@ -13,7 +13,7 @@ fn canonical_radiant_dependency_uses_the_standalone_sibling_contract() {
 
     assert!(manifest.contains("radiant = { path = \"../radiant\" }"));
     assert!(metadata.contains("repository = \"https://github.com/PORTALSURFER/radiant.git\""));
-    assert!(metadata.contains("revision = \"14c2e70818d6c7fb78ff3f19b06b017e99bdcfa3\""));
+    assert!(metadata.contains("revision = \"a3a6c14b52acc45e547b3f4da9bf60914158c9d3\""));
     assert!(metadata.contains("path = \"../radiant\""));
     assert!(!root.join(".gitmodules").exists());
     assert!(!root.join("vendor/radiant").exists());
