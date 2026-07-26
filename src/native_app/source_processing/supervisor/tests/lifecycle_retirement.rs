@@ -372,15 +372,32 @@ fn busy_source_discovery_is_rescheduled_after_retry_deadline() {
     let lock = rusqlite::Connection::open(&database_path).expect("open lock connection");
     lock.execute_batch("BEGIN EXCLUSIVE")
         .expect("hold source database lock");
-    let mut supervisor = SourceProcessingSupervisor::start(vec![source.clone()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let mut supervisor = SourceProcessingSupervisor::start_with_playback_state_and_event_sink(
+        vec![source.clone()],
+        false,
+        Some(Arc::new(sender)),
+    );
 
+    let mut saw_waiting_for_retry = false;
     wait_until(Duration::from_secs(15), || {
+        for event in receiver.try_iter() {
+            if let SourceProcessingEvent::Health(health) = event
+                && health.lifecycle.source_id == source.id.as_str()
+                && health.state == SourceProcessingHealthState::WaitingForRetry
+            {
+                saw_waiting_for_retry = health.retry_at.is_some()
+                    && health.failure_codes == ["discovery_retry_pending"];
+            }
+        }
         let telemetry = supervisor.shared.telemetry();
         telemetry.failed > 0
             && telemetry
                 .retry_at_by_source
                 .contains_key(source.id.as_str())
+            && saw_waiting_for_retry
     });
+    assert!(saw_waiting_for_retry);
     let retry_at = supervisor
         .shared
         .telemetry()
@@ -394,7 +411,26 @@ fn busy_source_discovery_is_rescheduled_after_retry_deadline() {
 
     lock.execute_batch("ROLLBACK").expect("release source lock");
     drop(lock);
-    wait_until(Duration::from_secs(12), || source_is_hashed(&source));
+    let mut saw_recovered_health = false;
+    wait_until(Duration::from_secs(12), || {
+        for event in receiver.try_iter() {
+            if let SourceProcessingEvent::Health(health) = event
+                && health.lifecycle.source_id == source.id.as_str()
+                && matches!(
+                    health.state,
+                    SourceProcessingHealthState::Processing | SourceProcessingHealthState::Ready
+                )
+            {
+                assert!(!health
+                    .failure_codes
+                    .iter()
+                    .any(|code| code == "discovery_retry_pending"));
+                saw_recovered_health = true;
+            }
+        }
+        source_is_hashed(&source) && saw_recovered_health
+    });
+    assert!(saw_recovered_health);
     assert_eq!(supervisor.shutdown()["joined"], true);
 }
 

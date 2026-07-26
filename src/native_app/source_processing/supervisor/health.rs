@@ -43,6 +43,17 @@ impl SourceHealthSummary {
         }
     }
 
+    pub(super) fn waiting_for_retry(code: impl Into<String>, retry_at: i64) -> Self {
+        Self {
+            state: SourceProcessingHealthState::WaitingForRetry,
+            source_generation: 0,
+            readiness_revision: 0,
+            stage_counts: BTreeMap::new(),
+            retry_at: Some(retry_at),
+            failure_codes: vec![code.into()],
+        }
+    }
+
     pub(super) fn into_event(
         self,
         lifecycle: SourceProcessingLifecycle,
@@ -56,6 +67,11 @@ impl SourceHealthSummary {
             retry_at: self.retry_at,
             failure_codes: self.failure_codes,
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn state_for_test(&self) -> SourceProcessingHealthState {
+        self.state
     }
 
     #[cfg(test)]
@@ -219,6 +235,11 @@ mod tests {
         );
         assert_eq!(reconciliation_failed.retry_at, Some(84));
         assert_eq!(reconciliation_failed.failure_codes, ["sqlite_busy"]);
+
+        let retrying = SourceHealthSummary::waiting_for_retry("discovery_retry_pending", 91);
+        assert_eq!(retrying.state, SourceProcessingHealthState::WaitingForRetry);
+        assert_eq!(retrying.retry_at, Some(91));
+        assert_eq!(retrying.failure_codes, ["discovery_retry_pending"]);
     }
 
     #[test]

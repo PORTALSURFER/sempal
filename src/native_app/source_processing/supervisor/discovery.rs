@@ -7,6 +7,130 @@ use super::{
     readiness_safety_probe, source_health_summary, source_processing_schema_available,
 };
 
+const DISCOVERY_RETRY_PENDING_CODE: &str = "discovery_retry_pending";
+const DISCOVERY_RECONCILIATION_FAILED_CODE: &str = "reconciliation_failed";
+
+/// Keep transient discovery outages out of the repair-needed state. The discovery boundary
+/// currently carries errors as strings, so classify only exact, known SQLite/OS leaf messages;
+/// unknown/schema-integrity failures remain durable reconciliation failures.
+fn discovery_error_is_retryable(error: &str) -> bool {
+    let error = error.trim().to_ascii_lowercase();
+    let leaf = error
+        .rsplit_once(": ")
+        .map_or(error.as_str(), |(_, leaf)| leaf);
+    let known_sqlite_wrapper = error == leaf
+        || error
+            .strip_prefix("database query failed: ")
+            .is_some_and(|cause| cause == leaf);
+    (known_sqlite_wrapper
+        && (matches!(
+            leaf,
+            "database is busy, please retry" | "database is locked"
+        ) || leaf
+            .strip_prefix("database is locked (")
+            .and_then(|suffix| suffix.strip_suffix(')'))
+            .is_some_and(|code| {
+                !code.is_empty() && code.chars().all(|character| character.is_ascii_digit())
+            })))
+        || [
+            "operation timed out",
+            "resource temporarily unavailable",
+            "stale file handle",
+            "input/output error",
+            "i/o error",
+            "interrupted system call",
+        ]
+        .iter()
+        .any(|marker| os_error_leaf_matches(leaf, marker))
+}
+
+fn os_error_leaf_matches(leaf: &str, marker: &str) -> bool {
+    leaf.strip_prefix(marker)
+        .and_then(|suffix| suffix.strip_prefix(" (os error "))
+        .and_then(|suffix| suffix.strip_suffix(')'))
+        .is_some_and(|code| {
+            !code.is_empty() && code.chars().all(|character| character.is_ascii_digit())
+        })
+}
+
+fn discovery_failure_health(error: &str, retry_at: i64) -> SourceHealthSummary {
+    if discovery_error_is_retryable(error) {
+        SourceHealthSummary::waiting_for_retry(DISCOVERY_RETRY_PENDING_CODE, retry_at)
+    } else {
+        SourceHealthSummary::reconciliation_failed(DISCOVERY_RECONCILIATION_FAILED_CODE)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{discovery_error_is_retryable, discovery_failure_health};
+    use crate::native_app::source_processing::SourceProcessingHealthState;
+
+    #[test]
+    fn discovery_error_classification_is_conservative() {
+        assert!(discovery_error_is_retryable(
+            "Database is busy, please retry"
+        ));
+        assert!(discovery_error_is_retryable(
+            "Database query failed: database is locked"
+        ));
+        assert!(discovery_error_is_retryable(
+            "Could not read source: Input/output error (os error 5)"
+        ));
+        assert!(discovery_error_is_retryable(
+            "Could not inspect source database path /tmp/source: Operation timed out (os error 60)"
+        ));
+        assert!(!discovery_error_is_retryable(
+            "Database query failed: no such table: metadata"
+        ));
+        assert!(!discovery_error_is_retryable(
+            "SQLite returned an unexpected result"
+        ));
+        assert!(!discovery_error_is_retryable(
+            "Database query failed: database disk image is malformed"
+        ));
+        assert!(!discovery_error_is_retryable(
+            "Database query failed: malformed schema timeout while validating"
+        ));
+        assert!(!discovery_error_is_retryable(
+            "Database query failed: no such table: metadata (database is locked)"
+        ));
+        assert!(!discovery_error_is_retryable(
+            "SQLite returned an unexpected result: input/output error recorded in metadata"
+        ));
+        assert!(!discovery_error_is_retryable("operation timed out"));
+        assert!(!discovery_error_is_retryable("input/output error"));
+        assert!(!discovery_error_is_retryable("i/o error"));
+        assert!(!discovery_error_is_retryable(
+            "schema validation: database is locked"
+        ));
+    }
+
+    #[test]
+    fn ambiguous_discovery_errors_stay_repair_needed_without_retry_deadline() {
+        for error in [
+            "Database query failed: malformed schema timeout while validating",
+            "operation timed out",
+            "input/output error",
+            "i/o error",
+            "schema validation: database is locked",
+        ] {
+            let health = discovery_failure_health(error, 123);
+            assert_eq!(
+                health.state_for_test(),
+                SourceProcessingHealthState::ReconciliationFailed,
+                "error: {error}"
+            );
+            assert_eq!(health.retry_at_for_test(), None, "error: {error}");
+            assert_eq!(
+                health.failure_codes_for_test(),
+                ["reconciliation_failed"],
+                "error: {error}"
+            );
+        }
+    }
+}
+
 pub(super) fn scheduler_candidate_indices(
     candidates: &[RuntimeCandidate],
     external_scan_admitted: bool,
@@ -166,16 +290,13 @@ pub(super) fn discover_candidates(
             Err(error) => {
                 record_discovery_error(shared, source, &error);
                 let retry_at = now_epoch_seconds().saturating_add(SOURCE_DISCOVERY_RETRY_SECONDS);
-                shared.publish_source_health(
-                    SourceHealthSummary::reconciliation_failed_at(
-                        "reconciliation_failed",
-                        Some(retry_at),
-                    )
-                    .into_event(super::SourceProcessingLifecycle::new(
+                let health = discovery_failure_health(&error, retry_at);
+                shared.publish_source_health(health.into_event(
+                    super::SourceProcessingLifecycle::new(
                         source.id.as_str(),
                         in_flight_work.lifecycle_generation,
-                    )),
-                );
+                    ),
+                ));
                 source_stats.insert(
                     source.id.as_str().to_string(),
                     SourceDiscoveryStats {
