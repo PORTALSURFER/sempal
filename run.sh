@@ -26,9 +26,6 @@ fi
 
 cd "$ROOT_DIR"
 
-if [[ ! -f "$ROOT_DIR/vendor/radiant/Cargo.toml" ]]; then
-  echo "[run] Radiant submodule is missing; initializing vendor/radiant..."
-  git submodule update --init --recursive vendor/radiant
-fi
+"$ROOT_DIR/scripts/radiant.sh" provision >/dev/null
 
 exec cargo run -- "$@"

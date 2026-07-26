@@ -1,16 +1,12 @@
 #!/usr/bin/env bash
 
-# Install local git hooks that keep wavecrate and the radiant submodule aligned
-# with their main-integration workflow and run bounded repository-state checks after
+# Install local git hooks that keep Wavecrate on its main-integration workflow
+# and run bounded repository-state checks after
 # branch/source updates.
 #
 # Hooks installed for wavecrate:
 # - post-checkout: run bounded repository-state checks
 # - pre-commit / pre-push: verify local `main` tracks `origin/main`; feature branches are allowed for PR work
-#
-# Hooks installed for vendor/radiant:
-# - post-checkout / pre-commit / pre-push: fail unless radiant uses
-#   local `main` tracking `origin/main`
 #
 # To temporarily disable hook execution, set WAVECRATE_SKIP_AGENT_PREFLIGHT_HOOK=1.
 
@@ -25,9 +21,10 @@ usage() {
   cat <<'USAGE'
 Usage: scripts/internal/agent/install_agent_preflight_hooks.sh [--force]
 
-Install local git hooks that keep wavecrate and vendor/radiant aligned with their
-main-integration workflow and run bounded repository-state checks after repo-level
-source updates. Full agent preflight remains an explicit operator/agent command.
+Install local git hooks that keep Wavecrate aligned with its main-integration
+workflow and run bounded repository-state checks after repo-level source updates.
+The standalone Radiant sibling is intentionally allowed to be dirty or on a
+feature branch for live development. Full agent preflight remains explicit.
 
 Options:
   --force  Overwrite existing hooks (a backup is still created if possible).
@@ -174,63 +171,8 @@ else
 fi
 EOF
 
-RADIANT_DIR="$ROOT_DIR/vendor/radiant"
-RADIANT_HOOK_DIR=""
-if git -C "$RADIANT_DIR" rev-parse --git-common-dir >/dev/null 2>&1; then
-  RADIANT_HOOK_DIR="$(git -C "$RADIANT_DIR" rev-parse --git-common-dir)/hooks"
-  ensure_hook_dir "$RADIANT_HOOK_DIR"
-  remove_managed_hook "$RADIANT_HOOK_DIR" "post-merge" "vendor/radiant must use local 'main'"
-
-  for hook_name in post-checkout pre-commit pre-push; do
-    write_hook "$RADIANT_HOOK_DIR" "$hook_name" "vendor/radiant must use local 'main'" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-
-if [[ "${WAVECRATE_SKIP_AGENT_PREFLIGHT_HOOK:-0}" == "1" ]]; then
-  exit 0
-fi
-
-hook_name="$(basename "$0")"
-if [[ "$hook_name" == "post-checkout" && "${3:-0}" != "1" ]]; then
-  exit 0
-fi
-
-branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
-if [[ -z "$branch" ]]; then
-  exit 0
-fi
-
-if [[ "$branch" == "HEAD" ]]; then
-  echo "[branch_guard] ERROR: vendor/radiant must use local 'main'; detached HEAD is not allowed." >&2
-  exit 1
-fi
-
-if [[ "$branch" != "main" ]]; then
-  echo "[branch_guard] ERROR: vendor/radiant must use local 'main'. Current branch: '$branch'." >&2
-  exit 1
-fi
-
-upstream="$(git for-each-ref --format='%(upstream:short)' "refs/heads/$branch")"
-if [[ -z "$upstream" ]]; then
-  echo "[branch_guard] ERROR: vendor/radiant branch '$branch' has no upstream. Expected 'origin/main'." >&2
-  exit 1
-fi
-
-if [[ "$upstream" != "origin/main" ]]; then
-  echo "[branch_guard] ERROR: vendor/radiant branch '$branch' must track 'origin/main'. Current upstream: '$upstream'." >&2
-  exit 1
-fi
-EOF
-  done
-fi
-
 echo "[agent_hook_install] Installed hooks:"
 echo "[agent_hook_install]   - $ROOT_HOOK_DIR/post-checkout"
 echo "[agent_hook_install]   - $ROOT_HOOK_DIR/pre-commit"
 echo "[agent_hook_install]   - $ROOT_HOOK_DIR/pre-push"
-if [[ -n "$RADIANT_HOOK_DIR" ]]; then
-  echo "[agent_hook_install]   - $RADIANT_HOOK_DIR/post-checkout"
-  echo "[agent_hook_install]   - $RADIANT_HOOK_DIR/pre-commit"
-  echo "[agent_hook_install]   - $RADIANT_HOOK_DIR/pre-push"
-fi
 echo "[agent_hook_install] Override with: export WAVECRATE_SKIP_AGENT_PREFLIGHT_HOOK=1"

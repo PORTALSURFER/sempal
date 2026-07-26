@@ -7,7 +7,7 @@
 # legacy debt from blocking the rule introduction.
 #
 # Scope:
-# - Rust files under `src/` and `vendor/radiant/src/`
+# - Rust files under `src/`
 # - Skips obvious test/bench paths and allowlisted files
 
 set -euo pipefail
@@ -84,7 +84,6 @@ is_testish_path() {
 should_check_file() {
   local file="$1"
   [[ "$file" == src/* ]] && [[ "$file" == *.rs ]] && return 0
-  [[ "$file" == vendor/radiant/src/* ]] && [[ "$file" == *.rs ]] && return 0
   return 1
 }
 
@@ -129,7 +128,7 @@ scan_diff_stream() {
 scan_git_diff() {
   local label="$1"
   shift
-  wavecrate_git diff --unified=0 --diff-filter=AMR "$@" -- src vendor/radiant/src \
+  wavecrate_git diff --unified=0 --diff-filter=AMR "$@" -- src \
     | scan_diff_stream "$label"
 }
 

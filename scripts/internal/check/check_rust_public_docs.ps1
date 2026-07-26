@@ -14,7 +14,7 @@ against the "b-side" content:
 - unstaged diffs read the working tree
 
 Scope:
-- Rust files under `src/` and `vendor/radiant/src/`
+- Rust files under `src/`
 - Skips test/bench paths and allowlisted files
 #>
 
@@ -52,7 +52,7 @@ try {
   }
 
   function Should-CheckFile([string]$Path) {
-    return (($Path -like "src/*.rs") -or ($Path -like "src/*/*.rs") -or ($Path -like "src/*/*/*.rs") -or ($Path -like "src/*/*/*/*.rs") -or ($Path -like "src/*/*/*/*/*.rs") -or ($Path -like "src/*/*/*/*/*/*.rs") -or ($Path -like "src/*/*/*/*/*/*/*.rs") -or ($Path -like "src/*/*/*/*/*/*/*/*.rs") -or ($Path -like "vendor/radiant/src/*.rs") -or ($Path -like "vendor/radiant/src/*/*.rs") -or ($Path -like "vendor/radiant/src/*/*/*.rs") -or ($Path -like "vendor/radiant/src/*/*/*/*.rs") -or ($Path -like "vendor/radiant/src/*/*/*/*/*.rs") -or ($Path -like "vendor/radiant/src/*/*/*/*/*/*.rs") -or ($Path -like "vendor/radiant/src/*/*/*/*/*/*/*.rs"))
+    return (($Path -like "src/*.rs") -or ($Path -like "src/*/*.rs") -or ($Path -like "src/*/*/*.rs") -or ($Path -like "src/*/*/*/*.rs") -or ($Path -like "src/*/*/*/*/*.rs") -or ($Path -like "src/*/*/*/*/*/*.rs") -or ($Path -like "src/*/*/*/*/*/*/*.rs") -or ($Path -like "src/*/*/*/*/*/*/*/*.rs"))
   }
 
   function Is-TestishPath([string]$Path) {
@@ -113,7 +113,7 @@ try {
   function Scan-Diff([string]$Label, [string[]]$GitArgs, [string]$Source, [string]$HeadRef) {
     $lines = @()
     try {
-      $lines = git diff --unified=0 --diff-filter=AMR @GitArgs -- src vendor/radiant/src
+      $lines = git diff --unified=0 --diff-filter=AMR @GitArgs -- src
     } catch {
       $lines = @()
     }

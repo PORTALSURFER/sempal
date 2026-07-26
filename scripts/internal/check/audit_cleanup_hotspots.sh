@@ -107,8 +107,6 @@ tmp_dead_counts="$(mktemp)"
 tmp_tma_counts="$(mktemp)"
 tmp_test_gaps="$(mktemp)"
 tmp_function_spans="$(mktemp)"
-VENDOR_REPO_PATH="vendor/radiant"
-VENDOR_SCOPE_PATH="src"
 
 cleanup() {
   rm -f \
@@ -123,29 +121,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-repo_is_ready() {
-  local repo_path="$1"
-  [[ -d "$repo_path" ]] || return 1
-  git -C "$repo_path" rev-parse --is-inside-work-tree >/dev/null 2>&1
-}
-
-emit_vendor_working_tree_files() {
-  local vendor_src="$ROOT_DIR/$VENDOR_REPO_PATH/$VENDOR_SCOPE_PATH"
-  [[ -d "$vendor_src" ]] || return 0
-  find "$vendor_src" -type f -name '*.rs' -print \
-    | sed "s#^$ROOT_DIR/##" \
-    | sed 's#\\#/#g'
-}
-
 collect_rust_files() {
   git ls-files -- '*.rs'
-
-  if repo_is_ready "$VENDOR_REPO_PATH"; then
-    git -C "$VENDOR_REPO_PATH" ls-files -- "$VENDOR_SCOPE_PATH" \
-      | sed "s#^#$VENDOR_REPO_PATH/#"
-  else
-    emit_vendor_working_tree_files
-  fi
 }
 
 is_dedicated_test_path() {
@@ -400,9 +377,9 @@ vendor_over_budget_count="$(count_rows_for_scope "$tmp_over_limit" vendor 2)"
   echo "- Files with \`clippy::too_many_arguments\` suppressions: $tma_supp_files"
   echo "- Likely large-file test-gap hotspots (heuristic): $test_gap_count"
   echo "- Wavecrate-root Rust files scanned: $root_rust_files"
-  echo "- Vendor/Radiant Rust files scanned: $vendor_rust_files"
+  echo "- Radiant sibling Rust files scanned separately: $vendor_rust_files"
   echo "- Wavecrate-root files over budget: $root_over_budget_count"
-  echo "- Vendor/Radiant files over budget: $vendor_over_budget_count"
+  echo "- Radiant sibling files over budget (standalone gate): $vendor_over_budget_count"
   echo
 
   echo "## Wavecrate-root largest Rust files"
@@ -411,7 +388,7 @@ vendor_over_budget_count="$(count_rows_for_scope "$tmp_over_limit" vendor 2)"
     | emit_line_table_for_scope /dev/stdin root "$TOP_FILES"
   echo
 
-  echo "## Vendor/Radiant largest Rust files"
+  echo "## Radiant sibling largest Rust files (standalone gate)"
   echo
   LC_ALL=C sort -t$'\t' -k1,1nr -k2,2 "$tmp_line_counts" \
     | emit_line_table_for_scope /dev/stdin vendor "$TOP_FILES"
@@ -423,7 +400,7 @@ vendor_over_budget_count="$(count_rows_for_scope "$tmp_over_limit" vendor 2)"
     | emit_function_table_for_scope /dev/stdin root "$TOP_FUNCTION_SPANS"
   echo
 
-  echo "## Vendor/Radiant largest function spans (heuristic)"
+  echo "## Radiant sibling largest function spans (standalone gate)"
   echo
   LC_ALL=C sort -t$'\t' -k1,1nr -k2,2 "$tmp_function_spans" \
     | emit_function_table_for_scope /dev/stdin vendor "$TOP_FUNCTION_SPANS"
@@ -435,7 +412,7 @@ vendor_over_budget_count="$(count_rows_for_scope "$tmp_over_limit" vendor 2)"
     | emit_line_table_for_scope /dev/stdin root 0
   echo
 
-  echo "## Vendor/Radiant files over budget"
+  echo "## Radiant sibling files over budget (standalone gate)"
   echo
   LC_ALL=C sort -t$'\t' -k1,1nr -k2,2 "$tmp_over_limit" \
     | emit_line_table_for_scope /dev/stdin vendor 0
@@ -446,7 +423,7 @@ vendor_over_budget_count="$(count_rows_for_scope "$tmp_over_limit" vendor 2)"
   emit_count_table_for_scope "$tmp_dead_counts" root "$TOP_SUPPRESSIONS"
   echo
 
-  echo "## Vendor/Radiant dead_code suppression density"
+  echo "## Radiant sibling dead_code suppression density (standalone gate)"
   echo
   emit_count_table_for_scope "$tmp_dead_counts" vendor "$TOP_SUPPRESSIONS"
   echo
@@ -456,7 +433,7 @@ vendor_over_budget_count="$(count_rows_for_scope "$tmp_over_limit" vendor 2)"
   emit_count_table_for_scope "$tmp_tma_counts" root "$TOP_SUPPRESSIONS"
   echo
 
-  echo "## Vendor/Radiant too_many_arguments suppression density"
+  echo "## Radiant sibling too_many_arguments suppression density (standalone gate)"
   echo
   emit_count_table_for_scope "$tmp_tma_counts" vendor "$TOP_SUPPRESSIONS"
   echo
@@ -469,7 +446,7 @@ vendor_over_budget_count="$(count_rows_for_scope "$tmp_over_limit" vendor 2)"
   emit_line_table_for_scope "$tmp_test_gaps" root "$TOP_FILES"
   echo
 
-  echo "## Vendor/Radiant likely test-gap hotspots (heuristic)"
+  echo "## Radiant sibling likely test-gap hotspots (standalone gate)"
   echo
   echo "Files with at least \`$TEST_GAP_MIN_LINES\` lines and no local \`#[cfg(test)]\` or \`mod tests\` marker."
   echo "Skips dedicated test modules/paths (\`tests/**\`, \`tests.rs\`, \`*_test.rs\`, \`*_tests.rs\`) and sibling module tests declared through \`mod.rs\` + \`tests.rs\`."
@@ -479,7 +456,7 @@ vendor_over_budget_count="$(count_rows_for_scope "$tmp_over_limit" vendor 2)"
 
   echo "## Suggested follow-up"
   echo
-  echo "1. Triage Wavecrate-root and Vendor/Radiant candidates as separate issue tracks."
+  echo "1. Triage Wavecrate-root candidates separately from the standalone Radiant repository."
   echo "2. Remove or test-gate high-density suppressions after each refactor slice."
   echo "3. Add focused tests for top heuristic gaps where behavior is non-trivial."
 } >"$OUTPUT_PATH"

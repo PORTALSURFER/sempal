@@ -54,7 +54,6 @@ try {
     "/src/gui_test/",
     "/src/sample_sources/",
     "/src/selection/",
-    "/vendor/radiant/"
   )
 
   $missing = @()
@@ -76,4 +75,3 @@ try {
 } finally {
   Pop-Location
 }
-

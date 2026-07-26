@@ -1,4 +1,0 @@
-[submodule "vendor/radiant"]
-	path = vendor/radiant
-	url = https://github.com/PORTALSURFER/radiant.git
-	branch = main

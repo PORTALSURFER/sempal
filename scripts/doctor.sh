@@ -31,6 +31,13 @@ fi
 info "Repo: $ROOT_DIR"
 info "OS: ${os_name}${is_wsl:+ (wsl)}"
 
+info "Checking canonical Radiant sibling..."
+if bash "$ROOT_DIR/scripts/radiant.sh" locate; then
+  info "Radiant sibling: available"
+else
+  err "Radiant sibling is missing or invalid; run scripts/bootstrap.sh to provision it"
+fi
+
 info "Checking ripgrep (rg)..."
 if command -v rg >/dev/null 2>&1; then
   info "rg: present"

@@ -214,7 +214,7 @@ fn post_cutover_compatibility_facades_are_absent() {
     );
     assert!(
         !manifest_dir
-            .join("vendor/radiant/src/compat/legacy_shell")
+            .join("../radiant/src/compat/legacy_shell")
             .exists(),
         "Radiant's removed legacy compatibility tree must stay absent"
     );

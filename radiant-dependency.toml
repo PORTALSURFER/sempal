@@ -1,0 +1,8 @@
+# Canonical Wavecrate -> Radiant checkout contract.
+#
+# Local development resolves the path relative to the Wavecrate checkout so a
+# sibling may remain on a feature branch or contain uncommitted work. Setup,
+# CI, and release helpers provision this exact revision into a clean checkout.
+repository = "https://github.com/PORTALSURFER/radiant.git"
+revision = "14c2e70818d6c7fb78ff3f19b06b017e99bdcfa3"
+path = "../radiant"

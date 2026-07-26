@@ -42,7 +42,7 @@ def is_testish_path(path: str) -> bool:
 def should_check_file(path: str) -> bool:
     if not path.endswith(".rs"):
         return False
-    return path.startswith("src/") or path.startswith("vendor/radiant/src/")
+    return path.startswith("src/")
 
 
 def load_allowlist(path: str) -> set[str]:
@@ -189,4 +189,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

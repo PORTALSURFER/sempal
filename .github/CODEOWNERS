@@ -41,9 +41,6 @@
 /src/external_drag/ @PORTALSURFER
 /src/wav_sanitize.rs @PORTALSURFER
 
-# UI framework (Radiant).
-/vendor/radiant/ @PORTALSURFER
-
 # Tests and assets.
 /tests/ @PORTALSURFER
 /assets/ @PORTALSURFER

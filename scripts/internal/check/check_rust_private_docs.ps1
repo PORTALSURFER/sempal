@@ -5,7 +5,7 @@ Diff-aware guard for doc comments on newly added Rust items.
 
 .DESCRIPTION
 Fails when added Rust items introduce missing doc comments in `src/` and
-`vendor/radiant/src/`.
+the standalone Radiant sibling.
 #>
 
 param(
@@ -51,7 +51,6 @@ try {
   function Should-CheckFile([string]$Path) {
     if (-not $Path.EndsWith(".rs")) { return $false }
     if ($Path.StartsWith("src/")) { return $true }
-    if ($Path.StartsWith("vendor/radiant/src/")) { return $true }
     return $false
   }
 
@@ -104,7 +103,7 @@ try {
   }
 
   function Scan-Diff([string]$Label, [string[]]$DiffArgs, [string]$Source, [string]$HeadRef) {
-    $diffLines = git diff --unified=0 --diff-filter=AMR @DiffArgs -- src vendor/radiant/src
+    $diffLines = git diff --unified=0 --diff-filter=AMR @DiffArgs -- src
     if ($LASTEXITCODE -ne 0) {
       $diffLines = @()
     }

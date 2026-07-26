@@ -40,14 +40,15 @@ const RELEASE_TRAIN_PREP_WORKFLOW: &str =
     include_str!("../.github/workflows/release-train-prepare.yml");
 const RC_WORKFLOW: &str = include_str!("../.github/workflows/release-rc.yml");
 const STABLE_WORKFLOW: &str = include_str!("../.github/workflows/release-stable.yml.disabled");
+const RADIANT_SMOKE_WORKFLOW: &str = include_str!("../.github/workflows/radiant-sibling-smoke.yml");
 const RELEASE_TRAIN_PREP_SCRIPT: &str =
     include_str!("../scripts/internal/release/prepare_release_train.py");
 const ASSEMBLE_RELEASE_FILES_SCRIPT: &str =
     include_str!("../scripts/internal/release/assemble_release_files.sh");
 const BUILD_RELEASE_ARTIFACT_SCRIPT: &str =
     include_str!("../scripts/internal/release/build_release_artifact.sh");
-const CHECKOUT_RADIANT_SCRIPT: &str =
-    include_str!("../scripts/internal/release/checkout_radiant_submodule.sh");
+const PROVISION_RADIANT_SCRIPT: &str =
+    include_str!("../scripts/internal/release/provision_radiant_sibling.sh");
 const SETUP_UBUNTU_RELEASE_DEPS_SCRIPT: &str =
     include_str!("../scripts/internal/release/setup_ubuntu_release_deps.sh");
 const RELEASE_ZIP_SCRIPT: &str = include_str!("../scripts/internal/release/build_release_zip.sh");
@@ -201,8 +202,8 @@ fn nightly_workflow_runs_validation_before_build_and_publish() {
         "nightly validation must have enough history for workspace tests that inspect git state"
     );
     assert!(
-        NIGHTLY_WORKFLOW.contains("scripts/internal/release/checkout_radiant_submodule.sh"),
-        "nightly validation must check out the Radiant submodule like RC/stable validation"
+        NIGHTLY_WORKFLOW.contains("scripts/internal/release/provision_radiant_sibling.sh"),
+        "nightly validation must provision the pinned Radiant sibling"
     );
     assert!(
         NIGHTLY_WORKFLOW.contains("scripts/internal/release/emit_rust_toolchain_channel.py"),
@@ -279,8 +280,9 @@ fn release_validation_installs_ubuntu_audio_deps_before_cargo_tests() {
 fn release_validation_lane_builds_workspace_and_runs_focused_checks() {
     assert!(
         RUN_RELEASE_VALIDATION_SCRIPT
-            .contains("cargo test --workspace --locked --exclude radiant --no-run"),
-        "release validation must compile Wavecrate-owned workspace test targets without running the broad native/UI lane"
+            .contains("cargo test --workspace --locked --no-run")
+            && RUN_RELEASE_VALIDATION_SCRIPT.contains("cargo test --manifest-path \"$RADIANT_DIR/Cargo.toml\""),
+        "release validation must compile Wavecrate workspace targets and standalone Radiant targets"
     );
     assert!(
         RUN_RELEASE_VALIDATION_SCRIPT.contains("cargo test --test release_contract")
@@ -1099,8 +1101,8 @@ fn release_workflows_use_shared_setup_build_and_signing_helpers() {
         ("stable workflow", STABLE_WORKFLOW),
     ] {
         assert!(
-            workflow.contains("scripts/internal/release/checkout_radiant_submodule.sh"),
-            "{name} must use the shared Radiant checkout helper"
+            workflow.contains("scripts/internal/release/provision_radiant_sibling.sh"),
+            "{name} must use the shared Radiant provisioning helper"
         );
         assert!(
             workflow.contains("scripts/internal/release/emit_rust_toolchain_channel.py"),
@@ -1133,8 +1135,8 @@ fn release_workflows_use_shared_setup_build_and_signing_helpers() {
     }
     assert!(
         RELEASE_TRAIN_PREP_WORKFLOW
-            .contains("scripts/internal/release/checkout_radiant_submodule.sh"),
-        "release train prep must use the shared Radiant checkout helper"
+            .contains("scripts/internal/release/provision_radiant_sibling.sh"),
+        "release train prep must use the shared Radiant provisioning helper"
     );
     assert!(
         RELEASE_TRAIN_PREP_WORKFLOW
@@ -1148,10 +1150,26 @@ fn release_workflows_use_shared_setup_build_and_signing_helpers() {
 }
 
 #[test]
+fn standalone_radiant_smoke_workflow_provisions_before_cargo() {
+    let provision = RADIANT_SMOKE_WORKFLOW
+        .find("scripts/internal/release/provision_radiant_sibling.sh")
+        .expect("Radiant smoke must provision the sibling");
+    let metadata = RADIANT_SMOKE_WORKFLOW
+        .find("cargo metadata --locked")
+        .expect("Radiant smoke must validate Cargo metadata");
+    assert!(
+        provision < metadata,
+        "provisioning must precede Cargo validation"
+    );
+    assert!(RADIANT_SMOKE_WORKFLOW.contains("workflow_dispatch:"));
+}
+
+#[test]
 fn shared_release_helpers_keep_policy_visible_and_strict() {
     assert!(
-        CHECKOUT_RADIANT_SCRIPT.contains("Missing RADIANT_SUBMODULE_DEPLOY_KEY"),
-        "Radiant checkout helper must fail clearly when the deploy key is missing"
+        PROVISION_RADIANT_SCRIPT.contains("RADIANT_REPOSITORY_DEPLOY_KEY")
+            && PROVISION_RADIANT_SCRIPT.contains("RADIANT_SUBMODULE_DEPLOY_KEY"),
+        "Radiant provisioning helper must map the deploy-key secret explicitly"
     );
     assert!(
         BUILD_RELEASE_ARTIFACT_SCRIPT.contains("--channel <nightly|rc|stable>"),

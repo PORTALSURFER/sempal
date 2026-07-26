@@ -202,7 +202,7 @@ The nextest policy is:
 - Nightly, RC, and stable use `scripts/internal/release/run_release_validation.sh`
   on `ubuntu-latest` before any package build or public publication. The helper
   compiles Wavecrate-owned workspace test targets with `cargo test --workspace
-  --locked --exclude radiant --no-run`, then runs release contract/helper tests
+  --locked --no-run`, then runs standalone Radiant validation plus release contract/helper tests
   and scanner tests. It intentionally avoids running the full native/UI default
   Cargo test lane in scheduled release workflows; local `ci-required` nextest,
   quarantined, GUI/manual, and performance checks remain explicit local or
@@ -452,10 +452,11 @@ Manual cold-cache smoke for large folders:
 
 ### Radiant compatibility tests
 
-Use for generic Radiant behavior and compatibility coverage in the vendored
-runtime dependency.
+Use for generic Radiant behavior and compatibility coverage in the standalone
+sibling runtime dependency. Provision it first with `scripts/radiant.sh
+provision` when starting from a fresh clone.
 
-- `cargo nextest run --manifest-path vendor/radiant/Cargo.toml`
+- `cargo nextest run --manifest-path ../radiant/Cargo.toml`
 
 ### GUI test platform
 

@@ -199,7 +199,7 @@ instruction.
 The release workflows keep channel policy in YAML but share operational helpers
 under `scripts/internal/release/`:
 
-- `checkout_radiant_submodule.sh` configures the private Radiant submodule.
+- `provision_radiant_sibling.sh` provisions the pinned standalone Radiant sibling.
 - `emit_rust_toolchain_channel.py` emits the pinned Rust toolchain channel for
   `dtolnay/rust-toolchain`.
 - `setup_windows_asio_sdk.ps1` prepares the Windows ASIO SDK path.
@@ -213,6 +213,19 @@ under `scripts/internal/release/`:
 - `sign_release_checksums.sh` signs and optionally verifies checksum files.
 - `validate_promoted_rc_release.py` verifies that stable promotion is backed by
   a complete RC GitHub prerelease before stable builds start.
+
+### Standalone Radiant checkout
+
+Wavecrate resolves Radiant from the sibling path recorded in
+`radiant-dependency.toml` (`../radiant` by default). Run
+`scripts/bootstrap.sh` (or the PowerShell equivalent) after a fresh clone; it
+provisions the recorded revision when the sibling is absent and never resets an
+existing dirty checkout. The helper's optional `--path` is restricted to that
+same Cargo-configured sibling path, which keeps isolated worktree pairs aligned
+with the build. CI/release helpers use
+`RADIANT_REPOSITORY_DEPLOY_KEY` (mapped from the existing
+`RADIANT_SUBMODULE_DEPLOY_KEY` secret) and fail closed unless the sibling's
+remote, manifest, clean state, and HEAD match the recorded revision.
 - `verify_published_release.py` downloads public GitHub or PortalSurfer release
   assets after publication, verifies checksum signatures and zip hashes, and
   inspects each `update-manifest.json` for the expected channel, version,

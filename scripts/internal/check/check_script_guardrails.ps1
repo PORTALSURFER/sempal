@@ -421,7 +421,7 @@ try {
   Invoke-ExpectExitCode -Label "ci smoke --Help" -ExpectedCode 0 -WorkDir $rootDir -ScriptPath (Join-Path $scriptsDir "ci.ps1") -Arguments @("smoke", "-Help")
   Invoke-ExpectExitCode -Label "ci agent --Help" -ExpectedCode 0 -WorkDir $rootDir -ScriptPath (Join-Path $scriptsDir "ci.ps1") -Arguments @("agent", "-Help")
   Invoke-ExpectExitCode -Label "ci quick --Help" -ExpectedCode 0 -WorkDir $rootDir -ScriptPath (Join-Path $scriptsDir "ci.ps1") -Arguments @("quick", "-Help")
-  Invoke-ExpectOutput -Label "size hotspot report surfaces scripts and Radiant scopes" -ExpectedCode 0 -WorkDir $rootDir -ScriptPath (Join-Path $scriptsDir "internal/check/report_size_hotspots.ps1") -Arguments @("-Limit", "1", "-TopFiles", "5") -ExpectedSubstrings @("# Size Hotspot Report", "scripts/internal", "vendor/radiant", "Over Budget")
+  Invoke-ExpectOutput -Label "size hotspot report surfaces scripts" -ExpectedCode 0 -WorkDir $rootDir -ScriptPath (Join-Path $scriptsDir "internal/check/report_size_hotspots.ps1") -Arguments @("-Limit", "1", "-TopFiles", "5") -ExpectedSubstrings @("# Size Hotspot Report", "scripts/internal", "Over Budget")
 
   $fixtureDir = New-TempDir
   try {
@@ -431,7 +431,6 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $repoDir "scripts") | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $repoDir "scripts/internal/check") -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $repoDir "docs") | Out-Null
-    New-Item -ItemType Directory -Path (Join-Path $repoDir "vendor") | Out-Null
 
     Copy-Item (Join-Path $scriptsDir "internal/check/check_file_size_budget.ps1") (Join-Path $repoDir "scripts/internal/check/check_file_size_budget.ps1")
     Set-Content -Path (Join-Path $repoDir "src/too_many_lines.rs") -Value @(
@@ -453,24 +452,11 @@ try {
     git -C $repoDir add src/too_many_lines.rs src/blank_lines_count.rs
     git -C $repoDir commit -qm "seed"
 
-    $vendorRepoDir = Join-Path $repoDir "vendor/radiant"
-    New-Item -ItemType Directory -Path $vendorRepoDir | Out-Null
-    New-Item -ItemType Directory -Path (Join-Path $vendorRepoDir "src") | Out-Null
-    Set-Content -Path (Join-Path $vendorRepoDir "src/too_many_lines.rs") -Value @(
-      "fn main() {",
-      "    println!(`"a`");",
-      "    println!(`"b`");",
-      "    println!(`"c`");",
-      "    println!(`"d`");",
-      "}"
-    )
-    git -C $vendorRepoDir init -q
-    git -C $vendorRepoDir config user.name "wavecrate-ci"
-    git -C $vendorRepoDir config user.email "ci@wavecrate.test"
-    git -C $vendorRepoDir add src/too_many_lines.rs
-    git -C $vendorRepoDir commit -qm "seed"
+    Add-Content -Path (Join-Path $repoDir "src/too_many_lines.rs") -Value @("    println!(`"budget`");", "    println!(`"budget`");", "    println!(`"budget`");")
+    git -C $repoDir add src/too_many_lines.rs
+    git -C $repoDir commit -qm "add budget lines"
 
-    Invoke-ExpectExitCode -Label "file size budget catches over-limit nested vendor file" -ExpectedCode 1 -WorkDir $repoDir -ScriptPath (Join-Path $repoDir "scripts/internal/check/check_file_size_budget.ps1") -Arguments @("-All", "-Limit", "3")
+    Invoke-ExpectExitCode -Label "file size budget catches over-limit Wavecrate file" -ExpectedCode 1 -WorkDir $repoDir -ScriptPath (Join-Path $repoDir "scripts/internal/check/check_file_size_budget.ps1") -Arguments @("-All", "-Limit", "3")
     Invoke-ExpectExitCode -Label "file size budget passes under limit" -ExpectedCode 0 -WorkDir $repoDir -ScriptPath (Join-Path $repoDir "scripts/internal/check/check_file_size_budget.ps1") -Arguments @("-All", "-Limit", "10")
     Invoke-ExpectExitCode -Label "file size budget counts blank lines in project files" -ExpectedCode 1 -WorkDir $repoDir -ScriptPath (Join-Path $repoDir "scripts/internal/check/check_file_size_budget.ps1") -Arguments @("-All", "-Limit", "4")
   } finally {
@@ -483,7 +469,6 @@ try {
     New-Item -ItemType Directory -Path $repoDir | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $repoDir "src/analysis") -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $repoDir "src/selection") -Force | Out-Null
-    New-Item -ItemType Directory -Path (Join-Path $repoDir "vendor/radiant/src") -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $repoDir "scripts/internal/check") -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $repoDir "tmp") | Out-Null
 
@@ -512,19 +497,6 @@ try {
       "pub fn two() {}",
       "pub fn three() {}"
     )
-    Set-Content -Path (Join-Path $repoDir "vendor/radiant/src/vendor_gap.rs") -Value @(
-      "pub fn vendor_one() {}",
-      "pub fn vendor_two() {}",
-      "pub fn vendor_three() {}"
-    )
-
-    $vendorRepoDir = Join-Path $repoDir "vendor/radiant"
-    git -C $vendorRepoDir init -q
-    git -C $vendorRepoDir config user.name "wavecrate-ci"
-    git -C $vendorRepoDir config user.email "ci@wavecrate.test"
-    git -C $vendorRepoDir add .
-    git -C $vendorRepoDir commit -qm "seed"
-
     git -C $repoDir init -q
     git -C $repoDir config user.name "wavecrate-ci"
     git -C $repoDir config user.email "ci@wavecrate.test"
@@ -535,25 +507,16 @@ try {
     Invoke-ExpectExitCode -Label "cleanup audit fixture succeeds" -ExpectedCode 0 -WorkDir $repoDir -ScriptPath (Join-Path $repoDir "scripts/internal/check/audit_cleanup_hotspots.ps1") -Arguments @("-Output", $outputPath, "-TestGapMinLines", "3", "-TopFiles", "10")
     $reportText = Get-Content -Path $outputPath -Raw
     $sectionStart = $reportText.IndexOf("## Wavecrate-root likely test-gap hotspots (heuristic)")
-    $sectionEnd = $reportText.IndexOf("## Vendor/Radiant likely test-gap hotspots (heuristic)")
+    $sectionEnd = $reportText.IndexOf("## Radiant sibling likely test-gap hotspots (standalone gate)")
     $testGapSection = if ($sectionStart -ge 0 -and $sectionEnd -gt $sectionStart) {
       $reportText.Substring($sectionStart, $sectionEnd - $sectionStart)
     } else {
       $reportText
     }
-    $vendorSectionStart = $reportText.IndexOf("## Vendor/Radiant likely test-gap hotspots (heuristic)")
-    $vendorSectionEnd = $reportText.IndexOf("## Suggested follow-up")
-    $vendorTestGapSection = if ($vendorSectionStart -ge 0 -and $vendorSectionEnd -gt $vendorSectionStart) {
-      $reportText.Substring($vendorSectionStart, $vendorSectionEnd - $vendorSectionStart)
-    } else {
-      $reportText
-    }
-    Assert-TextContains -Label "cleanup audit fixture reports two heuristic gaps across scopes" -Text $reportText -Fragment "Likely large-file test-gap hotspots (heuristic): 2"
+    Assert-TextContains -Label "cleanup audit fixture reports one Wavecrate heuristic gap" -Text $reportText -Fragment "Likely large-file test-gap hotspots (heuristic): 1"
     Assert-TextContains -Label "cleanup audit fixture emits root section" -Text $reportText -Fragment "## Wavecrate-root largest Rust files"
-    Assert-TextContains -Label "cleanup audit fixture emits vendor section" -Text $reportText -Fragment "## Vendor/Radiant largest Rust files"
+    Assert-TextContains -Label "cleanup audit fixture emits standalone section" -Text $reportText -Fragment "## Radiant sibling largest Rust files"
     Assert-TextContains -Label "cleanup audit fixture keeps the real gap" -Text $testGapSection -Fragment 'src/real_gap.rs'
-    Assert-TextContains -Label "cleanup audit fixture keeps the vendor gap separate" -Text $vendorTestGapSection -Fragment 'vendor/radiant/src/vendor_gap.rs'
-    Assert-TextNotContains -Label "cleanup audit fixture keeps vendor gap out of root section" -Text $testGapSection -Fragment 'vendor/radiant/src/vendor_gap.rs'
     Assert-TextNotContains -Label "cleanup audit fixture skips *_tests.rs files" -Text $testGapSection -Fragment 'src/analysis/ann_index_tests.rs'
     Assert-TextNotContains -Label "cleanup audit fixture skips sibling module tests" -Text $testGapSection -Fragment 'src/selection/range.rs'
   } finally {

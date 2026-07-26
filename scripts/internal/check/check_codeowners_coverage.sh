@@ -48,7 +48,6 @@ required_prefixes=(
   "/src/gui_test/"
   "/src/sample_sources/"
   "/src/selection/"
-  "/vendor/radiant/"
 )
 
 missing=0

@@ -1,0 +1,38 @@
+name: Wavecrate Radiant sibling smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sibling:
+    name: Provision and validate pinned Radiant sibling
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Provision pinned Radiant sibling
+        shell: bash
+        env:
+          RADIANT_REPOSITORY_DEPLOY_KEY: ${{ secrets.RADIANT_SUBMODULE_DEPLOY_KEY }}
+        run: scripts/internal/release/provision_radiant_sibling.sh
+      - name: Validate Cargo resolves the sibling
+        shell: bash
+        run: |
+          cargo metadata --locked --format-version 1 >/tmp/wavecrate-metadata.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          metadata = json.loads(Path('/tmp/wavecrate-metadata.json').read_text())
+          radiant = next(package for package in metadata['packages'] if package['name'] == 'radiant')
+          assert radiant['manifest_path'].endswith('/radiant/Cargo.toml')
+          assert not any(member.endswith('/radiant#0.1.0') for member in metadata['workspace_members'])
+          PY
+      - name: Run standalone Radiant compile smoke
+        shell: bash
+        run: cargo test --manifest-path ../radiant/Cargo.toml --locked --lib --no-default-features --no-run

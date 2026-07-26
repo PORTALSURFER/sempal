@@ -130,7 +130,7 @@ run_cleanup_audit_fixture() {
   local repo_dir="$fixture_dir/repo"
   local script_path="$repo_dir/scripts/internal/check/audit_cleanup_hotspots.sh"
   local output_path="$repo_dir/tmp/cleanup.md"
-  mkdir -p "$repo_dir/src/analysis" "$repo_dir/src/selection" "$repo_dir/vendor/radiant/src" "$repo_dir/scripts/internal/check" "$repo_dir/tmp"
+  mkdir -p "$repo_dir/src/analysis" "$repo_dir/src/selection" "$repo_dir/scripts/internal/check" "$repo_dir/tmp"
   cp "scripts/internal/check/audit_cleanup_hotspots.sh" "$script_path"
   chmod +x "$script_path"
 
@@ -157,18 +157,6 @@ pub fn one() {}
 pub fn two() {}
 pub fn three() {}
 EOF
-  cat >"$repo_dir/vendor/radiant/src/vendor_gap.rs" <<'EOF'
-pub fn vendor_one() {}
-pub fn vendor_two() {}
-pub fn vendor_three() {}
-EOF
-
-  git -C "$repo_dir/vendor/radiant" init -q
-  git -C "$repo_dir/vendor/radiant" config user.name "wavecrate-ci"
-  git -C "$repo_dir/vendor/radiant" config user.email "ci@wavecrate.test"
-  git -C "$repo_dir/vendor/radiant" add .
-  git -C "$repo_dir/vendor/radiant" commit -qm "seed"
-
   git -C "$repo_dir" init -q
   git -C "$repo_dir" config user.name "wavecrate-ci"
   git -C "$repo_dir" config user.email "ci@wavecrate.test"
@@ -187,19 +175,18 @@ EOF
     --top-files \
     10
 
-  root_gap_section="$(sed -n '/^## Wavecrate-root likely test-gap hotspots (heuristic)/,/^## Vendor\/Radiant likely test-gap hotspots (heuristic)/p' "$output_path")"
-  vendor_gap_section="$(sed -n '/^## Vendor\/Radiant likely test-gap hotspots (heuristic)/,/^## Suggested follow-up/p' "$output_path")"
+  root_gap_section="$(sed -n '/^## Wavecrate-root likely test-gap hotspots (heuristic)/,/^## Radiant sibling likely test-gap hotspots/p' "$output_path")"
 
-  if grep -Fq 'Likely large-file test-gap hotspots (heuristic): 2' "$output_path"; then
-    echo "[guardrails] PASS: cleanup-audit fixture reports two scoped heuristic gaps"
+  if grep -Fq 'Likely large-file test-gap hotspots (heuristic): 1' "$output_path"; then
+    echo "[guardrails] PASS: cleanup-audit fixture reports one Wavecrate heuristic gap"
   else
     echo "[guardrails] FAIL: cleanup-audit fixture reports unexpected heuristic gap count" >&2
     cat "$output_path" >&2
     failures=$((failures + 1))
   fi
 
-  if grep -Fq '## Wavecrate-root largest Rust files' "$output_path" && grep -Fq '## Vendor/Radiant largest Rust files' "$output_path"; then
-    echo "[guardrails] PASS: cleanup-audit fixture emits root/vendor sections"
+  if grep -Fq '## Wavecrate-root largest Rust files' "$output_path" && grep -Fq '## Radiant sibling largest Rust files' "$output_path"; then
+    echo "[guardrails] PASS: cleanup-audit fixture emits root/standalone sections"
   else
     echo "[guardrails] FAIL: cleanup-audit fixture did not emit root/vendor sections" >&2
     cat "$output_path" >&2
@@ -210,14 +197,6 @@ EOF
     echo "[guardrails] PASS: cleanup-audit fixture keeps the real gap"
   else
     echo "[guardrails] FAIL: cleanup-audit fixture missed the real gap" >&2
-    cat "$output_path" >&2
-    failures=$((failures + 1))
-  fi
-
-  if grep -Fq '`vendor/radiant/src/vendor_gap.rs`' <<<"$vendor_gap_section" && ! grep -Fq '`vendor/radiant/src/vendor_gap.rs`' <<<"$root_gap_section"; then
-    echo "[guardrails] PASS: cleanup-audit fixture keeps the vendor gap separate"
-  else
-    echo "[guardrails] FAIL: cleanup-audit fixture did not keep the vendor gap separate" >&2
     cat "$output_path" >&2
     failures=$((failures + 1))
   fi
@@ -303,7 +282,7 @@ run_file_size_budget_fixture() {
 
   local repo_dir="$fixture_dir/repo"
   local script_path="$repo_dir/scripts/internal/check/check_file_size_budget.sh"
-  mkdir -p "$repo_dir/src" "$repo_dir/scripts/internal/check" "$repo_dir/vendor"
+  mkdir -p "$repo_dir/src" "$repo_dir/scripts/internal/check"
   cp "scripts/internal/check/check_file_size_budget.sh" "$script_path"
   chmod +x "$script_path"
 
@@ -315,6 +294,9 @@ run_file_size_budget_fixture() {
   cat >"$fixture_dir/repo/src/too_many_lines.rs" <<'EOF'
 fn ok() {
     println!("budget");
+    println!("budget");
+    println!("budget");
+    println!("budget");
 }
 EOF
   cat >"$fixture_dir/repo/tests/notes.txt" <<'EOF'
@@ -325,23 +307,8 @@ EOF
   git -C "$fixture_dir/repo" add tests/notes.txt
   git -C "$fixture_dir/repo" commit -qm "seed"
 
-  mkdir -p "$fixture_dir/repo/vendor/radiant/src"
-  git -C "$fixture_dir/repo/vendor/radiant" init -q
-  git -C "$fixture_dir/repo/vendor/radiant" config user.name "wavecrate-ci"
-  git -C "$fixture_dir/repo/vendor/radiant" config user.email "ci@wavecrate.test"
-  cat >"$fixture_dir/repo/vendor/radiant/src/too_many_lines.rs" <<'EOF'
-fn main() {
-    println!("a");
-    println!("b");
-    println!("c");
-    println!("d");
-}
-EOF
-  git -C "$fixture_dir/repo/vendor/radiant" add src/too_many_lines.rs
-  git -C "$fixture_dir/repo/vendor/radiant" commit -qm "seed"
-
   run_expect_exit_code \
-    "file-size-budget fixture catches over-limit nested vendor file" \
+    "file-size-budget fixture catches over-limit Wavecrate file" \
     1 \
     "$repo_dir" \
     "$script_path" \
@@ -376,8 +343,8 @@ EOF
       echo "[guardrails] FAIL: file-size-budget fixture did not emit collected_file_count trace" >&2
       cat "$collection_trace" >&2
       failures=$((failures + 1))
-    elif (( collection_count < 2 )); then
-      echo "[guardrails] FAIL: file-size-budget fixture collected_file_count=$collection_count, below minimum threshold 2" >&2
+    elif (( collection_count < 1 )); then
+      echo "[guardrails] FAIL: file-size-budget fixture collected_file_count=$collection_count, below minimum threshold 1" >&2
       cat "$collection_trace" >&2
       failures=$((failures + 1))
     else
@@ -582,7 +549,7 @@ run_expect_output \
   "$ROOT_DIR" \
   "# Size Hotspot Report" \
   "scripts/internal" \
-  "vendor/radiant" \
+  "scripts/internal" \
   "Over Budget" \
   -- \
   scripts/internal/check/report_size_hotspots.sh \
