@@ -2,8 +2,8 @@ use radiant::{
     gui::automation::AutomationRole,
     prelude as ui,
     widgets::{
-        TextEditCommand, TextInputMessage, TextInputWidget, Widget, WidgetCommon, WidgetInput,
-        WidgetKey, WidgetOutput, WidgetSizing,
+        TextEditCommand, TextInputMessage, TextInputWidget, Widget, WidgetCapabilities,
+        WidgetCommon, WidgetInput, WidgetKey, WidgetOutput, WidgetSemantics, WidgetSizing,
     },
 };
 
@@ -161,16 +161,8 @@ impl Widget for BeatGuideCountInputWidget {
         true
     }
 
-    fn automation_role(&self) -> AutomationRole {
-        self.input.automation_role()
-    }
-
-    fn automation_label(&self) -> Option<String> {
-        Some(String::from("Beat guide count"))
-    }
-
-    fn automation_value_text(&self) -> Option<String> {
-        self.input.automation_value_text()
+    fn capabilities(&self) -> WidgetCapabilities<'_> {
+        WidgetCapabilities::new().semantics(self)
     }
 
     fn selected_text_slice(&self) -> Option<&str> {
@@ -189,6 +181,20 @@ impl Widget for BeatGuideCountInputWidget {
         theme: &ui::ThemeTokens,
     ) {
         self.input.append_paint(primitives, bounds, layout, theme);
+    }
+}
+
+impl WidgetSemantics for BeatGuideCountInputWidget {
+    fn automation_role(&self) -> AutomationRole {
+        self.input.automation_role()
+    }
+
+    fn automation_label(&self) -> Option<String> {
+        Some(String::from("Beat guide count"))
+    }
+
+    fn automation_value_text(&self) -> Option<String> {
+        self.input.automation_value_text()
     }
 }
 
