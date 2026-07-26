@@ -27,11 +27,20 @@ $Revision = MetadataValue 'revision' $Metadata
 $MetadataPath = MetadataValue 'path' $Metadata
 if ($Revision -notmatch '^[0-9a-f]{40}$') { Fail 'metadata revision is not a full SHA' }
 if (-not $Repository -or -not $MetadataPath) { Fail 'metadata repository/path is incomplete' }
-if (-not $Path) {
-  $Path = if ($env:WAVECRATE_RADIANT_DIR) { $env:WAVECRATE_RADIANT_DIR } else { $MetadataPath }
+if ($env:WAVECRATE_RADIANT_DIR) {
+  Fail 'WAVECRATE_RADIANT_DIR is unsupported because Cargo is pinned to the paired ../radiant sibling; unset it and use the paired path'
 }
-if (-not [IO.Path]::IsPathRooted($Path)) { $Path = Join-Path $Root $Path }
-$Target = [IO.Path]::GetFullPath($Path)
+function Resolve-SiblingPath([string] $Value) {
+  if (-not [IO.Path]::IsPathRooted($Value)) { $Value = Join-Path $Root $Value }
+  $parent = Split-Path -Parent $Value
+  if (-not (Test-Path $parent -PathType Container)) { Fail "cannot resolve sibling parent directory: $parent" }
+  return [IO.Path]::GetFullPath((Join-Path ([IO.Path]::GetFullPath($parent)) (Split-Path -Leaf $Value)))
+}
+$MetadataTarget = Resolve-SiblingPath $MetadataPath
+$Target = if ($Path) { Resolve-SiblingPath $Path } else { $MetadataTarget }
+if ($Target -ne $MetadataTarget) {
+  Fail "Radiant path '$Target' does not match Cargo's configured sibling '$MetadataTarget'; use the paired ../radiant path"
+}
 
 function Validate-Checkout {
   if (-not (Test-Path $Target -PathType Container)) { Fail "Radiant sibling is missing: $Target (run scripts/radiant.ps1 provision)" }

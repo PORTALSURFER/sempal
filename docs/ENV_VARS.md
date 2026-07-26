@@ -220,8 +220,9 @@ Wavecrate resolves Radiant from the sibling path recorded in
 `radiant-dependency.toml` (`../radiant` by default). Run
 `scripts/bootstrap.sh` (or the PowerShell equivalent) after a fresh clone; it
 provisions the recorded revision when the sibling is absent and never resets an
-existing dirty checkout. Set `WAVECRATE_RADIANT_DIR` to use another local
-checkout during development. CI/release helpers use
+existing dirty checkout. The helper's optional `--path` is restricted to that
+same Cargo-configured sibling path, which keeps isolated worktree pairs aligned
+with the build. CI/release helpers use
 `RADIANT_REPOSITORY_DEPLOY_KEY` (mapped from the existing
 `RADIANT_SUBMODULE_DEPLOY_KEY` secret) and fail closed unless the sibling's
 remote, manifest, clean state, and HEAD match the recorded revision.

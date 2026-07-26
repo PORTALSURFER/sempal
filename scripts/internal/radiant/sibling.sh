@@ -19,12 +19,11 @@ Usage: scripts/radiant.sh [locate|provision] [options]
 
 Options:
   --root <dir>       Wavecrate checkout (defaults to this repository)
-  --path <dir>       explicit sibling checkout path (overrides metadata/env)
+  --path <dir>       paired sibling path (must match Cargo's ../radiant path)
   --clean            provision an exact, clean detached checkout (CI/release)
   --help             show this help
 
 Environment:
-  WAVECRATE_RADIANT_DIR       local sibling override for development
   RADIANT_REPOSITORY_DEPLOY_KEY  SSH private key for private CI/release clones
   RADIANT_SUBMODULE_DEPLOY_KEY   legacy alias for the existing GitHub secret
 EOF
@@ -66,13 +65,28 @@ METADATA_PATH="$(metadata_value path)"
 [[ "$REVISION" =~ ^[0-9a-f]{40}$ ]] || die "metadata revision is not a full SHA"
 [[ -n "$REPOSITORY" && -n "$METADATA_PATH" ]] || die "metadata repository/path is incomplete"
 
+[[ -z "${WAVECRATE_RADIANT_DIR:-}" ]] || die "WAVECRATE_RADIANT_DIR is unsupported because Cargo is pinned to the paired ../radiant sibling; unset it and use the paired path"
+
+canonical_path() {
+  local path="$1" parent name
+  if [[ "$path" != /* ]]; then
+    path="$ROOT_DIR/$path"
+  fi
+  parent="$(dirname "$path")"
+  name="$(basename "$path")"
+  parent="$(cd "$parent" 2>/dev/null && pwd -P)" \
+    || die "cannot resolve sibling parent directory: $parent"
+  printf '%s/%s' "$parent" "$name"
+}
+
+METADATA_TARGET="$(canonical_path "$METADATA_PATH")"
 if [[ -z "$TARGET" ]]; then
-  TARGET="${WAVECRATE_RADIANT_DIR:-$METADATA_PATH}"
+  TARGET="$METADATA_TARGET"
+else
+  TARGET="$(canonical_path "$TARGET")"
+  [[ "$TARGET" == "$METADATA_TARGET" ]] \
+    || die "Radiant path '$TARGET' does not match Cargo's configured sibling '$METADATA_TARGET'; use the paired ../radiant path"
 fi
-if [[ "$TARGET" != /* ]]; then
-  TARGET="$ROOT_DIR/$TARGET"
-fi
-TARGET="$(cd "$(dirname "$TARGET")" 2>/dev/null && printf '%s/%s' "$PWD" "$(basename "$TARGET")" || printf '%s' "$TARGET")"
 
 expected_remote_matches() {
   local remote="$1" normalized
