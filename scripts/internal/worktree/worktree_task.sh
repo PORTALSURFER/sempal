@@ -31,7 +31,8 @@ Then (unless --no-run) launches:
 
 Defaults:
 - base ref: HEAD
-- worktree path: <repo>/.worktrees/<id>
+- paired paths: <repo>/.worktrees/<id>/wavecrate and
+  <repo>/.worktrees/<id>/radiant
 EOF
 }
 
