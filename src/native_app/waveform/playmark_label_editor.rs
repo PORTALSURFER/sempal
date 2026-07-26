@@ -3,8 +3,9 @@ use radiant::{
     prelude as ui,
     runtime::WidgetPaint,
     widgets::{
-        FocusBehavior, PointerButton, TextInputMessage, TextInputWidget, Widget, WidgetCommon,
-        WidgetInput, WidgetKey, WidgetOutput, WidgetSizing,
+        FocusBehavior, PointerButton, TextInputMessage, TextInputWidget, Widget,
+        WidgetCapabilities, WidgetCommon, WidgetInput, WidgetKey, WidgetOutput, WidgetSemantics,
+        WidgetSizing,
     },
 };
 use std::sync::{Arc, Mutex};
@@ -220,6 +221,30 @@ impl Widget for PlaymarkLabelWidget {
             })
     }
 
+    fn capabilities(&self) -> WidgetCapabilities<'_> {
+        WidgetCapabilities::new().semantics(self)
+    }
+
+    fn selected_text_slice(&self) -> Option<&str> {
+        self.input.as_ref().and_then(Widget::selected_text_slice)
+    }
+
+    fn selected_text(&self) -> Option<String> {
+        self.input.as_ref().and_then(Widget::selected_text)
+    }
+
+    fn append_paint(
+        &self,
+        primitives: &mut Vec<radiant::runtime::PaintPrimitive>,
+        bounds: ui::Rect,
+        layout: &ui::LayoutOutput,
+        theme: &ui::ThemeTokens,
+    ) {
+        self.append_paint_impl(primitives, bounds, layout, theme);
+    }
+}
+
+impl WidgetSemantics for PlaymarkLabelWidget {
     fn automation_role(&self) -> AutomationRole {
         if self.editing() {
             AutomationRole::TextInput
@@ -244,16 +269,10 @@ impl Widget for PlaymarkLabelWidget {
             .map(|input| input.state.value.clone())
             .or_else(|| Some(self.label.clone()))
     }
+}
 
-    fn selected_text_slice(&self) -> Option<&str> {
-        self.input.as_ref().and_then(Widget::selected_text_slice)
-    }
-
-    fn selected_text(&self) -> Option<String> {
-        self.input.as_ref().and_then(Widget::selected_text)
-    }
-
-    fn append_paint(
+impl PlaymarkLabelWidget {
+    fn append_paint_impl(
         &self,
         primitives: &mut Vec<radiant::runtime::PaintPrimitive>,
         bounds: ui::Rect,

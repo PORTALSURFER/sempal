@@ -2,7 +2,8 @@ use radiant::{
     gui::automation::AutomationRole,
     prelude as ui,
     widgets::{
-        ButtonWidget, Widget, WidgetCommon, WidgetInput, WidgetKey, WidgetOutput, WidgetSizing,
+        ButtonWidget, Widget, WidgetCapabilities, WidgetCommon, WidgetInput, WidgetKey,
+        WidgetOutput, WidgetSemantics, WidgetSizing,
     },
 };
 use std::sync::{Arc, Mutex};
@@ -109,6 +110,25 @@ impl Widget for PlaymarkBeatToggleWidget {
         })
     }
 
+    fn capabilities(&self) -> WidgetCapabilities<'_> {
+        WidgetCapabilities::new().semantics(self)
+    }
+
+    fn append_paint(
+        &self,
+        primitives: &mut Vec<radiant::runtime::PaintPrimitive>,
+        bounds: ui::Rect,
+        layout: &ui::LayoutOutput,
+        theme: &ui::ThemeTokens,
+    ) {
+        remember_painted_bounds(&self.painted_bounds, bounds);
+        if let Some(rect) = self.control_rect(bounds) {
+            self.button.append_paint(primitives, rect, layout, theme);
+        }
+    }
+}
+
+impl WidgetSemantics for PlaymarkBeatToggleWidget {
     fn automation_role(&self) -> AutomationRole {
         AutomationRole::Toggle
     }
@@ -123,19 +143,6 @@ impl Widget for PlaymarkBeatToggleWidget {
 
     fn automation_checked(&self) -> Option<bool> {
         Some(self.checked)
-    }
-
-    fn append_paint(
-        &self,
-        primitives: &mut Vec<radiant::runtime::PaintPrimitive>,
-        bounds: ui::Rect,
-        layout: &ui::LayoutOutput,
-        theme: &ui::ThemeTokens,
-    ) {
-        remember_painted_bounds(&self.painted_bounds, bounds);
-        if let Some(rect) = self.control_rect(bounds) {
-            self.button.append_paint(primitives, rect, layout, theme);
-        }
     }
 }
 
@@ -229,16 +236,8 @@ impl Widget for PlaymarkBeatCountWidget {
             })
     }
 
-    fn automation_role(&self) -> AutomationRole {
-        self.input.automation_role()
-    }
-
-    fn automation_label(&self) -> Option<String> {
-        Some(String::from("Playmark beat count"))
-    }
-
-    fn automation_value_text(&self) -> Option<String> {
-        self.input.automation_value_text()
+    fn capabilities(&self) -> WidgetCapabilities<'_> {
+        WidgetCapabilities::new().semantics(self)
     }
 
     fn selected_text_slice(&self) -> Option<&str> {
@@ -260,6 +259,20 @@ impl Widget for PlaymarkBeatCountWidget {
         if let Some(rect) = self.control_rect(bounds) {
             self.input.append_paint(primitives, rect, layout, theme);
         }
+    }
+}
+
+impl WidgetSemantics for PlaymarkBeatCountWidget {
+    fn automation_role(&self) -> AutomationRole {
+        self.input.automation_role()
+    }
+
+    fn automation_label(&self) -> Option<String> {
+        Some(String::from("Playmark beat count"))
+    }
+
+    fn automation_value_text(&self) -> Option<String> {
+        self.input.automation_value_text()
     }
 }
 

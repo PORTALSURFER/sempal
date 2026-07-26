@@ -3,6 +3,7 @@ use windows::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, OpenC
 use windows::Win32::System::Memory::{
     GMEM_MOVEABLE, GMEM_ZEROINIT, GlobalAlloc, GlobalLock, GlobalUnlock,
 };
+use windows::Win32::UI::Input::KeyboardAndMouse::GetActiveWindow;
 
 pub(super) struct ClipboardWriter {
     _clipboard: ClipboardOpenGuard,
@@ -43,7 +44,7 @@ impl ClipboardWriter {
 }
 
 fn active_window_owner() -> Result<HWND, String> {
-    let owner = unsafe { windows::Win32::UI::WindowsAndMessaging::GetActiveWindow() };
+    let owner = unsafe { GetActiveWindow() };
     if owner.0.is_null() {
         Err("GetActiveWindow returned no clipboard owner".to_string())
     } else {
