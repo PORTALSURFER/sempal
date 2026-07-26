@@ -660,6 +660,7 @@ impl FolderBrowserState {
         policy: VisibleSampleWindowPolicy<'_>,
     ) -> ui::VirtualListWindow {
         self.clear_scan_content_refresh_pending();
+        self.clear_background_content_refresh_pending();
         let window = self.follow_selected_file_view_matching_tags(
             policy.viewport_rows,
             policy.overscan_rows,
