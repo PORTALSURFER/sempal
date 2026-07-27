@@ -8,8 +8,8 @@ use radiant::{
     prelude::{self as ui, IntoView},
     runtime::{
         Command, DeclarativeOwnedCommandRuntimeBridge, Event, PaintTextInput, RuntimeBridge,
-        SurfaceFrame, SurfaceRuntime, TransientOverlayContext, UiSurface,
-        UiUpdateHandlerDiagnosticsPolicy,
+        RuntimeHostCapabilities, RuntimeTaskHost, SurfaceFrame, SurfaceRuntime,
+        TransientOverlayContext, UiSurface, UiUpdateHandlerDiagnosticsPolicy,
     },
     widgets::{DragHandleMessage, PointerButton, PointerModifiers, WidgetInput, WidgetKey},
 };
@@ -71,6 +71,53 @@ type NativeRuntimeForTests = SurfaceRuntime<
     >,
     super::test_support::state::GuiMessage,
 >;
+
+struct CaptureBridge {
+    messages: Vec<super::test_support::state::GuiMessage>,
+    target_name: Option<&'static str>,
+}
+
+impl RuntimeBridge<super::test_support::state::GuiMessage> for CaptureBridge {
+    fn project_surface(
+        &mut self,
+    ) -> std::sync::Arc<UiSurface<super::test_support::state::GuiMessage>> {
+        std::sync::Arc::new(ui::empty::<super::test_support::state::GuiMessage>().into_surface())
+    }
+
+    fn pull_surface(&mut self) -> UiSurface<super::test_support::state::GuiMessage> {
+        ui::empty::<super::test_support::state::GuiMessage>().into_surface()
+    }
+
+    fn update(
+        &mut self,
+        message: super::test_support::state::GuiMessage,
+    ) -> Command<super::test_support::state::GuiMessage> {
+        self.messages.push(message);
+        Command::none()
+    }
+
+    fn host_capabilities(
+        &self,
+    ) -> RuntimeHostCapabilities<Self, super::test_support::state::GuiMessage> {
+        RuntimeHostCapabilities::new().with_tasks()
+    }
+}
+
+impl RuntimeTaskHost<super::test_support::state::GuiMessage> for CaptureBridge {
+    fn spawn_worker_task(
+        &mut self,
+        name: &'static str,
+        _priority: radiant::prelude::TaskPriority,
+        _is_cancelled: Option<Box<dyn Fn() -> bool + Send + Sync + 'static>>,
+        work: Box<dyn FnOnce() + Send + 'static>,
+    ) -> bool {
+        if self.target_name.is_some_and(|target| target != name) {
+            return false;
+        }
+        work();
+        true
+    }
+}
 
 fn native_runtime_for_tests(mut state: NativeAppState, viewport: Vector2) -> NativeRuntimeForTests {
     super::test_support::sample_browser::prepare_sample_browser_view(&mut state);
@@ -243,46 +290,166 @@ fn run_command_for_tests(
     state: &mut NativeAppState,
     command: Command<super::test_support::state::GuiMessage>,
 ) {
+    let continues_committed_mutation = |message: &super::test_support::state::GuiMessage| {
+        matches!(
+            message,
+            super::test_support::state::GuiMessage::CommittedFileMutationRequested(_)
+                | super::test_support::state::GuiMessage::NormalizationFinished(_)
+                | super::test_support::state::GuiMessage::ExternalWaveformFileDropFinished {
+                    ..
+                }
+                | super::test_support::state::GuiMessage::ContextSampleSameFinished { .. }
+                | super::test_support::state::GuiMessage::ContextSampleDoubleFinished { .. }
+                | super::test_support::state::GuiMessage::SelectedFilesCopyFinished { .. }
+                | super::test_support::state::GuiMessage::WaveformSelectionCopyFinished { .. }
+                | super::test_support::state::GuiMessage::FolderMoveFinished { .. }
+                | super::test_support::state::GuiMessage::FileMoveConflictFinished { .. }
+                | super::test_support::state::GuiMessage::TrashMoveFinished { .. }
+                | super::test_support::state::GuiMessage::FolderBrowserRenameFinished(_)
+                | super::test_support::state::GuiMessage::WaveformDestructiveEditFinished(_)
+                | super::test_support::state::GuiMessage::PlaySelectionExtractionFinished { .. }
+                | super::test_support::state::GuiMessage::SelectedWholeFilesHarvestExtractionFinished {
+                    ..
+                }
+        )
+    };
     let mut commands = std::collections::VecDeque::from([command]);
     let mut processed = 0usize;
     while let Some(command) = commands.pop_front() {
+        for message in run_command_and_capture_messages_for_tests(command) {
+            let continues = continues_committed_mutation(&message);
+            let mut context = ui::UiUpdateContext::default();
+            state.apply_message(message, &mut context);
+            let followup = context.into_command();
+            if continues && !followup.is_empty() {
+                commands.push_back(followup);
+            }
+        }
         processed += 1;
         assert!(
             processed <= 1_000,
             "test command follow-up loop did not settle"
         );
-        command.run_inline_for_tests(|message| {
-            let continues_committed_mutation = matches!(
-                &message,
-                super::test_support::state::GuiMessage::CommittedFileMutationRequested(_)
-                    | super::test_support::state::GuiMessage::NormalizationFinished(_)
-                    | super::test_support::state::GuiMessage::ExternalWaveformFileDropFinished {
-                        ..
-                    }
-                    | super::test_support::state::GuiMessage::ContextSampleSameFinished { .. }
-                    | super::test_support::state::GuiMessage::ContextSampleDoubleFinished { .. }
-                    | super::test_support::state::GuiMessage::SelectedFilesCopyFinished { .. }
-                    | super::test_support::state::GuiMessage::WaveformSelectionCopyFinished { .. }
-                    | super::test_support::state::GuiMessage::FolderMoveFinished { .. }
-                    | super::test_support::state::GuiMessage::FileMoveConflictFinished { .. }
-                    | super::test_support::state::GuiMessage::TrashMoveFinished { .. }
-                    | super::test_support::state::GuiMessage::FolderBrowserRenameFinished(_)
-                    | super::test_support::state::GuiMessage::WaveformDestructiveEditFinished(_)
-                    | super::test_support::state::GuiMessage::PlaySelectionExtractionFinished {
-                        ..
-                    }
-                    | super::test_support::state::GuiMessage::SelectedWholeFilesHarvestExtractionFinished {
-                        ..
-                    }
-            );
-            let mut context = ui::UiUpdateContext::default();
-            state.apply_message(message, &mut context);
-            let followup = context.into_command();
-            if continues_committed_mutation && !followup.is_empty() {
-                commands.push_back(followup);
-            }
-        });
     }
+}
+
+fn run_worker_message_for_tests(
+    command: Command<super::test_support::state::GuiMessage>,
+    target_name: &'static str,
+) -> Option<super::test_support::state::GuiMessage> {
+    if command.business_task_priority(target_name).is_none() {
+        return None;
+    }
+    let messages = run_command_and_capture_messages_for_target_tests(command, target_name);
+    match messages.len() {
+        0 => None,
+        1 => messages.into_iter().next(),
+        count => panic!("worker task {target_name} emitted {count} messages; expected exactly one"),
+    }
+}
+
+fn run_command_and_capture_messages_for_tests(
+    command: Command<super::test_support::state::GuiMessage>,
+) -> Vec<super::test_support::state::GuiMessage> {
+    let mut runtime = radiant::runtime::SurfaceRuntime::new(
+        CaptureBridge {
+            messages: Vec::new(),
+            target_name: None,
+        },
+        Vector2::new(900.0, 620.0),
+    );
+    apply_strict_update_diagnostics(&mut runtime);
+    let _ = runtime.execute_command(command);
+    let mut processed = 0usize;
+    let mut idle_drains = 0usize;
+    while idle_drains < 2 {
+        processed += 1;
+        assert!(processed <= 1_000, "test command capture did not settle");
+        std::thread::sleep(Duration::from_millis(1));
+        let outcome = runtime.drain_runtime_messages();
+        if outcome.messages_dispatched == 0 && !outcome.runtime_work_remaining {
+            idle_drains += 1;
+        } else {
+            idle_drains = 0;
+        }
+    }
+    runtime.into_bridge().messages
+}
+
+fn run_command_and_capture_messages_for_target_tests(
+    command: Command<super::test_support::state::GuiMessage>,
+    target_name: &'static str,
+) -> Vec<super::test_support::state::GuiMessage> {
+    let mut runtime = radiant::runtime::SurfaceRuntime::new(
+        CaptureBridge {
+            messages: Vec::new(),
+            target_name: Some(target_name),
+        },
+        Vector2::new(900.0, 620.0),
+    );
+    apply_strict_update_diagnostics(&mut runtime);
+    let _ = runtime.execute_command(command);
+    let mut processed = 0usize;
+    let mut idle_drains = 0usize;
+    while idle_drains < 2 {
+        processed += 1;
+        assert!(processed <= 1_000, "targeted worker capture did not settle");
+        std::thread::sleep(Duration::from_millis(1));
+        let outcome = runtime.drain_runtime_messages();
+        if outcome.messages_dispatched == 0 && !outcome.runtime_work_remaining {
+            idle_drains += 1;
+        } else {
+            idle_drains = 0;
+        }
+    }
+    runtime.into_bridge().messages
+}
+
+#[test]
+fn targeted_worker_capture_returns_requested_task_and_skips_later_decoy() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+
+    let decoy_ran = Arc::new(AtomicBool::new(false));
+    let mut context = ui::UiUpdateContext::default();
+    context
+        .business()
+        .background("capture-target")
+        .run(|_| 7_u8, |_| super::test_support::state::GuiMessage::Frame);
+    let decoy_ran_in_worker = Arc::clone(&decoy_ran);
+    context.business().background("capture-decoy").run(
+        move |_| {
+            decoy_ran_in_worker.store(true, Ordering::SeqCst);
+            9_u8
+        },
+        |_| super::test_support::state::GuiMessage::ToggleShortcutHelp,
+    );
+
+    let messages =
+        run_command_and_capture_messages_for_target_tests(context.into_command(), "capture-target");
+    assert_eq!(
+        messages,
+        vec![super::test_support::state::GuiMessage::Frame]
+    );
+    assert!(!decoy_ran.load(Ordering::SeqCst));
+}
+
+pub(crate) fn run_command_collecting_followups_for_tests(
+    state: &mut NativeAppState,
+    command: Command<super::test_support::state::GuiMessage>,
+) -> Vec<Command<super::test_support::state::GuiMessage>> {
+    let mut followups = Vec::new();
+    for message in run_command_and_capture_messages_for_tests(command) {
+        let mut context = ui::UiUpdateContext::default();
+        state.apply_message(message, &mut context);
+        let followup = context.into_command();
+        if !followup.is_empty() {
+            followups.push(followup);
+        }
+    }
+    followups
 }
 
 fn start_deferred_sample_load_for_tests(

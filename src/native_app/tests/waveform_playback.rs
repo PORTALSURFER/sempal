@@ -381,21 +381,6 @@ fn external_drag_file_paths(
     }
 }
 
-fn run_named_perform(
-    command: radiant::runtime::Command<crate::native_app::test_support::state::GuiMessage>,
-    target_name: &'static str,
-) -> Option<crate::native_app::test_support::state::GuiMessage> {
-    match command {
-        radiant::runtime::Command::Perform { name, work, .. } if name == target_name => {
-            Some(work())
-        }
-        radiant::runtime::Command::Batch(commands) => commands
-            .into_iter()
-            .find_map(|command| run_named_perform(command, target_name)),
-        _ => None,
-    }
-}
-
 fn sample_load_completion(
     ticket: ui::TaskTicket,
     path: String,
@@ -2465,8 +2450,11 @@ fn playmark_selection_drag_extracts_before_external_handoff() {
         Some(ui::TaskPriority::Interactive),
         "drag extraction should be user-interactive but asynchronous"
     );
-    let completion = run_named_perform(command, "gui-waveform-selection-drag-extract")
-        .expect("drag extraction worker command");
+    let completion = crate::native_app::tests::run_worker_message_for_tests(
+        command,
+        "gui-waveform-selection-drag-extract",
+    )
+    .expect("drag extraction worker command");
     let mut finish_context = ui::UiUpdateContext::default();
     scenario
         .state

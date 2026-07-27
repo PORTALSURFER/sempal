@@ -369,7 +369,7 @@ fn active_folder_cache_warm_uses_ordered_stream_for_cache_ready_progress() {
         &mut context,
         source_root.path().display().to_string(),
         Vec::new(),
-        vec![first, second],
+        vec![first.clone(), second],
     );
 
     let warm_ticket = state
@@ -385,10 +385,49 @@ fn active_folder_cache_warm_uses_ordered_stream_for_cache_ready_progress() {
     );
     let command = start_context.into_command();
 
+    let messages = crate::native_app::tests::run_command_and_capture_messages_for_tests(command);
+    let progress = messages
+        .iter()
+        .filter_map(|message| match message {
+            crate::native_app::test_support::state::GuiMessage::ActiveFolderCacheWarmProgress(
+                completion,
+            ) => Some((
+                completion.output.path.clone(),
+                completion.output.processed,
+                completion.output.stage,
+            )),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        progress.len() >= 4,
+        "ordered cache warming should retain multiple progress events, got {}",
+        progress.len()
+    );
+    assert_eq!(progress[0].0, first);
     assert_eq!(
-        active_folder_cache_warm_stream_kind(&command),
-        Some("ordered"),
-        "cache-ready progress events must not be coalesced away"
+        progress[0].2,
+        crate::native_app::test_support::state::ActiveFolderCacheWarmStage::CheckingCache
+    );
+    assert_eq!(progress[1].0, first);
+    assert_eq!(
+        progress[1].2,
+        crate::native_app::test_support::state::ActiveFolderCacheWarmStage::LoadingCache
+    );
+    assert!(
+        progress.windows(2).all(|events| events[0].1 <= events[1].1),
+        "ordered cache progress should preserve nondecreasing processed order"
+    );
+    assert!(
+        matches!(
+            messages.last(),
+            Some(
+                crate::native_app::test_support::state::GuiMessage::ActiveFolderCacheWarmFinished(
+                    _
+                )
+            )
+        ),
+        "ordered cache progress must be followed by final completion"
     );
 }
 
@@ -1895,23 +1934,4 @@ fn normal_sample_load_persists_bright_cache_indicator_before_restart() {
             .contains(&sample_path),
         "freshly loaded cache indicator should survive immediate restart"
     );
-}
-
-fn active_folder_cache_warm_stream_kind(
-    command: &radiant::runtime::Command<crate::native_app::test_support::state::GuiMessage>,
-) -> Option<&'static str> {
-    use radiant::runtime::Command;
-
-    match command {
-        Command::PerformStream { name, .. } if *name == "gui-active-folder-cache-warm" => {
-            Some("ordered")
-        }
-        Command::PerformStreamLatest { name, .. } if *name == "gui-active-folder-cache-warm" => {
-            Some("latest")
-        }
-        Command::Batch(commands) => commands
-            .iter()
-            .find_map(active_folder_cache_warm_stream_kind),
-        _ => None,
-    }
 }

@@ -3007,7 +3007,14 @@ fn collect_after_commands_and_perform_count(
         timer_count,
         "every queued timer should have a test-visible mapped message"
     );
-    (delayed, count_perform_commands(&command))
+    (
+        delayed,
+        usize::from(
+            command
+                .business_task_priority("gui-last-played-persist")
+                .is_some(),
+        ),
+    )
 }
 
 fn count_timer_commands(
@@ -3020,24 +3027,10 @@ fn count_timer_commands(
     }
 }
 
-fn count_perform_commands(
-    command: &Command<crate::native_app::test_support::state::GuiMessage>,
-) -> usize {
-    match command {
-        Command::Perform { .. } => 1,
-        Command::Batch(commands) => commands.iter().map(count_perform_commands).sum(),
-        _ => 0,
-    }
-}
-
 fn run_first_perform(
     command: Command<crate::native_app::test_support::state::GuiMessage>,
 ) -> Option<crate::native_app::test_support::state::GuiMessage> {
-    match command {
-        Command::Perform { work, .. } => Some(work()),
-        Command::Batch(commands) => commands.into_iter().find_map(run_first_perform),
-        _ => None,
-    }
+    crate::native_app::tests::run_worker_message_for_tests(command, "gui-last-played-persist")
 }
 
 fn assert_starmap_viewport_reveals(
