@@ -74,6 +74,7 @@ type NativeRuntimeForTests = SurfaceRuntime<
 
 struct CaptureBridge {
     messages: Vec<super::test_support::state::GuiMessage>,
+    target_name: Option<&'static str>,
 }
 
 impl RuntimeBridge<super::test_support::state::GuiMessage> for CaptureBridge {
@@ -105,11 +106,14 @@ impl RuntimeBridge<super::test_support::state::GuiMessage> for CaptureBridge {
 impl RuntimeTaskHost<super::test_support::state::GuiMessage> for CaptureBridge {
     fn spawn_worker_task(
         &mut self,
-        _name: &'static str,
+        name: &'static str,
         _priority: radiant::prelude::TaskPriority,
         _is_cancelled: Option<Box<dyn Fn() -> bool + Send + Sync + 'static>>,
         work: Box<dyn FnOnce() + Send + 'static>,
     ) -> bool {
+        if self.target_name.is_some_and(|target| target != name) {
+            return false;
+        }
         work();
         true
     }
@@ -336,7 +340,12 @@ fn run_worker_message_for_tests(
     if command.business_task_priority(target_name).is_none() {
         return None;
     }
-    run_command_and_capture_messages_for_tests(command).pop()
+    let messages = run_command_and_capture_messages_for_target_tests(command, target_name);
+    match messages.len() {
+        0 => None,
+        1 => messages.into_iter().next(),
+        count => panic!("worker task {target_name} emitted {count} messages; expected exactly one"),
+    }
 }
 
 fn run_command_and_capture_messages_for_tests(
@@ -345,6 +354,7 @@ fn run_command_and_capture_messages_for_tests(
     let mut runtime = radiant::runtime::SurfaceRuntime::new(
         CaptureBridge {
             messages: Vec::new(),
+            target_name: None,
         },
         Vector2::new(900.0, 620.0),
     );
@@ -364,6 +374,66 @@ fn run_command_and_capture_messages_for_tests(
         }
     }
     runtime.into_bridge().messages
+}
+
+fn run_command_and_capture_messages_for_target_tests(
+    command: Command<super::test_support::state::GuiMessage>,
+    target_name: &'static str,
+) -> Vec<super::test_support::state::GuiMessage> {
+    let mut runtime = radiant::runtime::SurfaceRuntime::new(
+        CaptureBridge {
+            messages: Vec::new(),
+            target_name: Some(target_name),
+        },
+        Vector2::new(900.0, 620.0),
+    );
+    apply_strict_update_diagnostics(&mut runtime);
+    let _ = runtime.execute_command(command);
+    let mut processed = 0usize;
+    let mut idle_drains = 0usize;
+    while idle_drains < 2 {
+        processed += 1;
+        assert!(processed <= 1_000, "targeted worker capture did not settle");
+        std::thread::sleep(Duration::from_millis(1));
+        let outcome = runtime.drain_runtime_messages();
+        if outcome.messages_dispatched == 0 && !outcome.runtime_work_remaining {
+            idle_drains += 1;
+        } else {
+            idle_drains = 0;
+        }
+    }
+    runtime.into_bridge().messages
+}
+
+#[test]
+fn targeted_worker_capture_returns_requested_task_and_skips_later_decoy() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+
+    let decoy_ran = Arc::new(AtomicBool::new(false));
+    let mut context = ui::UiUpdateContext::default();
+    context
+        .business()
+        .background("capture-target")
+        .run(|_| 7_u8, |_| super::test_support::state::GuiMessage::Frame);
+    let decoy_ran_in_worker = Arc::clone(&decoy_ran);
+    context.business().background("capture-decoy").run(
+        move |_| {
+            decoy_ran_in_worker.store(true, Ordering::SeqCst);
+            9_u8
+        },
+        |_| super::test_support::state::GuiMessage::ToggleShortcutHelp,
+    );
+
+    let messages =
+        run_command_and_capture_messages_for_target_tests(context.into_command(), "capture-target");
+    assert_eq!(
+        messages,
+        vec![super::test_support::state::GuiMessage::Frame]
+    );
+    assert!(!decoy_ran.load(Ordering::SeqCst));
 }
 
 pub(crate) fn run_command_collecting_followups_for_tests(
