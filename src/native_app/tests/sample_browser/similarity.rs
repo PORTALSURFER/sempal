@@ -304,11 +304,19 @@ fn sample_browser_similarity_controls_persist_after_debounce() {
 
     state.ui.settings.similarity_persist_deadline = Some(Instant::now() - Duration::from_millis(1));
     state.advance_frame(&mut context);
-    let radiant::runtime::Command::Perform { priority, work, .. } = context.into_command() else {
-        panic!("expected similarity settings persist background command");
-    };
-    assert_eq!(priority, radiant::prelude::TaskPriority::BlockingIo);
-    state.apply_message(work(), &mut radiant::prelude::UiUpdateContext::default());
+    let command = context.into_command();
+    assert_eq!(
+        command.business_task_priority("gui-similarity-settings-persist"),
+        Some(radiant::prelude::TaskPriority::BlockingIo)
+    );
+    state.apply_message(
+        crate::native_app::tests::run_worker_message_for_tests(
+            command,
+            "gui-similarity-settings-persist",
+        )
+        .expect("similarity settings persist worker completion"),
+        &mut radiant::prelude::UiUpdateContext::default(),
+    );
 
     let loaded = wavecrate::sample_sources::config::load_or_default().expect("reload config");
     assert!(loaded.core.similarity.weighting_enabled);
@@ -347,11 +355,19 @@ fn sample_browser_similarity_controls_persist_after_debounce_while_playback_is_a
         state.playback_visual_activity_active(),
         "test setup should keep playback visually active during the persist frame"
     );
-    let radiant::runtime::Command::Perform { priority, work, .. } = context.into_command() else {
-        panic!("expected similarity settings persist background command during playback");
-    };
-    assert_eq!(priority, radiant::prelude::TaskPriority::BlockingIo);
-    state.apply_message(work(), &mut radiant::prelude::UiUpdateContext::default());
+    let command = context.into_command();
+    assert_eq!(
+        command.business_task_priority("gui-similarity-settings-persist"),
+        Some(radiant::prelude::TaskPriority::BlockingIo)
+    );
+    state.apply_message(
+        crate::native_app::tests::run_worker_message_for_tests(
+            command,
+            "gui-similarity-settings-persist",
+        )
+        .expect("similarity settings persist worker completion during playback"),
+        &mut radiant::prelude::UiUpdateContext::default(),
+    );
 
     let loaded = wavecrate::sample_sources::config::load_or_default().expect("reload config");
     assert!(

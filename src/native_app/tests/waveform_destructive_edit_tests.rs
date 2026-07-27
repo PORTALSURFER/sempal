@@ -1548,19 +1548,17 @@ fn destructive_edit_reload_failure_still_emits_committed_mutation() {
         &mut request_context,
     );
     let mut completion_followups = Vec::new();
-    request_context
-        .into_command()
-        .run_inline_for_tests(|message| {
-            if matches!(message, GuiMessage::WaveformDestructiveEditFinished(_)) {
-                fs::write(&path, b"not a waveform").expect("corrupt committed waveform");
-            }
-            let mut completion_context = ui::UiUpdateContext::default();
-            state.apply_message(message, &mut completion_context);
-            let command = completion_context.into_command();
-            if !command.is_empty() {
-                completion_followups.push(command);
-            }
-        });
+    let completion = crate::native_app::tests::run_worker_message_for_tests(
+        request_context.into_command(),
+        "gui-waveform-destructive-edit",
+    )
+    .expect("destructive edit worker completion");
+    if matches!(completion, GuiMessage::WaveformDestructiveEditFinished(_)) {
+        fs::write(&path, b"not a waveform").expect("corrupt committed waveform");
+    }
+    let mut completion_context = ui::UiUpdateContext::default();
+    state.apply_message(completion, &mut completion_context);
+    completion_followups.push(completion_context.into_command());
 
     assert!(
         commands_emit_committed_file_mutation(completion_followups),
@@ -2304,13 +2302,11 @@ fn apply_message_and_run_command(
 }
 
 fn commands_emit_committed_file_mutation(commands: Vec<Command<GuiMessage>>) -> bool {
-    let mut emitted = false;
-    for command in commands {
-        command.run_inline_for_tests(|message| {
-            emitted |= matches!(message, GuiMessage::CommittedFileMutationRequested(_));
-        });
-    }
-    emitted
+    commands.into_iter().any(|command| {
+        crate::native_app::tests::run_command_and_capture_messages_for_tests(command)
+            .into_iter()
+            .any(|message| matches!(message, GuiMessage::CommittedFileMutationRequested(_)))
+    })
 }
 
 fn assert_extracted_file_keep_1_rating(

@@ -409,7 +409,9 @@ impl NativeAppState {
         self.background
             .worker_receiver
             .take()
-            .map(|receiver| ui::Subscription::worker("gui-workers", receiver))
+            .map(|receiver| {
+                ui::Subscription::worker_payload("gui-workers", receiver, |message| message)
+            })
             .unwrap_or_else(ui::Subscription::none)
     }
 

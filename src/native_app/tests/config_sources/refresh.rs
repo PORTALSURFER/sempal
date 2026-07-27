@@ -342,8 +342,11 @@ fn source_filesystem_change_syncs_removed_file_to_source_database() {
         vec!["keep.wav", "stale.wav"],
         "watcher hints must not patch the visible tree before the source transaction commits"
     );
-    let sync_finished =
-        run_named_perform(context.into_command(), "gui-source-db-sync").expect("db sync command");
+    let sync_finished = crate::native_app::tests::run_worker_message_for_tests(
+        context.into_command(),
+        "gui-source-db-sync",
+    )
+    .expect("db sync command");
     let mut post_commit = ui::UiUpdateContext::default();
     state.apply_message(sync_finished, &mut post_commit);
 
@@ -391,17 +394,4 @@ fn source_filesystem_change_syncs_removed_file_to_source_database() {
         vec!["keep.wav"],
         "the browser projection should refresh only from committed background state"
     );
-}
-
-fn run_named_perform(
-    command: Command<crate::native_app::test_support::state::GuiMessage>,
-    target_name: &'static str,
-) -> Option<crate::native_app::test_support::state::GuiMessage> {
-    match command {
-        Command::Perform { name, work, .. } if name == target_name => Some(work()),
-        Command::Batch(commands) => commands
-            .into_iter()
-            .find_map(|command| run_named_perform(command, target_name)),
-        _ => None,
-    }
 }

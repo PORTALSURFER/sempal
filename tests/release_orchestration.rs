@@ -487,7 +487,7 @@ edition = "2024"
             ),
         );
         self.write("Cargo.lock", "# fixture lockfile\n");
-        self.write("radiant-dependency.toml", "repository = \"https://github.com/PORTALSURFER/radiant.git\"\nrevision = \"a3a6c14b52acc45e547b3f4da9bf60914158c9d3\"\npath = \"../radiant\"\n");
+        self.write("radiant-dependency.toml", "repository = \"https://github.com/PORTALSURFER/radiant.git\"\nrevision = \"095ddf597fbac5a1055550c64b30d27ce62f7c38\"\npath = \"../radiant\"\n");
         self.write("src/lib.rs", "");
         self.write(".github/workflows/release-train-prepare.yml", "");
         self.write(".github/workflows/release-rc.yml", "");

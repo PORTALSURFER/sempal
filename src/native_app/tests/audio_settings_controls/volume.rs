@@ -57,11 +57,15 @@ fn default_gui_volume_drag_defers_config_persistence_until_debounce() {
     assert!(state.audio.volume_persist_inflight);
 
     let command = context.into_command();
-    let radiant::runtime::Command::Perform { priority, work, .. } = command else {
-        panic!("expected volume settings persist background command");
-    };
-    assert_eq!(priority, radiant::prelude::TaskPriority::BlockingIo);
-    let message = work();
+    assert_eq!(
+        command.business_task_priority("gui-volume-settings-persist"),
+        Some(radiant::prelude::TaskPriority::BlockingIo)
+    );
+    let message = crate::native_app::tests::run_worker_message_for_tests(
+        command,
+        "gui-volume-settings-persist",
+    )
+    .expect("volume settings persist worker completion");
     state.apply_message(message, &mut radiant::prelude::UiUpdateContext::default());
 
     let loaded = wavecrate::sample_sources::config::load_or_default().expect("reload config");
@@ -91,11 +95,15 @@ fn volume_drag_persists_after_debounce_while_playback_is_active() {
     assert!(state.audio.volume_persist_inflight);
 
     let command = context.into_command();
-    let radiant::runtime::Command::Perform { priority, work, .. } = command else {
-        panic!("expected volume settings persist background command during playback");
-    };
-    assert_eq!(priority, radiant::prelude::TaskPriority::BlockingIo);
-    let message = work();
+    assert_eq!(
+        command.business_task_priority("gui-volume-settings-persist"),
+        Some(radiant::prelude::TaskPriority::BlockingIo)
+    );
+    let message = crate::native_app::tests::run_worker_message_for_tests(
+        command,
+        "gui-volume-settings-persist",
+    )
+    .expect("volume settings persist worker completion during playback");
     state.apply_message(message, &mut radiant::prelude::UiUpdateContext::default());
 
     let loaded = wavecrate::sample_sources::config::load_or_default().expect("reload config");

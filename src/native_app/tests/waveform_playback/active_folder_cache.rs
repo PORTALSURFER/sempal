@@ -1900,18 +1900,7 @@ fn normal_sample_load_persists_bright_cache_indicator_before_restart() {
 fn active_folder_cache_warm_stream_kind(
     command: &radiant::runtime::Command<crate::native_app::test_support::state::GuiMessage>,
 ) -> Option<&'static str> {
-    use radiant::runtime::Command;
-
-    match command {
-        Command::PerformStream { name, .. } if *name == "gui-active-folder-cache-warm" => {
-            Some("ordered")
-        }
-        Command::PerformStreamLatest { name, .. } if *name == "gui-active-folder-cache-warm" => {
-            Some("latest")
-        }
-        Command::Batch(commands) => commands
-            .iter()
-            .find_map(active_folder_cache_warm_stream_kind),
-        _ => None,
-    }
+    command
+        .business_task_priority("gui-active-folder-cache-warm")
+        .map(|_| "ordered")
 }

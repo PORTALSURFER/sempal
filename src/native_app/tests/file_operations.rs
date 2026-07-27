@@ -120,16 +120,7 @@ fn run_command_collecting_followups(
     state: &mut crate::native_app::test_support::state::NativeAppState,
     command: Command<GuiMessage>,
 ) -> Vec<Command<GuiMessage>> {
-    let mut followups = Vec::new();
-    command.run_inline_for_tests(|message| {
-        let mut context = ui::UiUpdateContext::default();
-        state.apply_message(message, &mut context);
-        let command = context.into_command();
-        if !command.is_empty() {
-            followups.push(command);
-        }
-    });
-    followups
+    crate::native_app::tests::run_command_collecting_followups_for_tests(state, command)
 }
 
 fn assert_short_edge_faded_drag_extraction(path: &std::path::Path) {
