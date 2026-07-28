@@ -13,6 +13,7 @@ mod file_move_metadata;
 #[doc(hidden)]
 pub mod harvest_file_ops;
 mod harvest_seen;
+mod harvest_touched;
 mod starmap_layout;
 /// Scan tracking state to avoid duplicate work.
 pub mod scan_state {
@@ -65,9 +66,10 @@ pub mod library {
         harvest_derivations_for_parent, harvest_derivative_count,
         harvest_derivative_counts_for_source, harvest_file, harvest_files_for_source,
         harvest_parents_for_child, load, lookup_retained_source_for_root,
-        lookup_source_id_for_root, mark_harvest_seen, mark_harvest_touched, open_connection,
-        record_harvest_derivation, remap_harvest_file_key, remap_harvest_file_prefix,
-        retained_sources, save, set_harvest_state, upsert_harvest_file, upsert_harvest_files,
+        lookup_source_id_for_root, mark_harvest_seen, mark_harvest_touched,
+        mark_harvest_touched_if_current, open_connection, record_harvest_derivation,
+        remap_harvest_file_key, remap_harvest_file_prefix, retained_sources, save,
+        set_harvest_state, upsert_harvest_file, upsert_harvest_files,
     };
 }
 
@@ -83,6 +85,10 @@ pub use file_move_metadata::{
     SourcedFileMoveMetadata, persist_copied_file_metadata, persist_sourced_moved_file_metadata,
 };
 pub use harvest_seen::{HarvestSeenPersistRequest, HarvestSeenPersistResult, persist_harvest_seen};
+pub use harvest_touched::{
+    HarvestTouchedPersistRequest, HarvestTouchedPersistResult, persist_harvest_touched,
+    persist_harvest_touched_if_current,
+};
 pub use starmap_layout::{
     STARMAP_LAYOUT_UMAP_VERSION, StarmapLayoutLoadRequest, StarmapLayoutLoadResult,
     StarmapLayoutPoint, StarmapLayoutSample, StarmapSourceLayoutRequest, load_starmap_layout,

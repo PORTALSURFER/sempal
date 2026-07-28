@@ -127,7 +127,11 @@ impl NativeAppState {
         {
             self.request_slide_loaded_sample_audio(frame_offset, context);
         }
-        self.mark_harvest_touched_after_waveform_mark_change(harvest_mark_before);
+        self.mark_harvest_touched_after_waveform_mark_change(
+            &message,
+            harvest_mark_before,
+            context,
+        );
         if let Some(before) = play_selection_before {
             self.waveform.pending_play_selection_transaction =
                 (matches!(
@@ -357,8 +361,10 @@ impl NativeAppState {
     }
 
     fn mark_harvest_touched_after_waveform_mark_change(
-        &self,
+        &mut self,
+        interaction: &WaveformInteraction,
         before: Option<WaveformHarvestMarkSnapshot>,
+        context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
         let Some(before) = before else {
             return;
@@ -366,8 +372,10 @@ impl NativeAppState {
         let Some(after) = WaveformHarvestMarkSnapshot::from_state(self) else {
             return;
         };
-        if before.path == after.path && before.marks_changed(&after) {
-            self.mark_harvest_touched_for_path(&after.path);
+        if (before.path == after.path && before.marks_changed(&after))
+            || matches!(interaction, WaveformInteraction::FinishSelection { .. })
+        {
+            self.schedule_harvest_touched_for_path(&after.path, context);
         }
     }
 }

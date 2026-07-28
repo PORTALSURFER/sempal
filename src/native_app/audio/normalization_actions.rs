@@ -404,7 +404,7 @@ impl NativeAppState {
         self.background.progress_tick = 0.0;
 
         self.evict_waveform_cache_paths(&result.normalized);
-        self.mark_harvest_touched_for_paths(&result.normalized);
+        self.schedule_harvest_touched_for_paths(&result.normalized, context);
         self.record_harvest_derivations_for_finished_normalization_copies(
             &result.normalized,
             &result.skipped,

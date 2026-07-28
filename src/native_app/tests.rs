@@ -307,6 +307,7 @@ fn run_command_for_tests(
                 | super::test_support::state::GuiMessage::TrashMoveFinished { .. }
                 | super::test_support::state::GuiMessage::FolderBrowserRenameFinished(_)
                 | super::test_support::state::GuiMessage::WaveformDestructiveEditFinished(_)
+                | super::test_support::state::GuiMessage::WaveformSelectionCopyExtracted { .. }
                 | super::test_support::state::GuiMessage::PlaySelectionExtractionFinished { .. }
                 | super::test_support::state::GuiMessage::SelectedWholeFilesHarvestExtractionFinished {
                     ..

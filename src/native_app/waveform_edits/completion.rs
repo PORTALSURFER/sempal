@@ -58,7 +58,7 @@ impl NativeAppState {
                 operation.clone(),
             );
         } else {
-            self.mark_harvest_touched_for_path(&active.request.absolute_path);
+            self.schedule_harvest_touched_for_path(&active.request.absolute_path, context);
         }
         let extracted_metadata_error = if let Some(extracted_path) = applied
             .extracted

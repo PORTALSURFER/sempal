@@ -207,7 +207,14 @@ fn successful_selected_file_copy_adds_keep_rating() {
         .folder_browser
         .select_file(kick.display().to_string());
 
-    state.finish_copy_selected_files(vec![kick.clone()], 1, std::time::Instant::now(), Ok(()));
+    let mut context = ui::UiUpdateContext::default();
+    state.finish_copy_selected_files(
+        vec![kick.clone()],
+        1,
+        std::time::Instant::now(),
+        Ok(()),
+        &mut context,
+    );
 
     assert_sample_rating(&state, &kick, Rating::KEEP_1, false);
 }
@@ -242,7 +249,14 @@ fn successful_selected_file_copy_increments_existing_keep_rating() {
             .set_file_rating_state(&kick, Rating::KEEP_1, false)
     );
 
-    state.finish_copy_selected_files(vec![kick.clone()], 1, std::time::Instant::now(), Ok(()));
+    let mut context = ui::UiUpdateContext::default();
+    state.finish_copy_selected_files(
+        vec![kick.clone()],
+        1,
+        std::time::Instant::now(),
+        Ok(()),
+        &mut context,
+    );
 
     assert_sample_rating(&state, &kick, Rating::new(2), false);
 }

@@ -3,6 +3,7 @@ use super::{
     HarvestSeenPersistRequest, HarvestState, NativeAppState, Path, PathBuf, SampleSource, WavEntry,
     tagged_playback_mode_for_tag,
 };
+use wavecrate::sample_sources::HarvestTouchedPersistRequest;
 
 impl NativeAppState {
     pub(in crate::native_app) fn selected_harvest_family_summary(
@@ -126,6 +127,21 @@ impl NativeAppState {
             source_id: source.id,
             source_root: source.root,
             source_database_root,
+            relative_path,
+        })
+    }
+
+    pub(super) fn harvest_touched_persist_request_for_path(
+        &self,
+        path: &Path,
+    ) -> Option<HarvestTouchedPersistRequest> {
+        let (source, relative_path) = self
+            .library
+            .folder_browser
+            .sample_source_for_file_path(path)?;
+        Some(HarvestTouchedPersistRequest {
+            file_id: path.display().to_string(),
+            source: source.clone(),
             relative_path,
         })
     }

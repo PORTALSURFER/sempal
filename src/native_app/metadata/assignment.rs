@@ -238,7 +238,7 @@ impl NativeAppState {
             return;
         }
         let touched_paths = changed_files.iter().map(PathBuf::from).collect::<Vec<_>>();
-        self.mark_harvest_touched_for_paths(&touched_paths);
+        self.schedule_harvest_touched_for_paths(&touched_paths, context);
         self.finish_metadata_tag_curation_change(&changed_files, previous_visible_ids);
         let status_tags = added_metadata_tag_status_tags(&requests, &tags);
         self.ui.status.sample = metadata_tag_added_status(&status_tags, changed_files.len());
@@ -360,7 +360,7 @@ impl NativeAppState {
             self.metadata.selected_tag = None;
         }
         let touched_paths = changed_files.iter().map(PathBuf::from).collect::<Vec<_>>();
-        self.mark_harvest_touched_for_paths(&touched_paths);
+        self.schedule_harvest_touched_for_paths(&touched_paths, context);
         self.finish_metadata_tag_curation_change(&changed_files, previous_visible_ids);
         self.ui.status.sample = metadata_tag_removed_status(&tag, changed_files.len());
         if requests.len() == 1 {
