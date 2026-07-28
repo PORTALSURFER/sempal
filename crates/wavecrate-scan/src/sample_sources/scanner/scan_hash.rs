@@ -1068,7 +1068,7 @@ fn reconcile_hashed_rename_candidates_with_source_root_and_hook(
     }
     let (renamed_samples, retained_candidates) = reconcile_indexed_rename_candidates(
         &mut batch,
-        root,
+        source_root,
         &entries_by_path,
         &candidate_identities,
         &rename_candidates,
@@ -1476,7 +1476,7 @@ fn deep_hash_scan_window_with_root_hooks(
     }
     let (renamed_samples, _) = reconcile_indexed_rename_candidates(
         &mut batch,
-        root,
+        source_root,
         &entries_by_path,
         &candidate_identities,
         &admitted_rename_candidates,
@@ -1583,7 +1583,7 @@ fn deep_hash_scan_with_hooks(
 
 fn reconcile_indexed_rename_candidates(
     batch: &mut SourceWriteBatch<'_>,
-    root: &std::path::Path,
+    source_root: &SourceRootCapability,
     entries_by_path: &HashMap<PathBuf, WavEntry>,
     candidate_identities: &HashMap<PathBuf, String>,
     rename_candidates: &HashSet<PathBuf>,
@@ -1626,7 +1626,9 @@ fn reconcile_indexed_rename_candidates(
             continue;
         };
         if pending_entry.relative_path == *present_path
-            || root.join(&pending_entry.relative_path).exists()
+            || source_root
+                .open_regular_file(&pending_entry.relative_path)?
+                .is_some()
             || pending_entry.file_size != present_entry.file_size
             || pending_entry.modified_ns != present_entry.modified_ns
         {
@@ -1672,7 +1674,9 @@ fn reconcile_indexed_rename_candidates(
         };
         if pending_entry.relative_path == *present_path
             || reconciled_paths.contains(&pending_entry.relative_path)
-            || root.join(&pending_entry.relative_path).exists()
+            || source_root
+                .open_regular_file(&pending_entry.relative_path)?
+                .is_some()
         {
             continue;
         }
