@@ -198,9 +198,9 @@ parent-workspace validation must not depend on an indefinitely growing shared
 Cargo artifact directory. It must distinguish quiet active compilation from a
 genuinely idle owned process tree, capture actionable command/toolchain/process
 samples before termination, and clean up only the process group created for the
-current run on failure, cancellation, or confirmed no progress. Focused
-standalone Radiant validation remains useful evidence but never replaces the
-parent-workspace gate.
+current run on failure, cancellation, or confirmed no progress. The pinned
+Radiant dependency is validated through the parent workspace and never replaces
+the parent-workspace gate with an independent checkout.
 
 ## Release Identity
 
@@ -2593,7 +2593,7 @@ Route changes by ownership before editing:
 * generic UI vocabulary re-exported for Wavecrate code belongs in `src/ui_primitives/**`
 * native host launch, lifecycle, automation, and shutdown adaptation belongs in `src/native_runtime/**`
 * do not route current product drag/drop fixes to `src/app/controller/ui/drag_drop_controller/**` unless a task explicitly names that deprecated compatibility controller
-* reusable UI, runtime, layout, widget, input, focus, invalidation, rendering, and test primitives belong in the standalone `../radiant` sibling repository
+* reusable UI, runtime, layout, widget, input, focus, invalidation, rendering, and test primitives belong in the standalone Radiant repository
 * runtime compatibility behavior should stay inside runtime/test surfaces rather than leaking into generic Radiant modules
 
 Large import lists are not formatting problems. In short: large import lists are architecture signals. When a Wavecrate GUI module needs broad imports from unrelated UI, domain, runtime, and helper areas, first split the module by responsibility or move reusable GUI behavior into Radiant. Keep imports explicit, avoid wildcard imports outside tests/preludes, and avoid using facade modules as dumping grounds for state, view construction, side effects, and re-exports at the same time. A facade may wire focused modules together, but it should not become the owner of app state shape, widget construction, side effects, and reusable GUI helpers.
@@ -2632,7 +2632,7 @@ The target `src/native_app/**` module map is:
 * `src/native_app/workflows/**` owns cross-domain commands that have side effects or meaningful product semantics, such as context-menu command dispatch. A workflow may call sample-library, metadata, audio, waveform, or shell helpers, but view rendering should remain in app chrome.
 * `src/native_app/shell/**` owns native-app launch, lifecycle hooks, message dispatch integration, shortcut resolution, logging, and Radiant runtime setup for the Wavecrate app. It should not own product rendering internals or domain mutation policy.
 * `src/native_app/ui/**` owns Wavecrate-local UI constants and identifiers that are not reusable Radiant primitives. It should stay small and should not become a second app-chrome or a generic UI facade.
-* `../radiant/**` owns generic GUI and runtime capability. If a Wavecrate view needs a reusable menu, overlay, list, drag/drop, focus, shortcut, layout, invalidation, or rendering primitive, add or improve the generic Radiant API with neutral names and keep Wavecrate as the product adapter.
+* the Radiant repository owns generic GUI and runtime capability. If a Wavecrate view needs a reusable menu, overlay, list, drag/drop, focus, shortcut, layout, invalidation, or rendering primitive, add or improve the generic Radiant API with neutral names and keep Wavecrate as the product adapter.
 
 Library-browser views are allowed to be part of app chrome because they are visible regions of the Wavecrate window: the source/folder sidebar, sample-list panel, tag-library panel, and context-menu overlay are chrome composition concerns. Library-browser behavior must remain outside app chrome because it owns product facts and side effects: which sources exist, how folders scan, how samples are selected, how collections and ratings mutate, how file paths are copied or trashed, and how metadata is persisted. Moving a view helper into `app_chrome` should reduce rendering ambiguity; moving command policy or mutable library state into `app_chrome` is a boundary regression.
 
@@ -2657,7 +2657,7 @@ Import direction should make that ownership visible:
 
 `src/issue_gateway/**` owns issue-reporting DTOs, token storage, and integration boundaries.
 
-`../radiant/**` owns reusable layout primitives, widgets, runtime/backend integration, and reusable runtime/test primitives used by Wavecrate's GUI. It should avoid Wavecrate-specific controller, audio, persistence, or product policy.
+The Radiant repository owns reusable layout primitives, widgets, runtime/backend integration, and reusable runtime/test primitives used by Wavecrate's GUI. It should avoid Wavecrate-specific controller, audio, persistence, or product policy.
 
 ### Wavecrate Owns
 

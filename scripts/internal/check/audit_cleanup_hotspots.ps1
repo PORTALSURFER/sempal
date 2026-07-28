@@ -100,7 +100,7 @@ function Test-IsVendorPath {
 function Get-ScopeLabel {
   param([string]$FilePath)
   if (Test-IsVendorPath -FilePath $FilePath) {
-    return "Radiant sibling (standalone validation)"
+    return "External dependency"
   }
   return "Wavecrate root"
 }
@@ -314,9 +314,9 @@ try {
     $writer.WriteLine(("- Files with {0} suppressions: {1}" -f (Format-Code "clippy::too_many_arguments"), ($tmaCounts | Measure-Object | Select-Object -ExpandProperty Count)))
     $writer.WriteLine(("- Likely large-file test-gap hotspots (heuristic): {0}" -f ($testGaps | Measure-Object | Select-Object -ExpandProperty Count)))
     $writer.WriteLine(("- Wavecrate-root Rust files scanned: {0}" -f ($rootEntries | Measure-Object | Select-Object -ExpandProperty Count)))
-    $writer.WriteLine(("- Radiant sibling Rust files scanned separately: {0}" -f ($vendorEntries | Measure-Object | Select-Object -ExpandProperty Count)))
+    $writer.WriteLine(("- External dependency Rust files scanned separately: {0}" -f ($vendorEntries | Measure-Object | Select-Object -ExpandProperty Count)))
     $writer.WriteLine(("- Wavecrate-root files over budget: {0}" -f ($rootOverLimit | Measure-Object | Select-Object -ExpandProperty Count)))
-    $writer.WriteLine(("- Radiant sibling files over budget (standalone gate): {0}" -f ($vendorOverLimit | Measure-Object | Select-Object -ExpandProperty Count)))
+    $writer.WriteLine(("- External dependency files over budget: {0}" -f ($vendorOverLimit | Measure-Object | Select-Object -ExpandProperty Count)))
     $writer.WriteLine()
 
     Write-RankedSection -Writer $writer -Title "## Wavecrate-root largest Rust files" -Headers @("Lines", "File") -Rows (
@@ -326,7 +326,7 @@ try {
         ForEach-Object { [pscustomobject]@{ Cells = @($_.LineCount, (Format-Code $_.File)) } }
     )
 
-    Write-RankedSection -Writer $writer -Title "## Radiant sibling largest Rust files (standalone gate)" -Headers @("Lines", "File") -Rows (
+    Write-RankedSection -Writer $writer -Title "## External dependency largest Rust files" -Headers @("Lines", "File") -Rows (
       $vendorEntries |
         Sort-Object LineCount, File -Descending |
         Select-Object -First $TopFiles |
@@ -340,7 +340,7 @@ try {
         ForEach-Object { [pscustomobject]@{ Cells = @($_.Span, ("{0} ({1})" -f (Format-Code $_.Name), (Format-Code $_.Location))) } }
     )
 
-    Write-RankedSection -Writer $writer -Title "## Radiant sibling largest function spans (standalone gate)" -Headers @("Span (lines)", "Function") -Rows (
+    Write-RankedSection -Writer $writer -Title "## External dependency largest function spans" -Headers @("Span (lines)", "Function") -Rows (
       $vendorFunctionSpans |
         Sort-Object Span, Location -Descending |
         Select-Object -First $TopFunctionSpans |
@@ -351,7 +351,7 @@ try {
       $rootOverLimit | ForEach-Object { [pscustomobject]@{ Cells = @($_.LineCount, (Format-Code $_.File)) } }
     )
 
-    Write-RankedSection -Writer $writer -Title "## Radiant sibling files over budget (standalone gate)" -Headers @("Lines", "File") -Rows (
+    Write-RankedSection -Writer $writer -Title "## External dependency files over budget" -Headers @("Lines", "File") -Rows (
       $vendorOverLimit | ForEach-Object { [pscustomobject]@{ Cells = @($_.LineCount, (Format-Code $_.File)) } }
     )
 
@@ -361,7 +361,7 @@ try {
         ForEach-Object { [pscustomobject]@{ Cells = @($_.Count, (Format-Code $_.File)) } }
     )
 
-    Write-RankedSection -Writer $writer -Title "## Radiant sibling dead_code suppression density (standalone gate)" -Headers @("Occurrences", "File") -Rows (
+    Write-RankedSection -Writer $writer -Title "## External dependency dead_code suppression density" -Headers @("Occurrences", "File") -Rows (
       $vendorDeadCounts |
         Select-Object -First $TopSuppressions |
         ForEach-Object { [pscustomobject]@{ Cells = @($_.Count, (Format-Code $_.File)) } }
@@ -373,7 +373,7 @@ try {
         ForEach-Object { [pscustomobject]@{ Cells = @($_.Count, (Format-Code $_.File)) } }
     )
 
-    Write-RankedSection -Writer $writer -Title "## Radiant sibling too_many_arguments suppression density (standalone gate)" -Headers @("Occurrences", "File") -Rows (
+    Write-RankedSection -Writer $writer -Title "## External dependency too_many_arguments suppression density" -Headers @("Occurrences", "File") -Rows (
       $vendorTmaCounts |
         Select-Object -First $TopSuppressions |
         ForEach-Object { [pscustomobject]@{ Cells = @($_.Count, (Format-Code $_.File)) } }
@@ -390,7 +390,7 @@ try {
         ForEach-Object { [pscustomobject]@{ Cells = @($_.LineCount, (Format-Code $_.File)) } }
     )
 
-    $writer.WriteLine("## Radiant sibling likely test-gap hotspots (standalone gate)")
+    $writer.WriteLine("## External dependency likely test-gap hotspots")
     $writer.WriteLine()
     $writer.WriteLine(("Files with at least {0} lines and no local {1} or {2} marker." -f (Format-Code ([string]$TestGapMinLines)), (Format-Code "#[cfg(test)]"), (Format-Code "mod tests")))
     $writer.WriteLine(("Skips dedicated test modules/paths ({0}, {1}, {2}, {3}) and sibling module tests declared through {4} + {5}." -f (Format-Code "tests/**"), (Format-Code "tests.rs"), (Format-Code "*_test.rs"), (Format-Code "*_tests.rs"), (Format-Code "mod.rs"), (Format-Code "tests.rs")))
@@ -403,7 +403,7 @@ try {
 
     $writer.WriteLine("## Suggested follow-up")
     $writer.WriteLine()
-    $writer.WriteLine("1. Triage Wavecrate-root candidates separately from the standalone Radiant repository.")
+    $writer.WriteLine("1. Triage Wavecrate-root candidates against the current workspace scope.")
     $writer.WriteLine("2. Remove or test-gate high-density suppressions after each refactor slice.")
     $writer.WriteLine("3. Add focused tests for top heuristic gaps where behavior is non-trivial.")
   } finally {

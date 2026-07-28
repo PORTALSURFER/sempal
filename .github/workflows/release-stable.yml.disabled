@@ -121,11 +121,6 @@ jobs:
           lfs: true
           fetch-depth: 0
           ref: ${{ needs.resolve.outputs.target_sha }}
-      - name: Provision pinned Radiant sibling
-        shell: bash
-        env:
-          RADIANT_REPOSITORY_DEPLOY_KEY: ${{ secrets.RADIANT_SUBMODULE_DEPLOY_KEY }}
-        run: scripts/internal/release/provision_radiant_sibling.sh
       - name: Read pinned Rust toolchain from rust-toolchain.toml
         id: rust_toolchain
         shell: bash
@@ -166,11 +161,6 @@ jobs:
         with:
           lfs: true
           ref: ${{ needs.resolve.outputs.target_sha }}
-      - name: Provision pinned Radiant sibling
-        shell: bash
-        env:
-          RADIANT_REPOSITORY_DEPLOY_KEY: ${{ secrets.RADIANT_SUBMODULE_DEPLOY_KEY }}
-        run: scripts/internal/release/provision_radiant_sibling.sh
       - name: Read pinned Rust toolchain from rust-toolchain.toml
         id: rust_toolchain
         shell: bash

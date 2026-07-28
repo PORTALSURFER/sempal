@@ -175,7 +175,7 @@ EOF
     --top-files \
     10
 
-  root_gap_section="$(sed -n '/^## Wavecrate-root likely test-gap hotspots (heuristic)/,/^## Radiant sibling likely test-gap hotspots/p' "$output_path")"
+  root_gap_section="$(sed -n '/^## Wavecrate-root likely test-gap hotspots (heuristic)/,/^## Suggested follow-up/p' "$output_path")"
 
   if grep -Fq 'Likely large-file test-gap hotspots (heuristic): 1' "$output_path"; then
     echo "[guardrails] PASS: cleanup-audit fixture reports one Wavecrate heuristic gap"
@@ -185,8 +185,8 @@ EOF
     failures=$((failures + 1))
   fi
 
-  if grep -Fq '## Wavecrate-root largest Rust files' "$output_path" && grep -Fq '## Radiant sibling largest Rust files' "$output_path"; then
-    echo "[guardrails] PASS: cleanup-audit fixture emits root/standalone sections"
+  if grep -Fq '## Wavecrate-root largest Rust files' "$output_path"; then
+    echo "[guardrails] PASS: cleanup-audit fixture emits root section"
   else
     echo "[guardrails] FAIL: cleanup-audit fixture did not emit root/vendor sections" >&2
     cat "$output_path" >&2
@@ -544,7 +544,7 @@ run_expect_exit_code \
   --help
 
 run_expect_output \
-  "size hotspot report surfaces scripts and Radiant scopes" \
+  "size hotspot report surfaces scripts and workspace scopes" \
   0 \
   "$ROOT_DIR" \
   "# Size Hotspot Report" \

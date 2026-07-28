@@ -260,13 +260,6 @@ run_prepare_train_dry_run_at_ref() {
 
   if (( status == 0 )); then
     set +e
-    run bash "$worktree/scripts/radiant.sh" provision --clean --path "$temp_root/radiant"
-    status=$?
-    set -e
-  fi
-
-  if (( status == 0 )); then
-    set +e
     (cd "$worktree" && run scripts/internal/release/prepare_release_train.py "$@")
     status=$?
     set -e

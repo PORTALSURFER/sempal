@@ -212,12 +212,6 @@ fn post_cutover_compatibility_facades_are_absent() {
         !manifest_dir.join("src/compat_app_contract.rs").exists(),
         "the temporary local runtime-contract facade should be deleted"
     );
-    assert!(
-        !manifest_dir
-            .join("../radiant/src/compat/legacy_shell")
-            .exists(),
-        "Radiant's removed legacy compatibility tree must stay absent"
-    );
 }
 
 #[test]

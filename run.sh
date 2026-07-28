@@ -26,6 +26,4 @@ fi
 
 cd "$ROOT_DIR"
 
-"$ROOT_DIR/scripts/radiant.sh" provision >/dev/null
-
 exec cargo run -- "$@"

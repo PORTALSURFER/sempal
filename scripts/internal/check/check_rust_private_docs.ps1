@@ -5,7 +5,7 @@ Diff-aware guard for doc comments on newly added Rust items.
 
 .DESCRIPTION
 Fails when added Rust items introduce missing doc comments in `src/` and
-the standalone Radiant sibling.
+the Wavecrate workspace.
 #>
 
 param(

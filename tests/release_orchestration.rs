@@ -487,15 +487,9 @@ edition = "2024"
             ),
         );
         self.write("Cargo.lock", "# fixture lockfile\n");
-        self.write("radiant-dependency.toml", "repository = \"https://github.com/PORTALSURFER/radiant.git\"\nrevision = \"095ddf597fbac5a1055550c64b30d27ce62f7c38\"\npath = \"../radiant\"\n");
         self.write("src/lib.rs", "");
         self.write(".github/workflows/release-train-prepare.yml", "");
         self.write(".github/workflows/release-rc.yml", "");
-        self.write(
-            "scripts/radiant.sh",
-            "#!/usr/bin/env bash\nset -euo pipefail\nmkdir -p \"$(dirname \"$PWD\")/radiant\"\nprintf '[radiant] fixture sibling provisioned\\n'\n",
-        );
-        make_executable(self.path().join("scripts/radiant.sh"));
         self.write(
             "scripts/internal/release/prepare_release_train.py",
             "#!/usr/bin/env bash\nversion=\"$(awk '/^\\[package\\]$/ { in_package = 1; next } in_package && /^\\[/ { exit } in_package && /^[[:space:]]*version[[:space:]]*=/ { gsub(/\\\"/, \"\", $3); print $3; exit }' Cargo.toml)\"\nprintf 'prepare-helper'\nfor arg in \"$@\"; do printf ' [%s]' \"$arg\"; done\nprintf ' [cwd-version=%s]\\n' \"$version\"\n",

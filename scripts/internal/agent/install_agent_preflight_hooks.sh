@@ -23,8 +23,8 @@ Usage: scripts/internal/agent/install_agent_preflight_hooks.sh [--force]
 
 Install local git hooks that keep Wavecrate aligned with its main-integration
 workflow and run bounded repository-state checks after repo-level source updates.
-The standalone Radiant sibling is intentionally allowed to be dirty or on a
-feature branch for live development. Full agent preflight remains explicit.
+Dependency updates are controlled by Cargo.toml/Cargo.lock. Full agent preflight
+remains explicit.
 
 Options:
   --force  Overwrite existing hooks (a backup is still created if possible).

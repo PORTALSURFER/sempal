@@ -42,13 +42,13 @@ function Write-BootstrapHint {
 $rootDir = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Write-Info "Repo: $rootDir"
 
-Write-Info "Checking canonical Radiant sibling..."
+Write-Info "Checking locked Cargo dependency resolution..."
 try {
-  & (Join-Path $rootDir 'scripts/radiant.ps1') locate
-  if ($LASTEXITCODE -ne 0) { throw "Radiant locator failed" }
-  Write-Info "Radiant sibling: available"
+  cargo metadata --locked --format-version 1 | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "Cargo metadata failed" }
+  Write-Info "Cargo dependency resolution: available"
 } catch {
-  Write-Err "Radiant sibling is missing or invalid; run scripts/bootstrap.ps1 to provision it"
+  Write-Err "Cargo dependency resolution failed; run cargo metadata --locked"
 }
 
 $isWindowsHost = Get-PlatformFlag -Name "IsWindows" -Fallback ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT)

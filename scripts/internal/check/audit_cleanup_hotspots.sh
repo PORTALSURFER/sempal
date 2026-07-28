@@ -244,9 +244,9 @@ count_rows_for_scope() {
   awk -F'\t' -v scope="$scope" -v file_column="$file_column" '
     function in_scope(file) {
       if (scope == "vendor") {
-        return file ~ /^vendor\/radiant\//
+        return file ~ /^__external__\//
       }
-      return file !~ /^vendor\/radiant\//
+      return file !~ /^__external__\//
     }
     in_scope($file_column) { count++ }
     END { print count + 0 }
@@ -260,9 +260,9 @@ emit_line_table_for_scope() {
   awk -F'\t' -v scope="$scope" -v limit="$limit" '
     function in_scope(file) {
       if (scope == "vendor") {
-        return file ~ /^vendor\/radiant\//
+        return file ~ /^__external__\//
       }
-      return file !~ /^vendor\/radiant\//
+      return file !~ /^__external__\//
     }
     BEGIN {
       emitted = 0
@@ -294,9 +294,9 @@ emit_count_table_for_scope() {
   awk -F'\t' -v scope="$scope" -v limit="$limit" '
     function in_scope(file) {
       if (scope == "vendor") {
-        return file ~ /^vendor\/radiant\//
+        return file ~ /^__external__\//
       }
-      return file !~ /^vendor\/radiant\//
+      return file !~ /^__external__\//
     }
     BEGIN {
       emitted = 0
@@ -328,9 +328,9 @@ emit_function_table_for_scope() {
   awk -F'\t' -v scope="$scope" -v limit="$limit" '
     function in_scope(file) {
       if (scope == "vendor") {
-        return file ~ /^vendor\/radiant\//
+        return file ~ /^__external__\//
       }
-      return file !~ /^vendor\/radiant\//
+      return file !~ /^__external__\//
     }
     BEGIN {
       emitted = 0
@@ -377,9 +377,9 @@ vendor_over_budget_count="$(count_rows_for_scope "$tmp_over_limit" vendor 2)"
   echo "- Files with \`clippy::too_many_arguments\` suppressions: $tma_supp_files"
   echo "- Likely large-file test-gap hotspots (heuristic): $test_gap_count"
   echo "- Wavecrate-root Rust files scanned: $root_rust_files"
-  echo "- Radiant sibling Rust files scanned separately: $vendor_rust_files"
+  echo "- External dependency Rust files scanned separately: $vendor_rust_files"
   echo "- Wavecrate-root files over budget: $root_over_budget_count"
-  echo "- Radiant sibling files over budget (standalone gate): $vendor_over_budget_count"
+  echo "- External dependency files over budget: $vendor_over_budget_count"
   echo
 
   echo "## Wavecrate-root largest Rust files"
@@ -388,7 +388,7 @@ vendor_over_budget_count="$(count_rows_for_scope "$tmp_over_limit" vendor 2)"
     | emit_line_table_for_scope /dev/stdin root "$TOP_FILES"
   echo
 
-  echo "## Radiant sibling largest Rust files (standalone gate)"
+  echo "## External dependency largest Rust files"
   echo
   LC_ALL=C sort -t$'\t' -k1,1nr -k2,2 "$tmp_line_counts" \
     | emit_line_table_for_scope /dev/stdin vendor "$TOP_FILES"
@@ -400,7 +400,7 @@ vendor_over_budget_count="$(count_rows_for_scope "$tmp_over_limit" vendor 2)"
     | emit_function_table_for_scope /dev/stdin root "$TOP_FUNCTION_SPANS"
   echo
 
-  echo "## Radiant sibling largest function spans (standalone gate)"
+  echo "## External dependency largest function spans"
   echo
   LC_ALL=C sort -t$'\t' -k1,1nr -k2,2 "$tmp_function_spans" \
     | emit_function_table_for_scope /dev/stdin vendor "$TOP_FUNCTION_SPANS"
@@ -412,7 +412,7 @@ vendor_over_budget_count="$(count_rows_for_scope "$tmp_over_limit" vendor 2)"
     | emit_line_table_for_scope /dev/stdin root 0
   echo
 
-  echo "## Radiant sibling files over budget (standalone gate)"
+  echo "## External dependency files over budget"
   echo
   LC_ALL=C sort -t$'\t' -k1,1nr -k2,2 "$tmp_over_limit" \
     | emit_line_table_for_scope /dev/stdin vendor 0
@@ -423,7 +423,7 @@ vendor_over_budget_count="$(count_rows_for_scope "$tmp_over_limit" vendor 2)"
   emit_count_table_for_scope "$tmp_dead_counts" root "$TOP_SUPPRESSIONS"
   echo
 
-  echo "## Radiant sibling dead_code suppression density (standalone gate)"
+  echo "## External dependency dead_code suppression density"
   echo
   emit_count_table_for_scope "$tmp_dead_counts" vendor "$TOP_SUPPRESSIONS"
   echo
@@ -433,7 +433,7 @@ vendor_over_budget_count="$(count_rows_for_scope "$tmp_over_limit" vendor 2)"
   emit_count_table_for_scope "$tmp_tma_counts" root "$TOP_SUPPRESSIONS"
   echo
 
-  echo "## Radiant sibling too_many_arguments suppression density (standalone gate)"
+  echo "## External dependency too_many_arguments suppression density"
   echo
   emit_count_table_for_scope "$tmp_tma_counts" vendor "$TOP_SUPPRESSIONS"
   echo
@@ -446,7 +446,7 @@ vendor_over_budget_count="$(count_rows_for_scope "$tmp_over_limit" vendor 2)"
   emit_line_table_for_scope "$tmp_test_gaps" root "$TOP_FILES"
   echo
 
-  echo "## Radiant sibling likely test-gap hotspots (standalone gate)"
+  echo "## External dependency likely test-gap hotspots"
   echo
   echo "Files with at least \`$TEST_GAP_MIN_LINES\` lines and no local \`#[cfg(test)]\` or \`mod tests\` marker."
   echo "Skips dedicated test modules/paths (\`tests/**\`, \`tests.rs\`, \`*_test.rs\`, \`*_tests.rs\`) and sibling module tests declared through \`mod.rs\` + \`tests.rs\`."
@@ -456,7 +456,7 @@ vendor_over_budget_count="$(count_rows_for_scope "$tmp_over_limit" vendor 2)"
 
   echo "## Suggested follow-up"
   echo
-  echo "1. Triage Wavecrate-root candidates separately from the standalone Radiant repository."
+  echo "1. Triage Wavecrate-root candidates against the current workspace scope."
   echo "2. Remove or test-gate high-density suppressions after each refactor slice."
   echo "3. Add focused tests for top heuristic gaps where behavior is non-trivial."
 } >"$OUTPUT_PATH"

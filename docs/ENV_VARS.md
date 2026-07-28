@@ -199,7 +199,6 @@ instruction.
 The release workflows keep channel policy in YAML but share operational helpers
 under `scripts/internal/release/`:
 
-- `provision_radiant_sibling.sh` provisions the pinned standalone Radiant sibling.
 - `emit_rust_toolchain_channel.py` emits the pinned Rust toolchain channel for
   `dtolnay/rust-toolchain`.
 - `setup_windows_asio_sdk.ps1` prepares the Windows ASIO SDK path.
@@ -214,18 +213,13 @@ under `scripts/internal/release/`:
 - `validate_promoted_rc_release.py` verifies that stable promotion is backed by
   a complete RC GitHub prerelease before stable builds start.
 
-### Standalone Radiant checkout
+### Radiant Cargo dependency
 
-Wavecrate resolves Radiant from the sibling path recorded in
-`radiant-dependency.toml` (`../radiant` by default). Run
-`scripts/bootstrap.sh` (or the PowerShell equivalent) after a fresh clone; it
-provisions the recorded revision when the sibling is absent and never resets an
-existing dirty checkout. The helper's optional `--path` is restricted to that
-same Cargo-configured sibling path, which keeps isolated worktree pairs aligned
-with the build. CI/release helpers use
-`RADIANT_REPOSITORY_DEPLOY_KEY` (mapped from the existing
-`RADIANT_SUBMODULE_DEPLOY_KEY` secret) and fail closed unless the sibling's
-remote, manifest, clean state, and HEAD match the recorded revision.
+Wavecrate resolves Radiant from the exact public Git revision declared in
+`Cargo.toml`; `Cargo.lock` records the resulting source. Run
+`cargo metadata --locked` after a fresh clone to verify the dependency cache and
+lockfile are available. No sibling checkout, deploy key, or provisioning helper
+is required.
 - `verify_published_release.py` downloads public GitHub or PortalSurfer release
   assets after publication, verifies checksum signatures and zip hashes, and
   inspects each `update-manifest.json` for the expected channel, version,

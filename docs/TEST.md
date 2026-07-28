@@ -202,7 +202,7 @@ The nextest policy is:
 - Nightly, RC, and stable use `scripts/internal/release/run_release_validation.sh`
   on `ubuntu-latest` before any package build or public publication. The helper
   compiles Wavecrate-owned workspace test targets with `cargo test --workspace
-  --locked --no-run`, then runs standalone Radiant validation plus release contract/helper tests
+  --locked --no-run`, then runs release contract/helper tests
   and scanner tests. It intentionally avoids running the full native/UI default
   Cargo test lane in scheduled release workflows; local `ci-required` nextest,
   quarantined, GUI/manual, and performance checks remain explicit local or
@@ -216,13 +216,8 @@ The nextest policy is:
 The non-blocking app architecture is enforced by
 `scripts/check.* non-blocking-architecture`, and that check is required by
 `scripts/ci.* agent` plus the agent preflight inside `scripts/ci.* local`. It
-runs Radiant's reusable non-blocking guardrails, Wavecrate's app-facing blocking
-scan, and the deterministic strict slow-handler diagnostics harness.
-The agent lane intentionally runs the focused Radiant non-blocking guardrail
-module instead of the full `generic_surface_guardrails` suite, because that
-broader suite also contains unrelated cleanup/source-shape guardrails that
-should be fixed deliberately rather than used as the non-blocking architecture
-gate.
+runs Wavecrate's app-facing blocking scan and the deterministic strict
+slow-handler diagnostics harness.
 
 Windows note:
 
@@ -452,11 +447,9 @@ Manual cold-cache smoke for large folders:
 
 ### Radiant compatibility tests
 
-Use for generic Radiant behavior and compatibility coverage in the standalone
-sibling runtime dependency. Provision it first with `scripts/radiant.sh
-provision` when starting from a fresh clone.
-
-- `cargo nextest run --manifest-path ../radiant/Cargo.toml`
+Radiant's own tests run in the Radiant repository. Wavecrate validation exercises
+the pinned public dependency through the normal workspace compile and test lanes;
+do not substitute a sibling checkout or Cargo-cache internals.
 
 ### GUI test platform
 

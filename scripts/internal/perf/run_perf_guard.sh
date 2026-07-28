@@ -15,14 +15,6 @@ source "$ROOT_DIR/scripts/internal/setup_headless_audio.sh"
 # Tooling-only Linux fallback for headless perf hosts; not product support.
 wavecrate_setup_headless_audio "perf_guard"
 
-RADIANT_DIR="$("$ROOT_DIR/scripts/radiant.sh" locate | sed -n 's/^RADIANT_DIR=//p')"
-RADIANT_RUNTIME_FILE="$RADIANT_DIR/src/gui_runtime/native_vello.rs"
-
-if [ ! -f "$RADIANT_RUNTIME_FILE" ]; then
-  echo "[perf_guard] ERROR: missing runtime internals at $RADIANT_RUNTIME_FILE" >&2
-  exit 1
-fi
-
 OUT_PATH="${WAVECRATE_PERF_GUARD_OUT:-target/perf/bench.json}"
 GUI_ROWS="${WAVECRATE_PERF_GUARD_GUI_ROWS:-2500}"
 GUI_INTERACTION_ROWS="${WAVECRATE_PERF_GUARD_GUI_INTERACTION_ROWS:-1500}"

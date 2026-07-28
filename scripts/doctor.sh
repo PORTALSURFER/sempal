@@ -31,11 +31,11 @@ fi
 info "Repo: $ROOT_DIR"
 info "OS: ${os_name}${is_wsl:+ (wsl)}"
 
-info "Checking canonical Radiant sibling..."
-if bash "$ROOT_DIR/scripts/radiant.sh" locate; then
-  info "Radiant sibling: available"
+info "Checking locked Cargo dependency resolution..."
+if cargo metadata --locked --format-version 1 >/dev/null 2>&1; then
+  info "Cargo dependency resolution: available"
 else
-  err "Radiant sibling is missing or invalid; run scripts/bootstrap.sh to provision it"
+  err "Cargo dependency resolution failed; run cargo metadata --locked"
 fi
 
 info "Checking ripgrep (rg)..."

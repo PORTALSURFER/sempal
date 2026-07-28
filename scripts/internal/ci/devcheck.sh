@@ -10,7 +10,6 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT_DIR"
-RADIANT_DIR="$(./scripts/radiant.sh locate | sed -n 's/^RADIANT_DIR=//p')"
 # shellcheck source=scripts/internal/use_cargo_cache.sh
 source "$ROOT_DIR/scripts/internal/use_cargo_cache.sh"
 wavecrate_enable_cargo_cache
@@ -60,11 +59,8 @@ fi
 echo "[devcheck] branch policy"
 ./scripts/internal/check/check_main_branch.sh
 
-echo "[devcheck] cargo check --manifest-path $RADIANT_DIR/Cargo.toml"
-cargo check --manifest-path "$RADIANT_DIR/Cargo.toml"
-
-echo "[devcheck] cargo check --manifest-path $RADIANT_DIR/Cargo.toml --example generic_native --no-default-features"
-cargo check --manifest-path "$RADIANT_DIR/Cargo.toml" --example generic_native --no-default-features
+echo "[devcheck] cargo metadata --locked"
+cargo metadata --locked --format-version 1 >/dev/null
 
 if (( APP_ONLY == 1 )); then
   echo "[devcheck] cargo check -p wavecrate --lib --bin wavecrate"

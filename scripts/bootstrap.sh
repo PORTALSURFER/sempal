@@ -72,18 +72,6 @@ failures=0
 
 echo "[bootstrap] repo: $ROOT_DIR"
 
-if (( VERIFY_ONLY == 1 )); then
-  if bash "$ROOT_DIR/scripts/radiant.sh" locate; then
-    echo "[bootstrap] Radiant sibling: available"
-  else
-    echo "[bootstrap] Radiant sibling: missing or invalid (run without --verify-only to provision)" >&2
-    failures=$((failures + 1))
-  fi
-else
-  echo "[bootstrap] Provisioning/checking the canonical Radiant sibling..."
-  bash "$ROOT_DIR/scripts/radiant.sh" provision
-fi
-
 if ! command -v git >/dev/null 2>&1; then
   echo "[bootstrap] ERROR: git not found on PATH" >&2
   exit 1
@@ -198,6 +186,17 @@ else
   else
     echo "[bootstrap] rustup component add clippy --toolchain $channel"
     rustup component add clippy --toolchain "$channel"
+  fi
+fi
+
+if cargo metadata --locked --format-version 1 >/dev/null 2>&1; then
+  echo "[bootstrap] Cargo dependency resolution: OK"
+else
+  echo "[bootstrap] Cargo dependency resolution: FAILED" >&2
+  if (( VERIFY_ONLY == 1 )); then
+    failures=$((failures + 1))
+  else
+    exit 1
   fi
 fi
 

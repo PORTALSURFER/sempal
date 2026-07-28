@@ -507,7 +507,7 @@ try {
     Invoke-ExpectExitCode -Label "cleanup audit fixture succeeds" -ExpectedCode 0 -WorkDir $repoDir -ScriptPath (Join-Path $repoDir "scripts/internal/check/audit_cleanup_hotspots.ps1") -Arguments @("-Output", $outputPath, "-TestGapMinLines", "3", "-TopFiles", "10")
     $reportText = Get-Content -Path $outputPath -Raw
     $sectionStart = $reportText.IndexOf("## Wavecrate-root likely test-gap hotspots (heuristic)")
-    $sectionEnd = $reportText.IndexOf("## Radiant sibling likely test-gap hotspots (standalone gate)")
+    $sectionEnd = $reportText.IndexOf("## Suggested follow-up")
     $testGapSection = if ($sectionStart -ge 0 -and $sectionEnd -gt $sectionStart) {
       $reportText.Substring($sectionStart, $sectionEnd - $sectionStart)
     } else {
@@ -515,7 +515,6 @@ try {
     }
     Assert-TextContains -Label "cleanup audit fixture reports one Wavecrate heuristic gap" -Text $reportText -Fragment "Likely large-file test-gap hotspots (heuristic): 1"
     Assert-TextContains -Label "cleanup audit fixture emits root section" -Text $reportText -Fragment "## Wavecrate-root largest Rust files"
-    Assert-TextContains -Label "cleanup audit fixture emits standalone section" -Text $reportText -Fragment "## Radiant sibling largest Rust files"
     Assert-TextContains -Label "cleanup audit fixture keeps the real gap" -Text $testGapSection -Fragment 'src/real_gap.rs'
     Assert-TextNotContains -Label "cleanup audit fixture skips *_tests.rs files" -Text $testGapSection -Fragment 'src/analysis/ann_index_tests.rs'
     Assert-TextNotContains -Label "cleanup audit fixture skips sibling module tests" -Text $testGapSection -Fragment 'src/selection/range.rs'

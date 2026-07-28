@@ -62,36 +62,6 @@
     ],
     "required_fragments": [
       {
-        "label": "PowerShell devcheck checks Radiant standalone example",
-        "path": "scripts/internal/ci/devcheck.ps1",
-        "fragment": "--example generic_native --no-default-features"
-      },
-      {
-        "label": "Bash devcheck checks Radiant standalone example",
-        "path": "scripts/internal/ci/devcheck.sh",
-        "fragment": "--example generic_native --no-default-features"
-      },
-      {
-        "label": "PowerShell ci agent runs Radiant no-default library tests",
-        "path": "scripts/internal/ci/ci_agent.ps1",
-        "fragment": "RADIANT_DIR"
-      },
-      {
-        "label": "Bash ci agent runs Radiant no-default library tests",
-        "path": "scripts/internal/ci/ci_agent.sh",
-        "fragment": "RADIANT_DIR"
-      },
-      {
-        "label": "PowerShell ci agent runs Radiant no-default app runtime API tests",
-        "path": "scripts/internal/ci/ci_agent.ps1",
-        "fragment": "RADIANT_DIR"
-      },
-      {
-        "label": "Bash ci agent runs Radiant no-default app runtime API tests",
-        "path": "scripts/internal/ci/ci_agent.sh",
-        "fragment": "RADIANT_DIR"
-      },
-      {
         "label": "PowerShell ci agent requires non-blocking architecture guardrails",
         "path": "scripts/internal/ci/ci_agent.ps1",
         "fragment": "scripts/check.ps1\") non-blocking-architecture"
@@ -100,16 +70,6 @@
         "label": "Bash ci agent requires non-blocking architecture guardrails",
         "path": "scripts/internal/ci/ci_agent.sh",
         "fragment": "./scripts/check.sh non-blocking-architecture"
-      },
-      {
-        "label": "PowerShell architecture guardrail targets the Radiant library fixture",
-        "path": "scripts/internal/check/check_non_blocking_architecture.ps1",
-        "fragment": "RADIANT_DIR"
-      },
-      {
-        "label": "Bash architecture guardrail targets the Radiant library fixture",
-        "path": "scripts/internal/check/check_non_blocking_architecture.sh",
-        "fragment": "RADIANT_DIR"
       },
       {
         "label": "PowerShell architecture guardrail targets the GUI boundary test",

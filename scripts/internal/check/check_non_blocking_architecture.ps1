@@ -21,13 +21,11 @@ $ErrorActionPreference = "Stop"
 if ($Help) {
   Write-Host "Usage: scripts/internal/check/check_non_blocking_architecture.ps1"
   Write-Host ""
-  Write-Host "Run required Radiant and Wavecrate non-blocking architecture guardrails."
+  Write-Host "Run required Wavecrate non-blocking architecture guardrails."
   exit 0
 }
 
 $rootDir = (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
-$radiantDir = (& (Join-Path $rootDir 'scripts/radiant.ps1') locate | Where-Object { $_ -like 'RADIANT_DIR=*' } | ForEach-Object { $_.Substring(13) })
-if (-not $radiantDir) { throw "Radiant sibling is missing or invalid" }
 
 function Invoke-NativeStep {
   param(
@@ -47,14 +45,6 @@ function Invoke-NativeStep {
 Push-Location $rootDir
 try {
   Enable-WavecrateCargoCache
-
-  Invoke-NativeStep -Label "Radiant synthetic blocking-token fixture" -Command {
-    Invoke-WavecrateCargo test --manifest-path (Join-Path $radiantDir 'Cargo.toml') --lib guardrail_reports_file_line_and_guidance_for_blocking_tokens
-  }
-
-  Invoke-NativeStep -Label "Radiant app/runtime/example guardrails" -Command {
-    Invoke-WavecrateCargo test --manifest-path (Join-Path $radiantDir 'Cargo.toml') --test generic_surface_guardrails source_quality::runtime::commands_and_app
-  }
 
   Invoke-NativeStep -Label "Wavecrate app-facing blocking guardrail" -Command {
     Invoke-WavecrateCargo test --package wavecrate --no-default-features --test gui_boundary native_app_ui_update_paths_do_not_call_blocking_business_apis
