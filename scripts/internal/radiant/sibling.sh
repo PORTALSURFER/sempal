@@ -53,7 +53,7 @@ metadata_value() {
   local key="$1"
   awk -v key="$key" '
     $0 ~ "^[[:space:]]*" key "[[:space:]]*=" {
-      sub(/^[^=]*=[[:space:]]*/, "", $0); gsub(/^[\" ]+|[\" ]+$/, "", $0); print; exit
+      sub(/^[^=]*=[[:space:]]*/, "", $0); gsub(/^[" ]+|[" ]+$/, "", $0); print; exit
     }
   ' "$ROOT_DIR/radiant-dependency.toml"
 }
@@ -125,7 +125,7 @@ print_state() {
 }
 
 provision() {
-  local parent key_file ssh_command clone_url
+  local parent key_file ssh_command clone_url cleanup_command
   if [[ -e "$TARGET" ]]; then
     validate_checkout
     if (( CLEAN == 0 )); then
@@ -155,7 +155,8 @@ provision() {
     chmod 600 "$key_file"
     ssh_command="ssh -i $key_file -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
     clone_url="git@github.com:PORTALSURFER/radiant.git"
-    trap 'rm -f "$key_file"' EXIT
+    printf -v cleanup_command 'rm -f -- %q' "$key_file"
+    trap "$cleanup_command" EXIT
   fi
   info "cloning Radiant at $REVISION into $TARGET"
   if [[ -n "$ssh_command" ]]; then
