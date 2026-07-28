@@ -190,16 +190,37 @@ pub fn mark_harvest_seen(
 pub fn mark_harvest_touched(
     identity: &HarvestFileIdentity,
 ) -> Result<HarvestFileRecord, LibraryError> {
+    mark_harvest_touched_if_current(identity, || true)
+        .map(|record| record.expect("unconditional harvest touch must not be skipped"))
+}
+
+/// Mark a harvest file as touched when the caller's revision is still current.
+///
+/// The predicate is evaluated while the global library lock is held and immediately before the
+/// state update, allowing UI-owned revision fences to serialize correctly with manual harvest
+/// mutations.
+pub fn mark_harvest_touched_if_current(
+    identity: &HarvestFileIdentity,
+    current: impl Fn() -> bool,
+) -> Result<Option<HarvestFileRecord>, LibraryError> {
     let started_at = Instant::now();
     let _guard = lock_library();
+    if !current() {
+        return Ok(None);
+    }
     let db = LibraryDatabase::open()?;
+    // Re-check after opening the database so a superseding request that arrives while opening it
+    // cannot proceed to the serialized state mutation.
+    if !current() {
+        return Ok(None);
+    }
     let result = db.advance_harvest_state(identity, HarvestState::Touched);
     record_library_db_event(
         "library.harvest.mark_touched",
         started_at,
         result.as_ref().map(|_| ()),
     );
-    result
+    result.map(Some)
 }
 
 /// Manually set a harvest state, including explicit reset to `New`.

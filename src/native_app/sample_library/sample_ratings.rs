@@ -55,6 +55,7 @@ impl NativeAppState {
     pub(in crate::native_app) fn add_keep_rating_to_handoff_paths(
         &mut self,
         paths: &[PathBuf],
+        context: &mut ui::UiUpdateContext<GuiMessage>,
     ) -> Result<usize, String> {
         let plan = self.rating_adjustment_plan_for_paths(paths, 1);
         if plan.is_empty() {
@@ -67,12 +68,15 @@ impl NativeAppState {
             .collect::<Vec<_>>();
         let applied = self.apply_rating_update_states(&plan.updates, RatingUpdateMode::After)?;
         if applied > 0 {
-            self.mark_harvest_touched_for_paths(&touched_paths);
+            self.schedule_harvest_touched_for_paths(&touched_paths, context);
         }
         Ok(applied)
     }
 
-    pub(in crate::native_app) fn unlock_context_sample(&mut self) {
+    pub(in crate::native_app) fn unlock_context_sample(
+        &mut self,
+        context: &mut ui::UiUpdateContext<GuiMessage>,
+    ) {
         let started_at = Instant::now();
         let Some(menu) = self.ui.browser_interaction.context_menu.take() else {
             return;
@@ -165,7 +169,7 @@ impl NativeAppState {
             return;
         }
         self.ui.status.sample = format!("Unlocked {}", sample_path_label(&loaded_path));
-        self.mark_harvest_touched_for_paths(std::slice::from_ref(&loaded_path));
+        self.schedule_harvest_touched_for_paths(std::slice::from_ref(&loaded_path), context);
         self.register_rating_transaction_with_label("Unlock sample", vec![update]);
         self.library
             .folder_browser
@@ -265,7 +269,7 @@ impl NativeAppState {
                 .iter()
                 .map(|update| update.absolute_path.clone())
                 .collect::<Vec<_>>();
-            self.mark_harvest_touched_for_paths(&touched_paths);
+            self.schedule_harvest_touched_for_paths(&touched_paths, context);
             self.register_rating_transaction(delta, plan.updates);
         }
 

@@ -35,6 +35,12 @@ impl NativeAppState {
             }
             GuiMessage::LastPlayedPersisted(result) => self.finish_last_played_persist(result),
             GuiMessage::HarvestSeenPersisted(result) => self.finish_harvest_seen_persist(result),
+            GuiMessage::HarvestTouchedPersisted(completion) => {
+                self.finish_harvest_touched_persist(completion, context)
+            }
+            GuiMessage::HarvestTouchedPersistAdmissionPoll(ticket) => {
+                self.poll_harvest_touched_persist_admission(ticket, context)
+            }
             GuiMessage::VolumeSettingsPersisted(result) => {
                 self.finish_volume_settings_persist(result)
             }

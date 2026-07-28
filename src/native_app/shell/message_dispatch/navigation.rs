@@ -614,7 +614,10 @@ impl NativeAppState {
         );
         #[cfg(test)]
         if let Some(ticket) = self.background.starmap_audition_promotion_task.active() {
-            self.record_scheduled_timer_message(GuiMessage::PromoteStarmapAudition { ticket, path });
+            self.record_scheduled_timer_message(GuiMessage::PromoteStarmapAudition {
+                ticket,
+                path,
+            });
         }
     }
 

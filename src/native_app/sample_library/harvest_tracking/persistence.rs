@@ -3,8 +3,16 @@ use super::{
     HarvestSourceRange, NativeAppState, NewHarvestDerivation, Path, PathBuf, SelectionRange,
     persist_harvest_seen,
 };
+use radiant::prelude as ui;
 
 impl NativeAppState {
+    pub(in crate::native_app) fn invalidate_harvest_touched_for_path(&mut self, path: &Path) {
+        let Some(request) = self.harvest_touched_persist_request_for_path(path) else {
+            return;
+        };
+        self.background.harvest_touched_persist.invalidate(&request);
+    }
+
     pub(in crate::native_app) fn schedule_harvest_seen_for_path(
         &self,
         path: &Path,
@@ -37,22 +45,69 @@ impl NativeAppState {
         }
     }
 
-    pub(in crate::native_app) fn mark_harvest_touched_for_path(&self, path: &Path) {
-        let Some(identity) = self.harvest_identity_for_path(path) else {
+    pub(in crate::native_app) fn schedule_harvest_touched_for_path(
+        &mut self,
+        path: &Path,
+        context: &mut ui::UiUpdateContext<GuiMessage>,
+    ) {
+        let Some(request) = self.harvest_touched_persist_request_for_path(path) else {
             return;
         };
-        if let Err(error) = wavecrate::sample_sources::library::mark_harvest_touched(&identity) {
-            tracing::warn!(path = %path.display(), "failed to mark harvest file as touched: {error}");
+        match self.background.harvest_touched_persist.enqueue(request) {
+            crate::native_app::app::HarvestTouchedPersistAdmission::Saturated => {
+                tracing::warn!(path = %path.display(), "harvest touched persistence queue saturated; request deferred");
+            }
+            crate::native_app::app::HarvestTouchedPersistAdmission::Queued
+            | crate::native_app::app::HarvestTouchedPersistAdmission::Replaced => {}
         }
+        self.background
+            .harvest_touched_persist
+            .schedule_if_idle(context);
     }
 
-    pub(in crate::native_app) fn mark_harvest_touched_for_paths<I>(&self, paths: I)
-    where
+    pub(in crate::native_app) fn finish_harvest_touched_persist(
+        &mut self,
+        completion: ui::TaskCompletion<crate::native_app::app::HarvestTouchedPersistBatchResult>,
+        context: &mut ui::UiUpdateContext<GuiMessage>,
+    ) {
+        let Some(result) = self.background.harvest_touched_persist.finish(completion) else {
+            return;
+        };
+        for persisted in result.results {
+            if let Some(persisted) = persisted.result {
+                if let Err(error) = persisted.result {
+                    tracing::warn!(
+                        file_id = %persisted.file_id,
+                        "failed to mark harvest file as touched in background: {error}"
+                    );
+                }
+            }
+        }
+        self.background
+            .harvest_touched_persist
+            .schedule_if_idle(context);
+    }
+
+    pub(in crate::native_app) fn poll_harvest_touched_persist_admission(
+        &mut self,
+        ticket: ui::TaskTicket,
+        context: &mut ui::UiUpdateContext<GuiMessage>,
+    ) {
+        self.background
+            .harvest_touched_persist
+            .poll_admission(ticket, context);
+    }
+
+    pub(in crate::native_app) fn schedule_harvest_touched_for_paths<I>(
+        &mut self,
+        paths: I,
+        context: &mut ui::UiUpdateContext<GuiMessage>,
+    ) where
         I: IntoIterator,
         I::Item: AsRef<Path>,
     {
         for path in paths {
-            self.mark_harvest_touched_for_path(path.as_ref());
+            self.schedule_harvest_touched_for_path(path.as_ref(), context);
         }
     }
 

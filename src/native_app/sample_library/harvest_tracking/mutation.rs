@@ -41,6 +41,7 @@ impl NativeAppState {
         };
         let mut applied_any = false;
         for target in &targets {
+            self.invalidate_harvest_touched_for_path(&target.path);
             if let Err(error) =
                 wavecrate::sample_sources::library::upsert_harvest_file(&target.identity)
             {
@@ -107,6 +108,7 @@ impl NativeAppState {
 
         let mut changed = false;
         for target in &targets {
+            self.invalidate_harvest_touched_for_path(&target.path);
             if let Err(error) =
                 wavecrate::sample_sources::library::upsert_harvest_file(&target.identity)
             {

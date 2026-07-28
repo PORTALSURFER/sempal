@@ -4315,6 +4315,7 @@ name = "radiant"
 version = "0.1.0"
 dependencies = [
  "arboard",
+ "block2 0.5.1",
  "kurbo",
  "lyon_tessellation",
  "objc2 0.5.2",

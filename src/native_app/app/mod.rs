@@ -39,7 +39,8 @@ pub(in crate::native_app) use state::ReleaseUpdateStatus;
 pub(in crate::native_app) use state::{
     AudioAppState, AudioOpenCompletion, AudioOpenTaskCompletion, AudioOptionsRefreshResult,
     BackgroundTaskState, ChromeUiState, ClipboardHandoffTarget, CompletedTransientSamplePlayback,
-    CutFileClipboard, ExtractedFilePlaybackType, FolderScanWorkerEvent, LibraryAppState,
+    CutFileClipboard, ExtractedFilePlaybackType, FolderScanWorkerEvent,
+    HarvestTouchedPersistAdmission, HarvestTouchedPersistBatchResult, LibraryAppState,
     MAX_BEAT_GUIDE_COUNT, MIN_BEAT_GUIDE_COUNT, MetadataAppState, NativeAppState,
     OverflowFadeAnimations, PendingFolderDelete, PendingPlaySelectionRetargetCycle,
     PendingPlaybackStart, PendingProtectedExtractionAction, PendingProtectedExtractionTargetSource,

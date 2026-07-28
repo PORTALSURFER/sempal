@@ -794,7 +794,20 @@ fn playmark_selection_copy_extracts_into_current_folder_before_clipboard_handoff
 
     let mut context = ui::UiUpdateContext::default();
     scenario.state.copy_selected_files(&mut context);
-    run_command_for_tests(&mut scenario.state, context.into_command());
+    let extraction_message = run_worker_message_for_tests(
+        context.into_command(),
+        "gui-copy-waveform-selection",
+    )
+    .expect("playmark copy extraction should complete");
+    let mut extraction_context = ui::UiUpdateContext::default();
+    scenario
+        .state
+        .apply_message(extraction_message, &mut extraction_context);
+    assert_eq!(
+        platform_copy_file_paths(extraction_context.into_command()),
+        Some(vec![extracted.clone()]),
+        "clipboard handoff should be queued before extracted-file metadata bookkeeping"
+    );
 
     assert!(extracted.is_file());
     assert!(
@@ -823,8 +836,8 @@ fn playmark_selection_copy_extracts_into_current_folder_before_clipboard_handoff
         Some(ui::TaskPriority::Background),
         "extracted rating persistence should not block clipboard completion"
     );
-    assert_extracted_file_metadata(&scenario.state, &extracted, &["one-shot"]);
     run_command_for_tests(&mut scenario.state, metadata_command);
+    assert_extracted_file_tags(&scenario.state, &extracted, &["one-shot"]);
     assert_persisted_extracted_file_keep_1_rating(&scenario.state, &extracted);
     assert_source_file_not_keep_rated(&scenario.state, &source_path);
     let parent = wavecrate::sample_sources::library::harvest_file(&harvest_key)
@@ -2236,6 +2249,14 @@ fn assert_extracted_file_metadata(
     assert_extracted_file_keep_1_rating(state, extracted);
 }
 
+fn assert_extracted_file_tags(
+    state: &crate::native_app::test_support::state::NativeAppState,
+    extracted: &std::path::Path,
+    tags: &[&str],
+) {
+    assert_extracted_metadata_tags(state, extracted, tags);
+}
+
 fn assert_extracted_metadata_tags(
     state: &crate::native_app::test_support::state::NativeAppState,
     extracted: &std::path::Path,
@@ -2633,6 +2654,8 @@ fn playmark_selection_change_marks_harvest_file_touched() {
 
     scenario.select_play_range(0.20, 0.50);
 
+    scenario.flush_background_work();
+
     assert_harvest_file_touched_without_derivatives(&harvest_key);
 }
 
@@ -2663,6 +2686,7 @@ fn editmark_selection_change_marks_harvest_file_touched() {
             &mut context,
         );
     }
+    run_command_for_tests(&mut scenario.state, context.into_command());
 
     assert_harvest_file_touched_without_derivatives(&harvest_key);
 }

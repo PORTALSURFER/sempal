@@ -76,6 +76,11 @@ impl WaveformPlaybackScenario {
         self.finish_play_range_drag(end);
     }
 
+    pub(super) fn flush_background_work(&mut self) {
+        let context = std::mem::take(&mut self.context);
+        run_command_for_tests(&mut self.state, context.into_command());
+    }
+
     pub(super) fn begin_play_range(&mut self, start: f32) {
         self.apply_waveform(WaveformInteraction::BeginSelection {
             kind: WaveformSelectionKind::Play,

@@ -298,6 +298,26 @@ fn harvest_state_auto_transitions_only_move_forward() {
 }
 
 #[test]
+fn current_harvest_touch_fence_rechecks_before_state_write() {
+    let temp = tempdir().unwrap();
+    with_config_home(temp.path(), || {
+        let identity = harvest_identity("source-fence", "drums/kick.wav");
+        upsert_harvest_file(&identity).unwrap();
+        let checks = std::sync::atomic::AtomicUsize::new(0);
+        let result = mark_harvest_touched_if_current(&identity, || {
+            checks.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0
+        })
+        .unwrap();
+        assert!(result.is_none());
+        assert_eq!(checks.load(std::sync::atomic::Ordering::Relaxed), 2);
+        assert_eq!(
+            harvest_file(&identity.key).unwrap().unwrap().state,
+            HarvestState::New
+        );
+    });
+}
+
+#[test]
 fn harvest_file_batch_upsert_persists_every_identity() {
     let temp = tempdir().unwrap();
     with_config_home(temp.path(), || {

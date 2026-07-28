@@ -190,6 +190,10 @@ pub(in crate::native_app) enum GuiMessage {
     },
     LastPlayedPersisted(LastPlayedPersistResult),
     HarvestSeenPersisted(HarvestSeenPersistResult),
+    HarvestTouchedPersisted(
+        ui::TaskCompletion<crate::native_app::app::HarvestTouchedPersistBatchResult>,
+    ),
+    HarvestTouchedPersistAdmissionPoll(ui::TaskTicket),
     VolumeSettingsPersisted(VolumeSettingsPersistResult),
     StopPlayback,
     ToggleLoopPlayback,

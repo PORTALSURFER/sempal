@@ -68,10 +68,11 @@ impl NativeAppState {
         count: usize,
         started_at: Instant,
         result: Result<(), String>,
+        context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
         match result {
             Ok(()) => {
-                let rating_error = self.add_keep_rating_to_handoff_paths(&paths).err();
+                let rating_error = self.add_keep_rating_to_handoff_paths(&paths, context).err();
                 self.ui.status.sample = match (count, rating_error) {
                     (1, None) => String::from("Copied selected file"),
                     (count, None) => format!("Copied {count} selected files"),
@@ -438,7 +439,8 @@ impl NativeAppState {
                 radiant::runtime::ExternalDragEffect::Copy
                 | radiant::runtime::ExternalDragEffect::Link => {
                     let rating_error = if handoff_adds_keep_rating {
-                        self.add_keep_rating_to_handoff_paths(&handoff_paths).err()
+                        self.add_keep_rating_to_handoff_paths(&handoff_paths, context)
+                            .err()
                     } else {
                         None
                     };

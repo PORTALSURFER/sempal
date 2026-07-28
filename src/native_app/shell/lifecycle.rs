@@ -448,11 +448,19 @@ impl NativeAppState {
     pub(in crate::native_app) fn shutdown(&mut self) -> Option<serde_json::Value> {
         let started_at = Instant::now();
         let source_processing = self.background.source_processing.shutdown();
+        let harvest_touched_unflushed = self.background.harvest_touched_persist.close();
+        if harvest_touched_unflushed != 0 {
+            tracing::warn!(
+                count = harvest_touched_unflushed,
+                "discarding admitted harvest-touch work during shutdown"
+            );
+        }
         crate::native_app::waveform::flush_background_waveform_cache_stores_for_shutdown();
         let elapsed = started_at.elapsed();
         Some(serde_json::json!({
             "waveform_cache_shutdown_flush_ms": duration_ms(elapsed),
             "source_processing": source_processing,
+            "harvest_touched_unflushed": harvest_touched_unflushed,
         }))
     }
 }
