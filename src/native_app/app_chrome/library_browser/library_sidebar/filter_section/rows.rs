@@ -40,10 +40,16 @@ const RATING_FILTER_TRASH_COLOR: ui::Rgba8 = ui::Rgba8 {
     b: 67,
     a: 235,
 };
-const RATING_FILTER_UNRATED_COLOR: ui::Rgba8 = ui::Rgba8 {
-    r: 154,
-    g: 158,
-    b: 164,
+const RATING_FILTER_UNRATED_ACTIVE_COLOR: ui::Rgba8 = ui::Rgba8 {
+    r: 184,
+    g: 188,
+    b: 194,
+    a: 235,
+};
+const RATING_FILTER_UNRATED_INACTIVE_COLOR: ui::Rgba8 = ui::Rgba8 {
+    r: 138,
+    g: 142,
+    b: 148,
     a: 220,
 };
 const RATING_FILTER_KEEP_COLOR: ui::Rgba8 = ui::Rgba8 {
@@ -51,6 +57,13 @@ const RATING_FILTER_KEEP_COLOR: ui::Rgba8 = ui::Rgba8 {
     g: 226,
     b: 96,
     a: 235,
+};
+/// Golden marker used for the top (locked) keep rating in the sample browser.
+const RATING_FILTER_TOP_KEEP_COLOR: ui::Rgba8 = ui::Rgba8 {
+    r: 232,
+    g: 188,
+    b: 56,
+    a: 245,
 };
 pub(super) const NAME_FILTER_INPUT_ID: u64 = widget_ids::NAME_FILTER_INPUT_ID;
 pub(super) const TAG_FILTER_INPUT_ID: u64 = widget_ids::TAG_FILTER_INPUT_ID;
@@ -425,42 +438,39 @@ fn rating_filter_toggle(
     help_tooltips_enabled: bool,
 ) -> ui::View<GuiMessage> {
     let level = toggle.level;
-    ui::selectable("", toggle.active)
-        .style(ui::WidgetStyle::subtle(rating_filter_tone(level)))
-        .color_marker(Some(rating_filter_swatch_color(level, toggle.active)))
-        .color_marker_side(RATING_FILTER_SWATCH_SIZE)
-        .color_marker_inset(0)
-        .color_marker_align(ui::ColorMarkerAlign::Center)
-        .message(move |enabled| {
-            GuiMessage::FolderBrowser(FolderBrowserMessage::ToggleRatingFilter(level, enabled))
-        })
+    let visible = ui::color_marker(Some(rating_filter_swatch_color(level, toggle.active)))
+        .side(RATING_FILTER_SWATCH_SIZE)
+        .inset(0)
+        .align(ui::ColorMarkerAlign::Center)
+        .view()
+        .size(RATING_FILTER_TOGGLE_WIDTH, FILTER_ROW_CONTROL_HEIGHT);
+    let input = ui::button("")
+        .active(toggle.active)
+        .message(GuiMessage::FolderBrowser(
+            FolderBrowserMessage::ToggleRatingFilter(level, !toggle.active),
+        ))
         .id(automation_rating_filter_toggle_id(toggle.label))
         .size(RATING_FILTER_TOGGLE_WIDTH, FILTER_ROW_CONTROL_HEIGHT)
-        .tooltip_if(help_tooltips_enabled, rating_filter_tooltip(level))
-}
-
-fn rating_filter_tone(level: i8) -> ui::WidgetTone {
-    if level < 0 {
-        ui::WidgetTone::Danger
-    } else if level > 0 {
-        ui::WidgetTone::Accent
-    } else {
-        ui::WidgetTone::Neutral
-    }
+        .tooltip_if(help_tooltips_enabled, rating_filter_tooltip(level));
+    ui::input_underlay(visible, input.input_only())
 }
 
 pub(super) fn rating_filter_swatch_color(level: i8, active: bool) -> ui::Rgba8 {
-    let color = if level < 0 {
+    let color = if level == 4 {
+        RATING_FILTER_TOP_KEEP_COLOR
+    } else if level < 0 {
         RATING_FILTER_TRASH_COLOR
     } else if level > 0 {
         RATING_FILTER_KEEP_COLOR
+    } else if active {
+        RATING_FILTER_UNRATED_ACTIVE_COLOR
     } else {
-        RATING_FILTER_UNRATED_COLOR
+        RATING_FILTER_UNRATED_INACTIVE_COLOR
     };
     if active {
         color
     } else {
-        color.with_alpha(color.a.saturating_sub(68))
+        color.with_alpha(color.a.saturating_sub(128))
     }
 }
 
