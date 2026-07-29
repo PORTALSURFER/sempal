@@ -832,7 +832,7 @@ fn playmark_selection_copy_extracts_into_current_folder_before_clipboard_handoff
     );
     let metadata_command = copy_finished_context.into_command();
     assert_eq!(
-        metadata_command.business_task_priority("gui-metadata-rating-persist"),
+        metadata_command.business_task_priority("gui-rating-persist"),
         Some(ui::TaskPriority::Background),
         "extracted rating persistence should not block clipboard completion"
     );

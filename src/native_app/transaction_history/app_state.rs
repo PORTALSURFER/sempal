@@ -48,6 +48,7 @@ impl NativeAppState {
             result.as_ref().err().cloned(),
             context,
         );
+        self.background.rating_persist.schedule_if_idle(context);
         match result {
             Ok(Some(applied)) => {
                 self.ui.status.sample = format!("Undid {}", applied.label);
@@ -80,6 +81,7 @@ impl NativeAppState {
             result.as_ref().err().cloned(),
             context,
         );
+        self.background.rating_persist.schedule_if_idle(context);
         match result {
             Ok(applied) if applied.is_empty() => {
                 self.ui.status.sample = format!("Transaction #{target_id} is not undoable");
@@ -116,6 +118,7 @@ impl NativeAppState {
             result.as_ref().err().cloned(),
             context,
         );
+        self.background.rating_persist.schedule_if_idle(context);
         match result {
             Ok(Some(applied)) => {
                 self.ui.status.sample = format!("Redid {}", applied.label);
@@ -148,6 +151,7 @@ impl NativeAppState {
             result.as_ref().err().cloned(),
             context,
         );
+        self.background.rating_persist.schedule_if_idle(context);
         match result {
             Ok(applied) if applied.is_empty() => {
                 self.ui.status.sample = format!("Transaction #{target_id} is not redoable");

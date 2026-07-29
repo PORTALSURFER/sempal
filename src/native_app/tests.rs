@@ -294,6 +294,7 @@ fn run_command_for_tests(
         matches!(
             message,
             super::test_support::state::GuiMessage::CommittedFileMutationRequested(_)
+                | super::test_support::state::GuiMessage::CommittedFileMutationFinished(_)
                 | super::test_support::state::GuiMessage::NormalizationFinished(_)
                 | super::test_support::state::GuiMessage::ExternalWaveformFileDropFinished {
                     ..
@@ -312,6 +313,7 @@ fn run_command_for_tests(
                 | super::test_support::state::GuiMessage::SelectedWholeFilesHarvestExtractionFinished {
                     ..
                 }
+                | super::test_support::state::GuiMessage::RatingPersisted(_)
         )
     };
     let mut commands = std::collections::VecDeque::from([command]);

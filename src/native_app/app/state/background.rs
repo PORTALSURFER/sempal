@@ -22,6 +22,9 @@ use crate::native_app::app::{
     NormalizationQueueItem, PendingWaveformDestructiveEdit, SourceProcessingHealth,
     SourceProcessingProgress,
 };
+use crate::native_app::sample_library::sample_ratings::{
+    RatingPersistRequest, persist_rating_requests,
+};
 use crate::native_app::source_processing::SourceProcessingSupervisor;
 use crate::native_app::waveform::WaveformPreservedMarks;
 
@@ -33,6 +36,7 @@ pub(in crate::native_app) struct BackgroundTaskState {
     pub(in crate::native_app) deferred_sample_load_task: ui::LatestTask,
     pub(in crate::native_app) sample_load_tasks: ui::ResourceTasks,
     pub(in crate::native_app) harvest_touched_persist: HarvestTouchedPersistOwner,
+    pub(in crate::native_app) rating_persist: RatingPersistOwner,
     pub(in crate::native_app) active_sample_load_key: Option<ui::ResourceKey>,
     pub(in crate::native_app) sample_load_cancel: Option<ui::CancellationToken>,
     pub(in crate::native_app) settled_sample_promotion_task: ui::LatestTask,
@@ -63,6 +67,169 @@ pub(in crate::native_app) struct BackgroundTaskState {
     pub(in crate::native_app) progress_tick: f32,
     pub(in crate::native_app) frame_cadence: frame_ui::FrameCadenceMonitor,
     pub(in crate::native_app) source_processing: SourceProcessingSupervisor,
+}
+
+#[cfg(test)]
+mod rating_persist_owner_tests {
+    use super::*;
+
+    fn request(source: &str, path: &str, rating: i8) -> RatingPersistRequest {
+        RatingPersistRequest {
+            source_id: source.to_owned(),
+            lifecycle_generation: None,
+            root: PathBuf::from(format!("/tmp/{source}")),
+            database_root: PathBuf::from(format!("/tmp/{source}/.db")),
+            relative_path: PathBuf::from(path),
+            absolute_path: PathBuf::from(format!("/tmp/{source}/{path}")),
+            rating: wavecrate::sample_sources::Rating::new(rating),
+            locked: false,
+        }
+    }
+
+    #[test]
+    fn rapid_same_path_enqueue_keeps_latest_revision() {
+        let mut owner = RatingPersistOwner::new();
+        owner.enqueue(request("one", "kick.wav", 1));
+        owner.enqueue(request("one", "kick.wav", 2));
+        let work = owner.queue.lock().expect("queue lock").claim_all();
+        assert_eq!(work.len(), 1);
+        assert_eq!(work[0].revision, 2);
+        assert_eq!(work[0].request.rating.val(), 2);
+    }
+
+    #[test]
+    fn replacement_makes_inflight_completion_stale() {
+        let mut owner = RatingPersistOwner::new();
+        owner.enqueue(request("one", "kick.wav", 1));
+        let first = owner.queue.lock().expect("queue lock").claim_all();
+        owner.enqueue(request("one", "kick.wav", 2));
+        let key = first[0].key.clone();
+        let queue = owner.queue.lock().expect("queue lock");
+        assert!(!queue.entries.get(&key).is_some_and(|entry| {
+            entry.revision == first[0].revision && entry.state == RatingPersistEntryState::InFlight
+        }));
+        drop(queue);
+        assert_eq!(owner.queue.lock().expect("queue lock").claim_all().len(), 1);
+    }
+
+    #[test]
+    fn failed_completion_does_not_erase_newer_projection() {
+        let mut owner = RatingPersistOwner::new();
+        owner.enqueue(request("one", "kick.wav", 1));
+        let first = owner.queue.lock().expect("queue lock").claim_all();
+        owner.enqueue(request("one", "kick.wav", 2));
+        let item = RatingPersistBatchItem {
+            key: first[0].key.clone(),
+            revision: first[0].revision,
+            absolute_path: first[0].request.absolute_path.clone(),
+            result: Some(Err(String::from("disk"))),
+        };
+        owner
+            .queue
+            .lock()
+            .expect("queue lock")
+            .entries
+            .get_mut(&item.key)
+            .unwrap()
+            .state = RatingPersistEntryState::Pending;
+        assert_eq!(
+            owner.queue.lock().expect("queue lock").entries[&item.key]
+                .request
+                .rating
+                .val(),
+            2
+        );
+    }
+
+    #[test]
+    fn same_source_rekey_after_claim_fences_old_completion() {
+        let mut owner = RatingPersistOwner::new();
+        owner.enqueue(request("one", "old/kick.wav", 1));
+        let work = owner.queue.lock().expect("queue lock").claim_all();
+        let old_revision = work[0].revision;
+        owner.defer_auto_trash(
+            "one",
+            PathBuf::from("old/kick.wav").as_path(),
+            old_revision,
+            PathBuf::from("/tmp/one/old/kick.wav"),
+        );
+        owner.rekey_prefix(
+            "one",
+            PathBuf::from("old").as_path(),
+            PathBuf::from("new").as_path(),
+            false,
+        );
+        let queue = owner.queue.lock().expect("queue lock");
+        let old_key = RatingPersistKey {
+            source_id: String::from("one"),
+            relative_path: PathBuf::from("old/kick.wav"),
+        };
+        let new_key = RatingPersistKey {
+            source_id: String::from("one"),
+            relative_path: PathBuf::from("new/kick.wav"),
+        };
+        assert!(!queue.entries.contains_key(&old_key));
+        assert!(queue.entries[&new_key].revision > old_revision);
+        assert_eq!(
+            queue.entries[&new_key].state,
+            RatingPersistEntryState::Pending
+        );
+        assert_eq!(
+            queue.deferred_auto_trash[&new_key].1,
+            PathBuf::from("/tmp/one/new/kick.wav")
+        );
+    }
+
+    #[test]
+    fn cross_source_rekey_after_claim_fences_old_completion() {
+        let mut owner = RatingPersistOwner::new();
+        owner
+            .queue
+            .lock()
+            .expect("queue lock")
+            .lifecycle_generations
+            .insert(String::from("two"), 9);
+        owner.enqueue(request("one", "kick.wav", 1));
+        let work = owner.queue.lock().expect("queue lock").claim_all();
+        let old_revision = work[0].revision;
+        owner.defer_auto_trash(
+            "one",
+            PathBuf::from("kick.wav").as_path(),
+            old_revision,
+            PathBuf::from("/tmp/one/kick.wav"),
+        );
+        owner.rekey_cross_source(
+            "one",
+            PathBuf::from("kick.wav").as_path(),
+            "two",
+            PathBuf::from("moved/kick.wav").as_path(),
+            PathBuf::from("/tmp/two").as_path(),
+            PathBuf::from("/tmp/two/.db").as_path(),
+        );
+        let queue = owner.queue.lock().expect("queue lock");
+        let old_key = RatingPersistKey {
+            source_id: String::from("one"),
+            relative_path: PathBuf::from("kick.wav"),
+        };
+        let new_key = RatingPersistKey {
+            source_id: String::from("two"),
+            relative_path: PathBuf::from("moved/kick.wav"),
+        };
+        assert!(!queue.entries.contains_key(&old_key));
+        assert!(queue.entries[&new_key].revision > old_revision);
+        assert_eq!(
+            queue.entries[&new_key].state,
+            RatingPersistEntryState::Pending
+        );
+        assert_eq!(
+            queue.entries[&new_key].request.lifecycle_generation,
+            Some(9)
+        );
+        assert_eq!(
+            queue.deferred_auto_trash[&new_key].1,
+            PathBuf::from("/tmp/two/moved/kick.wav")
+        );
+    }
 }
 
 impl BackgroundTaskState {
@@ -115,6 +282,7 @@ impl BackgroundTaskState {
             deferred_sample_load_task: ui::LatestTask::new(),
             sample_load_tasks: ui::ResourceTasks::new(),
             harvest_touched_persist: HarvestTouchedPersistOwner::new(),
+            rating_persist: RatingPersistOwner::new(),
             active_sample_load_key: None,
             sample_load_cancel: None,
             settled_sample_promotion_task: ui::LatestTask::new(),
@@ -162,6 +330,569 @@ impl BackgroundTaskState {
 const HARVEST_TOUCHED_QUEUE_CAPACITY: usize = 64;
 const HARVEST_TOUCHED_BATCH_LIMIT: usize = 32;
 const HARVEST_TOUCHED_ADMISSION_POLL_DELAY: Duration = Duration::from_millis(50);
+
+#[derive(Clone)]
+pub(in crate::native_app) struct RatingPersistOwner {
+    task: ui::LatestTask,
+    queue: Arc<Mutex<RatingPersistQueue>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(in crate::native_app) struct RatingPersistKey {
+    source_id: String,
+    relative_path: PathBuf,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::native_app) struct RatingPersistBatchResult {
+    pub(in crate::native_app) results: Vec<RatingPersistBatchItem>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::native_app) struct RatingPersistBatchItem {
+    pub(in crate::native_app) key: RatingPersistKey,
+    pub(in crate::native_app) revision: u64,
+    pub(in crate::native_app) absolute_path: PathBuf,
+    pub(in crate::native_app) result: Option<Result<(), String>>,
+}
+
+struct RatingPersistQueue {
+    entries: std::collections::HashMap<RatingPersistKey, RatingPersistEntry>,
+    desired: std::collections::HashMap<RatingPersistKey, RatingPersistRequest>,
+    deferred_auto_trash: std::collections::HashMap<RatingPersistKey, (u64, PathBuf)>,
+    lifecycle_generations: BTreeMap<String, u64>,
+    order: VecDeque<RatingPersistKey>,
+    next_revision: u64,
+    closed: bool,
+}
+
+struct RatingPersistEntry {
+    request: RatingPersistRequest,
+    revision: u64,
+    state: RatingPersistEntryState,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RatingPersistEntryState {
+    Pending,
+    InFlight,
+    Failed,
+}
+
+struct RatingPersistWork {
+    key: RatingPersistKey,
+    request: RatingPersistRequest,
+    revision: u64,
+}
+
+impl RatingPersistOwner {
+    fn new() -> Self {
+        Self {
+            task: ui::LatestTask::new(),
+            queue: Arc::new(Mutex::new(RatingPersistQueue {
+                entries: std::collections::HashMap::new(),
+                desired: std::collections::HashMap::new(),
+                deferred_auto_trash: std::collections::HashMap::new(),
+                lifecycle_generations: BTreeMap::new(),
+                order: VecDeque::new(),
+                next_revision: 1,
+                closed: false,
+            })),
+        }
+    }
+
+    pub(in crate::native_app) fn enqueue(&mut self, request: RatingPersistRequest) -> u64 {
+        let key = RatingPersistKey {
+            source_id: request.source_id.clone(),
+            relative_path: request.relative_path.clone(),
+        };
+        let Ok(mut queue) = self.queue.lock() else {
+            tracing::warn!("rating persistence queue lock poisoned; dropping request");
+            return 0;
+        };
+        if queue.closed {
+            return 0;
+        }
+        let revision = queue.next_revision;
+        queue.next_revision = queue.next_revision.saturating_add(1);
+        queue.desired.insert(key.clone(), request.clone());
+        queue.deferred_auto_trash.remove(&key);
+        if let Some(entry) = queue.entries.get_mut(&key) {
+            entry.request = request;
+            entry.revision = revision;
+            if entry.state != RatingPersistEntryState::Pending {
+                entry.state = RatingPersistEntryState::Pending;
+                queue.order.push_back(key);
+            }
+            return revision;
+        }
+        queue.order.push_back(key.clone());
+        queue.entries.insert(
+            key,
+            RatingPersistEntry {
+                request,
+                revision,
+                state: RatingPersistEntryState::Pending,
+            },
+        );
+        revision
+    }
+
+    pub(in crate::native_app) fn revision_for(
+        &self,
+        source_id: &str,
+        relative_path: &std::path::Path,
+    ) -> Option<u64> {
+        let key = RatingPersistKey {
+            source_id: source_id.to_owned(),
+            relative_path: relative_path.to_path_buf(),
+        };
+        self.queue
+            .lock()
+            .ok()
+            .and_then(|queue| queue.entries.get(&key).map(|entry| entry.revision))
+    }
+
+    pub(in crate::native_app) fn defer_auto_trash(
+        &mut self,
+        source_id: &str,
+        relative_path: &std::path::Path,
+        revision: u64,
+        absolute_path: PathBuf,
+    ) {
+        let key = RatingPersistKey {
+            source_id: source_id.to_owned(),
+            relative_path: relative_path.to_path_buf(),
+        };
+        if let Ok(mut queue) = self.queue.lock() {
+            queue
+                .deferred_auto_trash
+                .insert(key, (revision, absolute_path));
+        }
+    }
+
+    pub(in crate::native_app) fn take_committed_auto_trash(&mut self) -> Vec<PathBuf> {
+        self.queue
+            .lock()
+            .map(|mut queue| {
+                let mut paths = Vec::new();
+                let keys = queue
+                    .deferred_auto_trash
+                    .iter()
+                    .filter_map(|(key, (revision, _))| {
+                        queue
+                            .entries
+                            .get(key)
+                            .is_none()
+                            .then_some((key.clone(), *revision))
+                    })
+                    .collect::<Vec<_>>();
+                for (key, _) in keys {
+                    if let Some((_, path)) = queue.deferred_auto_trash.remove(&key) {
+                        paths.push(path);
+                    }
+                }
+                paths
+            })
+            .unwrap_or_default()
+    }
+
+    pub(in crate::native_app) fn desired_snapshot(&self) -> Vec<RatingPersistRequest> {
+        self.queue
+            .lock()
+            .map(|queue| queue.desired.values().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    pub(in crate::native_app) fn retain_current_lifecycles(
+        &mut self,
+        generations: &BTreeMap<String, u64>,
+    ) {
+        if let Ok(mut queue) = self.queue.lock() {
+            queue.lifecycle_generations = generations.clone();
+            queue.entries.retain(|key, entry| {
+                entry
+                    .request
+                    .lifecycle_generation
+                    .is_none_or(|generation| generations.get(&key.source_id) == Some(&generation))
+            });
+            queue.desired.retain(|key, request| {
+                request
+                    .lifecycle_generation
+                    .is_none_or(|generation| generations.get(&key.source_id) == Some(&generation))
+            });
+            let stale_auto_trash = queue
+                .deferred_auto_trash
+                .keys()
+                .filter(|key| {
+                    queue.entries.get(*key).is_none_or(|entry| {
+                        entry
+                            .request
+                            .lifecycle_generation
+                            .is_some_and(|generation| {
+                                generations.get(&key.source_id) != Some(&generation)
+                            })
+                    })
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            for key in stale_auto_trash {
+                queue.deferred_auto_trash.remove(&key);
+            }
+        }
+    }
+
+    pub(in crate::native_app) fn rekey_exact(
+        &mut self,
+        source_id: &str,
+        from: &std::path::Path,
+        to: &std::path::Path,
+    ) {
+        self.rekey_prefix(source_id, from, to, true);
+    }
+
+    pub(in crate::native_app) fn rekey_prefix(
+        &mut self,
+        source_id: &str,
+        from: &std::path::Path,
+        to: &std::path::Path,
+        exact: bool,
+    ) {
+        let Ok(mut queue) = self.queue.lock() else {
+            return;
+        };
+        let keys = queue
+            .desired
+            .keys()
+            .filter(|key| {
+                key.source_id == source_id
+                    && (key.relative_path == from
+                        || (!exact && key.relative_path.starts_with(from)))
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        for key in keys {
+            let Some(mut request) = queue.desired.remove(&key) else {
+                continue;
+            };
+            let Ok(suffix) = key.relative_path.strip_prefix(from) else {
+                continue;
+            };
+            let new_relative = if exact {
+                to.to_path_buf()
+            } else {
+                to.join(suffix)
+            };
+            request.relative_path = new_relative.clone();
+            request.absolute_path = request.root.join(&new_relative);
+            let new_key = RatingPersistKey {
+                source_id: source_id.to_owned(),
+                relative_path: new_relative,
+            };
+            queue.desired.insert(new_key, request);
+        }
+        let entry_keys = queue
+            .entries
+            .keys()
+            .filter(|key| {
+                key.source_id == source_id
+                    && (key.relative_path == from
+                        || (!exact && key.relative_path.starts_with(from)))
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        for key in entry_keys {
+            let Ok(suffix) = key.relative_path.strip_prefix(from) else {
+                continue;
+            };
+            let new_relative = if exact {
+                to.to_path_buf()
+            } else {
+                to.join(suffix)
+            };
+            let new_key = RatingPersistKey {
+                source_id: source_id.to_owned(),
+                relative_path: new_relative.clone(),
+            };
+            if let Some(mut entry) = queue.entries.remove(&key) {
+                entry.request.relative_path = new_relative.clone();
+                entry.request.absolute_path = entry.request.root.join(&new_relative);
+                if entry.state == RatingPersistEntryState::InFlight {
+                    let revision = queue.next_revision;
+                    queue.next_revision = queue.next_revision.saturating_add(1);
+                    entry.revision = revision;
+                    entry.state = RatingPersistEntryState::Pending;
+                    entry.request.lifecycle_generation = queue
+                        .lifecycle_generations
+                        .get(source_id)
+                        .copied()
+                        .or(entry.request.lifecycle_generation);
+                    queue.order.push_back(new_key.clone());
+                } else {
+                    for queued_key in &mut queue.order {
+                        if *queued_key == key {
+                            *queued_key = new_key.clone();
+                        }
+                    }
+                }
+                queue.entries.insert(new_key.clone(), entry);
+            }
+            if let Some(deferred) = queue.deferred_auto_trash.remove(&key) {
+                let revision = queue.entries.get(&new_key).map(|entry| entry.revision);
+                if let Some(revision) = revision {
+                    let absolute_path = queue
+                        .entries
+                        .get(&new_key)
+                        .map(|entry| entry.request.absolute_path.clone())
+                        .unwrap_or(deferred.1);
+                    queue
+                        .deferred_auto_trash
+                        .insert(new_key.clone(), (revision, absolute_path));
+                }
+            }
+        }
+    }
+
+    pub(in crate::native_app) fn rekey_cross_source(
+        &mut self,
+        from_source_id: &str,
+        from: &std::path::Path,
+        to_source_id: &str,
+        to: &std::path::Path,
+        to_root: &std::path::Path,
+        to_database_root: &std::path::Path,
+    ) {
+        let Ok(mut queue) = self.queue.lock() else {
+            return;
+        };
+        let keys = queue
+            .desired
+            .keys()
+            .filter(|key| key.source_id == from_source_id && key.relative_path == from)
+            .cloned()
+            .collect::<Vec<_>>();
+        for key in keys {
+            let Some(mut request) = queue.desired.remove(&key) else {
+                continue;
+            };
+            request.source_id = to_source_id.to_owned();
+            request.root = to_root.to_path_buf();
+            request.database_root = to_database_root.to_path_buf();
+            request.relative_path = to.to_path_buf();
+            request.absolute_path = request.root.join(to);
+            request.lifecycle_generation = queue.lifecycle_generations.get(to_source_id).copied();
+            queue.desired.insert(
+                RatingPersistKey {
+                    source_id: to_source_id.to_owned(),
+                    relative_path: to.to_path_buf(),
+                },
+                request,
+            );
+        }
+        let old_key = RatingPersistKey {
+            source_id: from_source_id.to_owned(),
+            relative_path: from.to_path_buf(),
+        };
+        let new_key = RatingPersistKey {
+            source_id: to_source_id.to_owned(),
+            relative_path: to.to_path_buf(),
+        };
+        if let Some(mut entry) = queue.entries.remove(&old_key) {
+            entry.request.source_id = to_source_id.to_owned();
+            entry.request.root = to_root.to_path_buf();
+            entry.request.database_root = to_database_root.to_path_buf();
+            entry.request.relative_path = to.to_path_buf();
+            entry.request.absolute_path = entry.request.root.join(to);
+            let destination_generation = queue.lifecycle_generations.get(to_source_id).copied();
+            if entry.state == RatingPersistEntryState::InFlight {
+                let revision = queue.next_revision;
+                queue.next_revision = queue.next_revision.saturating_add(1);
+                entry.revision = revision;
+                entry.state = RatingPersistEntryState::Pending;
+                entry.request.lifecycle_generation = queue
+                    .lifecycle_generations
+                    .get(to_source_id)
+                    .copied()
+                    .or(destination_generation);
+                queue.order.push_back(new_key.clone());
+            } else {
+                entry.request.lifecycle_generation = destination_generation;
+                for queued_key in &mut queue.order {
+                    if *queued_key == old_key {
+                        *queued_key = new_key.clone();
+                    }
+                }
+            }
+            queue.entries.insert(new_key.clone(), entry);
+        }
+        if let Some(deferred) = queue.deferred_auto_trash.remove(&old_key) {
+            if let Some(revision) = queue.entries.get(&new_key).map(|entry| entry.revision) {
+                let absolute_path = queue
+                    .entries
+                    .get(&new_key)
+                    .map(|entry| entry.request.absolute_path.clone())
+                    .unwrap_or(deferred.1);
+                queue
+                    .deferred_auto_trash
+                    .insert(new_key.clone(), (revision, absolute_path));
+            }
+        }
+    }
+
+    pub(in crate::native_app) fn invalidate_prefix(
+        &mut self,
+        source_id: &str,
+        prefix: &std::path::Path,
+    ) {
+        if let Ok(mut queue) = self.queue.lock() {
+            queue.desired.retain(|key, _| {
+                !(key.source_id == source_id && key.relative_path.starts_with(prefix))
+            });
+            queue.entries.retain(|key, _| {
+                !(key.source_id == source_id && key.relative_path.starts_with(prefix))
+            });
+            queue.order.retain(|key| {
+                !(key.source_id == source_id && key.relative_path.starts_with(prefix))
+            });
+            queue.deferred_auto_trash.retain(|key, _| {
+                !(key.source_id == source_id && key.relative_path.starts_with(prefix))
+            });
+        }
+    }
+
+    pub(in crate::native_app) fn schedule_if_idle(
+        &mut self,
+        context: &mut ui::UiUpdateContext<GuiMessage>,
+    ) {
+        let pending = self.queue.lock().ok().is_some_and(|queue| {
+            queue
+                .entries
+                .values()
+                .any(|entry| entry.state == RatingPersistEntryState::Pending)
+        });
+        if !pending || self.task.active().is_some() {
+            return;
+        }
+        let queue = Arc::clone(&self.queue);
+        context
+            .business()
+            .background("gui-rating-persist")
+            .latest(&mut self.task)
+            .run(
+                move |_| persist_rating_queue(queue),
+                GuiMessage::RatingPersisted,
+            );
+    }
+
+    pub(in crate::native_app) fn finish(
+        &mut self,
+        completion: ui::TaskCompletion<RatingPersistBatchResult>,
+    ) -> Option<RatingPersistBatchResult> {
+        let result = self.task.finish_completion(completion)?;
+        if let Ok(mut queue) = self.queue.lock() {
+            for item in &result.results {
+                let Some(entry) = queue.entries.get(&item.key) else {
+                    continue;
+                };
+                if entry.revision != item.revision
+                    || entry.state != RatingPersistEntryState::InFlight
+                    || entry
+                        .request
+                        .lifecycle_generation
+                        .is_some_and(|generation| {
+                            queue.lifecycle_generations.get(&item.key.source_id)
+                                != Some(&generation)
+                        })
+                {
+                    continue;
+                }
+                if item.result.as_ref().is_some_and(|result| result.is_ok()) {
+                    queue.entries.remove(&item.key);
+                } else {
+                    // Keep failures visible but do not retry until a newer UI projection arrives.
+                    if let Some(entry) = queue.entries.get_mut(&item.key) {
+                        entry.state = RatingPersistEntryState::Failed;
+                    }
+                    queue.deferred_auto_trash.remove(&item.key);
+                }
+            }
+        }
+        Some(result)
+    }
+
+    pub(in crate::native_app) fn close(&mut self) -> usize {
+        self.task.cancel();
+        if let Ok(mut queue) = self.queue.lock() {
+            let lost = queue.entries.len();
+            queue.closed = true;
+            queue.entries.clear();
+            queue.order.clear();
+            queue.desired.clear();
+            queue.deferred_auto_trash.clear();
+            return lost;
+        }
+        0
+    }
+}
+
+fn persist_rating_queue(queue: Arc<Mutex<RatingPersistQueue>>) -> RatingPersistBatchResult {
+    let work = queue
+        .lock()
+        .map(|mut queue| queue.claim_all())
+        .unwrap_or_default();
+    let requests = work
+        .iter()
+        .map(|item| item.request.clone())
+        .collect::<Vec<_>>();
+    let persisted = persist_rating_requests(&requests, |request| {
+        let Some(item) = work.iter().find(|item| {
+            item.request.source_id == request.source_id
+                && item.request.relative_path == request.relative_path
+        }) else {
+            return false;
+        };
+        queue.lock().ok().is_some_and(|queue| {
+            queue.entries.get(&item.key).is_some_and(|entry| {
+                entry.revision == item.revision
+                    && entry.state == RatingPersistEntryState::InFlight
+                    && entry.request.lifecycle_generation.is_none_or(|generation| {
+                        queue.lifecycle_generations.get(&item.key.source_id) == Some(&generation)
+                    })
+            })
+        })
+    });
+    let mut results = Vec::with_capacity(work.len());
+    for (item, result) in work.into_iter().zip(persisted) {
+        results.push(RatingPersistBatchItem {
+            key: item.key,
+            revision: item.revision,
+            absolute_path: item.request.absolute_path,
+            result,
+        });
+    }
+    RatingPersistBatchResult { results }
+}
+
+impl RatingPersistQueue {
+    fn claim_all(&mut self) -> Vec<RatingPersistWork> {
+        let mut work = Vec::with_capacity(self.order.len());
+        while let Some(key) = self.order.pop_front() {
+            let Some(entry) = self.entries.get_mut(&key) else {
+                continue;
+            };
+            if entry.state != RatingPersistEntryState::Pending {
+                continue;
+            }
+            entry.state = RatingPersistEntryState::InFlight;
+            work.push(RatingPersistWork {
+                key,
+                request: entry.request.clone(),
+                revision: entry.revision,
+            });
+        }
+        work
+    }
+}
 
 #[derive(Clone)]
 pub(in crate::native_app) struct HarvestTouchedPersistOwner {

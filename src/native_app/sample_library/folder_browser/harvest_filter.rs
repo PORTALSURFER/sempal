@@ -197,7 +197,10 @@ fn harvest_state_matches_filter(
 }
 
 impl FolderBrowserState {
-    fn source_id_for_file_path(&self, file_path: &Path) -> Option<String> {
+    pub(in crate::native_app) fn source_id_for_file_path(
+        &self,
+        file_path: &Path,
+    ) -> Option<String> {
         self.source
             .sources
             .iter()

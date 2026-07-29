@@ -301,6 +301,7 @@ fn accepted_external_file_drag_adds_keep_rating() {
         }),
         &mut context,
     );
+    run_command_for_tests(&mut state, context.into_command());
 
     assert_sample_rating(&state, &kick, Rating::KEEP_1, false);
 }
@@ -2237,6 +2238,7 @@ fn context_menu_unlock_drops_locked_keep_sample_to_keep_three() {
 
     let mut context = radiant::prelude::UiUpdateContext::default();
     state.apply_message(GuiMessage::UnlockContextSample, &mut context);
+    run_command_for_tests(&mut state, context.into_command());
 
     assert_eq!(state.ui.browser_interaction.context_menu, None);
     assert_sample_rating(&state, &sample_path, Rating::KEEP_3, false);
@@ -2268,13 +2270,19 @@ fn third_negative_rating_does_not_auto_trash_selected_file() {
 
     let mut context = radiant::prelude::UiUpdateContext::default();
     state.adjust_selected_rating(-1, &mut context);
+    run_command_for_tests(&mut state, context.into_command());
 
     assert!(sample.exists());
     assert!(!trash_root.path().join("third.wav").exists());
     let selected = state.library.folder_browser.selected_audio_files();
     assert_eq!(selected.len(), 1);
     assert_eq!(selected[0].rating, Rating::TRASH_3);
-    assert!(state.ui.status.sample.contains("Rated 1 sample"));
+    let db = SourceDatabase::open_for_test_fixture_source_write(source_root.path())
+        .expect("durable rating database");
+    assert_eq!(
+        db.tag_for_path(Path::new("third.wav")).expect("rating"),
+        Some(Rating::TRASH_3)
+    );
 }
 
 #[test]
@@ -2798,6 +2806,7 @@ fn rating_adjustment_survives_selected_file_rename() {
     let mut context = radiant::prelude::UiUpdateContext::default();
 
     state.adjust_selected_rating(1, &mut context);
+    run_command_for_tests(&mut state, context.into_command());
     state
         .library
         .folder_browser
@@ -2975,9 +2984,8 @@ fn fourth_negative_rating_moves_selected_file_to_trash() {
     let mut context = radiant::prelude::UiUpdateContext::default();
     state.adjust_selected_rating(-1, &mut context);
     assert!(
-        state.ui.status.sample.contains("fourth negative rating"),
-        "{}",
-        state.ui.status.sample
+        sample.exists(),
+        "auto-trash must wait for durable rating completion"
     );
     run_command_for_tests(&mut state, context.into_command());
 
@@ -3040,6 +3048,13 @@ fn fourth_negative_rating_keeps_file_available_when_trash_move_fails() {
     assert_eq!(
         state.library.folder_browser.selected_audio_files()[0].rating,
         Rating::TRASH_3
+    );
+    let db = SourceDatabase::open_for_test_fixture_source_write(source_root.path())
+        .expect("durable rating database");
+    assert_eq!(
+        db.tag_for_path(Path::new("blocked.wav")).expect("rating"),
+        Some(Rating::TRASH_3),
+        "rating must be durable even when the subsequent trash move is unavailable"
     );
     assert!(
         state
