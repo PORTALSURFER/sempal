@@ -46,6 +46,15 @@ pub(in crate::native_app) enum SourceProcessingActivity {
     },
 }
 
+/// Whether source-processing progress is actionable feedback for the user or routine
+/// reconciliation work that should remain available to diagnostics without occupying the global
+/// worker rail.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::native_app) enum SourceProcessingPresentation {
+    UserRelevant,
+    RoutineMaintenance,
+}
+
 /// Stable user-facing phases within source readiness discovery.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::native_app) enum SourceDiscoveryPhase {
@@ -61,6 +70,7 @@ pub(in crate::native_app) enum SourceDiscoveryPhase {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::native_app) struct SourceProcessingProgressEvent {
     pub(in crate::native_app) lifecycle: SourceProcessingLifecycle,
+    pub(in crate::native_app) presentation: SourceProcessingPresentation,
     pub(in crate::native_app) source_row_active: bool,
     pub(in crate::native_app) completed: usize,
     pub(in crate::native_app) total: usize,

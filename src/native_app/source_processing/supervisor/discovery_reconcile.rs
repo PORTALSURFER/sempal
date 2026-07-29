@@ -155,7 +155,39 @@ pub(super) fn discover_source_candidates_with_connection(
     })
 }
 
+#[cfg(test)]
 pub(super) fn discover_source_candidates_with_connection_and_progress(
+    source: &SampleSource,
+    connection: &mut rusqlite::Connection,
+    now: i64,
+    force_manifest_audit: bool,
+    force_reanalysis: bool,
+    pending_readiness_delta: Option<&PendingReadinessDelta>,
+    safety_probe_only: bool,
+    cancel: &AtomicBool,
+    progress: &mut dyn FnMut(DiscoveryProgressUpdate),
+) -> Result<
+    Cancellable<(
+        Vec<RuntimeCandidate>,
+        SourceDiscoveryStats,
+        Option<SourceHealthSummary>,
+    )>,
+    String,
+> {
+    discover_source_candidates_with_connection_and_progress_presented(
+        source,
+        connection,
+        now,
+        force_manifest_audit,
+        force_reanalysis,
+        pending_readiness_delta,
+        safety_probe_only,
+        cancel,
+        progress,
+    )
+}
+
+pub(super) fn discover_source_candidates_with_connection_and_progress_presented(
     source: &SampleSource,
     connection: &mut rusqlite::Connection,
     now: i64,

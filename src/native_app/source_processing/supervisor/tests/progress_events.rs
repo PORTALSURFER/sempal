@@ -20,7 +20,7 @@ fn readiness_progress_publishes_determinate_source_job_feedback() {
         task: RuntimeTask::Readiness(target),
     };
     let (sender, receiver) = std::sync::mpsc::channel();
-    let shared = Shared::new(vec![source], Some(Arc::new(sender)));
+    let shared = Arc::new(Shared::new(vec![source], Some(Arc::new(sender))));
     let lifecycle_generation = shared.control().source_lifecycle_generations["progress-source"];
 
     publish_source_processing_progress(
@@ -49,6 +49,86 @@ fn readiness_progress_publishes_determinate_source_job_feedback() {
             stage: ReadinessStage::EmbeddingAspects,
             relative_path: Some(String::from("drums/kick.wav")),
         }
+    );
+}
+
+#[test]
+fn routine_discovery_does_not_throttle_first_readiness_progress() {
+    let directory = tempfile::tempdir().expect("progress source");
+    let source = SampleSource::new_with_id(
+        SourceId::from_string("routine-to-readiness"),
+        directory.path().to_path_buf(),
+    );
+    let target = ReadinessTarget::file(
+        source.id.as_str(),
+        "identity-1",
+        "drums/kick.wav",
+        ReadinessStage::EmbeddingAspects,
+        "embedding-v1",
+        1,
+        "content-1",
+    );
+    let routine_candidate = RuntimeCandidate {
+        schedule: WorkCandidate::source(source.id.as_str(), ProcessingLane::Scan, 0, 1),
+        source: source.clone(),
+        task: RuntimeTask::ManifestAudit { accelerated: false },
+    };
+    let readiness_candidate = RuntimeCandidate {
+        schedule: WorkCandidate::readiness(&target, 1),
+        source: source.clone(),
+        task: RuntimeTask::Readiness(target),
+    };
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let shared = Arc::new(Shared::new(vec![source], Some(Arc::new(sender))));
+    let lifecycle_generation = shared.control().source_lifecycle_generations["routine-to-readiness"];
+    let mut state = CoordinatorExecutionState {
+        next_retry_at: None,
+        pending_similarity_refresh_lifecycles: BTreeSet::new(),
+        last_similarity_refresh_publish_at: None,
+        active_progress_source: None,
+        last_progress_publish_at: None,
+        progress_visible: false,
+        routine_maintenance_sources: BTreeSet::from([String::from("routine-to-readiness")]),
+    };
+    let stats = SourceDiscoveryStats {
+        progress_completed: 1,
+        progress_total: 1,
+        ..SourceDiscoveryStats::default()
+    };
+
+    publish_candidate_start(
+        &shared,
+        &routine_candidate,
+        lifecycle_generation,
+        &BTreeMap::from([(String::from("routine-to-readiness"), stats)]),
+        &mut state,
+    );
+    assert!(!state.progress_visible);
+    assert!(state.last_progress_publish_at.is_none());
+    let SourceProcessingEvent::Progress(routine) = receiver.recv().expect("routine progress") else {
+        panic!("expected routine progress");
+    };
+    assert_eq!(
+        routine.presentation,
+        SourceProcessingPresentation::RoutineMaintenance
+    );
+
+    publish_candidate_start(
+        &shared,
+        &readiness_candidate,
+        lifecycle_generation,
+        &BTreeMap::from([(String::from("routine-to-readiness"), stats)]),
+        &mut state,
+    );
+    assert!(state.progress_visible);
+    assert!(state.last_progress_publish_at.is_some());
+    let SourceProcessingEvent::Progress(readiness) = receiver.recv().expect("readiness progress")
+    else {
+        panic!("expected readiness progress");
+    };
+    assert_eq!(
+        readiness.presentation,
+        SourceProcessingPresentation::UserRelevant
     );
 }
 

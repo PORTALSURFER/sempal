@@ -81,6 +81,21 @@ fn held_execution_worker_defers_finished_event_until_result_is_handled() {
 }
 
 #[test]
+fn routine_only_progress_does_not_publish_completion() {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let shared = Shared::new(vec![], Some(Arc::new(sender)));
+
+    assert!(!publish_finished_if_idle(
+        &shared,
+        false,
+        Duration::from_secs(1),
+        false,
+        false,
+    ));
+    assert!(receiver.try_recv().is_err());
+}
+
+#[test]
 fn completion_from_removed_lifecycle_cannot_mutate_readded_source_state() {
     let directory = tempfile::tempdir().expect("temporary source");
     let source = SampleSource::new_with_id(
@@ -128,6 +143,7 @@ fn completion_from_removed_lifecycle_cannot_mutate_readded_source_state() {
         active_progress_source: None,
         last_progress_publish_at: None,
         progress_visible: false,
+        routine_maintenance_sources: BTreeSet::new(),
     };
     handle_completion(
         &shared,
@@ -195,6 +211,7 @@ fn final_similarity_layout_completion_wakes_durable_reconciliation() {
         active_progress_source: None,
         last_progress_publish_at: None,
         progress_visible: true,
+        routine_maintenance_sources: BTreeSet::new(),
     };
 
     handle_completion(
@@ -270,6 +287,7 @@ fn lifecycle_fence_remains_held_until_event_delivery_finishes() {
                     "atomic-progress-source",
                     lifecycle_generation,
                 ),
+                presentation: SourceProcessingPresentation::UserRelevant,
                 source_row_active: true,
                 completed: 1,
                 total: 2,

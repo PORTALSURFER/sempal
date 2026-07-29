@@ -7,17 +7,38 @@ use super::{
     AtomicBool, ContentAuditActivity, ContentAuditBudget, ContentAuditStorage, DatabaseWriterGate,
     Duration, ExecutionOutcome, Instant, ManifestAuditOutcome, Ordering, RuntimeCandidate,
     RuntimeTask, SourceDatabase, SourceProcessingActivity, SourceProcessingEvent,
-    SourceProcessingLifecycle, SourceProcessingProgressEvent,
+    SourceProcessingLifecycle, SourceProcessingPresentation, SourceProcessingProgressEvent,
     audit_source_and_record_with_budget_and_progress_and_writer_outcome, execute_readiness_target,
     manifest_audit_source_row_active, now_epoch_seconds,
 };
 
+#[cfg(test)]
 pub(super) fn execute_candidate(
     candidate: &RuntimeCandidate,
     lifecycle_generation: u64,
     cancel: &AtomicBool,
     database_writer: &DatabaseWriterGate,
     content_audit_activity: ContentAuditActivity,
+    publish_event: &mut dyn FnMut(SourceProcessingEvent) -> bool,
+) -> Result<ExecutionOutcome, String> {
+    execute_candidate_with_presentation(
+        candidate,
+        lifecycle_generation,
+        cancel,
+        database_writer,
+        content_audit_activity,
+        SourceProcessingPresentation::UserRelevant,
+        publish_event,
+    )
+}
+
+pub(super) fn execute_candidate_with_presentation(
+    candidate: &RuntimeCandidate,
+    lifecycle_generation: u64,
+    cancel: &AtomicBool,
+    database_writer: &DatabaseWriterGate,
+    content_audit_activity: ContentAuditActivity,
+    presentation: SourceProcessingPresentation,
     publish_event: &mut dyn FnMut(SourceProcessingEvent) -> bool,
 ) -> Result<ExecutionOutcome, String> {
     let result = match &candidate.task {
@@ -70,7 +91,11 @@ pub(super) fn execute_candidate(
                             source_id.clone(),
                             lifecycle_generation,
                         ),
-                        source_row_active: manifest_audit_source_row_active(audit_started_at),
+                        presentation,
+                        source_row_active: matches!(
+                            presentation,
+                            SourceProcessingPresentation::UserRelevant
+                        ) && manifest_audit_source_row_active(audit_started_at),
                         completed: checked.min(total),
                         total,
                         activity: SourceProcessingActivity::ManifestAudit {

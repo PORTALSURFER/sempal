@@ -8,7 +8,7 @@ mod worker;
 pub(in crate::native_app) use events::{
     SourceDiscoveryPhase, SourceProcessingActivity, SourceProcessingEvent,
     SourceProcessingEventSink, SourceProcessingHealthEvent, SourceProcessingHealthState,
-    SourceProcessingLifecycle, SourceProcessingProgressEvent,
+    SourceProcessingLifecycle, SourceProcessingPresentation, SourceProcessingProgressEvent,
 };
 pub(in crate::native_app) use supervisor::{
     ExternalScanHandoff, SourceAuditLifecycleCause, SourceProcessingSupervisor,

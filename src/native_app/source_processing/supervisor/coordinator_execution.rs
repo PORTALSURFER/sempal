@@ -6,8 +6,8 @@ use super::execute_synthetic_candidate_for_profile;
 use super::{
     Arc, AtomicBool, BTreeMap, BTreeSet, ExecutionPool, ExecutionRequest, FairScheduler, Instant,
     Ordering, PROGRESS_REFRESH_INTERVAL, RuntimeCandidate, RuntimeTask, Shared,
-    SourceDiscoveryStats, SourceProcessingLifecycle, publish_source_processing_progress,
-    scheduler_candidate_indices,
+    SourceDiscoveryStats, SourceProcessingLifecycle, SourceProcessingPresentation,
+    publish_source_processing_progress_with_presentation, scheduler_candidate_indices,
 };
 
 pub(super) struct CoordinatorExecutionState {
@@ -17,6 +17,7 @@ pub(super) struct CoordinatorExecutionState {
     pub(super) active_progress_source: Option<String>,
     pub(super) last_progress_publish_at: Option<Instant>,
     pub(super) progress_visible: bool,
+    pub(super) routine_maintenance_sources: BTreeSet<String>,
 }
 
 pub(super) fn execute_candidates(
@@ -111,6 +112,7 @@ pub(super) fn execute_candidates(
             candidates.push(candidate);
             break;
         };
+        let presentation = candidate_presentation(&candidate, &state);
         publish_candidate_start(
             shared,
             &candidate,
@@ -123,6 +125,7 @@ pub(super) fn execute_candidates(
             permit,
             cancel: candidate_cancel,
             in_flight,
+            presentation,
         };
         if let Err(request) = pool.try_dispatch(request) {
             shared.budgets().release(request.permit);
@@ -139,7 +142,7 @@ pub(super) fn execute_candidates(
     state
 }
 
-fn publish_candidate_start(
+pub(super) fn publish_candidate_start(
     shared: &Arc<Shared>,
     candidate: &RuntimeCandidate,
     lifecycle_generation: u64,
@@ -154,10 +157,21 @@ fn publish_candidate_start(
         || progress_due)
         && let Some(progress) = source_stats.get(candidate.source.id.as_str()).copied()
     {
-        publish_source_processing_progress(shared, candidate, lifecycle_generation, progress);
-        state.active_progress_source = Some(candidate.source.id.as_str().to_string());
-        state.last_progress_publish_at = Some(Instant::now());
-        state.progress_visible = true;
+        publish_source_processing_progress_with_presentation(
+            shared,
+            candidate,
+            lifecycle_generation,
+            progress,
+            candidate_presentation(candidate, state),
+        );
+        if matches!(
+            candidate_presentation(candidate, state),
+            SourceProcessingPresentation::UserRelevant
+        ) {
+            state.active_progress_source = Some(candidate.source.id.as_str().to_string());
+            state.last_progress_publish_at = Some(Instant::now());
+            state.progress_visible = true;
+        }
     }
     if matches!(&candidate.task, RuntimeTask::ManifestAudit { .. }) {
         let mut telemetry = shared.telemetry();
@@ -172,6 +186,21 @@ fn publish_candidate_start(
         lane = ?candidate.schedule.lane,
         "Source processing candidate dispatched"
     );
+}
+
+fn candidate_presentation(
+    candidate: &RuntimeCandidate,
+    state: &CoordinatorExecutionState,
+) -> SourceProcessingPresentation {
+    if matches!(&candidate.task, RuntimeTask::ManifestAudit { .. })
+        && state
+            .routine_maintenance_sources
+            .contains(candidate.source.id.as_str())
+    {
+        SourceProcessingPresentation::RoutineMaintenance
+    } else {
+        SourceProcessingPresentation::UserRelevant
+    }
 }
 
 #[cfg(test)]

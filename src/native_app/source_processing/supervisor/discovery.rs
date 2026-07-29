@@ -2,8 +2,9 @@ use super::{
     Arc, AtomicBool, BTreeMap, BTreeSet, Cancellable, DiscoveryProgressPublisher,
     DiscoveryProgressUpdate, Instant, PendingReadinessDelta, ProcessingLane, ReadinessStore,
     RuntimeCandidate, SOURCE_DISCOVERY_RETRY_SECONDS, SampleSource, Shared, SourceDatabase,
-    SourceDatabaseConnectionRole, SourceDiscoveryStats, SourceHealthSummary, cancelled,
-    discover_source_candidates_with_connection_and_progress, now_epoch_seconds,
+    SourceDatabaseConnectionRole, SourceDiscoveryStats, SourceHealthSummary,
+    SourceProcessingPresentation, cancelled,
+    discover_source_candidates_with_connection_and_progress_presented, now_epoch_seconds,
     readiness_safety_probe, source_health_summary, source_processing_schema_available,
 };
 
@@ -149,6 +150,7 @@ pub(super) fn discover_candidates(
     force_reanalysis_sources: &BTreeSet<String>,
     pending_readiness_deltas: &BTreeMap<String, PendingReadinessDelta>,
     safety_probe_only: bool,
+    presentation: SourceProcessingPresentation,
     source_work_cancels: &BTreeMap<String, Arc<AtomicBool>>,
 ) -> (
     Vec<RuntimeCandidate>,
@@ -196,12 +198,13 @@ pub(super) fn discover_candidates(
             last_log_publish_at: None,
             event_published: false,
             work_units: 0,
+            presentation,
         };
         let discovery_result = {
             let _writer = shared
                 .database_writer
                 .lock(super::DatabasePhase::SerialCompatibility);
-            discover_source_candidates_with_progress(
+            discover_source_candidates_with_progress_presented(
                 source,
                 now,
                 force_manifest_audit_sources.contains(source.id.as_str()),
@@ -356,7 +359,37 @@ pub(super) fn discover_source_candidates(
     })
 }
 
+#[cfg(test)]
 pub(super) fn discover_source_candidates_with_progress(
+    source: &SampleSource,
+    now: i64,
+    force_manifest_audit: bool,
+    force_reanalysis: bool,
+    pending_readiness_delta: Option<&PendingReadinessDelta>,
+    safety_probe_only: bool,
+    cancel: &AtomicBool,
+    progress: &mut dyn FnMut(DiscoveryProgressUpdate),
+) -> Result<
+    Cancellable<(
+        Vec<RuntimeCandidate>,
+        SourceDiscoveryStats,
+        Option<SourceHealthSummary>,
+    )>,
+    String,
+> {
+    discover_source_candidates_with_progress_presented(
+        source,
+        now,
+        force_manifest_audit,
+        force_reanalysis,
+        pending_readiness_delta,
+        safety_probe_only,
+        cancel,
+        progress,
+    )
+}
+
+pub(super) fn discover_source_candidates_with_progress_presented(
     source: &SampleSource,
     now: i64,
     force_manifest_audit: bool,
@@ -462,7 +495,7 @@ pub(super) fn discover_source_candidates_with_progress(
         SourceDatabaseConnectionRole::JobWorker,
     )
     .map_err(|error| error.to_string())?;
-    discover_source_candidates_with_connection_and_progress(
+    discover_source_candidates_with_connection_and_progress_presented(
         source,
         &mut connection,
         now,

@@ -232,6 +232,8 @@ fn source_processing_advances_activity_tick_on_frame() {
             source_id: String::from("source"),
             lifecycle_generation: 0,
             active: true,
+            presentation:
+                crate::native_app::source_processing::SourceProcessingPresentation::UserRelevant,
             source_row_active: true,
             completed: 3,
             total: 10,
@@ -253,6 +255,8 @@ fn source_processing_keeps_measured_progress_behind_one_worker_indicator() {
             source_id: String::from("source"),
             lifecycle_generation: 0,
             active: true,
+            presentation:
+                crate::native_app::source_processing::SourceProcessingPresentation::UserRelevant,
             source_row_active: true,
             completed: 20_625,
             total: 40_658,
@@ -289,6 +293,8 @@ fn source_processing_discovery_uses_compact_activity_feedback() {
             source_id: String::from("Projects"),
             lifecycle_generation: 0,
             active: true,
+            presentation:
+                crate::native_app::source_processing::SourceProcessingPresentation::UserRelevant,
             source_row_active: true,
             completed: 0,
             total: 0,
@@ -429,6 +435,8 @@ fn status_bar_routes_source_processing_through_worker_progress_and_job_details()
             source_id,
             lifecycle_generation: 0,
             active: true,
+            presentation:
+                crate::native_app::source_processing::SourceProcessingPresentation::UserRelevant,
             source_row_active: true,
             completed: 313,
             total: 9_985,
@@ -502,6 +510,8 @@ fn source_processing_job_details_use_truthful_discovery_units() {
                 source_id: source_id.clone(),
                 lifecycle_generation: 0,
                 active: true,
+                presentation:
+                    crate::native_app::source_processing::SourceProcessingPresentation::UserRelevant,
                 source_row_active: true,
                 completed,
                 total,

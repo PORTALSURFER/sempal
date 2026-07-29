@@ -160,6 +160,7 @@ fn discovery_progress_publisher_exposes_determinate_target_progress() {
         last_log_publish_at: None,
         event_published: false,
         work_units: 0,
+        presentation: SourceProcessingPresentation::UserRelevant,
     };
 
     publisher.advance(DiscoveryProgressUpdate::determinate(
@@ -219,6 +220,7 @@ fn discovery_progress_publisher_rejects_phase_and_count_regressions() {
         last_log_publish_at: None,
         event_published: false,
         work_units: 0,
+        presentation: SourceProcessingPresentation::UserRelevant,
     };
 
     publisher.advance(DiscoveryProgressUpdate::determinate(
@@ -276,6 +278,7 @@ fn discovery_phase_progress_is_debug_only() {
         last_log_publish_at: None,
         event_published: false,
         work_units: 0,
+        presentation: SourceProcessingPresentation::UserRelevant,
     };
 
     let info = capture_logs(tracing::Level::INFO, || {
