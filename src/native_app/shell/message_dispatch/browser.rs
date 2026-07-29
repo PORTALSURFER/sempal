@@ -73,6 +73,12 @@ impl NativeAppState {
                 context.repaint(ui::RepaintScope::Projection);
             }
             GuiMessage::SourceProcessingProgress(progress) => {
+                if matches!(
+                    progress.presentation,
+                    crate::native_app::source_processing::SourceProcessingPresentation::RoutineMaintenance
+                ) {
+                    return;
+                }
                 let source_is_current = if progress.source_id.is_empty() {
                     !progress.active
                         || !self

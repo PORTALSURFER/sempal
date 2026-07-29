@@ -1,6 +1,7 @@
 use std::{collections::BTreeMap, path::PathBuf};
 
 use crate::native_app::sample_library::folder_browser::RefreshedFileEntry;
+use crate::native_app::source_processing::SourceProcessingPresentation;
 use wavecrate::sample_sources::HarvestDerivationOperation;
 use wavecrate::sample_sources::readiness::{ReadinessStage, ReadinessStageCounts};
 
@@ -47,6 +48,7 @@ pub(in crate::native_app) struct SourceProcessingProgress {
     pub(in crate::native_app) source_id: String,
     pub(in crate::native_app) lifecycle_generation: u64,
     pub(in crate::native_app) active: bool,
+    pub(in crate::native_app) presentation: SourceProcessingPresentation,
     /// Whether this work owns the source-processing lane strongly enough to
     /// identify the source row as actively advancing. Brief maintenance checks
     /// and manifest audits remain visible in job details without pulsing a row.

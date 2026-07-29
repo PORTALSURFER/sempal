@@ -123,6 +123,7 @@ fn brief_discovery_reconciliation_does_not_flash_processing_feedback() {
         last_log_publish_at: None,
         event_published: false,
         work_units: 0,
+        presentation: SourceProcessingPresentation::UserRelevant,
     };
 
     publisher.advance(DiscoveryProgressUpdate::indeterminate(
@@ -196,6 +197,7 @@ fn discovery_progress_from_previous_readded_epoch_is_not_published() {
         last_log_publish_at: None,
         event_published: false,
         work_units: 0,
+        presentation: SourceProcessingPresentation::UserRelevant,
     };
     publisher.advance(DiscoveryProgressUpdate::determinate(
         SourceDiscoveryPhase::ComparingReadiness,

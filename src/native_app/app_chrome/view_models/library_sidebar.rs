@@ -639,6 +639,8 @@ mod tests {
             source_id: processing_source.id.as_str().to_string(),
             lifecycle_generation: 1,
             active: true,
+            presentation:
+                crate::native_app::source_processing::SourceProcessingPresentation::UserRelevant,
             source_row_active: true,
             completed: 2,
             total: 10,
@@ -687,6 +689,8 @@ mod tests {
             source_id: processing_source.id.as_str().to_string(),
             lifecycle_generation: 1,
             active: true,
+            presentation:
+                crate::native_app::source_processing::SourceProcessingPresentation::UserRelevant,
             source_row_active: false,
             completed: 4,
             total: 10,
@@ -707,6 +711,8 @@ mod tests {
             source_id: processing_source.id.as_str().to_string(),
             lifecycle_generation: 1,
             active: true,
+            presentation:
+                crate::native_app::source_processing::SourceProcessingPresentation::UserRelevant,
             source_row_active: true,
             completed: 0,
             total: 0,

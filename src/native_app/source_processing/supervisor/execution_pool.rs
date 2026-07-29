@@ -1,6 +1,6 @@
 use super::{
     Arc, AtomicBool, ContentAuditActivity, ExecutionOutcome, InFlightWorkGuard, Instant,
-    RuntimeCandidate, Shared, execute_candidate,
+    RuntimeCandidate, Shared, SourceProcessingPresentation, execute_candidate_with_presentation,
 };
 use crate::native_app::source_processing::scheduler::BudgetPermit;
 use std::{
@@ -14,6 +14,7 @@ pub(super) struct ExecutionRequest {
     pub(super) permit: BudgetPermit,
     pub(super) cancel: Arc<AtomicBool>,
     pub(super) in_flight: InFlightWorkGuard,
+    pub(super) presentation: SourceProcessingPresentation,
 }
 
 pub(super) struct ExecutionResult {
@@ -170,12 +171,13 @@ fn run_worker(
             }
         };
         let started = Instant::now();
-        let result = execute_candidate(
+        let result = execute_candidate_with_presentation(
             &request.candidate,
             lifecycle_generation,
             request.cancel.as_ref(),
             &shared.database_writer,
             content_audit_activity,
+            request.presentation,
             &mut |event| shared.publish_event(event),
         );
         let elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0;
@@ -282,6 +284,7 @@ mod tests {
                 permit,
                 cancel,
                 in_flight,
+                presentation: SourceProcessingPresentation::UserRelevant,
             })
             .map_err(|_| ())
             .expect("bounded execution dispatch");

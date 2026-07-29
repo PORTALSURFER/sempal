@@ -1,9 +1,9 @@
 use super::{
     Arc, BTreeMap, BTreeSet, CoordinatorExecutionState, Duration, ExecutionPool, FairScheduler,
     Instant, RuntimeCandidate, RuntimeTask, SAFETY_SWEEP_INTERVAL, Shared, SourceDiscoveryStats,
-    SourceProcessingLifecycle, aggregate_source_stats, coordinator_wait_duration,
-    discover_candidates, earliest_deadline, execute_candidates, now_epoch_seconds,
-    oldest_job_age_seconds, publish_similarity_readiness_refreshes,
+    SourceProcessingLifecycle, SourceProcessingPresentation, aggregate_source_stats,
+    coordinator_wait_duration, discover_candidates, earliest_deadline, execute_candidates,
+    now_epoch_seconds, oldest_job_age_seconds, publish_similarity_readiness_refreshes,
     publish_source_processing_finished, publish_source_processing_wait, queue_depths_by_source,
     release_converged_source_owner, select_source_for_discovery,
 };
@@ -24,6 +24,7 @@ pub(super) fn run_coordinator(shared: Arc<Shared>) {
     let mut pending_safety_probe_sources = BTreeSet::<String>::new();
     let mut last_similarity_refresh_publish_at = None::<Instant>;
     let mut progress_visible = false;
+    let mut routine_maintenance_sources = BTreeSet::<String>::new();
     #[cfg(test)]
     let mut synthetic_connections = BTreeMap::<String, rusqlite::Connection>::new();
     loop {
@@ -189,9 +190,23 @@ pub(super) fn run_coordinator(shared: Arc<Shared>) {
         let discovery_is_safety_probe = discovery_source_id
             .as_ref()
             .is_some_and(|source_id| pending_safety_probe_sources.contains(source_id));
+        let discovery_presentation =
+            if discovery_is_safety_probe && reason == "periodic_safety_sweep" {
+                SourceProcessingPresentation::RoutineMaintenance
+            } else {
+                SourceProcessingPresentation::UserRelevant
+            };
         if let Some(source_id) = discovery_source_id.as_ref() {
             pending_discovery_sources.remove(source_id);
             pending_safety_probe_sources.remove(source_id);
+            if matches!(
+                discovery_presentation,
+                SourceProcessingPresentation::RoutineMaintenance
+            ) {
+                routine_maintenance_sources.insert(source_id.clone());
+            } else {
+                routine_maintenance_sources.remove(source_id);
+            }
         }
         let sources_to_discover = sources
             .iter()
@@ -235,6 +250,7 @@ pub(super) fn run_coordinator(shared: Arc<Shared>) {
             &force_reanalysis_sources,
             &pending_readiness_deltas,
             discovery_is_safety_probe,
+            discovery_presentation,
             &source_work_cancels,
         );
         if !consumed_readiness_delta_sources.is_empty() {
@@ -248,7 +264,12 @@ pub(super) fn run_coordinator(shared: Arc<Shared>) {
             }
         }
         let discovery_deferred_for_capacity = !deferred_discoveries.is_empty();
-        if discovery_progress_published {
+        if discovery_progress_published
+            && matches!(
+                discovery_presentation,
+                SourceProcessingPresentation::UserRelevant
+            )
+        {
             progress_visible = true;
             active_progress_source = sources_to_discover
                 .first()
@@ -348,6 +369,7 @@ pub(super) fn run_coordinator(shared: Arc<Shared>) {
                 active_progress_source,
                 last_progress_publish_at,
                 progress_visible,
+                routine_maintenance_sources,
             },
             #[cfg(test)]
             &mut synthetic_connections,
@@ -359,6 +381,7 @@ pub(super) fn run_coordinator(shared: Arc<Shared>) {
         active_progress_source = execution_state.active_progress_source;
         last_progress_publish_at = execution_state.last_progress_publish_at;
         progress_visible = execution_state.progress_visible;
+        routine_maintenance_sources = execution_state.routine_maintenance_sources;
         if publish_similarity_readiness_refreshes(
             &shared,
             &mut pending_similarity_refresh_lifecycles,

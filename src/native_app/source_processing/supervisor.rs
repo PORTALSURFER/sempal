@@ -42,7 +42,7 @@ use super::worker::{SourceProcessingFailure, source_database_failure};
 use super::{
     SourceDiscoveryPhase, SourceProcessingActivity, SourceProcessingEvent,
     SourceProcessingEventSink, SourceProcessingHealthEvent, SourceProcessingHealthState,
-    SourceProcessingLifecycle, SourceProcessingProgressEvent,
+    SourceProcessingLifecycle, SourceProcessingPresentation, SourceProcessingProgressEvent,
     scheduler::{
         BudgetTracker, FairScheduler, PriorityContext, ProcessingBudgets, ProcessingLane,
         WorkCandidate,

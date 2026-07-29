@@ -9,7 +9,8 @@ use crate::native_app::{
     },
     source_processing::{
         SourceProcessingActivity, SourceProcessingEvent, SourceProcessingEventSink,
-        SourceProcessingHealthEvent, SourceProcessingHealthState, SourceProcessingProgressEvent,
+        SourceProcessingHealthEvent, SourceProcessingHealthState, SourceProcessingPresentation,
+        SourceProcessingProgressEvent,
     },
 };
 
@@ -67,6 +68,7 @@ fn map_event(event: SourceProcessingEvent) -> GuiMessage {
                 source_id: String::new(),
                 lifecycle_generation: 0,
                 active: false,
+                presentation: SourceProcessingPresentation::UserRelevant,
                 source_row_active: false,
                 completed: 0,
                 total: 0,
@@ -113,6 +115,7 @@ fn map_progress(event: SourceProcessingProgressEvent) -> SourceProcessingProgres
         source_id: event.lifecycle.source_id,
         lifecycle_generation: event.lifecycle.generation,
         active: true,
+        presentation: event.presentation,
         source_row_active: event.source_row_active,
         completed: event.completed,
         total: event.total,
@@ -272,6 +275,7 @@ mod tests {
         assert!(sink.try_publish(SourceProcessingEvent::Progress(
             SourceProcessingProgressEvent {
                 lifecycle: SourceProcessingLifecycle::new("source", 17),
+                presentation: SourceProcessingPresentation::UserRelevant,
                 source_row_active: true,
                 completed: 3,
                 total: 5,

@@ -4,7 +4,8 @@ use super::{
     ReadinessClassification, ReadinessEligibility, ReadinessScopeKind, ReadinessSnapshot,
     ReadinessStage, RuntimeCandidate, RuntimeTask, Shared, SourceDiscoveryPhase,
     SourceDiscoveryStats, SourceProcessingActivity, SourceProcessingEvent,
-    SourceProcessingLifecycle, SourceProcessingProgressEvent, earliest_deadline,
+    SourceProcessingLifecycle, SourceProcessingPresentation, SourceProcessingProgressEvent,
+    earliest_deadline,
 };
 
 pub(super) struct DiscoveryProgressPublisher<'a> {
@@ -17,6 +18,7 @@ pub(super) struct DiscoveryProgressPublisher<'a> {
     pub(super) last_log_publish_at: Option<Instant>,
     pub(super) event_published: bool,
     pub(super) work_units: usize,
+    pub(super) presentation: SourceProcessingPresentation,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -74,7 +76,11 @@ impl DiscoveryProgressPublisher<'_> {
                         self.source_id,
                         self.lifecycle_generation,
                     ),
-                    source_row_active: true,
+                    presentation: self.presentation,
+                    source_row_active: matches!(
+                        self.presentation,
+                        SourceProcessingPresentation::UserRelevant
+                    ),
                     completed: progress.completed.min(progress.total),
                     total: progress.total,
                     activity: SourceProcessingActivity::Discovering {
@@ -148,6 +154,22 @@ pub(super) fn publish_source_processing_progress(
     lifecycle_generation: u64,
     stats: SourceDiscoveryStats,
 ) {
+    publish_source_processing_progress_with_presentation(
+        shared,
+        candidate,
+        lifecycle_generation,
+        stats,
+        SourceProcessingPresentation::UserRelevant,
+    );
+}
+
+pub(super) fn publish_source_processing_progress_with_presentation(
+    shared: &Shared,
+    candidate: &RuntimeCandidate,
+    lifecycle_generation: u64,
+    stats: SourceDiscoveryStats,
+    presentation: SourceProcessingPresentation,
+) {
     let (completed, total) = match &candidate.task {
         RuntimeTask::Readiness(_) => (stats.progress_completed, stats.progress_total),
         RuntimeTask::ManifestAudit { .. } => (0, 0),
@@ -176,7 +198,9 @@ pub(super) fn publish_source_processing_progress(
                 candidate.source.id.as_str(),
                 lifecycle_generation,
             ),
-            source_row_active: !matches!(candidate.task, RuntimeTask::ManifestAudit { .. }),
+            presentation,
+            source_row_active: matches!(presentation, SourceProcessingPresentation::UserRelevant)
+                && !matches!(candidate.task, RuntimeTask::ManifestAudit { .. }),
             completed,
             total,
             activity,
@@ -267,6 +291,7 @@ pub(super) fn publish_source_processing_wait_for_source(
     shared.publish_event(SourceProcessingEvent::Progress(
         SourceProcessingProgressEvent {
             lifecycle: SourceProcessingLifecycle::new(source_id, lifecycle_generation),
+            presentation: SourceProcessingPresentation::UserRelevant,
             source_row_active: true,
             completed: stats.progress_completed,
             total: stats.progress_total,

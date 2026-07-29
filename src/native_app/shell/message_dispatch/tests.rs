@@ -94,6 +94,8 @@ fn source_processing_progress_opens_the_shared_job_details_popover() {
             source_id: source_id.clone(),
             lifecycle_generation: 0,
             active: true,
+            presentation:
+                crate::native_app::source_processing::SourceProcessingPresentation::UserRelevant,
             source_row_active: true,
             completed: 3,
             total: 10,
@@ -127,6 +129,8 @@ fn source_processing_progress_opens_the_shared_job_details_popover() {
             source_id: source_id.clone(),
             lifecycle_generation: 0,
             active: false,
+            presentation:
+                crate::native_app::source_processing::SourceProcessingPresentation::UserRelevant,
             source_row_active: false,
             completed: 10,
             total: 10,
@@ -160,6 +164,103 @@ fn source_processing_progress_opens_the_shared_job_details_popover() {
         state.background.source_processing_health[&source_id].status,
         crate::native_app::app::SourceProcessingHealthStatus::DegradedTerminal,
         "stale lifecycle health must not replace the retained current state"
+    );
+}
+
+#[test]
+fn routine_source_maintenance_progress_stays_out_of_the_worker_rail() {
+    let mut state = NativeAppStateFixture::default().build();
+    let source_id = state
+        .library
+        .folder_browser
+        .defer_add_source_path(std::path::PathBuf::from("/tmp/routine-maintenance"), false)
+        .expect("source registered");
+    state
+        .background
+        .source_lifecycle_generations
+        .insert(source_id.clone(), 0);
+    state.apply_message(
+        GuiMessage::SourceProcessingProgress(crate::native_app::app::SourceProcessingProgress {
+            source_id,
+            lifecycle_generation: 0,
+            active: true,
+            presentation:
+                crate::native_app::source_processing::SourceProcessingPresentation::RoutineMaintenance,
+            source_row_active: false,
+            completed: 1,
+            total: 1,
+            stage: String::from("Queueing unfinished work"),
+            detail: String::from("1 / 1 readiness targets checked"),
+        }),
+        &mut ui::UiUpdateContext::default(),
+    );
+
+    assert!(
+        state.background.source_processing_progress.is_none(),
+        "routine maintenance must not install retained source-processing progress"
+    );
+    assert!(!state.worker_progress_indicator_visible());
+    assert!(
+        crate::native_app::app_chrome::view_models::status_bar::StatusBarViewModel::from_app_state(
+            &state
+        )
+        .job_details
+        .is_none()
+    );
+}
+
+#[test]
+fn routine_source_maintenance_does_not_clear_user_relevant_progress() {
+    let mut state = NativeAppStateFixture::default().build();
+    let source_id = state
+        .library
+        .folder_browser
+        .defer_add_source_path(std::path::PathBuf::from("/tmp/routine-retains-user"), false)
+        .expect("source registered");
+    state
+        .background
+        .source_lifecycle_generations
+        .insert(source_id.clone(), 0);
+    state.background.source_processing_progress =
+        Some(crate::native_app::app::SourceProcessingProgress {
+            source_id: source_id.clone(),
+            lifecycle_generation: 0,
+            active: true,
+            presentation:
+                crate::native_app::source_processing::SourceProcessingPresentation::UserRelevant,
+            source_row_active: true,
+            completed: 3,
+            total: 10,
+            stage: String::from("Analyzing audio"),
+            detail: String::from("kick.wav"),
+        });
+
+    state.apply_message(
+        GuiMessage::SourceProcessingProgress(crate::native_app::app::SourceProcessingProgress {
+            source_id,
+            lifecycle_generation: 0,
+            active: true,
+            presentation:
+                crate::native_app::source_processing::SourceProcessingPresentation::RoutineMaintenance,
+            source_row_active: false,
+            completed: 1,
+            total: 1,
+            stage: String::from("Scanning source changes"),
+            detail: String::from("Checking the source manifest"),
+        }),
+        &mut ui::UiUpdateContext::default(),
+    );
+
+    assert_eq!(
+        state
+            .background
+            .source_processing_progress
+            .as_ref()
+            .map(|progress| (progress.presentation, progress.completed)),
+        Some((
+            crate::native_app::source_processing::SourceProcessingPresentation::UserRelevant,
+            3
+        ))
     );
 }
 
@@ -206,6 +307,8 @@ fn source_processing_progress_refreshes_the_retained_details_projection() {
             source_id,
             lifecycle_generation: 0,
             active: true,
+            presentation:
+                crate::native_app::source_processing::SourceProcessingPresentation::UserRelevant,
             source_row_active: true,
             completed: 4,
             total: 10,
@@ -250,6 +353,8 @@ fn source_processing_progress_repaints_retained_worker_anchor_on_visibility_edge
             source_id: source_id.clone(),
             lifecycle_generation: 0,
             active: true,
+            presentation:
+                crate::native_app::source_processing::SourceProcessingPresentation::UserRelevant,
             source_row_active: true,
             completed: 4,
             total: 10,
@@ -271,6 +376,8 @@ fn source_processing_progress_repaints_retained_worker_anchor_on_visibility_edge
             source_id: source_id.clone(),
             lifecycle_generation: 0,
             active: true,
+            presentation:
+                crate::native_app::source_processing::SourceProcessingPresentation::UserRelevant,
             source_row_active: true,
             completed: 5,
             total: 10,
@@ -291,6 +398,8 @@ fn source_processing_progress_repaints_retained_worker_anchor_on_visibility_edge
             source_id: source_id.clone(),
             lifecycle_generation: 0,
             active: false,
+            presentation:
+                crate::native_app::source_processing::SourceProcessingPresentation::UserRelevant,
             source_row_active: false,
             completed: 10,
             total: 10,
@@ -322,6 +431,8 @@ fn source_processing_progress_repaints_retained_worker_anchor_on_visibility_edge
             source_id: source_id.clone(),
             lifecycle_generation: 0,
             active: true,
+            presentation:
+                crate::native_app::source_processing::SourceProcessingPresentation::UserRelevant,
             source_row_active: true,
             completed: 5,
             total: 10,
@@ -343,6 +454,8 @@ fn source_processing_progress_repaints_retained_worker_anchor_on_visibility_edge
             source_id,
             lifecycle_generation: 0,
             active: true,
+            presentation:
+                crate::native_app::source_processing::SourceProcessingPresentation::UserRelevant,
             source_row_active: true,
             completed: 6,
             total: 10,
@@ -397,6 +510,8 @@ fn source_processing_progress_keeps_retained_repaint_paint_only_when_another_wor
             source_id: source_id.clone(),
             lifecycle_generation: 0,
             active,
+            presentation:
+                crate::native_app::source_processing::SourceProcessingPresentation::UserRelevant,
             source_row_active: active,
             completed,
             total: 10,
@@ -432,6 +547,8 @@ fn late_progress_for_removed_source_is_ignored() {
             source_id: String::from("retired-source"),
             lifecycle_generation: 0,
             active: true,
+            presentation:
+                crate::native_app::source_processing::SourceProcessingPresentation::UserRelevant,
             source_row_active: true,
             completed: 1,
             total: 10,
@@ -466,6 +583,8 @@ fn late_progress_from_previous_readded_source_epoch_is_ignored() {
             source_id: source_id.clone(),
             lifecycle_generation: 1,
             active: true,
+            presentation:
+                crate::native_app::source_processing::SourceProcessingPresentation::UserRelevant,
             source_row_active: true,
             completed: 1,
             total: 10,
@@ -481,6 +600,8 @@ fn late_progress_from_previous_readded_source_epoch_is_ignored() {
             source_id,
             lifecycle_generation: 2,
             active: true,
+            presentation:
+                crate::native_app::source_processing::SourceProcessingPresentation::UserRelevant,
             source_row_active: true,
             completed: 2,
             total: 10,

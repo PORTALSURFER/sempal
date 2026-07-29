@@ -2,6 +2,7 @@ use crate::native_app::app::{
     FileMoveProgress, FolderScanProgress, NativeAppState, NormalizationProgress,
     SourceProcessingHealth, SourceProcessingHealthStatus,
 };
+use crate::native_app::source_processing::SourceProcessingPresentation;
 use std::time::Instant;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -169,6 +170,13 @@ fn active_worker(state: &NativeAppState) -> Option<ActiveWorkerViewModel> {
         .background
         .source_processing_progress
         .as_ref()
+        .filter(|progress| {
+            progress.active
+                && matches!(
+                    progress.presentation,
+                    SourceProcessingPresentation::UserRelevant
+                )
+        })
         .map(|source_progress| ActiveWorkerViewModel {
             progress: WorkerProgressViewModel::from_source_processing(source_progress),
             details: JobDetailsViewModel::from_source_processing(state, source_progress),

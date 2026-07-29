@@ -16,6 +16,7 @@ use crate::native_app::app_chrome::palette::{ACCENT, DANGER};
 #[cfg(test)]
 use crate::native_app::app_chrome::view_models::status_bar::WorkerProgressViewModel;
 use crate::native_app::app_chrome::view_models::status_bar::{StatusBarViewModel, StatusSeverity};
+use crate::native_app::source_processing::SourceProcessingPresentation;
 use crate::native_app::ui::ids::{
     JOB_DETAILS_CURRENT_ROW_ID_BASE, WORKER_PROGRESS_PULSE_CORE_ID, WORKER_PROGRESS_ROOT_ID,
 };
@@ -78,7 +79,17 @@ impl NativeAppState {
             || self.background.file_move_progress.is_some()
             || (self.waveform.cache.active_folder_warm_folder_id.is_some()
                 && self.waveform.cache.active_folder_warm_total > 0)
-            || self.background.source_processing_progress.is_some()
+            || self
+                .background
+                .source_processing_progress
+                .as_ref()
+                .is_some_and(|progress| {
+                    progress.active
+                        && matches!(
+                            progress.presentation,
+                            SourceProcessingPresentation::UserRelevant
+                        )
+                })
     }
 
     pub(in crate::native_app) fn paint_worker_progress_indicator(
@@ -122,7 +133,13 @@ impl NativeAppState {
                 .source_processing_progress
                 .as_ref()
                 .filter(|progress| {
-                    progress.active && progress.source_row_active && !progress.source_id.is_empty()
+                    progress.active
+                        && matches!(
+                            progress.presentation,
+                            SourceProcessingPresentation::UserRelevant
+                        )
+                        && progress.source_row_active
+                        && !progress.source_id.is_empty()
                 })
         else {
             return;
