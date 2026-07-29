@@ -1,5 +1,7 @@
 use super::*;
-use crate::native_app::sample_library::folder_browser::scan_types::FolderScanItem;
+use crate::native_app::sample_library::folder_browser::scan_types::{
+    FolderScanItem, RatingHydrationStatus,
+};
 use crate::native_app::sample_library::folder_browser::{
     refreshed_file_entries_for_paths, scan::verify_direct_folder,
 };
@@ -358,6 +360,79 @@ fn folder_tree_refresh_prunes_deleted_folders_and_preserves_files() {
         vec!["keep.wav"],
         "folder-only refresh should preserve cached file rows for folders that still exist"
     );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn folder_tree_refresh_hydrates_cached_file_rating_and_lock_from_source_db() {
+    let root = temp_source_root("wavecrate-gui-folder-tree-refresh-rating-hydration");
+    let kick = root.join("kick.wav");
+    fs::write(&kick, [0_u8; 8]).expect("write kick");
+    let mut browser = FolderBrowserState::from_root(root.clone());
+    let database = SourceDatabase::open_for_source_write(&root).expect("open source db");
+    database
+        .upsert_file(std::path::Path::new("kick.wav"), 8, 0)
+        .expect("index kick");
+    database
+        .set_tag(std::path::Path::new("kick.wav"), Rating::KEEP_3)
+        .expect("persist kick rating");
+    database
+        .set_locked(std::path::Path::new("kick.wav"), true)
+        .expect("persist kick lock");
+
+    let result = refresh_folder_tree_only(FolderTreeRefreshRequest {
+        source_id: browser.selected_source_id().to_string(),
+        label: String::from("Assets"),
+        root: root.clone(),
+        database_root: root.clone(),
+    });
+    assert!(browser.apply_folder_tree_refresh_result(result));
+
+    let refreshed = browser
+        .selected_audio_files()
+        .into_iter()
+        .find(|file| file.id == path_id(&kick))
+        .expect("hydrated kick row");
+    assert_eq!(refreshed.rating, Rating::KEEP_3);
+    assert!(refreshed.rating_locked);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn folder_tree_refresh_missing_db_fails_hydration_without_creating_schema() {
+    let root = temp_source_root("wavecrate-gui-folder-tree-refresh-missing-db");
+    let kick = root.join("kick.wav");
+    fs::write(&kick, [0_u8; 8]).expect("write kick");
+    let mut browser = FolderBrowserState::from_root(root.clone());
+    assert!(browser.set_file_rating_state(&kick, Rating::KEEP_3, true));
+    let db_path = root.join(wavecrate::sample_sources::DB_FILE_NAME);
+    assert!(
+        !db_path.exists(),
+        "test setup should have no source database"
+    );
+
+    let result = refresh_folder_tree_only(FolderTreeRefreshRequest {
+        source_id: browser.selected_source_id().to_string(),
+        label: String::from("Assets"),
+        root: root.clone(),
+        database_root: root.clone(),
+    });
+    assert!(matches!(
+        result.rating_hydration,
+        RatingHydrationStatus::Failed { .. }
+    ));
+    assert!(
+        !db_path.exists(),
+        "background hydration must not create a database"
+    );
+    assert!(!browser.apply_folder_tree_refresh_result(result));
+    let cached = browser
+        .selected_audio_files()
+        .into_iter()
+        .find(|file| file.id == path_id(&kick))
+        .expect("cached kick row");
+    assert_eq!(cached.rating, Rating::KEEP_3);
+    assert!(cached.rating_locked);
     let _ = fs::remove_dir_all(root);
 }
 

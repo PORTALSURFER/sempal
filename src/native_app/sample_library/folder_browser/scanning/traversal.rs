@@ -11,7 +11,7 @@ use super::{
         BrowserEntryKind, classify_path_without_following, read_sorted_entries,
         source_traversal_policy,
     },
-    metadata::{SourceMetadataMap, rated_file_entry, source_rating_map},
+    metadata::{SourceMetadataMap, rated_file_entry, source_rating_map, source_rating_snapshot},
 };
 
 pub(in crate::native_app::sample_library::folder_browser) struct LoadedSourceSnapshot {
@@ -59,6 +59,15 @@ pub(in crate::native_app) fn refresh_folder_tree_only(
     let mut folder_count = 0;
     let folder = load_folder_tree_only(&request.root, &request.root, policy, &mut folder_count)
         .unwrap_or_else(|| placeholder_folder(&request.root));
+    let rating_hydration = match source_rating_snapshot(&request.root, &request.database_root) {
+        Ok(snapshot) => super::super::scan_types::RatingHydrationStatus::Complete { snapshot },
+        Err(error) => {
+            tracing::warn!(source = %request.root.display(), %error, "Folder tree rating hydration failed");
+            super::super::scan_types::RatingHydrationStatus::Failed {
+                error: error.to_string(),
+            }
+        }
+    };
     FolderTreeRefreshResult {
         source_id: request.source_id,
         label: request.label,
@@ -66,6 +75,7 @@ pub(in crate::native_app) fn refresh_folder_tree_only(
         folder_count,
         source_root_available: classify_path_without_following(&request.root)
             == Some(BrowserEntryKind::Directory),
+        rating_hydration,
     }
 }
 

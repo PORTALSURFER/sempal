@@ -4,7 +4,9 @@ use std::{
 };
 
 use super::source_scan_cache::FolderScanCacheUpdate;
-use super::{FileEntry, FolderEntry, collections::MissingCollectionSnapshot};
+use super::{
+    FileEntry, FolderEntry, collections::MissingCollectionSnapshot, scanning::RatingSnapshot,
+};
 use wavecrate::sample_sources::{
     config::DEFAULT_RATING_DECAY_WEEKS, scanner::CommittedSourceDelta,
 };
@@ -285,6 +287,13 @@ pub(in crate::native_app) struct FolderTreeRefreshResult {
     pub(in crate::native_app) folder: FolderEntry,
     pub(in crate::native_app) folder_count: usize,
     pub(in crate::native_app) source_root_available: bool,
+    pub(in crate::native_app) rating_hydration: RatingHydrationStatus,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::native_app) enum RatingHydrationStatus {
+    Complete { snapshot: RatingSnapshot },
+    Failed { error: String },
 }
 
 /// Request for verifying that a selected folder still matches its cached child state.

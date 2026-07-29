@@ -53,7 +53,18 @@ impl NativeAppState {
                 );
                 return;
             }
-            SourceSelectionRequest::Settled => {}
+            SourceSelectionRequest::Settled => {
+                if self.library.folder_browser.selected_source_id() == requested_id
+                    && self.library.folder_browser.selected_source_loaded()
+                    && !self.library.folder_browser.source_is_missing(&requested_id)
+                {
+                    self.queue_selected_source_folder_tree_refresh(
+                        context,
+                        "folder_browser.source_selection_folder_tree_refresh",
+                        "gui-source-selection-folder-tree-refresh",
+                    );
+                }
+            }
         }
         if self.library.folder_browser.selected_source_id() == requested_id
             && self.library.folder_browser.selected_source_loaded()

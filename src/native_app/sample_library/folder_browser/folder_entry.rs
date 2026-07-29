@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     FileEntry, file_entry, folder_label, path_id, rewrite_path_id,
-    scanning::{upsert_file, upsert_folder},
+    scanning::{RatingSnapshot, upsert_file, upsert_folder},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -180,6 +180,31 @@ impl FolderEntry {
             .collect::<Vec<_>>();
         let changed = previous_name != self.name || previous_children != next_children;
         self.children = next_children;
+        changed
+    }
+
+    pub(super) fn apply_rating_snapshot(
+        &mut self,
+        source_root: &Path,
+        snapshot: &RatingSnapshot,
+    ) -> bool {
+        let mut changed = false;
+        for file in &mut self.files {
+            let (rating, locked) = Path::new(&file.id)
+                .strip_prefix(source_root)
+                .ok()
+                .and_then(|relative| snapshot.get(relative))
+                .copied()
+                .unwrap_or((wavecrate::sample_sources::Rating::NEUTRAL, false));
+            if file.rating != rating || file.rating_locked != locked {
+                file.rating = rating;
+                file.rating_locked = locked;
+                changed = true;
+            }
+        }
+        for child in &mut self.children {
+            changed |= child.apply_rating_snapshot(source_root, snapshot);
+        }
         changed
     }
 
@@ -373,6 +398,10 @@ mod tests {
         }
     }
 
+    fn file(path: &str) -> FileEntry {
+        file_entry(&PathBuf::from(path))
+    }
+
     #[test]
     fn find_path_mut_follows_only_matching_path_branch() {
         let mut root = folder(
@@ -411,5 +440,33 @@ mod tests {
             .expect("component-exact sibling");
 
         assert_eq!(found.id, "/samples/drum-long");
+    }
+
+    #[test]
+    fn apply_rating_snapshot_recurses_and_resets_absent_files() {
+        let mut root = folder(
+            "/samples",
+            vec![FolderEntry {
+                files: vec![file("/samples/drums/kick.wav")],
+                ..folder("/samples/drums", Vec::new())
+            }],
+        );
+        root.files.push(file("/samples/old.wav"));
+        root.files[0].rating = wavecrate::sample_sources::Rating::KEEP_1;
+        root.files[0].rating_locked = true;
+
+        let snapshot = RatingSnapshot::from([(
+            PathBuf::from("drums/kick.wav"),
+            (wavecrate::sample_sources::Rating::KEEP_3, true),
+        )]);
+
+        assert!(root.apply_rating_snapshot(Path::new("/samples"), &snapshot));
+        let kick = root.find_file("/samples/drums/kick.wav").expect("kick");
+        assert_eq!(kick.rating, wavecrate::sample_sources::Rating::KEEP_3);
+        assert!(kick.rating_locked);
+        let old = root.find_file("/samples/old.wav").expect("old");
+        assert_eq!(old.rating, wavecrate::sample_sources::Rating::NEUTRAL);
+        assert!(!old.rating_locked);
+        assert!(!root.apply_rating_snapshot(Path::new("/samples"), &snapshot));
     }
 }
