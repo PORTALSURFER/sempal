@@ -53,9 +53,7 @@ impl NativeAppState {
             1 => String::from("Copying selected file"),
             count => format!("Copying {count} selected files"),
         };
-        let copied_paths = paths.clone();
         context.copy_file_paths(paths, move |result| GuiMessage::SelectedFilesCopyFinished {
-            paths: copied_paths,
             count,
             started_at,
             result: result.into_completed(),
@@ -64,24 +62,15 @@ impl NativeAppState {
 
     pub(in crate::native_app) fn finish_copy_selected_files(
         &mut self,
-        paths: Vec<PathBuf>,
         count: usize,
         started_at: Instant,
         result: Result<(), String>,
-        context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
         match result {
             Ok(()) => {
-                let rating_error = self.add_keep_rating_to_handoff_paths(&paths, context).err();
-                self.ui.status.sample = match (count, rating_error) {
-                    (1, None) => String::from("Copied selected file"),
-                    (count, None) => format!("Copied {count} selected files"),
-                    (1, Some(error)) => {
-                        format!("Copied selected file; rating update failed: {error}")
-                    }
-                    (count, Some(error)) => {
-                        format!("Copied {count} selected files; rating update failed: {error}")
-                    }
+                self.ui.status.sample = match count {
+                    1 => String::from("Copied selected file"),
+                    count => format!("Copied {count} selected files"),
                 };
                 emit_gui_action(
                     "browser.copy_selected_files",

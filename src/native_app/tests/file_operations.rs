@@ -78,6 +78,24 @@ fn assert_sample_rating(
     assert_eq!(persisted.locked, locked);
 }
 
+fn assert_loaded_sample_rating(
+    state: &crate::native_app::test_support::state::NativeAppState,
+    path: &Path,
+    rating: Rating,
+    locked: bool,
+) {
+    let file_id = path.display().to_string();
+    let row = state
+        .library
+        .folder_browser
+        .loaded_source_audio_files()
+        .into_iter()
+        .find(|file| file.id == file_id)
+        .expect("rated file should be loaded");
+    assert_eq!(row.rating, rating);
+    assert_eq!(row.rating_locked, locked);
+}
+
 fn assert_sample_not_keep_rated(
     state: &crate::native_app::test_support::state::NativeAppState,
     path: &Path,
@@ -184,7 +202,7 @@ fn file_move_conflict_dialog_renders_resolution_choices() {
 }
 
 #[test]
-fn successful_selected_file_copy_adds_keep_rating() {
+fn successful_selected_file_copy_leaves_neutral_rating_unchanged() {
     let mut state = gui_state_for_span_tests();
     let source_root = tempfile::tempdir().expect("source root");
     let drums = source_root.path().join("drums");
@@ -207,20 +225,13 @@ fn successful_selected_file_copy_adds_keep_rating() {
         .folder_browser
         .select_file(kick.display().to_string());
 
-    let mut context = ui::UiUpdateContext::default();
-    state.finish_copy_selected_files(
-        vec![kick.clone()],
-        1,
-        std::time::Instant::now(),
-        Ok(()),
-        &mut context,
-    );
+    state.finish_copy_selected_files(1, std::time::Instant::now(), Ok(()));
 
-    assert_sample_rating(&state, &kick, Rating::KEEP_1, false);
+    assert_sample_not_keep_rated(&state, &kick);
 }
 
 #[test]
-fn successful_selected_file_copy_increments_existing_keep_rating() {
+fn successful_selected_file_copy_leaves_existing_keep_rating_unchanged() {
     let mut state = gui_state_for_span_tests();
     let source_root = tempfile::tempdir().expect("source root");
     let drums = source_root.path().join("drums");
@@ -249,16 +260,9 @@ fn successful_selected_file_copy_increments_existing_keep_rating() {
             .set_file_rating_state(&kick, Rating::KEEP_1, false)
     );
 
-    let mut context = ui::UiUpdateContext::default();
-    state.finish_copy_selected_files(
-        vec![kick.clone()],
-        1,
-        std::time::Instant::now(),
-        Ok(()),
-        &mut context,
-    );
+    state.finish_copy_selected_files(1, std::time::Instant::now(), Ok(()));
 
-    assert_sample_rating(&state, &kick, Rating::new(2), false);
+    assert_loaded_sample_rating(&state, &kick, Rating::KEEP_1, false);
 }
 
 #[test]
