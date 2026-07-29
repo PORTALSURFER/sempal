@@ -710,23 +710,25 @@ fn filter_section_projects_rating_toggles_and_dispatches_changes() {
         240.0,
         FILTER_SECTION_TEST_FRAME_HEIGHT,
     ));
+    let layout = filter_section(&model)
+        .view_layout_at_size(ui::Vector2::new(240.0, FILTER_SECTION_TEST_FRAME_HEIGHT));
 
     assert!(
-        frame
-            .paint_plan
-            .first_widget_rect(automation_rating_filter_toggle_id("T3"))
+        layout
+            .rects
+            .get(&automation_rating_filter_toggle_id("T3"))
             .is_some()
     );
     assert!(
-        frame
-            .paint_plan
-            .first_widget_rect(automation_rating_filter_toggle_id("U"))
+        layout
+            .rects
+            .get(&automation_rating_filter_toggle_id("U"))
             .is_some()
     );
     assert!(
-        frame
-            .paint_plan
-            .first_widget_rect(automation_rating_filter_toggle_id("K4"))
+        layout
+            .rects
+            .get(&automation_rating_filter_toggle_id("K4"))
             .is_some()
     );
     assert!(frame.paint_plan.fill_rects().any(|fill| {
@@ -739,6 +741,25 @@ fn filter_section_projects_rating_toggles_and_dispatches_changes() {
             .fill_rects()
             .any(|fill| fill.color == rating_filter_swatch_color(1, false))
     );
+    for label in ["T3", "U", "K4"] {
+        let widget_id = automation_rating_filter_toggle_id(label);
+        assert!(
+            frame
+                .paint_plan
+                .fill_rects_for_widget(widget_id)
+                .next()
+                .is_none(),
+            "rating swatch input {label} must not paint a button surface"
+        );
+        assert!(
+            frame
+                .paint_plan
+                .stroke_rects_for_widget(widget_id)
+                .next()
+                .is_none(),
+            "rating swatch input {label} must not paint a border"
+        );
+    }
     assert!(
         !frame
             .paint_plan
@@ -748,7 +769,7 @@ fn filter_section_projects_rating_toggles_and_dispatches_changes() {
     assert_eq!(
         filter_section(&model).view_dispatch_widget_output(
             automation_rating_filter_toggle_id("K4"),
-            ui::WidgetOutput::typed(SelectableMessage::SelectionChanged { selected: true }),
+            ui::WidgetOutput::typed(ButtonMessage::Activate),
         ),
         Some(GuiMessage::FolderBrowser(
             FolderBrowserMessage::ToggleRatingFilter(4, true)
@@ -757,7 +778,7 @@ fn filter_section_projects_rating_toggles_and_dispatches_changes() {
     assert_eq!(
         filter_section(&model).view_dispatch_widget_output(
             automation_rating_filter_toggle_id("U"),
-            ui::WidgetOutput::typed(SelectableMessage::SelectionChanged { selected: false }),
+            ui::WidgetOutput::typed(ButtonMessage::Activate),
         ),
         Some(GuiMessage::FolderBrowser(
             FolderBrowserMessage::ToggleRatingFilter(0, false)
@@ -766,10 +787,69 @@ fn filter_section_projects_rating_toggles_and_dispatches_changes() {
     assert_eq!(
         filter_section(&model).view_dispatch_widget_output(
             automation_rating_filter_toggle_id("T3"),
-            ui::WidgetOutput::typed(SelectableMessage::SelectionChanged { selected: false }),
+            ui::WidgetOutput::typed(ButtonMessage::Activate),
         ),
         Some(GuiMessage::FolderBrowser(
             FolderBrowserMessage::ToggleRatingFilter(-3, false)
         ))
     );
+}
+
+#[test]
+fn inactive_rating_filter_swatches_are_toned_down_without_changing_active_colors() {
+    for (level, expected_active) in [
+        (
+            -3,
+            Rgba8 {
+                r: 238,
+                g: 77,
+                b: 67,
+                a: 235,
+            },
+        ),
+        (
+            0,
+            Rgba8 {
+                r: 184,
+                g: 188,
+                b: 194,
+                a: 235,
+            },
+        ),
+        (
+            4,
+            Rgba8 {
+                r: 232,
+                g: 188,
+                b: 56,
+                a: 245,
+            },
+        ),
+    ] {
+        let active = rating_filter_swatch_color(level, true);
+        let inactive = rating_filter_swatch_color(level, false);
+
+        assert_eq!(active, expected_active);
+        if level == 0 {
+            assert_eq!(
+                inactive,
+                Rgba8 {
+                    r: 138,
+                    g: 142,
+                    b: 148,
+                    a: 92,
+                }
+            );
+            assert!(inactive.r < active.r && inactive.g < active.g && inactive.b < active.b);
+        } else {
+            assert_eq!(
+                (inactive.r, inactive.g, inactive.b),
+                (active.r, active.g, active.b)
+            );
+        }
+        assert!(
+            inactive.a <= active.a.saturating_sub(120),
+            "inactive rating swatch for {level} should be materially dimmer"
+        );
+    }
 }

@@ -19,7 +19,7 @@ use crate::native_app::ui::ids::RETIRED_HARVEST_FILTER_ARROW_TOGGLE_ID;
 use radiant::gui::types::Rgba8;
 use radiant::prelude::IntoView;
 use radiant::runtime::{SurfaceFrame, SurfacePaintPlan};
-use radiant::widgets::{ButtonMessage, SelectableMessage, TextInputMessage};
+use radiant::widgets::{ButtonMessage, TextInputMessage};
 
 const FILTER_SECTION_TEST_FRAME_HEIGHT: f32 = 220.0;
 
