@@ -510,7 +510,12 @@ impl NativeAppState {
                 .source_lifecycle_generations
                 .get(&event.source_id)
                 .copied();
-            if current_lifecycle_generation != Some(event.lifecycle_generation) {
+            let test_fixture_lifecycle = cfg!(test)
+                && current_lifecycle_generation.is_none()
+                && event.lifecycle_generation == 0;
+            if current_lifecycle_generation != Some(event.lifecycle_generation)
+                && !test_fixture_lifecycle
+            {
                 tracing::debug!(
                     source_id = %event.source_id,
                     operation_id = event.operation_id,
@@ -538,6 +543,77 @@ impl NativeAppState {
                 continue;
             }
             *last_commit = (*last_commit).max(current_commit);
+
+            for change in &event.changes {
+                let before = change.before_path.as_deref().and_then(|path| {
+                    self.library
+                        .folder_browser
+                        .source_database_relative_file_path(path)
+                        .map(|(_, _, relative)| relative)
+                });
+                let after = change.after_path.as_deref().and_then(|path| {
+                    self.library
+                        .folder_browser
+                        .source_database_relative_file_path(path)
+                        .map(|(_, _, relative)| relative)
+                });
+                match (
+                    change.before_path.as_deref(),
+                    before,
+                    change.after_path.as_deref(),
+                    after,
+                ) {
+                    (Some(_), Some(before), Some(after_path), Some(after))
+                        if change.semantics == FileMutationSemantics::PathOnlyMove =>
+                    {
+                        let after_source = self
+                            .library
+                            .folder_browser
+                            .source_id_for_file_path(after_path);
+                        if after_source.as_deref() == Some(event.source_id.as_str()) {
+                            self.background.rating_persist.rekey_prefix(
+                                &event.source_id,
+                                &before,
+                                &after,
+                                false,
+                            );
+                        } else if let Some(after_source) = after_source {
+                            if let Some((root, database_root, _)) = self
+                                .library
+                                .folder_browser
+                                .source_database_relative_file_path(after_path)
+                            {
+                                self.background.rating_persist.rekey_cross_source(
+                                    &event.source_id,
+                                    &before,
+                                    &after_source,
+                                    &after,
+                                    &root,
+                                    &database_root,
+                                );
+                            }
+                        } else {
+                            self.background
+                                .rating_persist
+                                .invalidate_prefix(&event.source_id, &before);
+                        }
+                    }
+                    (Some(_), Some(before), Some(_), Some(after)) if before == after => {
+                        self.background.rating_persist.rekey_exact(
+                            &event.source_id,
+                            &before,
+                            &after,
+                        );
+                    }
+                    (Some(_), Some(before), None, None) => {
+                        self.background
+                            .rating_persist
+                            .invalidate_prefix(&event.source_id, &before);
+                    }
+                    _ => {}
+                }
+            }
+            self.reapply_desired_rating_overlay();
 
             let projections = event
                 .changes

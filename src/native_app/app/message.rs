@@ -23,9 +23,7 @@ use crate::native_app::app::{
 use crate::native_app::audio::playback_history::{
     LastPlayedPersistRequest, LastPlayedPersistResult,
 };
-use crate::native_app::metadata::{
-    MetadataRatingPersistResult, MetadataTagLoadResult, MetadataTagPersistResult,
-};
+use crate::native_app::metadata::{MetadataTagLoadResult, MetadataTagPersistResult};
 use crate::native_app::sample_library::committed_file_mutations::{
     FileMutationOutcome, FileMutationWork,
 };
@@ -193,6 +191,7 @@ pub(in crate::native_app) enum GuiMessage {
     HarvestTouchedPersisted(
         ui::TaskCompletion<crate::native_app::app::HarvestTouchedPersistBatchResult>,
     ),
+    RatingPersisted(ui::TaskCompletion<crate::native_app::app::RatingPersistBatchResult>),
     HarvestTouchedPersistAdmissionPoll(ui::TaskTicket),
     VolumeSettingsPersisted(VolumeSettingsPersistResult),
     StopPlayback,
@@ -534,7 +533,6 @@ pub(in crate::native_app) enum MetadataMessage {
     },
     DeleteContextMetadataTag,
     DeleteSelectedMetadataTag,
-    MetadataRatingPersisted(MetadataRatingPersistResult),
     MetadataTagsPersisted(MetadataTagPersistResult),
     MetadataTagsLoaded(MetadataTagLoadResult),
     ToggleSampleNameViewMode,

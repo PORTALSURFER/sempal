@@ -155,6 +155,7 @@ impl NativeAppState {
                             .apply_committed_projection_delta(&source_id, projection)
                     })
                     .unwrap_or(false);
+                self.reapply_desired_rating_overlay();
                 tracing::info!(
                     source_id = %source_id,
                     revision = delta.revision,

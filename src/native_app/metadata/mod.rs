@@ -15,9 +15,9 @@ pub(in crate::native_app) use style::{
 #[cfg(test)]
 pub(super) use types::MetadataTagCommit;
 pub(super) use types::{
-    MetadataRatingPersistResult, MetadataTagCategoryGroup, MetadataTagCompletionOption,
-    MetadataTagDisplayCategory, MetadataTagInputMode, MetadataTagLoadResult,
-    MetadataTagPersistResult, MetadataTagSelectionState,
+    MetadataTagCategoryGroup, MetadataTagCompletionOption, MetadataTagDisplayCategory,
+    MetadataTagInputMode, MetadataTagLoadResult, MetadataTagPersistResult,
+    MetadataTagSelectionState,
 };
 pub(super) use vocabulary::{
     commit_metadata_tag_text, inferred_metadata_tag_category_id_for_name,

@@ -586,6 +586,7 @@ impl NativeAppState {
         if let Some(source_id) = rating_decay_refresh {
             self.refresh_source(source_id, context);
         }
+        self.reapply_desired_rating_overlay();
     }
 
     fn apply_finished_folder_scan(
@@ -594,6 +595,7 @@ impl NativeAppState {
         started_at: Instant,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
+        self.reapply_desired_rating_overlay();
         if !scan.source_root_available {
             self.ui.status.sample = format!("Source missing: {}", scan.label);
             emit_gui_action(

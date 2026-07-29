@@ -134,6 +134,7 @@ impl NativeAppState {
             | GuiMessage::HarvestSeenPersisted(_)
             | GuiMessage::HarvestTouchedPersisted(_)
             | GuiMessage::HarvestTouchedPersistAdmissionPoll(_)
+            | GuiMessage::RatingPersisted(_)
             | GuiMessage::VolumeSettingsPersisted(_)
             | GuiMessage::StopPlayback
             | GuiMessage::ToggleLoopPlayback
@@ -357,6 +358,7 @@ fn gui_message_profile_label(message: &GuiMessage) -> &'static str {
         GuiMessage::HarvestSeenPersisted(_) => "HarvestSeenPersisted",
         GuiMessage::HarvestTouchedPersisted(_) => "HarvestTouchedPersisted",
         GuiMessage::HarvestTouchedPersistAdmissionPoll(_) => "HarvestTouchedPersistAdmissionPoll",
+        GuiMessage::RatingPersisted(_) => "RatingPersisted",
         GuiMessage::WaveformCacheIndicatorRefreshFinished(_) => {
             "WaveformCacheIndicatorRefreshFinished"
         }

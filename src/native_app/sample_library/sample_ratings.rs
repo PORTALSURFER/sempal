@@ -17,7 +17,21 @@ use crate::native_app::sample_library::sample_list::{
 use crate::native_app::transaction_history::TransactionContext;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::native_app) struct RatingPersistRequest {
+    pub(in crate::native_app) source_id: String,
+    pub(in crate::native_app) lifecycle_generation: Option<u64>,
+    pub(in crate::native_app) root: PathBuf,
+    pub(in crate::native_app) database_root: PathBuf,
+    pub(in crate::native_app) relative_path: PathBuf,
+    pub(in crate::native_app) absolute_path: PathBuf,
+    pub(in crate::native_app) rating: Rating,
+    pub(in crate::native_app) locked: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct RatingUpdate {
+    source_id: String,
+    lifecycle_generation: Option<u64>,
     root: PathBuf,
     database_root: PathBuf,
     relative_path: PathBuf,
@@ -31,10 +45,56 @@ struct RatingUpdate {
 #[derive(Debug, Default)]
 struct RatingAdjustmentPlan {
     updates: Vec<RatingUpdate>,
-    auto_trash_paths: Vec<PathBuf>,
+    auto_trash_updates: Vec<RatingUpdate>,
 }
 
 impl NativeAppState {
+    pub(in crate::native_app) fn reapply_desired_rating_overlay(&mut self) {
+        let desired = self.background.rating_persist.desired_snapshot();
+        for request in desired {
+            if request.lifecycle_generation.is_some_and(|generation| {
+                self.background
+                    .source_lifecycle_generations
+                    .get(&request.source_id)
+                    != Some(&generation)
+            }) || !self
+                .library
+                .folder_browser
+                .source_exists(&request.source_id)
+            {
+                continue;
+            }
+            let _ = self.library.folder_browser.set_file_rating_state(
+                &request.absolute_path,
+                request.rating,
+                request.locked,
+            );
+        }
+    }
+
+    pub(in crate::native_app) fn finish_rating_persist(
+        &mut self,
+        completion: ui::TaskCompletion<crate::native_app::app::RatingPersistBatchResult>,
+        context: &mut ui::UiUpdateContext<GuiMessage>,
+    ) {
+        let Some(result) = self.background.rating_persist.finish(completion) else {
+            return;
+        };
+        for item in result.results {
+            if let Some(Err(error)) = item.result {
+                self.ui.status.sample = format!(
+                    "Rating for {} not saved: {error}",
+                    sample_path_label(&item.absolute_path)
+                );
+            }
+        }
+        let auto_trash_paths = self.background.rating_persist.take_committed_auto_trash();
+        if !auto_trash_paths.is_empty() {
+            self.move_negative_threshold_files_to_trash(auto_trash_paths, Instant::now(), context);
+        }
+        self.background.rating_persist.schedule_if_idle(context);
+    }
+
     #[cfg(test)]
     pub(in crate::native_app) fn adjust_selected_rating(
         &mut self,
@@ -68,6 +128,7 @@ impl NativeAppState {
             .collect::<Vec<_>>();
         let applied = self.apply_rating_update_states(&plan.updates, RatingUpdateMode::After)?;
         if applied > 0 {
+            self.background.rating_persist.schedule_if_idle(context);
             self.schedule_harvest_touched_for_paths(&touched_paths, context);
         }
         Ok(applied)
@@ -125,7 +186,21 @@ impl NativeAppState {
             );
             return;
         };
+        let Some(source_id) = self
+            .library
+            .folder_browser
+            .source_id_for_file_path(&loaded_path)
+        else {
+            self.ui.status.sample = String::from("Sample is unavailable");
+            return;
+        };
         let update = RatingUpdate {
+            source_id: source_id.clone(),
+            lifecycle_generation: self
+                .background
+                .source_lifecycle_generations
+                .get(&source_id)
+                .copied(),
             root,
             database_root,
             relative_path,
@@ -156,6 +231,7 @@ impl NativeAppState {
                 return;
             }
         };
+        self.background.rating_persist.schedule_if_idle(context);
         if applied == 0 {
             self.ui.status.sample = String::from("Sample is unavailable");
             emit_gui_action(
@@ -234,8 +310,7 @@ impl NativeAppState {
                 return;
             }
         };
-
-        if applied == 0 && plan.auto_trash_paths.is_empty() {
+        if applied == 0 && plan.auto_trash_updates.is_empty() {
             self.ui.status.sample = String::from("Rating did not change");
             emit_gui_action(
                 "browser.rating.adjust",
@@ -273,10 +348,21 @@ impl NativeAppState {
             self.register_rating_transaction(delta, plan.updates);
         }
 
-        if !plan.auto_trash_paths.is_empty() {
-            self.move_negative_threshold_files_to_trash(plan.auto_trash_paths, started_at, context);
-            return;
+        for update in &plan.auto_trash_updates {
+            if let Some(revision) = self
+                .background
+                .rating_persist
+                .revision_for(&update.source_id, &update.relative_path)
+            {
+                self.background.rating_persist.defer_auto_trash(
+                    &update.source_id,
+                    &update.relative_path,
+                    revision,
+                    update.absolute_path.clone(),
+                );
+            }
         }
+        self.background.rating_persist.schedule_if_idle(context);
 
         if applied > 0 && allow_advance && self.ui.settings.persisted.controls.advance_after_rating
         {
@@ -407,7 +493,7 @@ impl NativeAppState {
             else {
                 continue;
             };
-            if previous_locked || should_auto_trash_on_rating(previous_rating, delta) {
+            if previous_locked {
                 continue;
             }
             let Some((root, database_root, relative_path)) = self
@@ -420,7 +506,20 @@ impl NativeAppState {
             let Some((rating, locked)) = next_rating_state(previous_rating, delta) else {
                 continue;
             };
+            let Some(source_id) = self
+                .library
+                .folder_browser
+                .source_id_for_file_path(&absolute_path)
+            else {
+                continue;
+            };
             plan.updates.push(RatingUpdate {
+                source_id: source_id.clone(),
+                lifecycle_generation: self
+                    .background
+                    .source_lifecycle_generations
+                    .get(&source_id)
+                    .copied(),
                 root,
                 database_root,
                 relative_path,
@@ -455,10 +554,6 @@ impl NativeAppState {
             .into_iter()
             .filter(|candidate| !candidate.locked)
         {
-            if should_auto_trash_on_rating(candidate.rating, delta) {
-                plan.auto_trash_paths.push(candidate.path);
-                continue;
-            }
             let Some((root, database_root, relative_path)) = self
                 .library
                 .folder_browser
@@ -466,10 +561,28 @@ impl NativeAppState {
             else {
                 continue;
             };
-            let Some((rating, locked)) = next_rating_state(candidate.rating, delta) else {
+            let (rating, locked) = if should_auto_trash_on_rating(candidate.rating, delta) {
+                (candidate.rating, candidate.locked)
+            } else {
+                let Some(next) = next_rating_state(candidate.rating, delta) else {
+                    continue;
+                };
+                next
+            };
+            let Some(source_id) = self
+                .library
+                .folder_browser
+                .source_id_for_file_path(&candidate.path)
+            else {
                 continue;
             };
-            plan.updates.push(RatingUpdate {
+            let update = RatingUpdate {
+                source_id: source_id.clone(),
+                lifecycle_generation: self
+                    .background
+                    .source_lifecycle_generations
+                    .get(&source_id)
+                    .copied(),
                 root,
                 database_root,
                 relative_path,
@@ -478,7 +591,11 @@ impl NativeAppState {
                 previous_locked: candidate.locked,
                 rating,
                 locked,
-            });
+            };
+            if should_auto_trash_on_rating(candidate.rating, delta) {
+                plan.auto_trash_updates.push(update.clone());
+            }
+            plan.updates.push(update);
         }
         plan
     }
@@ -518,14 +635,27 @@ impl NativeAppState {
         mode: RatingUpdateMode,
     ) -> Result<usize, String> {
         let mut applied = 0usize;
-        for ((root, database_root), source_updates) in group_updates_by_source(
+        for source_updates in group_updates_by_source(
             updates
                 .iter()
                 .cloned()
                 .map(|update| update.for_mode(mode))
                 .collect(),
-        ) {
-            persist_rating_updates(&root, &database_root, &source_updates)?;
+        )
+        .into_values()
+        {
+            let mut source_updates = source_updates;
+            for update in &mut source_updates {
+                update.lifecycle_generation = self
+                    .background
+                    .source_lifecycle_generations
+                    .get(&update.source_id)
+                    .copied()
+                    .or(update.lifecycle_generation);
+                self.background
+                    .rating_persist
+                    .enqueue(update.persist_request());
+            }
             for update in source_updates {
                 if self.apply_rating_update_to_loaded_browser_row(&update) {
                     applied += 1;
@@ -606,7 +736,7 @@ fn normalized_rating_path(path: &Path) -> PathBuf {
 
 impl RatingAdjustmentPlan {
     fn is_empty(&self) -> bool {
-        self.updates.is_empty() && self.auto_trash_paths.is_empty()
+        self.updates.is_empty() && self.auto_trash_updates.is_empty()
     }
 }
 
@@ -623,27 +753,69 @@ fn group_updates_by_source(
     by_source
 }
 
-fn persist_rating_updates(
-    root: &Path,
-    database_root: &Path,
-    updates: &[RatingUpdate],
-) -> Result<(), String> {
-    let db = SourceDatabase::open_for_user_metadata_write_with_database_root(root, database_root)
-        .map_err(|err| err.to_string())?;
-    let mut batch = db.write_batch().map_err(|err| err.to_string())?;
-    for update in updates {
-        let (file_size, modified_ns) = file_metadata(&update.absolute_path)?;
-        batch
-            .upsert_file(&update.relative_path, file_size, modified_ns)
-            .map_err(|err| err.to_string())?;
-        batch
-            .set_tag(&update.relative_path, update.rating)
-            .map_err(|err| err.to_string())?;
-        batch
-            .set_locked(&update.relative_path, update.locked)
-            .map_err(|err| err.to_string())?;
+pub(in crate::native_app) fn persist_rating_requests(
+    requests: &[RatingPersistRequest],
+    current: impl Fn(&RatingPersistRequest) -> bool,
+) -> Vec<Option<Result<(), String>>> {
+    let mut results = vec![None; requests.len()];
+    let mut groups: BTreeMap<(PathBuf, PathBuf), Vec<usize>> = BTreeMap::new();
+    for (index, request) in requests.iter().enumerate() {
+        groups
+            .entry((request.root.clone(), request.database_root.clone()))
+            .or_default()
+            .push(index);
     }
-    batch.commit().map_err(|err| err.to_string())
+    for ((root, database_root), indexes) in groups {
+        let active = indexes
+            .iter()
+            .copied()
+            .filter(|index| current(&requests[*index]))
+            .collect::<Vec<_>>();
+        if active.is_empty() {
+            continue;
+        }
+        let result = (|| {
+            let db = SourceDatabase::open_for_user_metadata_write_with_database_root(
+                &root,
+                &database_root,
+            )
+            .map_err(|err| err.to_string())?;
+            let mut batch = db.write_batch().map_err(|err| err.to_string())?;
+            for index in &active {
+                let request = &requests[*index];
+                let (file_size, modified_ns) = file_metadata(&request.absolute_path)?;
+                batch
+                    .upsert_file(&request.relative_path, file_size, modified_ns)
+                    .map_err(|err| err.to_string())?;
+                batch
+                    .set_tag(&request.relative_path, request.rating)
+                    .map_err(|err| err.to_string())?;
+                batch
+                    .set_locked(&request.relative_path, request.locked)
+                    .map_err(|err| err.to_string())?;
+            }
+            batch.commit().map_err(|err| err.to_string())
+        })();
+        for index in active {
+            results[index] = Some(result.clone());
+        }
+    }
+    results
+}
+
+impl RatingUpdate {
+    fn persist_request(&self) -> RatingPersistRequest {
+        RatingPersistRequest {
+            source_id: self.source_id.clone(),
+            lifecycle_generation: self.lifecycle_generation,
+            root: self.root.clone(),
+            database_root: self.database_root.clone(),
+            relative_path: self.relative_path.clone(),
+            absolute_path: self.absolute_path.clone(),
+            rating: self.rating,
+            locked: self.locked,
+        }
+    }
 }
 
 fn direction_label(delta: i8) -> &'static str {

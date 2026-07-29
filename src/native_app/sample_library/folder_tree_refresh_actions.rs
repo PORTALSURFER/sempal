@@ -76,6 +76,7 @@ impl NativeAppState {
             .library
             .folder_browser
             .apply_folder_tree_refresh_result(result);
+        self.reapply_desired_rating_overlay();
         if changed {
             self.persist_user_configuration("folder_browser.folder_tree_refresh", started_at);
         }

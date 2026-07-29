@@ -65,6 +65,7 @@ impl NativeAppState {
         let started_at = Instant::now();
         let count = batch.events.len();
         self.library.apply_folder_scan_discovery_batch(batch);
+        self.reapply_desired_rating_overlay();
         if logging::debug_logging_enabled() {
             tracing::debug!(
                 target: logging::ACTION_EVENT_TARGET,

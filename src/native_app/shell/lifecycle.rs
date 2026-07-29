@@ -145,6 +145,9 @@ impl NativeAppState {
         self.background.source_lifecycle_generations =
             self.background.source_processing.lifecycle_generations();
         self.background
+            .rating_persist
+            .retain_current_lifecycles(&self.background.source_lifecycle_generations);
+        self.background
             .source_processing_health
             .retain(|source_id, health| {
                 self.background.source_lifecycle_generations.get(source_id)
@@ -461,6 +464,13 @@ impl NativeAppState {
         let started_at = Instant::now();
         let source_processing = self.background.source_processing.shutdown();
         let harvest_touched_unflushed = self.background.harvest_touched_persist.close();
+        let rating_persist_unflushed = self.background.rating_persist.close();
+        if rating_persist_unflushed != 0 {
+            tracing::warn!(
+                count = rating_persist_unflushed,
+                "Rating persistence stopped with unflushed requests"
+            );
+        }
         if harvest_touched_unflushed != 0 {
             tracing::warn!(
                 count = harvest_touched_unflushed,

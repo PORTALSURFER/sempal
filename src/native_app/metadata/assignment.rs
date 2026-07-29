@@ -1,14 +1,8 @@
-use super::persistence::{
-    persist_metadata_rating_assignment, persist_metadata_tag_assignment,
-    persist_metadata_tag_assignments,
-};
+use super::persistence::{persist_metadata_tag_assignment, persist_metadata_tag_assignments};
 use super::playback_type_tags::{
     playback_type_replacement_present, replace_other_playback_type_tags,
 };
-use super::types::{
-    MetadataRatingPersistRequest, MetadataRatingPersistResult, MetadataTagPersistRequest,
-    MetadataTagPersistResult,
-};
+use super::types::{MetadataTagPersistRequest, MetadataTagPersistResult};
 use super::{GuiMessage, MetadataMessage, NativeAppState};
 use crate::native_app::app::ExtractedFilePlaybackType;
 use radiant::prelude as ui;
@@ -63,17 +57,28 @@ impl NativeAppState {
             EXTRACTED_FILE_RATING,
             EXTRACTED_FILE_LOCKED,
         );
-        enqueue_metadata_rating_persist_request(
-            MetadataRatingPersistRequest {
-                absolute_path: absolute_path.to_path_buf(),
-                source_root: source_root.clone(),
-                source_database_root: source_database_root.clone(),
+        let source_id = self
+            .library
+            .folder_browser
+            .source_id_for_file_path(absolute_path)
+            .ok_or_else(|| String::from("extracted file source is unavailable"))?;
+        self.background.rating_persist.enqueue(
+            crate::native_app::sample_library::sample_ratings::RatingPersistRequest {
+                source_id: source_id.clone(),
+                lifecycle_generation: self
+                    .background
+                    .source_lifecycle_generations
+                    .get(&source_id)
+                    .copied(),
+                root: source_root.clone(),
+                database_root: source_database_root.clone(),
                 relative_path: relative_path.clone(),
+                absolute_path: absolute_path.to_path_buf(),
                 rating: EXTRACTED_FILE_RATING,
                 locked: EXTRACTED_FILE_LOCKED,
             },
-            context,
         );
+        self.background.rating_persist.schedule_if_idle(context);
 
         self.assign_extracted_file_playback_type(
             absolute_path,
@@ -414,16 +419,6 @@ impl NativeAppState {
         }
     }
 
-    pub(in crate::native_app) fn finish_metadata_rating_persist(
-        &mut self,
-        result: MetadataRatingPersistResult,
-    ) {
-        if let Err(error) = result.result {
-            let label = crate::native_app::app::sample_path_label(&result.absolute_path);
-            self.ui.status.sample = format!("Rating for {label} not saved: {error}");
-        }
-    }
-
     fn selected_metadata_tag_targets(
         &self,
         action: &'static str,
@@ -549,17 +544,4 @@ fn enqueue_metadata_tag_persist_requests(
                 |result| GuiMessage::Metadata(MetadataMessage::MetadataTagsPersisted(result)),
             );
     }
-}
-
-fn enqueue_metadata_rating_persist_request(
-    request: MetadataRatingPersistRequest,
-    context: &mut ui::UiUpdateContext<GuiMessage>,
-) {
-    context
-        .business()
-        .background("gui-metadata-rating-persist")
-        .run(
-            move |_| persist_metadata_rating_assignment(request),
-            |result| GuiMessage::Metadata(MetadataMessage::MetadataRatingPersisted(result)),
-        );
 }
