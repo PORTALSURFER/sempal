@@ -88,8 +88,18 @@ on their exact timings or messages.
   settings, and producer version.
 - **Operation**: one user command or external reconciliation saga with one durable
   operation ID, intent, phases, disposition, status, and recovery record.
+- **Participant checkpoint**: durable evidence from one owner that permits the coordinator
+  to advance an operation without adding a journal phase. Cross-source move, watcher
+  continuity, reserve recovery, and pre-publish cancellation checkpoints are participant
+  evidence, not Mermaid state nodes.
 - **Publication**: making a committed source revision and its bounded projection visible
   to downstream consumers. A filesystem write or watcher callback is not publication.
+- **Watcher continuity proof**: the tuple of source/root identity, backend stream identity,
+  watcher generation, durable last-ack cursor/token, and contiguous replay coverage from that
+  cursor to the evidence batch boundary.
+- **Recovery reserve charge**: a durable, serialized per-volume recovery-only reservation
+  with an exact bounded byte budget, control-plane margin, spend/reconstitution state, and
+  operation linkage. It is not ordinary capacity.
 - **Readiness**: durable desired/observed artifact state for a source identity and revision;
   cache availability alone is never readiness.
 - **Region**: the smallest filesystem area whose truth may have changed. Regions widen from
@@ -165,7 +175,21 @@ These are normative target invariants.
     with `RecoveryReserveLow` or `DiskPressureRecoveryOnly`; it creates no journal or
     disposition. After `IntentDurable`, a failed claim is `RetryPending` when no incomplete
     participant is known, or `PartialNeedsRetry` only when a durable participant checkpoint
-    proves incomplete work. It never borrows the protected floor.
+    proves incomplete work. Ordinary work cannot consume the protected floor; recovery-only
+    use follows the serialized charge/spend/reconstitute protocol below.
+16. A cross-source move publishes and reopens the destination before committing
+    `DestinationSourceReconciled`, durably records origin-removal intent before any origin
+    mutation, verifies capability-bound origin absence, and retires origin membership only
+    after that proof. Both copies, uncertain absence, or ambiguous identity preserve evidence
+    and remain recoverable; they never become silent success or destructive cleanup.
+17. Watcher-derived publication requires a `WatcherContinuityProof`. Memory-only evidence,
+    an absent or non-replayable cursor, a gap, a source/root, stream, or generation change, or
+    any otherwise unprovable coverage retains the last good projection and requires a
+    conservative affected-region or source audit before watcher-derived publication.
+18. A pre-publish cancellation is not terminal until staging, if any, has either been
+    capability-bound verified absent and its capacity claim durably released, or has been
+    durably preserved for recovery with its capacity still accounted. Uncertain or preserved
+    staging remains actionable and nonterminal.
 
 ## Identities, lifecycle, and revision fences
 
@@ -286,7 +310,11 @@ An operation record contains at least:
   required by that mode;
 - phase, disposition, retry count/lease, cancellation request, and user-status key;
 - participant checkpoints for filesystem, source DB, global DB, Harvest, projection,
-  readiness, and artifacts;
+  readiness, and artifacts, including cross-source move ordering and pre-publish cancellation
+  cleanup/preservation evidence;
+- per-volume recovery-reserve ledger reference, charge ID, exact bounded charge/spend budget,
+  control-plane margin, serialized charge state, and reconstitution evidence when recovery-only
+  capacity is used;
 - recovery hints that are relative/capability-bound and are revalidated against live state;
 - error class, stable diagnostic code, bounded context, and redaction-safe details.
 
@@ -351,6 +379,40 @@ permission to continue with a stronger claim. The journal retains the attempted 
 result, filesystem classification, and verification observation so later recovery can narrow
 or widen the claim without guessing.
 
+### Cross-source move participant ordering
+
+A cross-source move has one durable operation but two independently owned source participants.
+The ordered target contract is:
+
+1. publish and reopen-verify the destination;
+2. commit the destination source and record `DestinationSourceReconciled`;
+3. durably record the origin-removal intent, including the origin source identity, root
+   capability, expected path, sample/content identity, and operation ID, as
+   `OriginRemovalStarted` before mutating the origin;
+4. perform the physical origin mutation through the origin capability;
+5. verify capability-bound absence of the expected origin object and record
+   `OriginAbsenceVerified`;
+6. commit origin source retirement, which completes the source participants; and
+7. run the remaining global/Harvest rekey, projection, and readiness work.
+
+These are participant checkpoints while the journal phase remains `FilesystemPublished`; the
+phase advances to `SourceReconciled` only after origin retirement commits. They do not add a
+journal phase or a Mermaid state node. A crash after `OriginRemovalStarted` re-reads both
+locations and the durable identities before retrying: a missing origin with one verified
+destination may continue to absence verification, an unchanged origin may retry the physical
+mutation, and both copies, a replacement object, or an identity mismatch must preserve both
+copies and widen to `AuditRequired` or `FailedDataLossRisk`. An unproven absence never retires
+the origin source. A capability or identity ambiguity is not permission to delete either copy.
+
+For a cross-source move, `Succeeded` additionally requires all seven ordering outcomes,
+including destination reconciliation, durable origin-removal intent, verified origin absence,
+origin retirement, and all required downstream participants. `CancelledAfterPublish` requires
+the destination outcome and a complete, explicitly chosen forward or compensating recovery
+record; it cannot claim that the origin was untouched after removal intent. `RolledBack`
+requires verified destination compensation plus verified origin presence/source restoration
+when origin mutation had begun. If either proof is unavailable, the operation remains resumable
+or enters a guarded failure disposition with both possible files preserved.
+
 ### Phases and dispositions
 
 The durable phase machine begins at `IntentDurable`; `Accepted` is not a phase. The normal
@@ -369,7 +431,9 @@ phase order is:
    verified. The record separately reports namespace atomicity and power-loss synchronization
    evidence according to [Publication durability contract](#publication-durability-contract).
 5. `SourceReconciled`: each affected physical source has committed its manifest, identity,
-   directory, and source-local metadata delta.
+   directory, and source-local metadata delta. For a cross-source move this phase is reached
+   only after `DestinationSourceReconciled`, `OriginRemovalStarted`,
+   `OriginAbsenceVerified`, physical origin mutation, and origin source retirement.
 6. `GlobalReconciled`: all required global-library and Harvest participants are `Applied` or
    `NotApplicable`; only optional rebuildable artifact work may remain deferred, represented
    by the later `SucceededWithDeferredArtifacts` terminal disposition.
@@ -396,13 +460,13 @@ must name the guard and the participant checkpoint that proved it.
 
 | Phase | Legal resumable overlay | Guard to advance or terminate |
 | --- | --- | --- |
-| `IntentDurable`, `Prepared` | None, `RetryPending`, `CancelRequestedBeforePublish` | Admission/retry may continue. `CancelledBeforePublish` or `BlockedByUser` may enter `Terminal` only after no filesystem mutation or publish evidence is found. |
-| `FilesystemStaged` | None, `RetryPending`, `PartialNeedsRetry`, `CancelRequestedBeforePublish` | Resume or discard only after live staging/final inspection proves whether publication occurred. No terminal success is legal here. |
-| `FilesystemPublished` | None, `RetryPending`, `PartialNeedsRetry`, `AuditRequired`, `CancelRequestedAfterPublish` | Source reconciliation must consume the verified output without repeating filesystem work. Cancellation remains resumable until required reconciliation completes. |
+| `IntentDurable`, `Prepared` | None, `RetryPending`, `CancelRequestedBeforePublish` | Admission/retry may continue. `CancelledBeforePublish` or `BlockedByUser` may enter `Terminal` only after no publish evidence exists and any staging cleanup has verified absence and released its claim. Preserved or uncertain staging stays nonterminal and capacity-accounted. |
+| `FilesystemStaged` | None, `RetryPending`, `PartialNeedsRetry`, `CancelRequestedBeforePublish` | Resume or discard only after live staging/final inspection proves whether publication occurred. Pre-publish cancellation must record staging removal/absence and capacity-release evidence, or preserve staging with an actionable nonterminal disposition. No terminal success is legal here. |
+| `FilesystemPublished` | None, `RetryPending`, `PartialNeedsRetry`, `AuditRequired`, `CancelRequestedAfterPublish` | Source reconciliation must consume the verified output without repeating filesystem work. Cross-source moves must complete the ordered origin-removal checkpoints. Cancellation remains resumable until required reconciliation or verified compensation completes. |
 | `SourceReconciled` | None, `RetryPending`, `PartialNeedsRetry`, `AuditRequired`, `CancelRequestedAfterPublish` | Required global/Harvest work deferred or failed stays `SourceReconciled + PartialNeedsRetry`; it must not be called globally reconciled or successful. A source/projection evidence gap stays auditable. |
 | `GlobalReconciled` | None, `RetryPending`, `AuditRequired`, `CancelRequestedAfterPublish` | Every required global and Harvest participant is `Applied` or `NotApplicable`; otherwise the phase cannot advance. |
 | `ProjectionPublished`, `ReadinessScheduled` | None, `RetryPending`, `AuditRequired`, `CancelRequestedAfterPublish` | A projection gap remains `AuditRequired` until the authoritative revision is republished. Optional artifact deficits may remain deferred, but required participants must be complete. |
-| `Terminal` | None | `Succeeded` requires all required participants `Applied`/`NotApplicable` and no unresolved audit. `SucceededWithDeferredArtifacts` permits only optional rebuildable artifacts to be deferred. `CancelledBeforePublish` requires no publish evidence; `CancelledAfterPublish` requires verified publish plus complete required reconciliation. `RolledBack` requires verified compensating work. `BlockedByUser`, `FailedPreservingData`, and `FailedDataLossRisk` require their explicit safe-state/escalation guards and preserve evidence. |
+| `Terminal` | None | `Succeeded` requires all required participants `Applied`/`NotApplicable` and no unresolved audit; cross-source moves additionally require every ordered origin/destination checkpoint. `SucceededWithDeferredArtifacts` permits only optional rebuildable artifacts to be deferred. `CancelledBeforePublish` requires no publish, verified staged absence when staging existed, and durable capacity release. `CancelledAfterPublish` requires verified publish plus complete required reconciliation or a verified compensating outcome. `RolledBack` requires verified compensating work, including origin restoration when needed. `BlockedByUser`, `FailedPreservingData`, and `FailedDataLossRisk` require their explicit safe-state/escalation guards and preserve evidence. |
 
 `RejectedBeforeIntent` is outside this phase/disposition table: it is a non-durable
 coordinator result, not a journal phase or durable disposition. Pre-intent cancellation is
@@ -412,17 +476,19 @@ a known incomplete participant or non-atomic publication checkpoint; the checkpo
 durable and prove incomplete work, so an initial admission denial can never select it.
 `AuditRequired` requires uncertain evidence or a revision gap and forbids success until the
 audit closes; `CancelRequestedBeforePublish` requires a cancel request before any verified
-publish; and `CancelRequestedAfterPublish` requires a verified publish with unfinished
-required reconciliation. `Succeeded` requires every required participant to be `Applied` or
-`NotApplicable` and every projection gap closed.
+publish and starts the staged-payload cleanup protocol; and `CancelRequestedAfterPublish`
+requires a verified publish with unfinished required reconciliation. `Succeeded` requires
+every required participant to be `Applied` or `NotApplicable` and every projection gap closed.
 `SucceededWithDeferredArtifacts` permits only optional rebuildable artifacts to be deferred.
-`CancelledBeforePublish` requires a live-state proof of no publish, `CancelledAfterPublish`
-requires verified publish plus complete required reconciliation, `RolledBack` requires
-verified compensation, `BlockedByUser` requires an explicit user decision or capability
-action, `FailedPreservingData` requires bounded recovery exhaustion with preserved evidence,
-and `FailedDataLossRisk` requires unresolved safety ambiguity with escalation and no destructive
-cleanup. These guards apply on every transition to the corresponding overlay or terminal
-record.
+`CancelledBeforePublish` requires a live-state proof of no publish, capability-bound verified
+staging absence when staging existed, and a durable release of the associated capacity claim;
+preserved or uncertain staging is nonterminal. `CancelledAfterPublish` requires verified
+publish plus complete required reconciliation, `RolledBack` requires verified compensation,
+`BlockedByUser` requires an explicit user decision or capability action, `FailedPreservingData`
+requires bounded recovery exhaustion with preserved evidence, and `FailedDataLossRisk` requires
+unresolved safety ambiguity with escalation and no destructive cleanup. For cross-source moves,
+these guards also require the destination/origin ordering contract above. These guards apply on
+every transition to the corresponding overlay or terminal record.
 
 Success therefore cannot be emitted while required Global or Harvest work is deferred. A
 projection gap is never converted to success by a stale view; it remains `AuditRequired` until
@@ -441,11 +507,15 @@ source reconciliation (then any required global, Harvest, projection, or readine
 checkpoint) without repeating filesystem work, and emits terminal `CancelledAfterPublish`
 only after the durable operation has a complete required recovery record.
 
-Only journal phases are state nodes in the diagram. The seven named checkpoints are non-journal
-participant checkpoints: `CopyStarted`, `CopyProgress`, `DestinationFlushAttempted`,
+Only journal phases are state nodes in the diagram. The named publication checkpoints are
+non-journal participant checkpoints: `CopyStarted`, `CopyProgress`, `DestinationFlushAttempted`,
 `CopyValidated`, `PublishStarted`, and `PublishObserved` execute while the journal phase remains
 `FilesystemStaged`; `ReopenedVerified` is the participant checkpoint that advances to
-`FilesystemPublished`.
+`FilesystemPublished`. Cross-source move checkpoints (`DestinationSourceReconciled`,
+`OriginRemovalStarted`, and `OriginAbsenceVerified`) execute while the journal phase remains
+`FilesystemPublished` until origin retirement. Pre-publish cancellation uses non-journal
+`StagingRemovalStarted`, `StagingAbsenceVerified`, `CapacityReleaseVerified`, and
+`StagingPreservedForRecovery` evidence; none of these checkpoints is a state node.
 
 ```mermaid
 stateDiagram-v2
@@ -455,9 +525,9 @@ stateDiagram-v2
     FilesystemStaged --> Prepared : verified no publish
     FilesystemStaged --> FilesystemPublished : ReopenedVerified participant checkpoint / mode-specific verified publication
     note right of FilesystemStaged
-        Non-journal participant checkpoints: CopyStarted, CopyProgress,
-        DestinationFlushAttempted, CopyValidated, PublishStarted,
-        PublishObserved, ReopenedVerified
+        Non-journal participant checkpoints: publication checkpoints;
+        cross-source move checkpoints; cancellation cleanup or
+        preserved-for-recovery checkpoints
     end note
     FilesystemPublished --> SourceReconciled
     SourceReconciled --> GlobalReconciled
@@ -485,6 +555,14 @@ stateDiagram-v2
 - After `FilesystemPublished`, recovery never simply deletes the output because a later DB
   step failed. It reconciles the output into the source or retains it as an explicitly
   visible orphan/recovery item.
+- For a cross-source move, recovery after destination publication first reconciles the
+  destination, then uses the durable origin-removal intent and capability-bound live state to
+  decide whether to retry origin mutation, verify absence, retire origin membership, or
+  preserve both copies for audit. It never infers origin absence from a missing watcher event
+  or from a journal stage.
+- A pre-publish cancellation never becomes terminal from a cancel flag alone. Staging is
+  removed only with verified capability-bound absence and a durable capacity release, or is
+  preserved with a durable recovery charge and an actionable nonterminal status.
 - A source DB commit without global DB completion is a retryable saga checkpoint, not a
   second filesystem operation.
 - A global DB commit without projection completion is repaired by republishing from the
@@ -548,9 +626,13 @@ actions.
   separately journaled non-atomic copy/validate/publish protocol and retain partial status
   until visibility is verified. Source writers commit path and directory truth;
   content-derived readiness remains valid when content identity is unchanged.
-- **Cross-source move** is an idempotent saga: durable intent, source staging, destination
-  publish, destination commit, source retirement commit, global/Harvest rekey, projection,
-  and readiness. Re-running a step uses identities and operation ID to avoid duplicate rows.
+- **Cross-source move** is an idempotent saga with explicit participant ordering: durable
+  intent, destination publish and reopen verification, `DestinationSourceReconciled`, durable
+  origin-removal intent, physical origin mutation, capability-bound `OriginAbsenceVerified`,
+  origin source retirement, then global/Harvest rekey, projection, and readiness. Re-running a
+  step uses identities and operation ID to avoid duplicate rows. A crash after origin-removal
+  intent inspects both copies before choosing retry, absence verification, audit, or guarded
+  compensation; both copies or ambiguous identity are preserved and actionable.
 - **Trash** is a move into an app-owned or OS-approved recovery location with a durable
   restore record. It is not a metadata-only hide. Source membership retires only after the
   physical move is verified.
@@ -579,6 +661,27 @@ flags/cookies where available, timestamp, watcher generation, root identity, and
 error markers. It does not query SQLite, enumerate recursively, hash, hydrate metadata, or
 publish UI state. Raw evidence remains durable or retained until a reconciliation result
 acknowledges it or explicitly widens to a source audit.
+
+### Watcher continuity and replay proof
+
+Watcher-derived publication is permitted only when the reconciliation records a
+`WatcherContinuityProof` containing all of the following: the same source/root identity, the
+same backend stream identity, the same watcher generation, a durable last-ack cursor/token that
+the backend can replay, and contiguous replay coverage from that cursor through the current
+evidence batch boundary. The acknowledgement advances durably with the source checkpoint; a
+cursor held only in memory is not an acknowledgement or a recovery proof.
+
+On startup, watcher restart, or source replacement, continuity is unproven when the cursor is
+absent, non-replayable, or memory-only; replay has a gap; the root, backend stream, or watcher
+generation changes; raw events were lost; or the backend cannot establish contiguous coverage.
+The coordinator retains the last good projection and raw evidence, marks the affected region
+or source for a conservative audit, and forbids watcher-derived publication until that audit
+commits an authoritative source revision. An audit may publish its verified revision, but it
+does not retroactively convert an unproven watcher batch into continuous evidence.
+
+The continuity proof, replay start/end, gap reason, last-good source/projection revisions, and
+audit scope are durable diagnostics. A failed proof is actionable (`WatcherContinuityUnproven`),
+not a reason to clear the view or infer deletion.
 
 Real Finder copy/rename/delete events must be treated as the contract. Synthetic path-only
 fixtures are useful unit inputs but cannot define event shape, ordering, parent coverage, or
@@ -615,8 +718,9 @@ The source writer commits directory truth and supported-file truth together at o
 revision. The delta includes added, changed, moved, retired, and directory-only entries plus
 the affected ancestors needed to reparent the browser tree. The projection publisher prepares
 rows off the UI thread and applies only a bounded delta whose base revision is the currently
-visible revision. A missing base revision or a non-contiguous delta retains the last good
-projection and requests a full authoritative snapshot or audit.
+visible revision and whose watcher continuity proof is valid when watcher evidence is used. A
+missing base revision, a non-contiguous delta, or an unproven watcher continuity proof retains
+the last good projection and requests a full authoritative snapshot or audit.
 
 There is no per-event full metadata snapshot, recursive browser hydration, or UI-thread I/O.
 Full snapshots are a gap/initialization path, prepared off-thread and published atomically.
@@ -692,18 +796,43 @@ Readers have explicit classes and different guarantees:
 | External/unknown reader | Ungoverned by Wavecrate; it may retain a WAL snapshot indefinitely. Wavecrate uses passive checkpoints, never blocks or kills the reader, and measures the retained frames. | `ExternalReaderRetainingWal` and, at the hard watermark, `WalHardWatermark`; pause/reject WAL-growing work while preserving recovery capacity. |
 
 The initial target also reserves a non-sparse 256 MiB recovery reserve on every distinct
-affected writable volume. The reserve is not available to routine work: the capacity plan in
-each journal record accounts for destination staging, a final/direct non-atomic destination,
-the journal, source/global DB plus WAL/SHM, and coexisting backup/replacement/recovery
-payloads before any side effect. Identical allocation is counted once for a same-volume
-rename, while coexisting allocations are counted separately. If free capacity reaches the
-reserve floor or a required reservation cannot fit, new user operations and background writes
-are rejected with `RecoveryReserveLow` or `DiskPressureRecoveryOnly`; only bounded journal,
-recovery, ownership-release, and required already-admitted commit work may run. If the hard
-WAL watermark is reached while capacity remains above the protected reserve, new WAL-growing
-admission is paused/retried and routine work is rejected first. This reserve is a target
-default and must be provisioned as real non-sparse capacity, not merely a quota or sparse
-file. Capacity failure never borrows the floor.
+affected writable volume. Ordinary user work, background writes, and routine maintenance are
+prohibited from consuming or claiming that floor. The capacity plan in each journal record
+accounts for destination staging, a final/direct non-atomic destination, the journal,
+source/global DB plus WAL/SHM, and coexisting backup/replacement/recovery payloads before any
+side effect. Identical allocation is counted once for a same-volume rename, while coexisting
+allocations are counted separately.
+
+Recovery may use the protected floor only through a durable, serialized per-volume protocol:
+
+1. The recovery owner acquires the volume's recovery-reserve charge lock; no two charges for
+   the same volume may overlap. No new admission or routine work may start on that volume
+   while a charge is active; ordinary admission remains closed until reconstitution.
+2. Before consuming any reserve bytes, the owner durably records a `RecoveryReserveCharge`
+   with the operation ID, volume identity, purpose, exact bounded `charge_bytes`, an explicit
+   control-plane margin, pre-charge capacity, and state `Charged`. The charge budget plus its
+   margin must fit within the 256 MiB floor; every spend is bounded by that recorded budget.
+3. Each recovery allocation and release is serialized through the charge and durably records
+   `Spent`/remaining budget before the corresponding physical action is relied upon. A
+   memory-only charge, release, or budget extension is invalid.
+   Protected bytes are never consumed or released on the basis of an unrecorded transition.
+4. After recovery work, the owner verifies that the reserve is physically reconstituted as
+   non-sparse capacity, durably records `Reconstituted`, and only then reopens ordinary
+   admission. The control-plane margin remains unavailable until this record is durable.
+5. After a crash, startup reconciles the durable charge ledger with live filesystem and volume
+   state conservatively. A charged or spent budget remains unavailable until reconciliation
+   and reconstitution are verified; missing ledger or capacity evidence enters
+   `RecoveryReserveReconstitutionRequired` with retry/free-space/recovery actions.
+
+If free capacity reaches the reserve floor or a required ordinary reservation cannot fit, new
+user operations and background writes are rejected with `RecoveryReserveLow` or
+`DiskPressureRecoveryOnly`; only bounded journal, recovery, ownership-release, and required
+already-admitted commit work may run. If the hard WAL watermark is reached while capacity
+remains above the protected reserve, new WAL-growing admission is paused/retried and routine
+work is rejected first. This reserve is a target default and must be provisioned as real
+non-sparse capacity, not merely a quota or sparse file. Ordinary work is prohibited while a
+recovery-only charge is active; that charge is the sole bounded exception and must be
+reconstituted before normal admission resumes.
 
 WAL telemetry records WAL size (`wal_bytes_before/after`), soft/hard watermark crossings,
 retained frames (where `log_frames - checkpointed_frames` is available), reader class and
@@ -718,8 +847,10 @@ actionable and passive maintenance continues without making an unsafe durability
 The writer receives a normalized region and current observations prepared by a worker. In a
 bounded transaction it verifies the source identity/generation, applies idempotent changes,
 increments the appropriate source revision only when authoritative source truth changed,
-records watcher checkpoint evidence separately, and returns a structured delta. Metadata-only
-updates do not advance path/identity revision unless they actually change source truth.
+records watcher checkpoint evidence separately, and advances a durable last-ack cursor only
+with a valid `WatcherContinuityProof`; otherwise it records the gap/audit requirement and
+retains the last good projection. It returns a structured delta. Metadata-only updates do not
+advance path/identity revision unless they actually change source truth.
 
 ## Integration of metadata, ratings, history, Harvest, readiness, and artifacts
 
@@ -779,7 +910,9 @@ retain distinct durable IDs.
 After `IntentDurable`, a capacity claim that cannot be made within the retry policy becomes
 `RetryPending` with `RecoveryReserveLow` or `DiskPressureRecoveryOnly` when no incomplete
 participant is known. It becomes `PartialNeedsRetry` only when a durable participant
-checkpoint proves incomplete work. It never borrows the protected floor. A full queue does
+checkpoint proves incomplete work. Ordinary work cannot consume the protected floor; a
+recovery-only charge must use the serialized protocol in [WAL maintenance and reader
+snapshots](#wal-maintenance-and-reader-snapshots). A full queue does
 not create a durable rejection or disposition; a low-priority request may be described as
 deferred with its retry cause, but the typed result remains `RejectedBeforeIntent`.
 
@@ -788,6 +921,11 @@ Cancellation rules:
 - before `IntentDurable`: cancel as a non-durable `RejectedBeforeIntent` result, without a
   durable filesystem side effect or operation record;
 - after intent and before filesystem publish: stop before the next safe boundary and record
+  the resumable `CancelRequestedBeforePublish`; inspect final and staging paths, then record
+  `StagingRemovalStarted` followed by capability-bound `StagingAbsenceVerified` and
+  `CapacityReleaseVerified` when cleanup succeeds. If removal or absence is uncertain, record
+  `StagingPreservedForRecovery`, retain the capacity claim, and remain nonterminal with an
+  actionable retry/recovery status. Only the verified cleanup path may enter terminal
   `CancelledBeforePublish`;
 - after publish: first record the resumable `CancelRequestedAfterPublish` checkpoint; recovery
   finishes or compensates the durable saga before resolving to `CancelledAfterPublish` or
@@ -823,15 +961,21 @@ legal durable overlay such as `RetryPending`, `PartialNeedsRetry`, or `AuditRequ
 | `PowerLossSynchronizationUnverified` | `fsync`/`FlushFileBuffers` unavailable, downgraded, or medium not classifiable | After intent, retain visibility result and evidence with a legal retry/partial overlay; never claim power-loss durability | “File is visible; storage durability could not be verified.” |
 | `SourceReconciliationDelayed` | Filesystem published; source commit busy/failed | `RetryPending` and retain the published path | “Created; finishing library registration.” |
 | `ProjectionGap` | Delta base/revision gap, incomplete hydration | `AuditRequired`; retain last good view and use full snapshot/audit | “Library view is catching up.” |
+| `WatcherContinuityUnproven` | Memory-only/lost evidence, absent or non-replayable cursor, replay gap, or source/root, stream, or generation change | `AuditRequired`; retain the last good projection and audit the affected region/source before watcher-derived publication | “Library changes need verification.” with Audit |
+| `CrossSourceOriginRemovalPending` | Crash, contention, or unavailable origin after durable origin-removal intent | `RetryPending` or `PartialNeedsRetry`; retain destination and origin evidence until absence and origin retirement are proven | “Move is finishing origin cleanup.” with Retry/Audit |
+| `OriginAbsenceUnverified` | Capability-bound absence cannot be proven after physical origin mutation | `AuditRequired` or guarded `FailedDataLossRisk`; do not retire origin membership or delete either copy | “Move needs source verification.” with Audit |
+| `CrossSourceIdentityAmbiguous` | Both copies, replacement identity, or origin/destination identity mismatch | `AuditRequired`/`FailedDataLossRisk`; preserve both copies and require an explicit recovery action | “Move needs attention; possible copies were preserved.” |
+| `StagingPreservedForRecovery` | Pre-publish cancellation cannot prove staged payload removal/absence | `PartialNeedsRetry` or `AuditRequired`; retain the capacity claim and keep the operation nonterminal | “Cancellation is waiting for staged-data recovery.” with Retry/Reveal |
 | `ArtifactDeferred` | Cache or analysis write failed/evicted | Retryable readiness deficit | “Available; analysis is pending.” |
 | `ExternalReaderRetainingWal` | External/unknown reader prevents passive WAL checkpoint progress | Before intent: `RejectedBeforeIntent`; after intent: never block or kill the reader, pause WAL-growing work at the hard watermark, and retain recovery reserve with a legal retry overlay | “Another process is retaining database history.” with retry/close-other-process guidance |
 | `WalHardWatermark` | WAL reaches the initial 64 MiB write-admission watermark | Before intent: `RejectedBeforeIntent`; after intent: pause/reject new WAL-growing work and allow only already-admitted bounded commits that fit reserved capacity and recovery-only work | “Database maintenance is catching up; new work is paused.” |
 | `WalReaderBudgetExpired` | Governed Wavecrate snapshot exceeds its time/row/byte budget | Cancel/close at a safe boundary and resume from a new snapshot | “Library view is catching up.” |
 | `RecoveryReserveLow` | Writable-volume free space reaches the non-sparse 256 MiB reserve floor or cannot fit an existing required reservation | Before intent: `RejectedBeforeIntent` after provisional-claim release; after intent: recovery-only admission with `RetryPending` unless a durable incomplete checkpoint proves `PartialNeedsRetry` | “Storage is reserved for recovery; new work is paused.” |
-| `DiskPressureRecoveryOnly` | A conservative per-volume peak claim cannot fit without borrowing the protected floor | Before intent: `RejectedBeforeIntent` after provisional-claim release; after intent: allow only bounded recovery or already-admitted work whose claim fits, with `RetryPending` unless a durable incomplete checkpoint proves `PartialNeedsRetry` | “Storage is reserved for recovery; new work is paused.” |
+| `DiskPressureRecoveryOnly` | A conservative per-volume peak claim cannot fit above the protected floor | Before intent: `RejectedBeforeIntent` after provisional-claim release; after intent: allow only bounded recovery or already-admitted work whose claim fits, with `RetryPending` unless a durable incomplete checkpoint proves `PartialNeedsRetry`; any reserve use requires a serialized durable charge | “Storage is reserved for recovery; new work is paused.” |
 | `DiskPressure` | Insufficient space above the reserve for staging, journal, database, or artifacts | Before intent: `RejectedBeforeIntent`; after intent: pause low-priority writes, preserve durable data, and use a legal retry/partial overlay after safe checkpoint/space recovery | “Storage is low; background work is paused.” with recovery guidance |
+| `RecoveryReserveReconstitutionRequired` | Crash or failure leaves a durable reserve charge/spend without verified physical reconstitution | Recovery-only serialized reconciliation; keep the volume closed to ordinary admission until `Reconstituted` is durable | “Recovery storage needs to be restored.” with Free space/Retry |
 | `IntegrityFailure` | Corrupt DB, malformed journal, duplicate identity | Before intent: `RejectedBeforeIntent`; after intent: preserve data, isolate, and use `FailedPreservingData` or another guarded durable disposition | “Recovery needs attention.” |
-| `Cancelled` | User cancellation at a safe boundary | Before intent: `RejectedBeforeIntent`; after intent: legal cancellation overlay or terminal disposition | “Cancelled” plus whether a file was published. |
+| `Cancelled` | User cancellation at a safe boundary | Before intent: `RejectedBeforeIntent`; after intent: `CancelRequestedBeforePublish` or `CancelRequestedAfterPublish`; terminal disposition only after the applicable cleanup, reconciliation, or compensation guard | “Cancellation is being recovered.” plus whether a file was published. |
 
 Status is attached to the operation ID and participant counts, not just a transient spinner.
 The UI may show optimistic result, waiting, retrying, partial success, complete, or needs
@@ -855,12 +999,18 @@ reveal, restore, audit, choose destination, or dismiss after preserving evidence
    may create/update retry leases, recovery checkpoints, or operation status records.
 3. Open the global-library writer and, for each source, acquire its lease/epoch before starting
    the source writer owner. Run compatible open/maintenance policy, reconcile source-local
-   journal rows and leases, and compare durable watcher checkpoint with current watcher
-   coverage. Recover a stale lease only after liveness/expiry checks and live filesystem/DB
-   verification; never take over an active owner.
+   journal rows and leases, and compare the durable watcher continuity tuple (source/root,
+   backend stream, generation, replayable last-ack cursor/token, and contiguous coverage) with
+   current watcher coverage. Recover a stale lease only after liveness/expiry checks and live
+   filesystem/DB verification; never take over an active owner. Reconcile per-volume reserve
+   charges before ordinary admission; charged or spent reserve remains unavailable until
+   reconstitution is verified and durable.
 4. Recover operations in order of durable phase, but inspect filesystem and DB truth instead
    of trusting stage. Resume idempotent steps, adopt published outputs, restore safe staged
-   data, or mark `FailedPreservingData`/`AuditRequired` with preserved evidence.
+   data, run the cross-source origin-removal/absence checks, and complete or preserve
+   pre-publish cancellation staging. Unproven watcher continuity retains the last good
+   projection and starts an affected-region/source audit; otherwise mark
+   `FailedPreservingData`/`AuditRequired` with preserved evidence.
 5. Publish retained browser projections only when their source revision remains valid. Start
    audits and readiness catch-up as bounded background work.
 6. Reattach UI statuses to in-flight/retry operations; do not reset a user-visible operation
@@ -913,7 +1063,14 @@ classification, staging/final device or volume comparison, publication mode, vis
 verification result, namespace atomicity result, synchronization primitive/result,
 directory-sync support, and reopen verification. Logs distinguish queue wait, filesystem
 latency, SQLite busy time, transaction time, projection preparation, UI apply time, and
-readiness/artifact work.
+readiness/artifact work. Cross-source move spans record destination/origin participant
+checkpoints, origin-removal intent, identity comparisons, absence verification result, and
+the selected forward/compensating recovery outcome. Pre-publish cancellation spans record
+staging removal/preservation checkpoints, verified absence, and capacity-release outcome.
+Watcher spans record source/root identity, backend stream identity, watcher generation,
+durable last-ack cursor/token, replay start/end, contiguous-coverage result, gap reason, and
+audit scope. Per-volume reserve spans record charge ID, exact budget, control-plane margin,
+serialized lock outcome, spend/reconstitution state, and whether ordinary admission was held.
 
 Provisional targets for implementation benchmarking, not current guarantees:
 
@@ -930,6 +1087,9 @@ Provisional targets for implementation benchmarking, not current guarantees:
   not durable without creating restart-visible status;
 - every busy retry records count, wait, owner, source, and final disposition;
 - source-wide audits expose discovered count, committed chunks, gaps, and remaining work;
+- watcher continuity exposes replay coverage, cursor availability/replayability, generation and
+  stream changes, last-good projection retention, audit starts/completions, and
+  `WatcherContinuityUnproven` outcomes;
 - WAL metrics expose soft/hard watermark crossings, reader class, retained frames, oldest
   governed snapshot age, external-reader retention when observable, and protected/free reserve
   bytes;
@@ -941,7 +1101,9 @@ Metrics must be split by operation kind, source size, region kind, watcher backe
 contention, and cache/artifact kind. Per-volume telemetry also records the capacity plan,
 allocation class, peak/current claim, claim/release outcome, protected-floor headroom, and
 whether a same-volume allocation was deduplicated or coexisted. Do not infer UI starvation
-from end-to-end latency alone.
+from end-to-end latency alone. Reserve metrics distinguish ordinary admission prohibition,
+recovery-only charge/spend/reconstitution, active control-plane margin, and actionable
+reconstitution failure.
 
 ## Failure and recovery matrix
 
@@ -951,15 +1113,23 @@ from end-to-end latency alone.
 | Validation, ownership, queue, or initial-capacity admission fails before durable intent | Release provisional claims and perform no journal, filesystem, SQLite, WAL, or SHM mutation | `RejectedBeforeIntent`; work was not started and is not durable, with a new-attempt retry action. |
 | Crash after intent, before staging | Resume or cancel intent safely | Pending/recovering status. |
 | Copy/render fails in staging | Remove only verified staging payload | Failed before publish; source unchanged. |
+| Pre-publish cancellation with staging | Record `CancelRequestedBeforePublish`; inspect final/staging, verify staged absence and capacity release, or preserve staging with its claim | Terminal `CancelledBeforePublish` only after verified cleanup; uncertain/preserved staging remains actionable and nonterminal. |
 | Staged-file or namespace synchronization fails | Record the primitive/result, stop the stronger claim, reopen/verify if safe, and downgrade or retain `PartialNeedsRetry` | Visibility, atomicity, and power-loss status remain distinct; no false durability claim. |
 | Destination filesystem cannot provide atomic rename | Run journaled non-atomic copy/validate/publish recovery | Explicit non-atomic partial or completed status; never an atomicity claim. |
-| Capacity claim fails after `IntentDurable` before a durable participant checkpoint proves incomplete work | Retain the durable record, release only proven unused claims, and retry only after the per-volume plan fits above the protected floor | `RetryPending` plus `RecoveryReserveLow` or `DiskPressureRecoveryOnly`; never borrow the reserve. |
-| Capacity claim fails after a durable participant checkpoint proves incomplete work | Retain the last durable checkpoint, release only proven unused claims, and retry only after the per-volume plan fits above the protected floor | `PartialNeedsRetry` plus `RecoveryReserveLow` or `DiskPressureRecoveryOnly`; never borrow the reserve. |
+| Capacity claim fails after `IntentDurable` before a durable participant checkpoint proves incomplete work | Retain the durable record, release only proven unused claims, and retry only after the per-volume plan fits above the protected floor | `RetryPending` plus `RecoveryReserveLow` or `DiskPressureRecoveryOnly`; ordinary work cannot consume the floor and recovery-only use requires a durable charge. |
+| Capacity claim fails after a durable participant checkpoint proves incomplete work | Retain the last durable checkpoint, release only proven unused claims, and retry only after the per-volume plan fits above the protected floor | `PartialNeedsRetry` plus `RecoveryReserveLow` or `DiskPressureRecoveryOnly`; ordinary work cannot consume the floor and recovery-only use requires a durable charge. |
+| Recovery-only reserve charge or spend is interrupted | Reconcile the durable per-volume charge with live state; keep the exact budget and control-plane margin unavailable until physical reconstitution is verified and recorded | `RecoveryReserveReconstitutionRequired`; ordinary admission remains closed for that volume. |
 | Remote/removable output is visible but synchronization is unverified | Reopen and verify content, record `VisibilityVerified` plus explicit downgrade, and retain evidence | File is visible; no atomic or power-loss guarantee. |
 | Publish succeeds, source DB busy | Keep published file; retry source reconciliation | Created/changed; registration pending. |
+| Cross-source destination source commit succeeds | Durably record `DestinationSourceReconciled`, then durably record origin-removal intent before origin mutation | Move remains in progress; no origin retirement yet. |
+| Crash after cross-source origin-removal intent | Inspect operation identity and both origin/destination objects; retry physical mutation, verify absence, or preserve evidence for audit | `CrossSourceOriginRemovalPending`; both copies or ambiguity remains nonterminal. |
+| Origin absence or identity cannot be proven | Do not retire origin source; retain both possible copies and widen to affected-source audit or guarded escalation | `OriginAbsenceUnverified`/`CrossSourceIdentityAmbiguous`; no false success or deletion. |
+| Origin absence is verified after physical mutation | Commit origin source retirement, then continue global/Harvest rekey, projection, and readiness | Move may advance; success still requires all downstream participants. |
 | Source commit succeeds, global DB busy | Retry global participant by operation ID | Source visible; global links pending. |
 | Global commit succeeds, projection worker dies | Republish from committed revision | Last good view retained until catch-up. |
 | Watcher echo is late or duplicated | Match operation/path/identity; ignore after acknowledgement | No duplicate operation or refresh storm. |
+| Watcher continuity proof is missing or non-replayable | Retain last good projection and raw evidence; audit affected region/source before watcher-derived publication | `WatcherContinuityUnproven`; no inferred deletion or publication. |
+| Watcher stream/root/generation changes or replay gap | Invalidate continuity proof, retain last good projection, and perform conservative audit | `WatcherContinuityUnproven`; audit result may publish an authoritative revision. |
 | Watcher has uncertain/overflow evidence | Widen to subtree/source audit; retain raw evidence | View catching up; no false deletion. |
 | Scan and watcher overlap | Queue evidence and reconcile after committed revision | No claim that scan completion is watcher authority. |
 | Directory contains only unsupported files or is empty | Commit directory truth independently of audio rows | Folder remains visible until proven absent. |
@@ -984,16 +1154,16 @@ event captures where available.
 
 | Area | Required coverage |
 | --- | --- |
-| Journal | Profile lock before writable journal open, recovery mutation, and durable admission; pre-intent validation/ownership/queue/initial-capacity rejection with no operation ID, record, checkpoint, retry lease, or restart status; acceptance exactly at `IntentDurable` with capacity plan/claims committed; no `Accepted` phase; per-volume capacity plans and claims for every allocation class and order; power loss at every phase, torn/truncated records, duplicate recovery, unknown phase, retry lease, cancellation before/after publish. |
-| File owner | No-follow roots, protected sources, collisions, macOS `F_FULLFSYNC`/`fsync` downgrade evidence, Windows `FlushFileBuffers`/write-through replace, directory-sync support, destination-local same-device staging/rename, cross-device/remote/removable non-atomic fallback, reopen verification, crash recovery, partial status, trash/restore, delete uncertainty, and hash/identity verification. |
+| Journal | Profile lock before writable journal open, recovery mutation, and durable admission; pre-intent validation/ownership/queue/initial-capacity rejection with no operation ID, record, checkpoint, retry lease, or restart status; acceptance exactly at `IntentDurable` with capacity plan/claims committed; no `Accepted` phase; per-volume capacity plans and claims for every allocation class and order; durable reserve charge/spend/reconstitution with exact budget, control-plane margin, same-volume serialization, crash reconciliation, and admission reopening only after `Reconstituted`; power loss at every phase, torn/truncated records, duplicate recovery, unknown phase, retry lease, cross-source checkpoints, and pre-publish cancellation cleanup/preservation. |
+| File owner | No-follow roots, protected sources, collisions, macOS `F_FULLFSYNC`/`fsync` downgrade evidence, Windows `FlushFileBuffers`/write-through replace, directory-sync support, destination-local same-device staging/rename, cross-device/remote/removable non-atomic fallback, reopen verification, crash recovery, partial status, trash/restore, delete uncertainty, hash/identity verification, cross-source origin mutation/absence, both-copy preservation, and staged-payload absence/capacity release. |
 | Source writer | One-writer serialization across processes, profile-lock rejection, distinct profile/source ownership statuses, source lease/epoch fencing and verified stale recovery, bounded transactions, busy/locked backoff, stale revision, lifecycle replacement, idempotent manifest delta, directory-only entries, metadata-only revision neutrality. |
 | WAL/readers | Current evidence versus target soft 32 MiB/hard 64 MiB watermarks, `journal_size_limit` non-cap semantics, 15 s throttle, 250 ms busy timeout, passive/incomplete checkpoints, all three reader classes, retained-frame metrics, bounded owner/losing-process snapshots, uncooperative external readers, non-sparse 256 MiB reserve on each affected volume, WAL/SHM capacity claims and per-chunk claims, admission/pause/reject/recovery-only behavior, and no interactive checkpoint wait. |
-| Finder contract | Real copy/rename/reparent/delete event shapes, empty folders, unsupported-only folders, duplicate/reordered events, missing ancestors, overflow, watcher restart, scan overlap, raw evidence retention. |
-| Cross-DB saga | Source success/global retry, global success/projection retry, Harvest retry, duplicate operation delivery, destination/source rekey, rating and history coalescing. |
-| Projection | Exact contiguous delta, stale delta, gap fallback, bounded preparation, last-good retention, no UI-thread file/SQLite calls, no per-event full hydration. |
+| Finder contract | Real copy/rename/reparent/delete event shapes, empty folders, unsupported-only folders, duplicate/reordered events, missing ancestors, overflow, watcher restart, scan overlap, raw evidence retention, source/root identity, backend stream identity, watcher generation, durable replayable cursor/token, contiguous replay, memory-only loss, and conservative audit fallback. |
+| Cross-DB saga | Source success/global retry, global success/projection retry, Harvest retry, duplicate operation delivery, destination/source rekey, explicit cross-source destination commit/origin intent/absence/retirement ordering, both-copy and ambiguous-identity recovery, rating and history coalescing. |
+| Projection | Exact contiguous delta, stale delta, gap fallback, watcher continuity proof failure, affected-region/source audit before watcher-derived publication, bounded preparation, last-good retention, no UI-thread file/SQLite calls, no per-event full hydration. |
 | Readiness/artifacts | Path-only vs content change, cache eviction, artifact version change, failure/deferred state, source revision wake ordering, lease reclamation. |
-| Scheduler | Queue saturation distinct from capacity exhaustion, `RejectedBeforeIntent` for pre-intent denials, post-intent `RetryPending` versus checkpoint-proven `PartialNeedsRetry`, per-volume allocation ordering, fairness across sources, priority inversion, cancellation at each phase, busy backoff, shutdown drain, no dropped accepted intent, and output chunk claims before writes. |
-| Status/diagnostics | Stable profile/source ownership codes, `RejectedBeforeIntent` wording that work was not started and is not durable, visibility/atomicity/power-loss downgrade wording, WAL watermark/external-reader/reserve statuses, partial wording, retry/reveal/restore actions, restart status continuity, redacted path context, metrics cardinality. |
+| Scheduler | Queue saturation distinct from capacity exhaustion, `RejectedBeforeIntent` for pre-intent denials, post-intent `RetryPending` versus checkpoint-proven `PartialNeedsRetry`, per-volume allocation ordering, serialized same-volume reserve charges, ordinary-work prohibition while charged, fairness across sources, priority inversion, cancellation cleanup/preservation at each pre-publish boundary, busy backoff, shutdown drain, no dropped accepted intent, and output chunk claims before writes. |
+| Status/diagnostics | Stable profile/source ownership codes, `RejectedBeforeIntent` wording that work was not started and is not durable, visibility/atomicity/power-loss downgrade wording, watcher continuity/audit statuses, cross-source origin/both-copy/identity statuses, staged-preservation cancellation status, WAL watermark/external-reader/reserve/reconstitution statuses, partial wording, retry/reveal/restore/audit actions, restart status continuity, redacted path context, metrics cardinality. |
 | Compatibility | Old source/global DB opens, migration-free read-only roles, journal adapters, schema failure preservation; follow `docs/DATABASE_MIGRATIONS.md`. |
 
 Benchmarks must compare at least:
@@ -1013,23 +1183,27 @@ measures total wall time cannot distinguish scheduler contention from UI starvat
 ## Phased delivery
 
 1. **Contracts and instrumentation**: introduce typed IDs/fences at API boundaries,
-   operation/status telemetry, and tests that prove UI handlers do not perform I/O. Preserve
-   existing file journal compatibility.
+   operation/status telemetry, watcher continuity fields, and tests that prove UI handlers do
+   not perform I/O. Preserve existing file journal compatibility.
 2. **Coordinator and journal**: make accepted user file operations durable before mutation;
-   add bounded retry, cancellation, startup recovery, and user status. Keep physical owners
-   behind adapters.
+   add bounded retry, the pre-publish cancellation cleanup/preservation protocol, the
+   per-volume reserve charge/spend/reconstitute protocol, startup recovery, and user status.
+   Keep physical owners behind adapters.
 3. **Source writer and committed deltas**: serialize one writer per physical DB, publish
-   source revisions/structured deltas, and separate watcher checkpoints from manifest truth.
+   source revisions/structured deltas, separate watcher checkpoints from manifest truth, and
+   persist replayable watcher continuity proofs.
 4. **Finder reconciliation and projection**: retain raw events, add conservative region
-   normalization, directory truth, bounded revisioned browser deltas, and gap fallback. Use
-   real event captures in validation.
+   normalization, directory truth, bounded revisioned browser deltas, continuity-loss audit
+   fallback, and last-good projection retention. Use real event captures in validation.
 5. **Cross-database sagas**: route global library, Harvest, rating, history, and transaction
-   records through idempotent participant steps with rekey and restart coverage.
+   records through idempotent participant steps with explicit cross-source destination commit,
+   origin-removal/absence/retirement ordering, rekey, and restart coverage.
 6. **Readiness and artifacts**: integrate exact content/path generations, rebuildable artifact
    store, deferred artifact status, and bounded cache cleanup.
 7. **Hardening and performance**: tune leases, fairness, busy retry, source-size scaling,
-   crash injection, migration compatibility, and provisional SLOs. Revalidate any remaining
-   current-evidence claims against real sources and platform event logs.
+   crash injection across move/cancellation/watcher/reserve checkpoints, migration
+   compatibility, and provisional SLOs. Revalidate any remaining current-evidence claims
+   against real sources and platform event logs.
 
 Each phase must leave the previous phase's recovery contract intact. No phase may make a
 filesystem write without a durable intent or make a UI projection authoritative from a
@@ -1056,7 +1230,8 @@ watcher callback alone.
 - Too-conservative Finder widening can make large libraries expensive; region budgets,
   deduplication, and measured audit thresholds are required.
 - Cross-database saga retries can expose temporary partial states; status and idempotent
-  rekeying are product behavior, not incidental logging.
+  rekeying are product behavior, not incidental logging. Cross-source moves add a dangerous
+  both-copy/ambiguous-identity case that must preserve evidence rather than guess.
 - One writer owner can become a bottleneck if transactions are not bounded or if read paths
   accidentally enter the writer queue.
 - Stable identity and content hashing can be expensive or unavailable on some filesystems;
@@ -1066,7 +1241,15 @@ watcher callback alone.
   must not let a benchmark failure silently widen a claim.
 - External readers and hostile or faulty media can defeat retention and flush expectations;
   recovery must protect reserved capacity and report those observations rather than promise
-  guarantees Wavecrate cannot control.
+  guarantees Wavecrate cannot control. Reserve reconstitution failures can keep ordinary
+  admission closed, so the charge ledger and actionable status must be more durable than the
+  recovery worker.
+- Watcher backends may expose incomplete or non-replayable cursors; continuity loss can widen
+  a small change into an expensive audit, but publishing without the proof risks false
+  deletion. Last-good projection retention and measured audit limits are required.
+- Pre-publish staging cleanup can fail independently of the user cancellation request; a
+  preserved payload consumes recovery capacity and must remain visible/actionable until
+  verified removal or recovery.
 
 ### Open decisions before implementation
 
@@ -1093,6 +1276,14 @@ watcher callback alone.
    undo/redo and auditability?
 10. What provisional SLOs survive real local-disk, removable-volume, antivirus, and database
    contention measurements?
+11. Which durable journal/sidecar primitive should own the per-volume reserve ledger, and what
+    control-plane margin is sufficient across supported filesystems without weakening the
+    256 MiB floor?
+12. Which watcher backends provide replayable cursors and what retention window is required to
+    establish contiguous coverage after restart or stream replacement?
+13. Which user-facing recovery action is appropriate when a cross-source move has both copies,
+    ambiguous identity, or preserved pre-publish staging, subject to the no-destructive-guess
+    guard?
 
 Until the remaining decisions are resolved, implementation should use the defined platform
 classification and conservative recovery, preserve data, retain evidence, and surface a
