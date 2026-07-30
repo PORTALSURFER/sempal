@@ -167,8 +167,23 @@ fn sync_source_database_paths_once(
             };
             let browser_projection_delta = if browser_delta_eligible && incomplete_error.is_none() {
                 match build_browser_projection_delta(root, &db, &completed.committed_delta) {
-                    Ok(projection) => projection,
+                    Ok(Some(projection)) => Some(projection),
+                    Ok(None) => {
+                        incomplete_error = Some(format!(
+                            "browser projection was not available at committed revision {}",
+                            completed.committed_delta.revision
+                        ));
+                        tracing::warn!(
+                            source_id,
+                            revision = completed.committed_delta.revision,
+                            "Falling back to a full browser projection after exact revision hydration failed"
+                        );
+                        None
+                    }
                     Err(error) => {
+                        incomplete_error = Some(format!(
+                            "browser projection hydration failed: {error}"
+                        ));
                         tracing::warn!(
                             source_id,
                             error,
@@ -286,12 +301,54 @@ fn wait_for_retry(cancel: &AtomicBool, delay: Duration) -> bool {
 mod tests {
     use std::{
         path::{Path, PathBuf},
-        sync::atomic::AtomicBool,
+        sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        },
     };
 
     use wavecrate::sample_sources::{Rating, SourceDatabase, scanner};
+    use wavecrate_scan::sample_sources::scanner::{ScanWritePhase, ScanWriter};
 
-    use super::{recover_source_filesystem_sync, sync_source_database_paths};
+    use super::{
+        recover_source_filesystem_sync, sync_source_database_paths,
+        sync_source_database_paths_with_writer,
+    };
+
+    #[derive(Clone)]
+    struct RevisionBumpingWriter {
+        database_root: PathBuf,
+        manifest_locks: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    struct RevisionBumpGuard {
+        database_root: PathBuf,
+        bump_revision: bool,
+    }
+
+    impl Drop for RevisionBumpGuard {
+        fn drop(&mut self) {
+            if !self.bump_revision {
+                return;
+            }
+            let db = SourceDatabase::open_for_test_fixture_source_write(&self.database_root)
+                .expect("open revision-bump database");
+            db.set_tag(Path::new("fresh.wav"), Rating::KEEP_1)
+                .expect("bump committed revision after scan");
+        }
+    }
+
+    impl ScanWriter for RevisionBumpingWriter {
+        type Guard = RevisionBumpGuard;
+
+        fn lock(&self, phase: ScanWritePhase) -> Self::Guard {
+            RevisionBumpGuard {
+                database_root: self.database_root.clone(),
+                bump_revision: phase == ScanWritePhase::Manifest
+                    && self.manifest_locks.fetch_add(1, Ordering::AcqRel) == 1,
+            }
+        }
+    }
 
     #[test]
     fn filesystem_sync_panic_returns_a_terminal_result() {
@@ -421,6 +478,39 @@ mod tests {
         );
         assert!(projection.upserted_files.is_empty());
         assert!(projection.removed_file_ids.is_empty());
+    }
+
+    #[test]
+    fn filesystem_sync_requires_full_recovery_when_projection_revision_changes() {
+        let root = tempfile::tempdir().expect("source root");
+        std::fs::write(root.path().join("fresh.wav"), vec![7_u8; 9 * 1024 * 1024])
+            .expect("large wav");
+        let writer = RevisionBumpingWriter {
+            database_root: root.path().to_path_buf(),
+            manifest_locks: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        };
+
+        let result = sync_source_database_paths_with_writer(
+            String::from("source-a"),
+            root.path().to_path_buf(),
+            root.path().to_path_buf(),
+            vec![PathBuf::from("fresh.wav")],
+            1,
+            &AtomicBool::new(false),
+            &writer,
+        );
+
+        let success = result
+            .result
+            .expect("revision mismatch should retain the committed scan");
+        assert!(success.browser_projection_delta.is_none());
+        assert!(!success.committed_delta.is_empty());
+        assert!(
+            success
+                .incomplete_error
+                .as_deref()
+                .is_some_and(|error| error.contains("browser projection hydration failed"))
+        );
     }
 
     #[cfg(unix)]
