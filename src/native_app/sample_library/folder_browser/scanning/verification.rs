@@ -60,7 +60,7 @@ fn read_direct_folder_snapshot(
     {
         return DirectFolderSnapshot::Missing;
     }
-    let Some(entries) = read_sorted_entries(path, source_root, policy) else {
+    let Some(entries) = read_sorted_entries(path, source_root, policy, None) else {
         return DirectFolderSnapshot::Unavailable;
     };
     let child_paths = entries

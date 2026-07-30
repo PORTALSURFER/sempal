@@ -22,6 +22,7 @@ impl FolderBrowserState {
             .and_then(|source| source.projection_revision)
     }
 
+    #[cfg(test)]
     pub(in crate::native_app) fn apply_committed_projection_delta(
         &mut self,
         source_id: &str,

@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     path::PathBuf,
     sync::atomic::{AtomicBool, Ordering},
     thread,
@@ -7,7 +8,8 @@ use std::{
 
 use wavecrate::sample_sources::{BrowserMetadataSnapshot, SourceDatabase};
 use wavecrate_library::sample_sources::{
-    SourceEntryKind, SourceEntryProbeError, classify_path_without_following_with_policy,
+    BrowserFileMetadata, SourceEntryKind, SourceEntryProbeError,
+    classify_path_without_following_with_policy,
 };
 use wavecrate_scan::sample_sources::scanner::{
     self, ScanWritePhase, ScanWriter, UncoordinatedScanWriter,
@@ -179,6 +181,7 @@ fn sync_source_database_paths_once(
                     &db,
                     &paths,
                     &completed.committed_delta,
+                    cancel,
                 ) {
                     Ok(preparation) => preparation,
                     Err(error) => {
@@ -208,6 +211,7 @@ fn build_browser_projection_preparation(
     db: &SourceDatabase,
     paths: &[PathBuf],
     delta: &scanner::CommittedSourceDelta,
+    cancel: &AtomicBool,
 ) -> Result<(Option<BrowserProjectionDelta>, Vec<PreparedFolderProjection>), String> {
     let snapshot = db
         .browser_metadata_snapshot()
@@ -222,7 +226,14 @@ fn build_browser_projection_preparation(
     }
     let browser_projection_delta = (delta.revision > 0)
         .then(|| build_browser_projection_delta(root, &snapshot, delta));
-    let prepared_folder_projections = prepare_folder_projections(root, db, paths, &snapshot, delta)?;
+    let metadata = snapshot
+        .files
+        .iter()
+        .filter(|entry| !entry.missing)
+        .map(|entry| (entry.relative_path.clone(), entry.clone()))
+        .collect::<HashMap<PathBuf, BrowserFileMetadata>>();
+    let prepared_folder_projections =
+        prepare_folder_projections(root, db, paths, &metadata, &snapshot, delta, cancel)?;
     Ok((browser_projection_delta, prepared_folder_projections))
 }
 
@@ -298,8 +309,10 @@ fn prepare_folder_projections(
     root: &std::path::Path,
     db: &SourceDatabase,
     paths: &[PathBuf],
+    metadata: &HashMap<PathBuf, BrowserFileMetadata>,
     snapshot: &BrowserMetadataSnapshot,
     delta: &scanner::CommittedSourceDelta,
+    cancel: &AtomicBool,
 ) -> Result<Vec<PreparedFolderProjection>, String> {
     let policy = db
         .source_traversal_policy()
@@ -346,10 +359,16 @@ fn prepare_folder_projections(
             Ok(classification)
                 if classification.visible_kind() == Some(SourceEntryKind::Directory) => {
                 Some(
-                    load_folder_at_path_with_browser_metadata(&absolute_path, root, snapshot, policy)
-                        .ok_or_else(|| {
-                            format!("read folder projection: {}", absolute_path.display())
-                        })?,
+                    load_folder_at_path_with_browser_metadata(
+                        &absolute_path,
+                        root,
+                        metadata,
+                        policy,
+                        cancel,
+                    )
+                    .ok_or_else(|| {
+                        format!("read folder projection: {}", absolute_path.display())
+                    })?,
                 )
             }
             Err(SourceEntryProbeError::Missing) => None,
