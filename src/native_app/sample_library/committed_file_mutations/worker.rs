@@ -233,11 +233,10 @@ pub(super) fn reconcile_source_mutation(
     let before_database =
         SourceDatabase::open_for_background_job_with_database_root(root, &database_root)
             .map_err(|error| format!("open source before mutation reconciliation: {error}"))?;
-    let before = manifest_by_path(
-        before_database
-            .list_manifest_entries()
-            .map_err(|error| format!("read source manifest before mutation: {error}"))?,
-    );
+    let (_, before_entries) = before_database
+        .manifest_snapshot_with_revision_under_paths(&request.affected_relative_paths)
+        .map_err(|error| format!("read affected source manifest before mutation: {error}"))?;
+    let before = manifest_by_path(before_entries);
     drop(before_database);
 
     let sync = sync_source_database_paths(
@@ -258,11 +257,10 @@ pub(super) fn reconcile_source_mutation(
     let after_database =
         SourceDatabase::open_for_background_job_with_database_root(root, &database_root)
             .map_err(|error| format!("open source after mutation reconciliation: {error}"))?;
-    let after = manifest_by_path(
-        after_database
-            .list_manifest_entries()
-            .map_err(|error| format!("read source manifest after mutation: {error}"))?,
-    );
+    let (_, after_entries) = after_database
+        .manifest_snapshot_with_revision_under_paths(&request.affected_relative_paths)
+        .map_err(|error| format!("read affected source manifest after mutation: {error}"))?;
+    let after = manifest_by_path(after_entries);
     let committed_source_revision = after_database
         .get_revision()
         .map_err(|error| format!("read committed source revision: {error}"))?
@@ -316,6 +314,7 @@ pub(super) fn reconcile_source_mutation(
         committed_delta: success.committed_delta,
         affected_relative_paths: request.affected_relative_paths,
         watcher_echoes: request.watcher_echoes,
+        browser_projection_delta: success.browser_projection_delta,
     })
 }
 

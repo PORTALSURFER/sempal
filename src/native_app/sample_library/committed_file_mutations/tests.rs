@@ -419,6 +419,7 @@ fn stale_lifecycle_completion_has_no_committed_mutation_side_effects() {
         },
         affected_relative_paths: vec![PathBuf::from("stale.wav")],
         watcher_echoes,
+        browser_projection_delta: None,
     };
     let selected_before = state
         .library

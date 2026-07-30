@@ -6,7 +6,9 @@ use std::{
 use rusqlite::{OptionalExtension, params};
 
 use super::super::util::map_sql_error;
-use super::super::{Rating, SampleSoundType, SourceDbError, SourceWriteBatch};
+use super::super::{
+    ExistingFileMetadataUpdate, Rating, SampleSoundType, SourceDbError, SourceWriteBatch,
+};
 use super::command::{SourceContentHashWrite, SourceFileWrite, SourceTagWrite};
 use super::mutation::{
     update_flag_statement, update_path_i64_statement, update_path_null_statement,
@@ -31,6 +33,31 @@ const CLEAR_LAST_CURATED_AT_SQL: &str =
     "UPDATE wav_files SET last_curated_at = NULL WHERE path = ?1";
 
 impl<'conn> SourceWriteBatch<'conn> {
+    /// Update filesystem facts for an existing live row without inserting or dirtying path or
+    /// identity revisions.
+    pub fn update_existing_file_metadata(
+        &mut self,
+        relative_path: &Path,
+        file_size: u64,
+        modified_ns: i64,
+    ) -> Result<ExistingFileMetadataUpdate, SourceDbError> {
+        let updated = self.tx.execute(
+            "UPDATE wav_files
+                 SET file_size = ?1, modified_ns = ?2, missing = 0
+                 WHERE path = ?3 AND missing = 0",
+            rusqlite::params![
+                file_size as i64,
+                modified_ns,
+                relative_path.to_string_lossy()
+            ],
+        )?;
+        Ok(if updated == 0 {
+            ExistingFileMetadataUpdate::Missing
+        } else {
+            ExistingFileMetadataUpdate::Updated
+        })
+    }
+
     pub(super) fn apply_file_write(
         &mut self,
         write: SourceFileWrite<'_>,

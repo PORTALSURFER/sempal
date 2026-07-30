@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use wavecrate::sample_sources::SourceDatabase;
+use wavecrate::sample_sources::{ExistingFileMetadataUpdate, SourceDatabase};
 use wavecrate_library::timestamps::system_time_to_unix_nanos;
 
 use crate::native_app::audio::playback_history::LastPlayedPersistResult;
@@ -77,13 +77,23 @@ fn persist_last_played_with_db(
     modified_ns: i64,
 ) -> Result<(), String> {
     let mut batch = db.write_batch().map_err(|err| err.to_string())?;
-    batch
-        .upsert_file(&request.relative_path, file_size, modified_ns)
-        .map_err(|err| err.to_string())?;
+    if matches!(
+        batch
+            .update_existing_file_metadata(&request.relative_path, file_size, modified_ns)
+            .map_err(|err| err.to_string())?,
+        ExistingFileMetadataUpdate::Missing
+    ) {
+        return Err(format!(
+            "playback persistence deferred until source row exists: {}",
+            request.relative_path.display()
+        ));
+    }
     batch
         .set_last_played_at(&request.relative_path, request.played_at)
         .map_err(|err| err.to_string())?;
-    batch.commit().map_err(|err| err.to_string())
+    batch
+        .commit_auxiliary_state()
+        .map_err(|err| err.to_string())
 }
 
 fn file_metadata(path: &Path) -> Result<(u64, i64), String> {

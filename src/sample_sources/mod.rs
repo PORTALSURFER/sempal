@@ -99,13 +99,13 @@ pub(crate) use wavecrate_library::sample_sources::is_supported_audio;
 pub use wavecrate_library::sample_sources::normalize_relative_path;
 pub use wavecrate_library::sample_sources::readiness;
 pub use wavecrate_library::sample_sources::{
-    BrowserMetadataSnapshot, DB_FILE_NAME, HarvestDerivationOperation, HarvestDerivationRecord,
-    HarvestFileIdentity, HarvestFileKey, HarvestFileRecord, HarvestMetadataSnapshot,
-    HarvestSourceRange, HarvestState, LIBRARY_DB_FILE_NAME, LibraryError, LibraryState,
-    NewHarvestDerivation, Rating, SampleSource, SourceCollectionWrite, SourceContentHashWrite,
-    SourceDatabase, SourceDatabaseConnectionRole, SourceDbError, SourceFileWrite, SourceId,
-    SourceMetadataStorage, SourceRole, SourceTagWrite, SourceWriteCommand, WavEntry,
-    database_path_for, default_primary_import_folder, normalize_path,
+    BrowserMetadataSnapshot, DB_FILE_NAME, ExistingFileMetadataUpdate, HarvestDerivationOperation,
+    HarvestDerivationRecord, HarvestFileIdentity, HarvestFileKey, HarvestFileRecord,
+    HarvestMetadataSnapshot, HarvestSourceRange, HarvestState, LIBRARY_DB_FILE_NAME, LibraryError,
+    LibraryState, NewHarvestDerivation, Rating, SampleSource, SourceCollectionWrite,
+    SourceContentHashWrite, SourceDatabase, SourceDatabaseConnectionRole, SourceDbError,
+    SourceFileWrite, SourceId, SourceMetadataStorage, SourceRole, SourceTagWrite,
+    SourceWriteCommand, WavEntry, database_path_for, default_primary_import_folder, normalize_path,
 };
 pub use wavecrate_library::sample_sources::{HiddenDirectoryPolicy, SourceTraversalPolicy};
 pub use wavecrate_scan::sample_sources::ScanTracker;

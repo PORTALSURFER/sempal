@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use wavecrate::sample_sources::{BrowserMetadataSnapshot, SourceDatabase};
+use wavecrate::sample_sources::SourceDatabase;
 use wavecrate_library::sample_sources::is_supported_audio;
 use wavecrate_scan::sample_sources::scanner::{
     self, ScanWritePhase, ScanWriter, UncoordinatedScanWriter,
@@ -165,10 +165,7 @@ fn sync_source_database_paths_once(
                     }
                 }
             };
-            let browser_projection_delta = if browser_delta_eligible
-                && incomplete_error.is_none()
-                && completed.committed_delta.revision > 0
-            {
+            let browser_projection_delta = if browser_delta_eligible && incomplete_error.is_none() {
                 match build_browser_projection_delta(root, &db, &completed.committed_delta) {
                     Ok(projection) => projection,
                     Err(error) => {
@@ -197,9 +194,28 @@ fn build_browser_projection_delta(
     db: &SourceDatabase,
     delta: &scanner::CommittedSourceDelta,
 ) -> Result<Option<BrowserProjectionDelta>, String> {
-    let BrowserMetadataSnapshot { revision, files } = db
-        .browser_metadata_snapshot()
+    let projection_paths = delta
+        .created
+        .iter()
+        .map(|entry| entry.relative_path.clone())
+        .chain(
+            delta
+                .changed
+                .iter()
+                .map(|entry| entry.relative_path.clone()),
+        )
+        .chain(
+            delta
+                .moved
+                .iter()
+                .map(|entry| entry.new_relative_path.clone()),
+        )
+        .collect::<Vec<_>>();
+    let snapshot = db
+        .browser_metadata_for_paths_at_revision(delta.revision, &projection_paths)
         .map_err(|error| format!("read committed browser projection delta: {error}"))?;
+    let revision = snapshot.revision;
+    let files = snapshot.files;
     if revision != delta.revision {
         tracing::info!(
             committed_revision = delta.revision,
@@ -208,27 +224,14 @@ fn build_browser_projection_delta(
         );
         return Ok(None);
     }
-    let upsert_paths = delta
-        .created
+    let upsert_paths = projection_paths
         .iter()
-        .map(|entry| entry.relative_path.as_path())
-        .chain(
-            delta
-                .changed
-                .iter()
-                .map(|entry| entry.relative_path.as_path()),
-        )
-        .chain(
-            delta
-                .moved
-                .iter()
-                .map(|entry| entry.new_relative_path.as_path()),
-        )
+        .cloned()
         .collect::<std::collections::HashSet<_>>();
     let mut folders = std::collections::BTreeSet::new();
     let upserted_files = files
         .into_iter()
-        .filter(|entry| !entry.missing && upsert_paths.contains(entry.relative_path.as_path()))
+        .filter(|entry| !entry.missing && upsert_paths.contains(&entry.relative_path))
         .map(|entry| {
             let absolute = root.join(&entry.relative_path);
             if let Some(parent) = absolute.parent() {
@@ -383,6 +386,41 @@ mod tests {
                 .is_none(),
             "ordinary deep hashing must remain queued for the supervisor"
         );
+    }
+
+    #[test]
+    fn filesystem_sync_publishes_exact_revision_for_an_empty_duplicate_sync() {
+        let root = tempfile::tempdir().expect("source root");
+        let unchanged = root.path().join("unchanged.wav");
+        std::fs::write(&unchanged, vec![3_u8; 128]).expect("unchanged wav");
+        let db =
+            SourceDatabase::open_for_test_fixture_source_write(root.path()).expect("source db");
+        scanner::hard_rescan(&db).expect("initial scan");
+
+        let result = sync_source_database_paths(
+            String::from("source-a"),
+            root.path().to_path_buf(),
+            root.path().to_path_buf(),
+            vec![PathBuf::from("unchanged.wav")],
+            1,
+            &AtomicBool::new(false),
+        );
+
+        let success = result.result.expect("sync result");
+        assert!(success.committed_delta.is_empty());
+        let projection = success
+            .browser_projection_delta
+            .expect("empty sync still carries the authoritative revision");
+        assert_eq!(
+            projection.manifest_revision,
+            success.committed_delta.revision
+        );
+        assert_eq!(
+            projection.snapshot_revision,
+            success.committed_delta.revision
+        );
+        assert!(projection.upserted_files.is_empty());
+        assert!(projection.removed_file_ids.is_empty());
     }
 
     #[cfg(unix)]

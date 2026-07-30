@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use wavecrate::sample_sources::SourceDatabase;
+use wavecrate::sample_sources::{ExistingFileMetadataUpdate, SourceDatabase};
 use wavecrate_library::timestamps::system_time_to_unix_nanos;
 
 use crate::native_app::sample_library::folder_browser::view_contract::MissingCollectionFile;
@@ -33,9 +33,17 @@ pub(super) fn persist_collection_updates(
     let mut batch = db.write_batch().map_err(|err| err.to_string())?;
     for update in updates {
         let (file_size, modified_ns) = file_metadata(&update.absolute_path)?;
-        batch
-            .upsert_file(&update.relative_path, file_size, modified_ns)
-            .map_err(|err| err.to_string())?;
+        if matches!(
+            batch
+                .update_existing_file_metadata(&update.relative_path, file_size, modified_ns)
+                .map_err(|err| err.to_string())?,
+            ExistingFileMetadataUpdate::Missing
+        ) {
+            return Err(format!(
+                "collection persistence deferred until source row exists: {}",
+                update.relative_path.display()
+            ));
+        }
         match update.operation {
             CollectionOperation::Add => batch
                 .add_collection(&update.relative_path, update.collection)
@@ -45,7 +53,9 @@ pub(super) fn persist_collection_updates(
                 .map_err(|err| err.to_string())?,
         }
     }
-    batch.commit().map_err(|err| err.to_string())
+    batch
+        .commit_auxiliary_state()
+        .map_err(|err| err.to_string())
 }
 
 pub(super) fn group_missing_collection_files_by_source(
@@ -74,7 +84,9 @@ pub(super) fn persist_missing_collection_cleanup(
             .remove_collection(&file.relative_path, file.collection)
             .map_err(|err| err.to_string())?;
     }
-    batch.commit().map_err(|err| err.to_string())
+    batch
+        .commit_auxiliary_state()
+        .map_err(|err| err.to_string())
 }
 
 fn file_metadata(path: &Path) -> Result<(u64, i64), String> {

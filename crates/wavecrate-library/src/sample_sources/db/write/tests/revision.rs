@@ -2,7 +2,7 @@ use std::path::Path;
 
 use tempfile::tempdir;
 
-use super::super::super::{Rating, SampleSoundType, SourceDatabase};
+use super::super::super::{ExistingFileMetadataUpdate, Rating, SampleSoundType, SourceDatabase};
 use super::helpers::{revision_value, wav_paths_revision_value};
 
 #[test]
@@ -134,4 +134,36 @@ fn metadata_wrapper_uses_batch_revision_policy_without_wav_path_churn() {
     );
     assert_eq!(revision_value(&db), 1);
     assert_eq!(wav_paths_revision_value(&db), 0);
+}
+
+#[test]
+fn existing_file_metadata_update_is_revision_neutral_and_defers_missing_rows() {
+    let dir = tempdir().unwrap();
+    let db = SourceDatabase::open_for_source_write(dir.path()).unwrap();
+    let path = Path::new("one.wav");
+    db.upsert_file(path, 10, 5).unwrap();
+    let revision = revision_value(&db);
+
+    let mut batch = db.write_batch().unwrap();
+    assert_eq!(
+        batch.update_existing_file_metadata(path, 20, 7).unwrap(),
+        ExistingFileMetadataUpdate::Updated
+    );
+    batch.commit_auxiliary_state().unwrap();
+
+    assert_eq!(revision_value(&db), revision);
+    let entry = db.entry_for_path(path).unwrap().unwrap();
+    assert_eq!(entry.file_size, 20);
+    assert_eq!(entry.modified_ns, 7);
+
+    let missing = Path::new("missing.wav");
+    let mut batch = db.write_batch().unwrap();
+    assert_eq!(
+        batch.update_existing_file_metadata(missing, 30, 9).unwrap(),
+        ExistingFileMetadataUpdate::Missing
+    );
+    batch.commit_auxiliary_state().unwrap();
+
+    assert_eq!(revision_value(&db), revision);
+    assert!(db.entry_for_path(missing).unwrap().is_none());
 }

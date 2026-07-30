@@ -5,7 +5,9 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
 };
-use wavecrate::sample_sources::{SourceDatabase, SourceDbError, db::SourceWriteBatch};
+use wavecrate::sample_sources::{
+    ExistingFileMetadataUpdate, SourceDatabase, SourceDbError, db::SourceWriteBatch,
+};
 use wavecrate_library::timestamps::system_time_to_unix_nanos;
 
 pub(super) fn persist_metadata_tag_assignment(
@@ -72,9 +74,17 @@ fn persist_metadata_tag_assignment_inner(
     )
     .map_err(|err| err.to_string())?;
     let mut batch = db.write_batch().map_err(|err| err.to_string())?;
-    batch
-        .upsert_file(&request.relative_path, file_size, modified_ns)
-        .map_err(|err| err.to_string())?;
+    if matches!(
+        batch
+            .update_existing_file_metadata(&request.relative_path, file_size, modified_ns)
+            .map_err(|err| err.to_string())?,
+        ExistingFileMetadataUpdate::Missing
+    ) {
+        return Err(format!(
+            "metadata tag persistence deferred until source row exists: {}",
+            request.relative_path.display()
+        ));
+    }
     for tag in &request.tags {
         if request.assigned {
             remove_conflicting_persisted_playback_tags(&mut batch, &request.relative_path, tag)
@@ -89,7 +99,9 @@ fn persist_metadata_tag_assignment_inner(
         }
         .map_err(|err| err.to_string())?;
     }
-    batch.commit().map_err(|err| err.to_string())
+    batch
+        .commit_auxiliary_state()
+        .map_err(|err| err.to_string())
 }
 
 fn remove_conflicting_persisted_playback_tags(
@@ -221,7 +233,9 @@ fn repair_persisted_metadata_tag_conflicts(
             .replace_tags_for_path(&repair.relative_path, &repair.tags)
             .map_err(|err| err.to_string())?;
     }
-    batch.commit().map_err(|err| err.to_string())
+    batch
+        .commit_auxiliary_state()
+        .map_err(|err| err.to_string())
 }
 
 fn file_metadata(path: &Path) -> Result<(u64, i64), String> {

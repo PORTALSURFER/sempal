@@ -29,6 +29,22 @@ pub(in crate::native_app) const FILESYSTEM_SYNC_PREP_INTENTS: SourcePrepIntents 
 pub(in crate::native_app) const FILESYSTEM_SYNC_PREP_REASON: &str = "filesystem_changed";
 
 impl NativeAppState {
+    pub(in crate::native_app) fn queue_full_source_reconciliation_after_committed_mutation(
+        &mut self,
+        source_id: String,
+        committed_revision: u64,
+        lifecycle_generation: u64,
+        context: &mut ui::UiUpdateContext<GuiMessage>,
+    ) {
+        self.queue_filesystem_source_refresh(
+            source_id,
+            SourceRefreshCause::ProjectionRevisionGap { committed_revision },
+            Some(lifecycle_generation),
+            Instant::now(),
+            context,
+        );
+    }
+
     pub(in crate::native_app) fn refresh_source_after_filesystem_change(
         &mut self,
         source_id: String,

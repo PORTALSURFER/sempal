@@ -5,7 +5,7 @@ use std::{
 };
 
 use radiant::prelude as ui;
-use wavecrate::sample_sources::{Rating, SourceDatabase};
+use wavecrate::sample_sources::{ExistingFileMetadataUpdate, Rating, SourceDatabase};
 use wavecrate_library::timestamps::system_time_to_unix_nanos;
 
 use crate::native_app::app::{GuiMessage, NativeAppState, emit_gui_action};
@@ -784,9 +784,21 @@ pub(in crate::native_app) fn persist_rating_requests(
             for index in &active {
                 let request = &requests[*index];
                 let (file_size, modified_ns) = file_metadata(&request.absolute_path)?;
-                batch
-                    .upsert_file(&request.relative_path, file_size, modified_ns)
-                    .map_err(|err| err.to_string())?;
+                if matches!(
+                    batch
+                        .update_existing_file_metadata(
+                            &request.relative_path,
+                            file_size,
+                            modified_ns,
+                        )
+                        .map_err(|err| err.to_string())?,
+                    ExistingFileMetadataUpdate::Missing
+                ) {
+                    return Err(format!(
+                        "rating persistence deferred until source row exists: {}",
+                        request.relative_path.display()
+                    ));
+                }
                 batch
                     .set_tag(&request.relative_path, request.rating)
                     .map_err(|err| err.to_string())?;
@@ -794,7 +806,9 @@ pub(in crate::native_app) fn persist_rating_requests(
                     .set_locked(&request.relative_path, request.locked)
                     .map_err(|err| err.to_string())?;
             }
-            batch.commit().map_err(|err| err.to_string())
+            batch
+                .commit_auxiliary_state()
+                .map_err(|err| err.to_string())
         })();
         for index in active {
             results[index] = Some(result.clone());
