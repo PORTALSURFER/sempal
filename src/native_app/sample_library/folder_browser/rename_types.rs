@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use wavecrate::sample_sources::SourceFileEvidence;
+
 use super::FolderEntry;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -88,6 +90,8 @@ pub(in crate::native_app) struct FileMetadataRemap {
 pub(in crate::native_app) struct RenameCommitCompletion {
     pub(in crate::native_app) request: RenameCommitRequest,
     pub(in crate::native_app) result: Result<RenameCommitSuccess, String>,
+    /// Evidence captured by the rename worker immediately after the filesystem rename.
+    pub(in crate::native_app) post_filesystem_evidence: Option<SourceFileEvidence>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

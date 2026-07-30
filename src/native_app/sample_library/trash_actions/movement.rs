@@ -5,11 +5,14 @@ use std::{
     io,
     path::{Path, PathBuf},
 };
+use wavecrate::sample_sources::{SourceFileEvidence, capture_source_file_evidence};
 
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::native_app) struct TrashMoveOutcome {
     pub source: PathBuf,
     pub result: TrashMoveResult,
+    /// Evidence captured immediately after the worker's filesystem attempt.
+    pub evidence: SourceFileEvidence,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -35,9 +38,11 @@ pub(super) fn move_path_to_configured_trash(
 ) -> TrashMoveOutcome {
     let source_path = path.to_path_buf();
     let result = move_path_to_configured_trash_inner(path, trash_folder);
+    let evidence = capture_source_file_evidence(&source_path);
     TrashMoveOutcome {
         source: source_path,
         result,
+        evidence,
     }
 }
 
@@ -685,6 +690,20 @@ mod tests {
         );
         assert_eq!(fs::read(moved_path).unwrap(), b"kick");
         assert!(fs::symlink_metadata(broken_link).is_ok());
+    }
+
+    #[test]
+    fn trash_worker_captures_post_move_source_evidence() {
+        let temp = tempdir().unwrap();
+        let trash = temp.path().join("trash");
+        let source = temp.path().join("kick.wav");
+        fs::create_dir(&trash).unwrap();
+        fs::write(&source, b"kick").unwrap();
+
+        let outcome = move_path_to_configured_trash(&source, Some(&trash));
+
+        assert!(matches!(outcome.result, TrashMoveResult::Moved { .. }));
+        assert_eq!(outcome.evidence, SourceFileEvidence::Missing);
     }
 
     #[cfg(unix)]

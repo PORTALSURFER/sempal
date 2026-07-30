@@ -1,6 +1,7 @@
 use super::*;
 use std::fs;
 use tempfile::tempdir;
+use wavecrate::sample_sources::capture_source_file_evidence;
 
 #[test]
 fn file_move_plan_deduplicates_ready_paths_and_reports_conflicts() {
@@ -196,6 +197,45 @@ fn rollback_restores_source_without_touching_a_replaced_destination() {
     assert_eq!(fs::read(first_source).unwrap(), b"first");
     assert_eq!(fs::read(first_destination).unwrap(), b"replacement");
     assert_eq!(fs::read(second_source).unwrap(), b"second");
+}
+
+#[test]
+fn commit_callback_captures_evidence_before_a_later_observer_rewrite() {
+    let root = tempdir().unwrap();
+    let source = root.path().join("source");
+    let target = root.path().join("target");
+    fs::create_dir_all(&source).unwrap();
+    fs::create_dir_all(&target).unwrap();
+    let first_source = source.join("first.wav");
+    let second_source = source.join("second.wav");
+    let first_destination = target.join("first.wav");
+    let second_destination = target.join("second.wav");
+    fs::write(&first_source, b"first").unwrap();
+    fs::write(&second_source, b"second").unwrap();
+    let original_evidence = capture_source_file_evidence(&first_source);
+    let transfers = [
+        FileTransfer::move_file(first_source, first_destination.clone()),
+        FileTransfer::move_file(second_source, second_destination),
+    ];
+    let mut evidence = Vec::new();
+
+    transfer_files_with_rollback_and_progress_with_commit_callback(
+        &transfers,
+        |_, _| {},
+        |_, after| {
+            evidence.push(capture_source_file_evidence(after));
+            if after == first_destination {
+                fs::write(after, b"replacement").unwrap();
+            }
+        },
+    )
+    .expect("moves succeed");
+
+    assert_eq!(evidence[0], original_evidence);
+    assert_ne!(
+        evidence[0],
+        capture_source_file_evidence(&first_destination)
+    );
 }
 
 #[test]

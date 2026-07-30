@@ -1664,6 +1664,7 @@ fn trashing_selected_block_materializes_remaining_rows_and_loads_next_sample() {
                         .path()
                         .join(path.file_name().expect("sample file name")),
                 },
+                evidence: wavecrate::sample_sources::capture_source_file_evidence(path),
             }
         })
         .collect::<Vec<_>>();
@@ -1747,12 +1748,14 @@ fn partial_batch_trash_reconciles_moved_rows_and_keeps_failed_rows() {
                 result: TrashMoveResult::Moved {
                     destination: source_root.path().join("trash").join("a-moved.wav"),
                 },
+                evidence: wavecrate::sample_sources::capture_source_file_evidence(&moved),
             },
             TrashMoveOutcome {
                 source: failed.clone(),
                 result: TrashMoveResult::Failed {
                     error: String::from("injected second-item failure"),
                 },
+                evidence: wavecrate::sample_sources::capture_source_file_evidence(&failed),
             },
         ],
         &mut context,
