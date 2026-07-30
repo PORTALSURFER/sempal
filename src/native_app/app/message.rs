@@ -38,6 +38,7 @@ use crate::native_app::sample_library::folder_browser::scan::{
     PreparedFolderScanResult,
 };
 use crate::native_app::sample_library::folder_scan_actions::FolderScanMaintenanceResult;
+use crate::native_app::sample_library::native_file_drop_actions::PreparedFileMutationChange;
 use crate::native_app::sample_library::native_file_open_actions::NativeAudioDocumentOpenValidation;
 use crate::native_app::sample_library::similarity_scores::SimilarityScoresResult;
 use crate::native_app::sample_library::trash_actions::movement::TrashMoveOutcome;
@@ -132,7 +133,7 @@ pub(in crate::native_app) enum GuiMessage {
     ExternalWaveformFileDropFinished {
         source: PathBuf,
         started_at: Instant,
-        result: Result<PathBuf, String>,
+        result: Result<PreparedFileMutationChange, String>,
     },
     NativeAudioDocumentOpenValidated {
         started_at: Instant,

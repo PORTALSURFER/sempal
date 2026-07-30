@@ -137,6 +137,39 @@ fn same_source_duplicate_finish_uses_prepared_mutation_handoff() {
 }
 
 #[test]
+fn external_waveform_drop_finish_uses_prepared_mutation_handoff() {
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let source = fs::read_to_string(format!(
+        "{manifest_dir}/src/native_app/sample_library/native_file_drop_actions.rs"
+    ))
+    .expect("native external waveform drop actions should be readable");
+    let body = source_between(
+        &source,
+        "pub(in crate::native_app) fn finish_external_waveform_file_drop",
+        "fn supported_waveform_drop_file",
+    );
+
+    assert!(
+        body.contains("queue_prepared_committed_file_mutation"),
+        "external waveform drop completion must hand off worker-captured evidence"
+    );
+    for forbidden in [
+        "queue_committed_file_mutation",
+        "capture_expected_filesystem_state",
+        "capture_source_file_evidence",
+        "std::fs::",
+        "fs::",
+        "SourceDatabase",
+        "rusqlite",
+    ] {
+        assert!(
+            !body.contains(forbidden),
+            "external waveform drop UI completion must not perform {forbidden}"
+        );
+    }
+}
+
+#[test]
 fn sample_identity_fingerprints_require_wavecrate_debug_mode() {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let source = fs::read_to_string(format!(

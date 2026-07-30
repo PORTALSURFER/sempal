@@ -6,12 +6,20 @@ use std::{
 
 use radiant::prelude as ui;
 use radiant::runtime::{NativeFileDrop, NativeFileDropPhase};
+use wavecrate::sample_sources::{capture_source_file_evidence, SourceFileEvidence};
 
 use crate::native_app::app::{GuiMessage, NativeAppState, NativeFileDropHover, emit_gui_action};
 use crate::native_app::sample_library::committed_file_mutations::{
     FileMutationChange, FileMutationOperation, FileMutationProjection,
 };
 use crate::native_app::sample_library::exclusive_file_transfer::copy_file_to_unique_destination_with;
+
+/// Immutable worker-owned evidence for one externally imported file.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::native_app) struct PreparedFileMutationChange {
+    pub(in crate::native_app) path: PathBuf,
+    pub(in crate::native_app) evidence: SourceFileEvidence,
+}
 
 impl NativeAppState {
     pub(in crate::native_app) fn apply_native_file_drop(
@@ -179,7 +187,7 @@ impl NativeAppState {
         &mut self,
         source: PathBuf,
         started_at: Instant,
-        result: Result<PathBuf, String>,
+        result: Result<PreparedFileMutationChange, String>,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
         match result {
@@ -206,15 +214,17 @@ impl NativeAppState {
 
     fn load_copied_external_file(
         &mut self,
-        copied: PathBuf,
+        prepared: PreparedFileMutationChange,
         context: &mut ui::UiUpdateContext<GuiMessage>,
         started_at: Instant,
     ) {
-        self.queue_committed_file_mutation(
+        self.queue_prepared_committed_file_mutation(
             FileMutationOperation::ImportDrop,
             vec![
-                FileMutationChange::created(copied.clone())
-                    .with_projection(FileMutationProjection::SelectAndLoad { path: copied }),
+                FileMutationChange::created_prepared(prepared.path.clone(), prepared.evidence)
+                    .with_projection(FileMutationProjection::SelectAndLoad {
+                        path: prepared.path.clone(),
+                    }),
             ],
             context,
         );
@@ -242,7 +252,7 @@ fn file_name_or_path(path: &Path) -> String {
 fn execute_external_waveform_file_drop(
     source: &Path,
     target_folder: &Path,
-) -> Result<PathBuf, String> {
+) -> Result<PreparedFileMutationChange, String> {
     execute_external_waveform_file_drop_with(source, target_folder, |_, _| {})
 }
 
@@ -250,7 +260,7 @@ fn execute_external_waveform_file_drop_with(
     source: &Path,
     target_folder: &Path,
     before_publish: impl FnMut(usize, &Path),
-) -> Result<PathBuf, String> {
+) -> Result<PreparedFileMutationChange, String> {
     if !source.is_file() {
         return Err(format!("not a file: {}", source.display()));
     }
@@ -275,7 +285,9 @@ fn execute_external_waveform_file_drop_with(
                 target_folder.display()
             )
         })?;
-    Ok(committed.path().to_path_buf())
+    let path = committed.path().to_path_buf();
+    let evidence = capture_source_file_evidence(&path);
+    Ok(PreparedFileMutationChange { path, evidence })
 }
 
 fn paths_refer_to_same_file(left: &Path, right: &Path) -> bool {
@@ -288,12 +300,56 @@ fn paths_refer_to_same_file(left: &Path, right: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wavecrate::sample_sources::MAX_SOURCE_FILE_EVIDENCE_HASH_BYTES;
 
     #[test]
     fn waveform_drop_rejects_appledouble_sidecars() {
         assert!(supported_waveform_drop_file(Path::new("kick.wav")));
         assert!(!supported_waveform_drop_file(Path::new("._kick.wav")));
         assert!(!supported_waveform_drop_file(Path::new("drums/._kick.wav")));
+    }
+
+    #[test]
+    fn external_drop_captures_small_file_hash_evidence() {
+        let root = tempfile::tempdir().unwrap();
+        let source_folder = root.path().join("external");
+        let target_folder = root.path().join("target");
+        fs::create_dir(&source_folder).unwrap();
+        fs::create_dir(&target_folder).unwrap();
+        let source = source_folder.join("kick.wav");
+        fs::write(&source, b"small source").unwrap();
+
+        let prepared = execute_external_waveform_file_drop(&source, &target_folder).unwrap();
+
+        assert_eq!(prepared.path, target_folder.join("kick.wav"));
+        assert_eq!(
+            prepared.evidence,
+            SourceFileEvidence::ContentHash(*blake3::hash(b"small source").as_bytes())
+        );
+    }
+
+    #[test]
+    fn external_drop_captures_large_file_metadata_evidence() {
+        let root = tempfile::tempdir().unwrap();
+        let source_folder = root.path().join("external");
+        let target_folder = root.path().join("target");
+        fs::create_dir(&source_folder).unwrap();
+        fs::create_dir(&target_folder).unwrap();
+        let source = source_folder.join("large.wav");
+        let bytes = vec![0x5a; (MAX_SOURCE_FILE_EVIDENCE_HASH_BYTES + 1) as usize];
+        fs::write(&source, &bytes).unwrap();
+
+        let prepared = execute_external_waveform_file_drop(&source, &target_folder).unwrap();
+
+        assert_eq!(prepared.path, target_folder.join("large.wav"));
+        assert!(matches!(
+            prepared.evidence,
+            SourceFileEvidence::Metadata {
+                len,
+                is_dir: false,
+                ..
+            } if len == bytes.len() as u64
+        ));
     }
 
     #[test]
@@ -307,7 +363,7 @@ mod tests {
         let direct_target = target_folder.join("kick.wav");
         fs::write(&source, b"source").unwrap();
 
-        let copied = execute_external_waveform_file_drop_with(
+        let prepared = execute_external_waveform_file_drop_with(
             &source,
             &target_folder,
             |index, candidate| {
@@ -318,9 +374,13 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(copied, target_folder.join("kick_copy001.wav"));
+        assert_eq!(prepared.path, target_folder.join("kick_copy001.wav"));
+        assert_eq!(
+            prepared.evidence,
+            SourceFileEvidence::ContentHash(*blake3::hash(b"source").as_bytes())
+        );
         assert_eq!(fs::read(direct_target).unwrap(), b"late owner");
-        assert_eq!(fs::read(copied).unwrap(), b"source");
+        assert_eq!(fs::read(&prepared.path).unwrap(), b"source");
         assert_eq!(fs::read(source).unwrap(), b"source");
     }
 }
