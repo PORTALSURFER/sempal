@@ -12,7 +12,7 @@ use std::{
 use radiant::{gui::frame as frame_ui, prelude as ui};
 use wavecrate::audio::AudioPlayer;
 use wavecrate::sample_sources::{
-    HarvestTouchedPersistRequest, HarvestTouchedPersistResult, SourceId,
+    HarvestTouchedPersistRequest, HarvestTouchedPersistResult, SampleSource, SourceId,
     persist_harvest_touched_if_current,
 };
 
@@ -1302,12 +1302,39 @@ impl HarvestSelectionDerivationOwner {
     }
 
     pub(in crate::native_app) fn rekey_file(&self, old_path: &std::path::Path, new_path: &std::path::Path) {
-        self.rekey_paths(|path| {
-            if path == old_path {
-                Some(new_path.to_path_buf())
-            } else {
-                None
+        self.rekey_paths(|request| {
+            let mut changed = false;
+            if request.source_path == old_path {
+                request.source_path = new_path.to_path_buf();
+                changed = true;
             }
+            if request.child_path == old_path {
+                request.child_path = new_path.to_path_buf();
+                changed = true;
+            }
+            changed
+        });
+    }
+
+    pub(in crate::native_app) fn rekey_file_cross_source(
+        &self,
+        old_path: &std::path::Path,
+        new_path: &std::path::Path,
+        destination_source: SampleSource,
+    ) {
+        self.rekey_paths(|request| {
+            let mut changed = false;
+            if request.source_path == old_path {
+                request.source_path = new_path.to_path_buf();
+                request.source = destination_source.clone();
+                changed = true;
+            }
+            if request.child_path == old_path {
+                request.child_path = new_path.to_path_buf();
+                request.child_source = destination_source.clone();
+                changed = true;
+            }
+            changed
         });
     }
 
@@ -1316,16 +1343,31 @@ impl HarvestSelectionDerivationOwner {
         old_prefix: &std::path::Path,
         new_prefix: &std::path::Path,
     ) {
-        self.rekey_paths(|path| {
-            let suffix = path.strip_prefix(old_prefix).ok()?;
-            Some(new_prefix.join(suffix))
+        self.rekey_paths(|request| {
+            let mut changed = false;
+            if let Ok(suffix) = request.source_path.strip_prefix(old_prefix) {
+                request.source_path = new_prefix.join(suffix);
+                changed = true;
+            }
+            if let Ok(suffix) = request.child_path.strip_prefix(old_prefix) {
+                request.child_path = new_prefix.join(suffix);
+                changed = true;
+            }
+            changed
         });
     }
 
     fn rekey_paths<F>(&self, mut rekey: F)
     where
-        F: FnMut(&std::path::Path) -> Option<PathBuf>,
+        F: FnMut(&mut HarvestSelectionDerivationRequest) -> bool,
     {
+        // Move completion and the worker must observe one serialized ordering:
+        // persistence gate, then queue.  This prevents a move rekey from
+        // changing an in-flight request after the worker has validated it.
+        let Ok(_persist_gate) = self.persist_gate.lock() else {
+            tracing::error!("harvest selection derivation gate lock poisoned during rekey");
+            return;
+        };
         let Ok(mut queue) = self.queue.lock() else {
             tracing::error!("harvest selection derivation queue lock poisoned during rekey");
             return;
@@ -1336,16 +1378,7 @@ impl HarvestSelectionDerivationOwner {
                 let Some(entry) = queue.entries.get_mut(&id) else {
                     continue;
                 };
-                let mut changed = false;
-                if let Some(path) = rekey(&entry.request.source_path) {
-                    entry.request.source_path = path;
-                    changed = true;
-                }
-                if let Some(path) = rekey(&entry.request.child_path) {
-                    entry.request.child_path = path;
-                    changed = true;
-                }
-                changed
+                rekey(&mut entry.request)
             };
             if changed {
                 let revision = queue.next_revision;
@@ -1412,46 +1445,41 @@ fn persist_harvest_selection_derivation_queue(
     queue: Arc<Mutex<HarvestSelectionDerivationQueue>>,
     persist_gate: Arc<Mutex<()>>,
 ) -> HarvestSelectionDerivationBatchResult {
+    let Ok(_persist_gate) = persist_gate.lock() else {
+        tracing::error!("harvest selection derivation gate poisoned in background worker");
+        return HarvestSelectionDerivationBatchResult { results: Vec::new() };
+    };
     let work = queue
         .lock()
         .map(|mut queue| queue.claim_all())
         .unwrap_or_default();
-    let Ok(_persist_gate) = persist_gate.lock() else {
-        tracing::error!("harvest selection derivation gate poisoned in background worker");
-        return HarvestSelectionDerivationBatchResult {
-            results: work
-                .into_iter()
-                .map(|item| HarvestSelectionDerivationBatchItem {
-                    id: item.id,
-                    revision: item.revision,
-                    source_path: PathBuf::new(),
-                    child_path: PathBuf::new(),
-                    result: Err(String::from("persistence gate poisoned")),
-                })
-                .collect(),
-        };
-    };
     let mut results = Vec::with_capacity(work.len());
     for item in work {
+        // Validate the exact claimed revision immediately before executing the
+        // database mutation.  Rekeys take the same gate first, so they either
+        // happen before this check (and supersede the old work) or after the
+        // old mutation has committed.
         let request = queue
             .lock()
             .ok()
-            .and_then(|queue| queue.entries.get(&item.id).map(|entry| entry.request.clone()));
+            .and_then(|queue| {
+                queue.entries.get(&item.id).and_then(|entry| {
+                    (entry.revision == item.revision
+                        && entry.state == HarvestSelectionDerivationEntryState::InFlight
+                        && !queue.closed)
+                        .then(|| entry.request.clone())
+                })
+            });
         let Some(request) = request else {
             continue;
         };
-        let revision = queue
-            .lock()
-            .ok()
-            .and_then(|queue| queue.entries.get(&item.id).map(|entry| entry.revision))
-            .unwrap_or(item.revision);
         let result = execute_harvest_selection_derivation(request.clone());
         if let Ok(mut queue) = queue.lock() {
-            queue.acknowledge(item.id, revision, result.is_ok());
+            queue.acknowledge(item.id, item.revision, result.is_ok());
         }
         results.push(HarvestSelectionDerivationBatchItem {
             id: item.id,
-            revision,
+            revision: item.revision,
             source_path: request.source_path,
             child_path: request.child_path,
             result,
@@ -1520,6 +1548,55 @@ mod harvest_selection_derivation_owner_tests {
         let entry = queue.entries.values().next().expect("queued request");
         assert_eq!(entry.request.source_path, root.path().join("new/source.wav"));
         assert_eq!(entry.request.child_path, root.path().join("new/child.wav"));
+    }
+
+    #[test]
+    fn in_flight_move_rekeys_to_one_pending_latest_edge() {
+        let root = tempfile::tempdir().expect("root");
+        let mut owner = HarvestSelectionDerivationOwner::new();
+        owner.enqueue(request(root.path()));
+        let claimed = owner.queue.lock().expect("queue lock").claim_all();
+        assert_eq!(claimed.len(), 1);
+
+        owner.rekey_prefix(&root.path().join("old"), &root.path().join("new"));
+
+        let queue = owner.queue.lock().expect("queue lock");
+        assert_eq!(queue.entries.len(), 1);
+        let entry = queue.entries.values().next().expect("rekeyed request");
+        assert_eq!(entry.state, HarvestSelectionDerivationEntryState::Pending);
+        assert!(entry.revision > claimed[0].revision);
+        assert_eq!(entry.request.source_path, root.path().join("new/source.wav"));
+        assert_eq!(entry.request.child_path, root.path().join("new/child.wav"));
+        assert!(!queue.order.is_empty(), "rekeyed edge must be rescheduled");
+    }
+
+    #[test]
+    fn cross_source_in_flight_move_rekeys_endpoint_source_context() {
+        let source_root = tempfile::tempdir().expect("source root");
+        let destination_root = tempfile::tempdir().expect("destination root");
+        let source = SampleSource::new_with_id(SourceId::new(), source_root.path().to_path_buf());
+        let destination =
+            SampleSource::new_with_id(SourceId::new(), destination_root.path().to_path_buf());
+        let mut owner = HarvestSelectionDerivationOwner::new();
+        let mut queued = request(source_root.path());
+        queued.source = source.clone();
+        queued.child_source = source;
+        owner.enqueue(queued);
+        let claimed = owner.queue.lock().expect("queue lock").claim_all();
+        assert_eq!(claimed.len(), 1);
+
+        let old_path = source_root.path().join("old/source.wav");
+        let new_path = destination_root.path().join("new/source.wav");
+        owner.rekey_file_cross_source(&old_path, &new_path, destination.clone());
+
+        let queue = owner.queue.lock().expect("queue lock");
+        let entry = queue.entries.values().next().expect("rekeyed request");
+        assert_eq!(entry.state, HarvestSelectionDerivationEntryState::Pending);
+        assert!(entry.revision > claimed[0].revision);
+        assert_eq!(entry.request.source_path, new_path);
+        assert_eq!(entry.request.source.id, destination.id);
+        assert_eq!(entry.request.source.root, destination.root);
+        assert_ne!(entry.request.child_source.id, destination.id);
     }
 
     #[test]

@@ -394,15 +394,28 @@ impl NativeAppState {
     }
 
     fn remap_harvest_file_key_for_move(&self, old_path: &Path, new_path: &Path) {
-        self.background
-            .harvest_selection_derivation
-            .rekey_file(old_path, new_path);
+        let Some((destination_source, _)) = self
+            .library
+            .folder_browser
+            .sample_source_for_file_path(new_path)
+        else {
+            return;
+        };
         let Some(old_key) = self.harvest_key_for_path(old_path) else {
             return;
         };
         let Some(new_key) = self.harvest_key_for_path(new_path) else {
             return;
         };
+        if old_key.source_id == new_key.source_id {
+            self.background
+                .harvest_selection_derivation
+                .rekey_file(old_path, new_path);
+        } else {
+            self.background
+                .harvest_selection_derivation
+                .rekey_file_cross_source(old_path, new_path, destination_source);
+        }
         if let Err(error) =
             wavecrate::sample_sources::library::remap_harvest_file_key(&old_key, &new_key)
         {
