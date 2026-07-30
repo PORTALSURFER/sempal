@@ -1,11 +1,9 @@
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
+use std::{cell::RefCell, collections::HashMap, path::PathBuf};
 
-use wavecrate::sample_sources::SourceDatabase;
-use wavecrate_library::timestamps::system_time_to_unix_nanos;
+#[cfg(test)]
+use std::path::Path;
+
+use wavecrate::sample_sources::{ExistingFileMetadataUpdate, SourceDatabase};
 
 use crate::native_app::audio::playback_history::LastPlayedPersistResult;
 
@@ -38,11 +36,18 @@ pub(super) fn persist_last_played(request: LastPlayedPersistRequest) -> LastPlay
 }
 
 fn persist_last_played_inner(request: &LastPlayedPersistRequest) -> Result<(), String> {
-    let (file_size, modified_ns) =
-        file_metadata(&request.source_root.join(&request.relative_path))?;
-    with_playback_history_source_db(request, |db| {
-        persist_last_played_with_db(db, request, file_size, modified_ns)
-    })
+    with_playback_history_source_db(request, |db| persist_last_played_with_db(db, request))
+}
+
+#[cfg(test)]
+fn file_metadata(path: &Path) -> Result<(u64, i64), String> {
+    let metadata = std::fs::metadata(path)
+        .map_err(|err| format!("Failed to read {}: {err}", path.display()))?;
+    let modified_ns = metadata
+        .modified()
+        .map(wavecrate_library::timestamps::system_time_to_unix_nanos)
+        .map_err(|err| format!("Missing modified time for {}: {err}", path.display()))?;
+    Ok((metadata.len(), modified_ns))
 }
 
 fn with_playback_history_source_db<T>(
@@ -73,28 +78,25 @@ fn with_playback_history_source_db<T>(
 fn persist_last_played_with_db(
     db: &SourceDatabase,
     request: &LastPlayedPersistRequest,
-    file_size: u64,
-    modified_ns: i64,
 ) -> Result<(), String> {
     let mut batch = db.write_batch().map_err(|err| err.to_string())?;
-    batch
-        .upsert_file(&request.relative_path, file_size, modified_ns)
-        .map_err(|err| err.to_string())?;
+    if matches!(
+        batch
+            .ensure_existing_live_file(&request.relative_path)
+            .map_err(|err| err.to_string())?,
+        ExistingFileMetadataUpdate::Missing
+    ) {
+        return Err(format!(
+            "playback persistence deferred until source row exists: {}",
+            request.relative_path.display()
+        ));
+    }
     batch
         .set_last_played_at(&request.relative_path, request.played_at)
         .map_err(|err| err.to_string())?;
-    batch.commit().map_err(|err| err.to_string())
-}
-
-fn file_metadata(path: &Path) -> Result<(u64, i64), String> {
-    let metadata = std::fs::metadata(path)
-        .map_err(|err| format!("Failed to read {}: {err}", path.display()))?;
-    let modified_ns = system_time_to_unix_nanos(
-        metadata
-            .modified()
-            .map_err(|err| format!("Missing modified time for {}: {err}", path.display()))?,
-    );
-    Ok((metadata.len(), modified_ns))
+    batch
+        .commit_auxiliary_state()
+        .map_err(|err| err.to_string())
 }
 
 #[cfg(test)]

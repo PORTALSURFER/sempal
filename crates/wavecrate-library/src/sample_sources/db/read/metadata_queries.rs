@@ -227,6 +227,148 @@ impl SourceDatabase {
         browser_metadata_snapshot_with_observer(self, || {})
     }
 
+    /// Fetch browser metadata for exact source-relative paths at one committed revision.
+    ///
+    /// The query is bounded by `paths` and fails closed when another writer advances the source
+    /// revision before the read begins. It is the committed-mutation counterpart to the full
+    /// browser snapshot and must not be replaced with a source-wide materialization.
+    pub fn browser_metadata_for_paths_at_revision(
+        &self,
+        expected_revision: u64,
+        paths: &[std::path::PathBuf],
+    ) -> Result<BrowserMetadataSnapshot, SourceDbError> {
+        let transaction = self
+            .connection
+            .unchecked_transaction()
+            .map_err(map_sql_error)?;
+        let revision = transaction
+            .query_row(
+                "SELECT value FROM metadata WHERE key = 'revision'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(map_sql_error)?
+            .map(|raw| raw.parse::<u64>().map_err(|_| SourceDbError::Unexpected))
+            .transpose()?
+            .unwrap_or_default();
+        if revision != expected_revision {
+            return Err(SourceDbError::Unexpected);
+        }
+        if paths.is_empty() {
+            return Ok(BrowserMetadataSnapshot {
+                revision,
+                files: Vec::new(),
+            });
+        }
+
+        let wav_columns = super::super::schema::table_columns(&transaction, "wav_files")?;
+        let collection_columns =
+            super::super::schema::table_columns(&transaction, "wav_file_collections")?;
+        let memberships_available =
+            collection_columns.contains("path") && collection_columns.contains("collection");
+        let supported_filter = if wav_columns.contains("extension") {
+            crate::sample_sources::supported_audio_where_clause()
+        } else {
+            String::from(
+                "lower(path) GLOB '*.wav' AND path NOT GLOB '._*' AND path NOT GLOB '*/._*'",
+            )
+        };
+        let legacy_collection =
+            optional_browser_column(&wav_columns, "collection", "NULL AS collection");
+        let placeholders = (1..=paths.len())
+            .map(|index| format!("?{index}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "SELECT path, {}, {}, {}, {}, {legacy_collection}, {}, {}, {}
+             FROM wav_files
+             WHERE {supported_filter} AND path IN ({placeholders})
+             ORDER BY path ASC",
+            optional_browser_column(&wav_columns, "tag", "0 AS tag"),
+            optional_browser_column(&wav_columns, "locked", "0 AS locked"),
+            optional_browser_column(&wav_columns, "last_played_at", "NULL AS last_played_at"),
+            optional_browser_column(&wav_columns, "last_curated_at", "NULL AS last_curated_at"),
+            optional_browser_column(&wav_columns, "file_size", "0 AS file_size"),
+            optional_browser_column(&wav_columns, "modified_ns", "0 AS modified_ns"),
+            optional_browser_column(&wav_columns, "missing", "0 AS missing"),
+        );
+        let raw_paths = paths
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        let mut statement = transaction.prepare(&sql).map_err(map_sql_error)?;
+        let rows = statement
+            .query_map(rusqlite::params_from_iter(raw_paths.iter()), |row| {
+                let Some(relative_path) = decode_relative_path(
+                    row.get(0)?,
+                    "Skipping browser metadata row with invalid relative path",
+                )?
+                else {
+                    return Ok(None);
+                };
+                let legacy_collection = if memberships_available {
+                    Vec::new()
+                } else {
+                    row.get::<_, Option<i64>>(5)?
+                        .and_then(SampleCollection::from_i64)
+                        .into_iter()
+                        .collect()
+                };
+                Ok(Some((
+                    row.get::<_, String>(0)?,
+                    BrowserFileMetadata {
+                        relative_path,
+                        file_size: u64::try_from(row.get::<_, i64>(6)?).unwrap_or_default(),
+                        modified_ns: row.get(7)?,
+                        missing: row.get::<_, i64>(8)? != 0,
+                        rating: Rating::from_i64(row.get(1)?),
+                        locked: row.get::<_, i64>(2)? != 0,
+                        collections: legacy_collection,
+                        last_played_at: row.get(3)?,
+                        last_curated_at: row.get(4)?,
+                    },
+                )))
+            })
+            .map_err(map_sql_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(map_sql_error)?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        drop(statement);
+
+        let mut files = rows.into_iter().map(|(_, file)| file).collect::<Vec<_>>();
+        if memberships_available && !files.is_empty() {
+            let placeholders = (1..=raw_paths.len())
+                .map(|index| format!("?{index}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let sql = format!(
+                "SELECT path, collection FROM wav_file_collections WHERE path IN ({placeholders}) ORDER BY path ASC, collection ASC"
+            );
+            let mut statement = transaction.prepare(&sql).map_err(map_sql_error)?;
+            let memberships = statement
+                .query_map(rusqlite::params_from_iter(raw_paths.iter()), |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+                })
+                .map_err(map_sql_error)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(map_sql_error)?;
+            let mut by_path = HashMap::<String, Vec<SampleCollection>>::new();
+            for (path, collection) in memberships {
+                if let Some(collection) = SampleCollection::from_i64(collection) {
+                    by_path.entry(path).or_default().push(collection);
+                }
+            }
+            for file in &mut files {
+                let raw_path = file.relative_path.to_string_lossy().into_owned();
+                file.collections = by_path.remove(&raw_path).unwrap_or_default();
+            }
+        }
+        Ok(BrowserMetadataSnapshot { revision, files })
+    }
+
     /// Fetch one bounded browser metadata page at an exact source revision.
     ///
     /// `after_cursor` is an exclusive raw-SQL keyset cursor. A revision mismatch fails closed so pages

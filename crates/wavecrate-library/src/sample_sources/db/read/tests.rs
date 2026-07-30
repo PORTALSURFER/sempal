@@ -112,6 +112,33 @@ fn browser_metadata_page_advances_past_invalid_raw_path_rows() {
 }
 
 #[test]
+fn browser_metadata_for_paths_is_exact_and_revision_fenced() {
+    let dir = tempdir().unwrap();
+    let db = SourceDatabase::open_for_source_write(dir.path()).unwrap();
+    db.upsert_file(Path::new("one.wav"), 10, 5).unwrap();
+    db.upsert_file(Path::new("two.wav"), 20, 6).unwrap();
+    db.set_tag(Path::new("one.wav"), Rating::KEEP_1).unwrap();
+    let revision = db.get_revision().unwrap();
+
+    let snapshot = db
+        .browser_metadata_for_paths_at_revision(
+            revision,
+            &[PathBuf::from("one.wav"), PathBuf::from("not-indexed.wav")],
+        )
+        .unwrap();
+    assert_eq!(snapshot.revision, revision);
+    assert_eq!(snapshot.files.len(), 1);
+    assert_eq!(snapshot.files[0].relative_path, PathBuf::from("one.wav"));
+    assert_eq!(snapshot.files[0].rating, Rating::KEEP_1);
+
+    db.set_tag(Path::new("two.wav"), Rating::new(2)).unwrap();
+    assert!(
+        db.browser_metadata_for_paths_at_revision(revision, &[PathBuf::from("one.wav")])
+            .is_err()
+    );
+}
+
+#[test]
 fn browser_metadata_snapshot_has_constant_statement_count_for_large_sources() {
     let dir = tempdir().unwrap();
     let mut db = SourceDatabase::open_for_source_write(dir.path()).unwrap();

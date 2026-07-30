@@ -21,6 +21,42 @@ fn hard_rescan_prunes_missing_rows() {
 }
 
 #[test]
+fn auxiliary_metadata_write_does_not_hide_external_content_change() {
+    let dir = tempdir().unwrap();
+    let file_path = dir.path().join("one.wav");
+    std::fs::write(&file_path, b"before").unwrap();
+    let db = SourceDatabase::open_for_scan(dir.path()).unwrap();
+    scan_once(&db).unwrap();
+    let before = db.entry_for_path(Path::new("one.wav")).unwrap().unwrap();
+
+    // An external edit races with a revision-neutral auxiliary write. The latter must only guard
+    // live-row existence; scanner-owned size/mtime/hash facts remain untouched for reconciliation.
+    std::fs::write(&file_path, b"after with different content").unwrap();
+    let aux =
+        SourceDatabase::open_for_user_metadata_write_with_database_root(dir.path(), dir.path())
+            .unwrap();
+    let mut batch = aux.write_batch().unwrap();
+    assert!(matches!(
+        batch
+            .ensure_existing_live_file(Path::new("one.wav"))
+            .unwrap(),
+        ExistingFileMetadataUpdate::Updated
+    ));
+    batch.set_tag(Path::new("one.wav"), Rating::KEEP_1).unwrap();
+    batch.commit_auxiliary_state().unwrap();
+
+    let after_aux = db.entry_for_path(Path::new("one.wav")).unwrap().unwrap();
+    assert_eq!(after_aux.file_size, before.file_size);
+    assert_eq!(after_aux.modified_ns, before.modified_ns);
+    let stats = hard_rescan(&db).unwrap();
+    assert_eq!(stats.committed_delta.changed.len(), 1);
+    assert_eq!(
+        stats.committed_delta.changed[0].relative_path,
+        Path::new("one.wav")
+    );
+}
+
+#[test]
 fn hard_rescan_prunes_missing_files_with_tags() {
     let dir = tempdir().unwrap();
     let file_path = dir.path().join("one.wav");

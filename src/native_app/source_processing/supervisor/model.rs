@@ -12,6 +12,12 @@ pub(super) struct PendingSourceRetirement {
     pub(super) terminal_offline: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct PendingProjectionFence {
+    pub(super) lifecycle_generation: u64,
+    pub(super) revision: u64,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(super) struct PendingReadinessDelta {
     pub(super) scope_ids: BTreeSet<String>,

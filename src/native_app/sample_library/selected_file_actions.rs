@@ -3,7 +3,8 @@ use crate::native_app::app::{
 };
 use crate::native_app::app::{emit_gui_action, sample_path_label};
 use crate::native_app::sample_library::committed_file_mutations::{
-    FileMutationChange, FileMutationOperation, FileMutationProjection,
+    FileMutationChange, FileMutationOperation, FileMutationPostCommit,
+    FileMutationPostCommitPresentation, FileMutationProjection,
 };
 use crate::native_app::sample_library::folder_browser::BrowserListingRevealReason;
 use crate::native_app::sample_library::sample_list::{
@@ -504,6 +505,50 @@ impl NativeAppState {
     ) {
         match completion.result {
             Ok(path) => {
+                if drag_position.is_none() {
+                    // The authoritative metadata and browser publication remain deferred, but a
+                    // reused output path must not keep stale decoded audio while that completes.
+                    self.evict_waveform_cache_path(&path);
+                    let source_duration_seconds = self.waveform.current.duration_seconds() as f64;
+                    if let Some(request) = self.harvest_selection_derivation_request(
+                        &completion.source_path,
+                        &path,
+                        completion.selection,
+                        source_duration_seconds,
+                        harvest_operation.clone(),
+                    ) {
+                        self.background
+                            .harvest_selection_derivation
+                            .enqueue(request);
+                        self.background
+                            .harvest_selection_derivation
+                            .schedule_if_idle(context);
+                    }
+                    let cross_source_derivative =
+                        self.extraction_derivative_crosses_sources(&completion.source_path, &path);
+                    let mut change = FileMutationChange::created(path.clone());
+                    let effective_focus_derivative = focus_derivative && cross_source_derivative;
+                    if effective_focus_derivative {
+                        change = change.with_projection(FileMutationProjection::FocusAndLoad {
+                            path: path.clone(),
+                            reason: BrowserListingRevealReason::LoadedFileFocus,
+                        });
+                    }
+                    change = change.with_post_commit(FileMutationPostCommit {
+                        source_path: completion.source_path,
+                        selection: completion.selection,
+                        playback_type,
+                        focus_derivative: effective_focus_derivative,
+                        started_at,
+                        presentation: FileMutationPostCommitPresentation::Extracted,
+                    });
+                    self.queue_committed_file_mutation(
+                        FileMutationOperation::Extract,
+                        vec![change],
+                        context,
+                    );
+                    return;
+                }
                 self.evict_waveform_cache_path(&path);
                 self.waveform
                     .current
@@ -532,9 +577,12 @@ impl NativeAppState {
                         "same_source_derivative"
                     }),
                 );
-                let metadata_error = self
-                    .assign_extracted_file_metadata(&path, playback_type, context)
-                    .err();
+                let metadata_error = if drag_position.is_some() {
+                    self.project_extracted_file_metadata(&path, playback_type)
+                        .err()
+                } else {
+                    None
+                };
                 if let Some(request) = self.harvest_selection_derivation_request(
                     &completion.source_path,
                     &path,
@@ -542,7 +590,9 @@ impl NativeAppState {
                     self.waveform.current.duration_seconds() as f64,
                     harvest_operation,
                 ) {
-                    self.background.harvest_selection_derivation.enqueue(request);
+                    self.background
+                        .harvest_selection_derivation
+                        .enqueue(request);
                     self.background
                         .harvest_selection_derivation
                         .schedule_if_idle(context);
@@ -614,15 +664,34 @@ impl NativeAppState {
                 }
                 self.queue_partially_committed_file_mutation(
                     FileMutationOperation::Extract,
-                    vec![if focus_derivative && drag_position.is_none() {
-                        FileMutationChange::created(path.clone()).with_projection(
-                            FileMutationProjection::FocusAndLoad {
-                                path,
-                                reason: BrowserListingRevealReason::LoadedFileFocus,
-                            },
-                        )
+                    vec![if drag_position.is_none() {
+                        let change = if focus_derivative {
+                            FileMutationChange::created(path.clone()).with_projection(
+                                FileMutationProjection::FocusAndLoad {
+                                    path,
+                                    reason: BrowserListingRevealReason::LoadedFileFocus,
+                                },
+                            )
+                        } else {
+                            FileMutationChange::created(path)
+                        };
+                        change.with_post_commit(FileMutationPostCommit {
+                            source_path: completion.source_path.clone(),
+                            selection: completion.selection,
+                            playback_type,
+                            focus_derivative,
+                            started_at,
+                            presentation: FileMutationPostCommitPresentation::Extracted,
+                        })
                     } else {
-                        FileMutationChange::created(path)
+                        FileMutationChange::created(path).with_post_commit(FileMutationPostCommit {
+                            source_path: completion.source_path.clone(),
+                            selection: completion.selection,
+                            playback_type,
+                            focus_derivative: false,
+                            started_at,
+                            presentation: FileMutationPostCommitPresentation::Drag,
+                        })
                     }],
                     metadata_error
                         .into_iter()
@@ -654,6 +723,75 @@ impl NativeAppState {
                 );
             }
         }
+    }
+
+    pub(in crate::native_app) fn finish_committed_playmark_extraction_metadata(
+        &mut self,
+        path: &Path,
+        post_commit: &FileMutationPostCommit,
+        context: &mut radiant::prelude::UiUpdateContext<GuiMessage>,
+    ) -> Option<String> {
+        let metadata_error = self
+            .assign_extracted_file_metadata(path, post_commit.playback_type, context)
+            .err();
+        metadata_error
+    }
+
+    pub(in crate::native_app) fn finish_committed_playmark_extraction_visuals(
+        &mut self,
+        path: &Path,
+        post_commit: &FileMutationPostCommit,
+        metadata_error: Option<&str>,
+    ) {
+        if post_commit.presentation == FileMutationPostCommitPresentation::Drag {
+            if let Some(error) = metadata_error {
+                self.ui.status.sample = format!(
+                    "Dragging {}; extracted metadata incomplete: {error}",
+                    sample_path_label(path)
+                );
+            }
+            return;
+        }
+        self.evict_waveform_cache_path(path);
+        self.waveform
+            .current
+            .mark_extracted_play_selection(&post_commit.source_path, post_commit.selection);
+        self.waveform.current.flash_play_selection();
+        let protected_origin = self
+            .library
+            .folder_browser
+            .path_is_in_protected_source(&post_commit.source_path);
+        self.flash_primary_source_acceptance_for_protected_extraction(
+            &post_commit.source_path,
+            path,
+        );
+        self.log_sample_identity_checkpoint(
+            "waveform.extract.finished_after_refresh",
+            "finish_committed_playmark_extraction",
+            Some(path),
+            Some(if protected_origin && post_commit.focus_derivative {
+                "protected_origin_cross_source_derivative"
+            } else if post_commit.focus_derivative {
+                "cross_source_derivative"
+            } else if protected_origin {
+                "protected_origin_derivative_left_unfocused"
+            } else {
+                "same_source_derivative_left_unfocused"
+            }),
+        );
+        let label = sample_path_label(path);
+        self.ui.status.sample = match metadata_error {
+            Some(error) => format!("Extracted {label}; extracted metadata incomplete: {error}"),
+            None => format!("Extracted {label}"),
+        };
+        emit_gui_action(
+            "waveform.extract_playmarked_range",
+            Some("waveform"),
+            Some(&label),
+            "success",
+            post_commit.started_at,
+            None,
+        );
     }
 
     pub(in crate::native_app) fn finish_selected_whole_files_harvest_extraction(

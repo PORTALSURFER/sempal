@@ -3,8 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use wavecrate::sample_sources::SourceDatabase;
-use wavecrate_library::timestamps::system_time_to_unix_nanos;
+use wavecrate::sample_sources::{ExistingFileMetadataUpdate, SourceDatabase};
 
 use crate::native_app::sample_library::folder_browser::view_contract::MissingCollectionFile;
 
@@ -32,10 +31,17 @@ pub(super) fn persist_collection_updates(
         .map_err(|err| err.to_string())?;
     let mut batch = db.write_batch().map_err(|err| err.to_string())?;
     for update in updates {
-        let (file_size, modified_ns) = file_metadata(&update.absolute_path)?;
-        batch
-            .upsert_file(&update.relative_path, file_size, modified_ns)
-            .map_err(|err| err.to_string())?;
+        if matches!(
+            batch
+                .ensure_existing_live_file(&update.relative_path)
+                .map_err(|err| err.to_string())?,
+            ExistingFileMetadataUpdate::Missing
+        ) {
+            return Err(format!(
+                "collection persistence deferred until source row exists: {}",
+                update.relative_path.display()
+            ));
+        }
         match update.operation {
             CollectionOperation::Add => batch
                 .add_collection(&update.relative_path, update.collection)
@@ -45,7 +51,9 @@ pub(super) fn persist_collection_updates(
                 .map_err(|err| err.to_string())?,
         }
     }
-    batch.commit().map_err(|err| err.to_string())
+    batch
+        .commit_auxiliary_state()
+        .map_err(|err| err.to_string())
 }
 
 pub(super) fn group_missing_collection_files_by_source(
@@ -74,18 +82,9 @@ pub(super) fn persist_missing_collection_cleanup(
             .remove_collection(&file.relative_path, file.collection)
             .map_err(|err| err.to_string())?;
     }
-    batch.commit().map_err(|err| err.to_string())
-}
-
-fn file_metadata(path: &Path) -> Result<(u64, i64), String> {
-    let metadata = std::fs::metadata(path)
-        .map_err(|err| format!("Failed to read {}: {err}", path.display()))?;
-    let modified_ns = system_time_to_unix_nanos(
-        metadata
-            .modified()
-            .map_err(|err| format!("Missing modified time for {}: {err}", path.display()))?,
-    );
-    Ok((metadata.len(), modified_ns))
+    batch
+        .commit_auxiliary_state()
+        .map_err(|err| err.to_string())
 }
 
 #[cfg(test)]

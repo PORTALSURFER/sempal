@@ -154,6 +154,14 @@ impl SourceProcessingSupervisor {
             retained_source_ids.contains(source_id) && !changed_source_ids.contains(source_id)
         });
         control
+            .pending_projection_fences
+            .retain(|source_id, fence| {
+                retained_source_ids.contains(source_id)
+                    && !changed_source_ids.contains(source_id)
+                    && source_lifecycle_generations.get(source_id)
+                        == Some(&fence.lifecycle_generation)
+            });
+        control
             .accepted_manifest_revisions
             .retain(|source_id, fence| {
                 retained_source_ids.contains(source_id)

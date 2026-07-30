@@ -323,6 +323,15 @@ pub struct BrowserMetadataPage {
     pub next_cursor: Option<BrowserMetadataCursor>,
 }
 
+/// Whether an existing live source row accepted a metadata-only update.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExistingFileMetadataUpdate {
+    /// The live row was updated without changing path or identity revisions.
+    Updated,
+    /// No live row exists yet; the caller must order the update after authoritative creation.
+    Missing,
+}
+
 /// Authoritative identity facts for one live source-manifest row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceManifestEntry {

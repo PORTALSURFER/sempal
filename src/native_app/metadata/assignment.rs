@@ -22,6 +22,32 @@ struct MetadataTagTarget {
 }
 
 impl NativeAppState {
+    /// Apply extracted-file metadata to the immediate UI projection without attempting durable
+    /// writes. The authoritative file-mutation completion schedules those writes after its source
+    /// row exists.
+    pub(in crate::native_app) fn project_extracted_file_metadata(
+        &mut self,
+        absolute_path: &Path,
+        playback_type: ExtractedFilePlaybackType,
+    ) -> Result<(), String> {
+        let (source_root, source_database_root, relative_path) =
+            self.extracted_file_metadata_target(absolute_path)?;
+        self.library.folder_browser.set_file_rating_state(
+            absolute_path,
+            EXTRACTED_FILE_RATING,
+            EXTRACTED_FILE_LOCKED,
+        );
+        self.assign_extracted_file_playback_type(
+            absolute_path,
+            source_root,
+            source_database_root,
+            relative_path,
+            playback_type,
+            None,
+        );
+        Ok(())
+    }
+
     pub(in crate::native_app) fn add_metadata_tags(
         &mut self,
         tags: Vec<String>,
@@ -43,15 +69,8 @@ impl NativeAppState {
         playback_type: ExtractedFilePlaybackType,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) -> Result<(), String> {
-        let Some((source_root, source_database_root, relative_path)) = self
-            .library
-            .folder_browser
-            .source_database_relative_file_path(absolute_path)
-        else {
-            return Err(String::from(
-                "extracted file is not inside a configured source",
-            ));
-        };
+        let (source_root, source_database_root, relative_path) =
+            self.extracted_file_metadata_target(absolute_path)?;
         self.library.folder_browser.set_file_rating_state(
             absolute_path,
             EXTRACTED_FILE_RATING,
@@ -86,10 +105,30 @@ impl NativeAppState {
             source_database_root,
             relative_path,
             playback_type,
-            context,
+            Some(context),
         );
 
         Ok(())
+    }
+
+    fn extracted_file_metadata_target(
+        &self,
+        absolute_path: &Path,
+    ) -> Result<(PathBuf, PathBuf, PathBuf), String> {
+        let Some((source_root, source_database_root, relative_path)) = self
+            .library
+            .folder_browser
+            .source_database_relative_file_path(absolute_path)
+        else {
+            return Err(String::from(
+                "extracted file is not inside a configured source",
+            ));
+        };
+        self.library
+            .folder_browser
+            .source_id_for_file_path(absolute_path)
+            .ok_or_else(|| String::from("extracted file source is unavailable"))?;
+        Ok((source_root, source_database_root, relative_path))
     }
 
     fn assign_extracted_file_playback_type(
@@ -99,7 +138,7 @@ impl NativeAppState {
         source_database_root: PathBuf,
         relative_path: PathBuf,
         playback_type: ExtractedFilePlaybackType,
-        context: &mut ui::UiUpdateContext<GuiMessage>,
+        mut context: Option<&mut ui::UiUpdateContext<GuiMessage>>,
     ) {
         let tag = playback_type.tag().to_string();
         let file_id = absolute_path.to_string_lossy().to_string();
@@ -114,9 +153,10 @@ impl NativeAppState {
             replace_other_playback_type_tags(&mut file_tags, tag.as_str(), &mut added);
         if !file_tags.iter().any(|existing| existing == &tag) {
             file_tags.push(tag.clone());
-            push_unique(&mut added, tag);
+            push_unique(&mut added, tag.clone());
         }
-        if added.is_empty() && removed_conflicting.is_empty() {
+        let persist = context.is_some();
+        if !persist && added.is_empty() && removed_conflicting.is_empty() {
             return;
         }
 
@@ -142,17 +182,21 @@ impl NativeAppState {
                 assigned: false,
             });
         }
-        if !added.is_empty() {
+        if persist {
+            let mut durable_added = added.clone();
+            push_unique(&mut durable_added, tag.clone());
             requests.push(MetadataTagPersistRequest {
                 absolute_path: absolute_path.to_path_buf(),
                 source_root,
                 source_database_root,
                 relative_path,
-                tags: added,
+                tags: durable_added,
                 assigned: true,
             });
         }
-        enqueue_metadata_tag_persist_requests(requests, context);
+        if let Some(context) = context.take() {
+            enqueue_metadata_tag_persist_requests(requests, context);
+        }
     }
 
     #[cfg(test)]

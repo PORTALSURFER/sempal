@@ -56,9 +56,9 @@ pub use pending_renames::{PendingRenameDiagnostics, PendingRenameEntry, PendingR
 pub use rename_metadata::RenameMetadataSnapshot;
 pub use types::{
     BrowserFileMetadata, BrowserMetadataCursor, BrowserMetadataPage, BrowserMetadataSnapshot,
-    Rating, SampleCollection, SampleSoundType, SourceIndexClassification, SourceIndexDiagnostic,
-    SourceIndexEntry, SourceIndexSnapshot, SourceManifestEntry, SourceTag, SourceTagUsage,
-    WavEntry,
+    ExistingFileMetadataUpdate, Rating, SampleCollection, SampleSoundType,
+    SourceIndexClassification, SourceIndexDiagnostic, SourceIndexEntry, SourceIndexSnapshot,
+    SourceManifestEntry, SourceTag, SourceTagUsage, WavEntry,
 };
 pub use util::normalize_relative_path;
 pub use write::{

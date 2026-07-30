@@ -9,8 +9,9 @@ use std::{collections::BTreeSet, path::PathBuf, time::Instant};
 
 use radiant::prelude as ui;
 use wavecrate::sample_sources::{readiness::ReadinessStage, scanner::CommittedSourceDelta};
+use wavecrate::selection::SelectionRange;
 
-use crate::native_app::app::{GuiMessage, NativeAppState};
+use crate::native_app::app::{ExtractedFilePlaybackType, GuiMessage, NativeAppState};
 use crate::native_app::sample_library::folder_browser::BrowserListingRevealReason;
 use crate::native_app::sample_library::folder_browser::commands::{
     FileMoveConflictCompletion, FolderMoveRequest, FolderMoveSuccess, RenameCommitCompletion,
@@ -19,6 +20,7 @@ use crate::native_app::sample_library::source_prep::{
     CacheWarmIntent, MetadataRefreshIntent, ReadinessIntent, SourceFeedbackIntent,
     SourcePrepIntents, SourcePriorityIntent,
 };
+use crate::native_app::source_processing::ProjectionHandoffTicket;
 
 #[cfg(test)]
 mod tests;
@@ -28,9 +30,11 @@ mod worker;
 pub(in crate::native_app) use watcher_echo::{
     CommittedWatcherEcho, CommittedWatcherPathState, observed_watcher_path_state,
 };
+#[cfg(test)]
+use worker::reconcile_file_mutation_requests;
 use worker::{
     build_source_requests, capture_expected_filesystem_state, merge_file_mutation_failures,
-    mutation_completion_is_stale_or_duplicate, reconcile_file_mutation_requests,
+    mutation_completion_is_stale_or_duplicate, reconcile_file_mutation_requests_with_handoff,
 };
 
 pub(in crate::native_app) const COMMITTED_MUTATION_PREP_INTENTS: SourcePrepIntents =
@@ -38,6 +42,15 @@ pub(in crate::native_app) const COMMITTED_MUTATION_PREP_INTENTS: SourcePrepInten
         readiness: ReadinessIntent::InvalidateAndRequestConvergence,
         priority: SourcePriorityIntent::PromoteIfSelected,
         metadata_refresh: MetadataRefreshIntent::Force,
+        refresh_waveform_cache_projection_if_selected: true,
+        cache_warm: CacheWarmIntent::Preserve,
+        feedback: SourceFeedbackIntent::Preserve,
+    };
+pub(in crate::native_app) const COMMITTED_PLAYMARK_PREP_INTENTS: SourcePrepIntents =
+    SourcePrepIntents {
+        readiness: ReadinessIntent::InvalidateAndRequestConvergence,
+        priority: SourcePriorityIntent::PromoteIfSelected,
+        metadata_refresh: MetadataRefreshIntent::IfNotLoaded,
         refresh_waveform_cache_projection_if_selected: true,
         cache_warm: CacheWarmIntent::Preserve,
         feedback: SourceFeedbackIntent::Preserve,
@@ -113,6 +126,26 @@ pub(in crate::native_app) enum FileMutationSemantics {
     ContentChanged,
     PathOnlyMove,
     Delete,
+}
+
+/// Extraction follow-up inputs captured before asynchronous reconciliation changes selection or
+/// playback state. The follow-up is admitted only after the created source row is authoritative.
+#[derive(Clone, Debug, PartialEq)]
+pub(in crate::native_app) struct FileMutationPostCommit {
+    pub(in crate::native_app) source_path: PathBuf,
+    pub(in crate::native_app) selection: SelectionRange,
+    pub(in crate::native_app) playback_type: ExtractedFilePlaybackType,
+    pub(in crate::native_app) focus_derivative: bool,
+    pub(in crate::native_app) started_at: Instant,
+    pub(in crate::native_app) presentation: FileMutationPostCommitPresentation,
+}
+
+impl Eq for FileMutationPostCommit {}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::native_app) enum FileMutationPostCommitPresentation {
+    Extracted,
+    Drag,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -221,6 +254,7 @@ pub(in crate::native_app) struct FileMutationChange {
     expected_before_state: Option<ExpectedMutationPathState>,
     expected_after_state: Option<ExpectedMutationPathState>,
     projection: Option<FileMutationProjection>,
+    post_commit: Option<FileMutationPostCommit>,
 }
 
 impl FileMutationChange {
@@ -234,6 +268,7 @@ impl FileMutationChange {
             expected_before_state: None,
             expected_after_state: None,
             projection: None,
+            post_commit: None,
         }
     }
 
@@ -247,6 +282,7 @@ impl FileMutationChange {
             expected_before_state: None,
             expected_after_state: None,
             projection: None,
+            post_commit: None,
         }
     }
 
@@ -260,6 +296,7 @@ impl FileMutationChange {
             expected_before_state: None,
             expected_after_state: None,
             projection: None,
+            post_commit: None,
         }
     }
 
@@ -273,6 +310,7 @@ impl FileMutationChange {
             expected_before_state: None,
             expected_after_state: None,
             projection: None,
+            post_commit: None,
         }
     }
 
@@ -289,6 +327,14 @@ impl FileMutationChange {
         projection: FileMutationProjection,
     ) -> Self {
         self.projection = Some(projection);
+        self
+    }
+
+    pub(in crate::native_app) fn with_post_commit(
+        mut self,
+        post_commit: FileMutationPostCommit,
+    ) -> Self {
+        self.post_commit = Some(post_commit);
         self
     }
 
@@ -316,6 +362,9 @@ pub(in crate::native_app) struct CommittedFileMutation {
     pub(in crate::native_app) committed_delta: CommittedSourceDelta,
     pub(in crate::native_app) affected_relative_paths: Vec<PathBuf>,
     pub(in crate::native_app) watcher_echoes: Vec<CommittedWatcherEcho>,
+    pub(in crate::native_app) browser_projection_delta:
+        Option<crate::native_app::app::BrowserProjectionDelta>,
+    pub(in crate::native_app) projection_handoff_ticket: Option<ProjectionHandoffTicket>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -426,13 +475,14 @@ impl NativeAppState {
         work: FileMutationWork,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
+        let budget = self.background.source_processing.budget_handle();
         context
             .business()
             .background("gui-committed-file-mutation")
             .run(
                 move |_| {
                     merge_file_mutation_failures(
-                        reconcile_file_mutation_requests(work.requests),
+                        reconcile_file_mutation_requests_with_handoff(work.requests, budget),
                         work.failures,
                     )
                 },
@@ -531,19 +581,85 @@ impl NativeAppState {
                 .entry(event.source_id.clone())
                 .or_default();
             let current_commit = (event.committed_source_revision, event.operation_id);
-            if mutation_completion_is_stale_or_duplicate(*last_commit, current_commit) {
+            let accepted_commit = *last_commit;
+            if mutation_completion_is_stale_or_duplicate(accepted_commit, current_commit) {
                 tracing::debug!(
                     source_id = %event.source_id,
                     operation_id = event.operation_id,
                     revision = event.committed_source_revision,
-                    accepted_revision = last_commit.0,
-                    accepted_operation_id = last_commit.1,
+                    accepted_revision = accepted_commit.0,
+                    accepted_operation_id = accepted_commit.1,
                     "Ignoring stale committed file-mutation completion"
                 );
                 continue;
             }
-            *last_commit = (*last_commit).max(current_commit);
-
+            let extraction_post_commit = event
+                .changes
+                .iter()
+                .find_map(|change| change.post_commit.clone());
+            let extraction_path = event
+                .changes
+                .iter()
+                .find_map(|change| change.after_path.clone());
+            let browser_projection_applied =
+                event
+                    .browser_projection_delta
+                    .clone()
+                    .is_some_and(|projection| {
+                        self.library
+                            .folder_browser
+                            .apply_committed_projection_delta(&event.source_id, projection)
+                    });
+            let projection_accepted = event
+                .projection_handoff_ticket
+                .as_ref()
+                .is_some_and(|ticket| browser_projection_applied && ticket.accept());
+            if !projection_accepted {
+                if let Some(ticket) = event.projection_handoff_ticket.as_ref()
+                    && !browser_projection_applied
+                {
+                    ticket.reject("committed_mutation_projection_rejected");
+                }
+                // This is the conservative recovery path: the exact committed projection could
+                // not be applied at the expected revision, so do not acknowledge the watcher or
+                // publish readiness. Affected-path refresh keeps the durable metadata completion
+                // visible while the queued source refresh repairs the missing projection.
+                self.library
+                    .folder_browser
+                    .refresh_filesystem_paths(&event.source_id, &event.affected_relative_paths);
+                if let (Some(post_commit), Some(path)) =
+                    (extraction_post_commit.as_ref(), extraction_path.as_deref())
+                {
+                    let metadata_error = self.finish_committed_playmark_extraction_metadata(
+                        path,
+                        post_commit,
+                        context,
+                    );
+                    self.reapply_desired_rating_overlay();
+                    self.finish_committed_playmark_extraction_visuals(
+                        path,
+                        post_commit,
+                        metadata_error.as_deref(),
+                    );
+                }
+                for projection in event
+                    .changes
+                    .iter()
+                    .filter_map(|change| change.projection.as_ref())
+                {
+                    self.apply_committed_file_mutation_projection(projection, context);
+                }
+                self.queue_full_source_reconciliation_after_committed_mutation(
+                    event.source_id.clone(),
+                    event.committed_source_revision,
+                    event.lifecycle_generation,
+                    context,
+                );
+                continue;
+            }
+            self.transactions
+                .latest_committed_mutation
+                .insert(event.source_id.clone(), accepted_commit.max(current_commit));
             for change in &event.changes {
                 let before = change.before_path.as_deref().and_then(|path| {
                     self.library
@@ -613,6 +729,19 @@ impl NativeAppState {
                     _ => {}
                 }
             }
+            let extraction_metadata_error =
+                match (&extraction_post_commit, extraction_path.as_deref()) {
+                    (Some(post_commit), Some(path))
+                        if event.operation == FileMutationOperation::Extract =>
+                    {
+                        self.finish_committed_playmark_extraction_metadata(
+                            path,
+                            post_commit,
+                            context,
+                        )
+                    }
+                    _ => None,
+                };
             self.reapply_desired_rating_overlay();
 
             let projections = event
@@ -620,9 +749,10 @@ impl NativeAppState {
                 .iter()
                 .filter_map(|change| change.projection.as_ref())
                 .collect::<Vec<_>>();
-            if !projections
-                .iter()
-                .any(|projection| projection.replaces_default_refresh())
+            if !browser_projection_applied
+                && !projections
+                    .iter()
+                    .any(|projection| projection.replaces_default_refresh())
             {
                 self.library
                     .folder_browser
@@ -630,6 +760,15 @@ impl NativeAppState {
             }
             for projection in projections {
                 self.apply_committed_file_mutation_projection(projection, context);
+            }
+            if let (Some(post_commit), Some(path)) =
+                (extraction_post_commit.as_ref(), extraction_path.as_deref())
+            {
+                self.finish_committed_playmark_extraction_visuals(
+                    path,
+                    post_commit,
+                    extraction_metadata_error.as_deref(),
+                );
             }
             if let Some(watcher) = self.library.source_watcher.as_ref() {
                 watcher.acknowledge_committed_paths(
@@ -647,17 +786,15 @@ impl NativeAppState {
                 invalidated_stages = ?event.invalidated_stages,
                 "Committed Wavecrate-owned file mutation"
             );
-            self.background.source_processing.request_source_delta(
-                &event.source_id,
-                event.lifecycle_generation,
-                &event.committed_delta,
-                "committed_file_mutation_delta",
-            );
             // This call refreshes metadata projections and wakes the source-owned readiness
             // reconciler. It deliberately happens after the source DB and browser projection.
             self.queue_source_prep(
                 event.source_id,
-                COMMITTED_MUTATION_PREP_INTENTS,
+                if extraction_post_commit.is_some() {
+                    COMMITTED_PLAYMARK_PREP_INTENTS
+                } else {
+                    COMMITTED_MUTATION_PREP_INTENTS
+                },
                 COMMITTED_MUTATION_PREP_REASON,
                 context,
             );

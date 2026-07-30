@@ -90,8 +90,11 @@ mod state;
 mod state_machine_observation;
 mod telemetry;
 
-pub(in crate::native_app) use admission::{ExternalScanHandoff, SourceScanAdmissionState};
-use admission::{SourceProcessingBudgetHandle, install_worker_app_root};
+use admission::install_worker_app_root;
+pub(in crate::native_app) use admission::{
+    ExternalScanHandoff, ProjectionHandoffTicket, SourceProcessingBudgetHandle,
+    SourceScanAdmissionState,
+};
 use cache_ownership::*;
 pub(in crate::native_app) use commands::SourceAuditLifecycleCause;
 use control::*;
