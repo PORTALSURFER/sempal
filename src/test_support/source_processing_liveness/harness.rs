@@ -99,7 +99,7 @@ impl LivenessHarness {
             changes,
         )
         .expect("commit Wavecrate-owned mutation");
-        assert_eq!(committed.source_id, self.source.id.as_str());
+        assert_eq!(committed.fence.source_id, self.source.id);
         self.watcher_stimulus = WatcherStimulus::InternalMutation;
         self.watcher_events_committed = operation_id;
         self.expected_source_generation = self.current_manifest_generation();

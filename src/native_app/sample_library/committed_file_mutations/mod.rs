@@ -8,7 +8,9 @@
 use std::{collections::BTreeSet, path::PathBuf, time::Instant};
 
 use radiant::prelude as ui;
-use wavecrate::sample_sources::{readiness::ReadinessStage, scanner::CommittedSourceDelta};
+use wavecrate::sample_sources::{
+    SourceId, readiness::ReadinessStage, scanner::CommittedSourceDelta,
+};
 use wavecrate::selection::SelectionRange;
 
 use crate::native_app::app::{ExtractedFilePlaybackType, GuiMessage, NativeAppState};
@@ -57,6 +59,109 @@ pub(in crate::native_app) const COMMITTED_PLAYMARK_PREP_INTENTS: SourcePrepInten
     };
 pub(in crate::native_app) const COMMITTED_MUTATION_PREP_REASON: &str = "filesystem_changed";
 
+/// Process-local, non-durable correlation for one mutation request.
+///
+/// This is intentionally distinct from a future durable operation identifier. It is only used
+/// to correlate worker results, watcher echoes, and bounded telemetry within this process.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub(in crate::native_app) struct ProcessLocalMutationCorrelationId(u64);
+
+impl ProcessLocalMutationCorrelationId {
+    pub(in crate::native_app) const fn from_raw(value: u64) -> Self {
+        Self(value)
+    }
+
+    pub(in crate::native_app) const fn as_raw(self) -> u64 {
+        self.0
+    }
+}
+
+impl std::fmt::Display for ProcessLocalMutationCorrelationId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub(in crate::native_app) struct LifecycleGeneration(u64);
+
+impl LifecycleGeneration {
+    pub(in crate::native_app) const fn from_raw(value: u64) -> Self {
+        Self(value)
+    }
+
+    pub(in crate::native_app) const fn as_raw(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub(in crate::native_app) struct CommittedSourceRevision(u64);
+
+impl CommittedSourceRevision {
+    pub(in crate::native_app) const fn from_raw(value: u64) -> Self {
+        Self(value)
+    }
+
+    pub(in crate::native_app) const fn as_raw(self) -> u64 {
+        self.0
+    }
+}
+
+/// Cursor ordering is revision-first; correlation only breaks ties within one revision.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub(in crate::native_app) struct RevisionFirstCursor {
+    pub(in crate::native_app) revision: CommittedSourceRevision,
+    pub(in crate::native_app) correlation: ProcessLocalMutationCorrelationId,
+}
+
+impl RevisionFirstCursor {
+    pub(in crate::native_app) const fn new(
+        revision: CommittedSourceRevision,
+        correlation: ProcessLocalMutationCorrelationId,
+    ) -> Self {
+        Self {
+            revision,
+            correlation,
+        }
+    }
+}
+
+/// The complete internal publication fence for a committed source mutation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::native_app) struct CommittedMutationFence {
+    pub(in crate::native_app) source_id: SourceId,
+    pub(in crate::native_app) lifecycle_generation: LifecycleGeneration,
+    pub(in crate::native_app) cursor: RevisionFirstCursor,
+}
+
+impl CommittedMutationFence {
+    pub(in crate::native_app) fn new(
+        source_id: SourceId,
+        lifecycle_generation: LifecycleGeneration,
+        committed_source_revision: CommittedSourceRevision,
+        correlation: ProcessLocalMutationCorrelationId,
+    ) -> Self {
+        Self {
+            source_id,
+            lifecycle_generation,
+            cursor: RevisionFirstCursor::new(committed_source_revision, correlation),
+        }
+    }
+
+    pub(in crate::native_app) fn with_lifecycle_generation(
+        mut self,
+        lifecycle_generation: LifecycleGeneration,
+    ) -> Self {
+        self.lifecycle_generation = lifecycle_generation;
+        self
+    }
+
+    pub(in crate::native_app) fn correlation(&self) -> ProcessLocalMutationCorrelationId {
+        self.cursor.correlation
+    }
+}
+
 #[cfg(test)]
 pub(in crate::native_app) fn reconcile_file_mutation_for_liveness_test(
     source: wavecrate::sample_sources::SampleSource,
@@ -65,7 +170,12 @@ pub(in crate::native_app) fn reconcile_file_mutation_for_liveness_test(
     mut changes: Vec<FileMutationChange>,
 ) -> Result<CommittedFileMutation, String> {
     capture_expected_filesystem_state(&mut changes);
-    let requests = build_source_requests(operation_id, operation, changes, &[source]);
+    let requests = build_source_requests(
+        ProcessLocalMutationCorrelationId::from_raw(operation_id),
+        operation,
+        changes,
+        &[source],
+    );
     match reconcile_file_mutation_requests(requests) {
         FileMutationOutcome::Committed(mut committed) if committed.len() == 1 => {
             Ok(committed.remove(0))
@@ -352,11 +462,8 @@ impl FileMutationChange {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::native_app) struct CommittedFileMutation {
-    pub(in crate::native_app) source_id: String,
-    pub(in crate::native_app) lifecycle_generation: u64,
-    pub(in crate::native_app) operation_id: u64,
+    pub(in crate::native_app) fence: CommittedMutationFence,
     pub(in crate::native_app) operation: FileMutationOperation,
-    pub(in crate::native_app) committed_source_revision: u64,
     pub(in crate::native_app) changes: Vec<FileMutationChange>,
     pub(in crate::native_app) invalidated_stages: BTreeSet<ReadinessStage>,
     pub(in crate::native_app) committed_delta: CommittedSourceDelta,
@@ -369,8 +476,9 @@ pub(in crate::native_app) struct CommittedFileMutation {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::native_app) struct FileMutationFailure {
-    pub(in crate::native_app) source_id: Option<String>,
-    pub(in crate::native_app) operation_id: u64,
+    pub(in crate::native_app) source_id: Option<SourceId>,
+    pub(in crate::native_app) lifecycle_generation: Option<LifecycleGeneration>,
+    pub(in crate::native_app) correlation_id: ProcessLocalMutationCorrelationId,
     pub(in crate::native_app) operation: FileMutationOperation,
     pub(in crate::native_app) error: String,
 }
@@ -424,33 +532,40 @@ impl NativeAppState {
         if changes.is_empty() && reported_failures.is_empty() {
             return None;
         }
-        let operation_id = self.background.next_task_id();
+        let correlation_id =
+            ProcessLocalMutationCorrelationId::from_raw(self.background.next_task_id());
         let had_changes = !changes.is_empty();
         capture_expected_filesystem_state(&mut changes);
         let failures = reported_failures
             .into_iter()
             .map(|(source_id, error)| FileMutationFailure {
-                source_id,
-                operation_id,
+                source_id: source_id.map(SourceId::from_string),
+                lifecycle_generation: None,
+                correlation_id,
                 operation,
                 error,
             })
             .collect::<Vec<_>>();
         let sources = self.library.folder_browser.configured_sample_sources();
-        let mut requests = build_source_requests(operation_id, operation, changes, &sources);
+        let mut requests = build_source_requests(correlation_id, operation, changes, &sources);
         let lifecycle_generations = self.background.source_processing.lifecycle_generations();
         for request in &mut requests {
-            request.lifecycle_generation = lifecycle_generations
+            let lifecycle_generation = lifecycle_generations
                 .get(request.source.id.as_str())
                 .copied()
                 .unwrap_or_default();
+            request.fence = request
+                .fence
+                .clone()
+                .with_lifecycle_generation(LifecycleGeneration::from_raw(lifecycle_generation));
         }
         if requests.is_empty() {
             let mut failures = failures;
             if had_changes {
                 failures.push(FileMutationFailure {
                     source_id: None,
-                    operation_id,
+                    lifecycle_generation: None,
+                    correlation_id,
                     operation,
                     error: String::from("No configured source owns the committed mutation paths"),
                 });
@@ -462,12 +577,12 @@ impl NativeAppState {
                 },
                 context,
             );
-            return Some(operation_id);
+            return Some(correlation_id.as_raw());
         }
         context.emit(GuiMessage::CommittedFileMutationRequested(
             FileMutationWork { requests, failures },
         ));
-        Some(operation_id)
+        Some(correlation_id.as_raw())
     }
 
     pub(in crate::native_app) fn start_committed_file_mutation(
@@ -497,13 +612,15 @@ impl NativeAppState {
         error: impl Into<String>,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
-        let operation_id = self.background.next_task_id();
+        let correlation_id =
+            ProcessLocalMutationCorrelationId::from_raw(self.background.next_task_id());
         self.finish_committed_file_mutation(
             FileMutationOutcome::Failed {
                 committed: Vec::new(),
                 failures: vec![FileMutationFailure {
-                    source_id,
-                    operation_id,
+                    source_id: source_id.map(SourceId::from_string),
+                    lifecycle_generation: None,
+                    correlation_id,
                     operation,
                     error: error.into(),
                 }],
@@ -519,11 +636,13 @@ impl NativeAppState {
         error: impl Into<String>,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
-        let operation_id = self.background.next_task_id();
+        let correlation_id =
+            ProcessLocalMutationCorrelationId::from_raw(self.background.next_task_id());
         self.finish_committed_file_mutation(
             FileMutationOutcome::RolledBack(FileMutationFailure {
-                source_id,
-                operation_id,
+                source_id: source_id.map(SourceId::from_string),
+                lifecycle_generation: None,
+                correlation_id,
                 operation,
                 error: error.into(),
             }),
@@ -544,9 +663,13 @@ impl NativeAppState {
             } => (committed, failures),
             FileMutationOutcome::RolledBack(failure) => {
                 tracing::warn!(
-                    operation_id = failure.operation_id,
+                    correlation_id = failure.correlation_id.as_raw(),
                     operation = failure.operation.as_str(),
-                    source_id = failure.source_id.as_deref().unwrap_or("unknown"),
+                    source_id = failure
+                        .source_id
+                        .as_ref()
+                        .map(SourceId::as_str)
+                        .unwrap_or("unknown"),
                     error = %failure.error,
                     "Wavecrate-owned file mutation rolled back"
                 );
@@ -555,21 +678,24 @@ impl NativeAppState {
         };
 
         for event in committed {
+            let source_id = event.fence.source_id.clone();
+            let lifecycle_generation = event.fence.lifecycle_generation;
+            let cursor = event.fence.cursor;
             let current_lifecycle_generation = self
                 .background
                 .source_lifecycle_generations
-                .get(&event.source_id)
+                .get(source_id.as_str())
                 .copied();
             let test_fixture_lifecycle = cfg!(test)
                 && current_lifecycle_generation.is_none()
-                && event.lifecycle_generation == 0;
-            if current_lifecycle_generation != Some(event.lifecycle_generation)
+                && lifecycle_generation.as_raw() == 0;
+            if current_lifecycle_generation != Some(lifecycle_generation.as_raw())
                 && !test_fixture_lifecycle
             {
                 tracing::debug!(
-                    source_id = %event.source_id,
-                    operation_id = event.operation_id,
-                    event_lifecycle_generation = event.lifecycle_generation,
+                    source_id = %source_id,
+                    correlation_id = cursor.correlation.as_raw(),
+                    event_lifecycle_generation = lifecycle_generation.as_raw(),
                     current_lifecycle_generation = ?current_lifecycle_generation,
                     "Ignoring committed file-mutation completion from a stale source lifecycle"
                 );
@@ -578,17 +704,17 @@ impl NativeAppState {
             let last_commit = self
                 .transactions
                 .latest_committed_mutation
-                .entry(event.source_id.clone())
+                .entry(source_id.as_str().to_owned())
                 .or_default();
-            let current_commit = (event.committed_source_revision, event.operation_id);
+            let current_commit = cursor;
             let accepted_commit = *last_commit;
             if mutation_completion_is_stale_or_duplicate(accepted_commit, current_commit) {
                 tracing::debug!(
-                    source_id = %event.source_id,
-                    operation_id = event.operation_id,
-                    revision = event.committed_source_revision,
-                    accepted_revision = accepted_commit.0,
-                    accepted_operation_id = accepted_commit.1,
+                    source_id = %source_id,
+                    correlation_id = cursor.correlation.as_raw(),
+                    revision = cursor.revision.as_raw(),
+                    accepted_revision = accepted_commit.revision.as_raw(),
+                    accepted_correlation_id = accepted_commit.correlation.as_raw(),
                     "Ignoring stale committed file-mutation completion"
                 );
                 continue;
@@ -608,7 +734,7 @@ impl NativeAppState {
                     .is_some_and(|projection| {
                         self.library
                             .folder_browser
-                            .apply_committed_projection_delta(&event.source_id, projection)
+                            .apply_committed_projection_delta(source_id.as_str(), projection)
                     });
             let projection_accepted = event
                 .projection_handoff_ticket
@@ -626,7 +752,7 @@ impl NativeAppState {
                 // visible while the queued source refresh repairs the missing projection.
                 self.library
                     .folder_browser
-                    .refresh_filesystem_paths(&event.source_id, &event.affected_relative_paths);
+                    .refresh_filesystem_paths(source_id.as_str(), &event.affected_relative_paths);
                 if let (Some(post_commit), Some(path)) =
                     (extraction_post_commit.as_ref(), extraction_path.as_deref())
                 {
@@ -650,16 +776,17 @@ impl NativeAppState {
                     self.apply_committed_file_mutation_projection(projection, context);
                 }
                 self.queue_full_source_reconciliation_after_committed_mutation(
-                    event.source_id.clone(),
-                    event.committed_source_revision,
-                    event.lifecycle_generation,
+                    source_id.as_str().to_owned(),
+                    cursor.revision.as_raw(),
+                    lifecycle_generation.as_raw(),
                     context,
                 );
                 continue;
             }
-            self.transactions
-                .latest_committed_mutation
-                .insert(event.source_id.clone(), accepted_commit.max(current_commit));
+            self.transactions.latest_committed_mutation.insert(
+                source_id.as_str().to_owned(),
+                accepted_commit.max(current_commit),
+            );
             for change in &event.changes {
                 let before = change.before_path.as_deref().and_then(|path| {
                     self.library
@@ -686,9 +813,9 @@ impl NativeAppState {
                             .library
                             .folder_browser
                             .source_id_for_file_path(after_path);
-                        if after_source.as_deref() == Some(event.source_id.as_str()) {
+                        if after_source.as_deref() == Some(source_id.as_str()) {
                             self.background.rating_persist.rekey_prefix(
-                                &event.source_id,
+                                source_id.as_str(),
                                 &before,
                                 &after,
                                 false,
@@ -700,7 +827,7 @@ impl NativeAppState {
                                 .source_database_relative_file_path(after_path)
                             {
                                 self.background.rating_persist.rekey_cross_source(
-                                    &event.source_id,
+                                    source_id.as_str(),
                                     &before,
                                     &after_source,
                                     &after,
@@ -711,12 +838,12 @@ impl NativeAppState {
                         } else {
                             self.background
                                 .rating_persist
-                                .invalidate_prefix(&event.source_id, &before);
+                                .invalidate_prefix(source_id.as_str(), &before);
                         }
                     }
                     (Some(_), Some(before), Some(_), Some(after)) if before == after => {
                         self.background.rating_persist.rekey_exact(
-                            &event.source_id,
+                            source_id.as_str(),
                             &before,
                             &after,
                         );
@@ -724,7 +851,7 @@ impl NativeAppState {
                     (Some(_), Some(before), None, None) => {
                         self.background
                             .rating_persist
-                            .invalidate_prefix(&event.source_id, &before);
+                            .invalidate_prefix(source_id.as_str(), &before);
                     }
                     _ => {}
                 }
@@ -756,7 +883,7 @@ impl NativeAppState {
             {
                 self.library
                     .folder_browser
-                    .refresh_filesystem_paths(&event.source_id, &event.affected_relative_paths);
+                    .refresh_filesystem_paths(source_id.as_str(), &event.affected_relative_paths);
             }
             for projection in projections {
                 self.apply_committed_file_mutation_projection(projection, context);
@@ -772,16 +899,16 @@ impl NativeAppState {
             }
             if let Some(watcher) = self.library.source_watcher.as_ref() {
                 watcher.acknowledge_committed_paths(
-                    event.source_id.clone(),
+                    source_id.clone(),
                     event.watcher_echoes,
-                    event.operation_id,
+                    cursor,
                 );
             }
             tracing::info!(
-                source_id = %event.source_id,
-                operation_id = event.operation_id,
+                source_id = %source_id,
+                correlation_id = cursor.correlation.as_raw(),
                 operation = event.operation.as_str(),
-                revision = event.committed_source_revision,
+                revision = cursor.revision.as_raw(),
                 changes = event.changes.len(),
                 invalidated_stages = ?event.invalidated_stages,
                 "Committed Wavecrate-owned file mutation"
@@ -789,7 +916,7 @@ impl NativeAppState {
             // This call refreshes metadata projections and wakes the source-owned readiness
             // reconciler. It deliberately happens after the source DB and browser projection.
             self.queue_source_prep(
-                event.source_id,
+                source_id.as_str().to_owned(),
                 if extraction_post_commit.is_some() {
                     COMMITTED_PLAYMARK_PREP_INTENTS
                 } else {
@@ -802,9 +929,13 @@ impl NativeAppState {
 
         for failure in failures {
             tracing::warn!(
-                operation_id = failure.operation_id,
+                correlation_id = failure.correlation_id.as_raw(),
                 operation = failure.operation.as_str(),
-                source_id = failure.source_id.as_deref().unwrap_or("unknown"),
+                source_id = failure
+                    .source_id
+                    .as_ref()
+                    .map(SourceId::as_str)
+                    .unwrap_or("unknown"),
                 error = %failure.error,
                 "Wavecrate-owned file mutation failed before authoritative publication"
             );
