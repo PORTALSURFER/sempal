@@ -483,6 +483,7 @@ impl NativeAppState {
             "waveform_cache_shutdown_flush_ms": duration_ms(elapsed),
             "source_processing": source_processing,
             "harvest_touched_unflushed": harvest_touched_unflushed,
+            "rating_persist_unflushed": rating_persist_unflushed,
         }))
     }
 }

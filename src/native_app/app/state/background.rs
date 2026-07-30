@@ -72,11 +72,19 @@ pub(in crate::native_app) struct BackgroundTaskState {
 #[cfg(test)]
 mod rating_persist_owner_tests {
     use super::*;
+    use wavecrate::sample_sources::SourceDatabase;
+
+    fn owner() -> RatingPersistOwner {
+        RatingPersistOwner::new_with_lifecycle_generations(BTreeMap::from([(
+            String::from("one"),
+            7,
+        )]))
+    }
 
     fn request(source: &str, path: &str, rating: i8) -> RatingPersistRequest {
         RatingPersistRequest {
             source_id: source.to_owned(),
-            lifecycle_generation: None,
+            lifecycle_generation: Some(7),
             root: PathBuf::from(format!("/tmp/{source}")),
             database_root: PathBuf::from(format!("/tmp/{source}/.db")),
             relative_path: PathBuf::from(path),
@@ -88,7 +96,7 @@ mod rating_persist_owner_tests {
 
     #[test]
     fn rapid_same_path_enqueue_keeps_latest_revision() {
-        let mut owner = RatingPersistOwner::new();
+        let mut owner = owner();
         owner.enqueue(request("one", "kick.wav", 1));
         owner.enqueue(request("one", "kick.wav", 2));
         let work = owner.queue.lock().expect("queue lock").claim_all();
@@ -99,7 +107,7 @@ mod rating_persist_owner_tests {
 
     #[test]
     fn replacement_makes_inflight_completion_stale() {
-        let mut owner = RatingPersistOwner::new();
+        let mut owner = owner();
         owner.enqueue(request("one", "kick.wav", 1));
         let first = owner.queue.lock().expect("queue lock").claim_all();
         owner.enqueue(request("one", "kick.wav", 2));
@@ -114,7 +122,7 @@ mod rating_persist_owner_tests {
 
     #[test]
     fn failed_completion_does_not_erase_newer_projection() {
-        let mut owner = RatingPersistOwner::new();
+        let mut owner = owner();
         owner.enqueue(request("one", "kick.wav", 1));
         let first = owner.queue.lock().expect("queue lock").claim_all();
         owner.enqueue(request("one", "kick.wav", 2));
@@ -143,7 +151,7 @@ mod rating_persist_owner_tests {
 
     #[test]
     fn same_source_rekey_after_claim_fences_old_completion() {
-        let mut owner = RatingPersistOwner::new();
+        let mut owner = owner();
         owner.enqueue(request("one", "old/kick.wav", 1));
         let work = owner.queue.lock().expect("queue lock").claim_all();
         let old_revision = work[0].revision;
@@ -182,7 +190,7 @@ mod rating_persist_owner_tests {
 
     #[test]
     fn cross_source_rekey_after_claim_fences_old_completion() {
-        let mut owner = RatingPersistOwner::new();
+        let mut owner = owner();
         owner
             .queue
             .lock()
@@ -228,6 +236,155 @@ mod rating_persist_owner_tests {
         assert_eq!(
             queue.deferred_auto_trash[&new_key].1,
             PathBuf::from("/tmp/two/moved/kick.wav")
+        );
+    }
+
+    #[test]
+    fn close_flushes_latest_inflight_supersession_including_lock() {
+        let source_root = tempfile::tempdir().expect("source root");
+        let database_root = tempfile::tempdir().expect("database root");
+        let relative_path = PathBuf::from("kick.wav");
+        let absolute_path = source_root.path().join(&relative_path);
+        std::fs::write(&absolute_path, b"fixture").expect("sample fixture");
+        let source_id = String::from("one");
+        let mut owner = owner();
+
+        owner.enqueue(RatingPersistRequest {
+            source_id: source_id.clone(),
+            lifecycle_generation: Some(7),
+            root: source_root.path().to_path_buf(),
+            database_root: database_root.path().to_path_buf(),
+            relative_path: relative_path.clone(),
+            absolute_path: absolute_path.clone(),
+            rating: wavecrate::sample_sources::Rating::new(1),
+            locked: false,
+        });
+        let _inflight = owner.queue.lock().expect("queue lock").claim_all();
+        owner.enqueue(RatingPersistRequest {
+            source_id,
+            lifecycle_generation: Some(7),
+            root: source_root.path().to_path_buf(),
+            database_root: database_root.path().to_path_buf(),
+            relative_path: relative_path.clone(),
+            absolute_path,
+            rating: wavecrate::sample_sources::Rating::KEEP_3,
+            locked: true,
+        });
+
+        assert_eq!(owner.close(), 0);
+        let database = SourceDatabase::open_for_user_metadata_write_with_database_root(
+            source_root.path(),
+            database_root.path(),
+        )
+        .expect("reopen source database");
+        assert_eq!(
+            database.tag_for_path(&relative_path).expect("read rating"),
+            Some(wavecrate::sample_sources::Rating::KEEP_3)
+        );
+        assert_eq!(
+            database.locked_for_path(&relative_path).expect("read lock"),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn close_reports_failed_requests_and_clears_closed_queue() {
+        let source_root = tempfile::tempdir().expect("source root");
+        let database_root = tempfile::tempdir().expect("database root");
+        let mut owner = owner();
+        owner.enqueue(RatingPersistRequest {
+            source_id: String::from("one"),
+            lifecycle_generation: Some(7),
+            root: source_root.path().to_path_buf(),
+            database_root: database_root.path().to_path_buf(),
+            relative_path: PathBuf::from("missing.wav"),
+            absolute_path: source_root.path().join("missing.wav"),
+            rating: wavecrate::sample_sources::Rating::KEEP_3,
+            locked: true,
+        });
+
+        assert_eq!(owner.close(), 1);
+        let queue = owner.queue.lock().expect("queue lock");
+        assert!(queue.closed);
+        assert!(queue.entries.is_empty());
+        assert!(queue.desired.is_empty());
+    }
+
+    #[test]
+    fn worker_persists_current_generation_rating_and_lock() {
+        let source_root = tempfile::tempdir().expect("source root");
+        let database_root = tempfile::tempdir().expect("database root");
+        let relative_path = PathBuf::from("kick.wav");
+        let absolute_path = source_root.path().join(&relative_path);
+        std::fs::write(&absolute_path, b"fixture").expect("sample fixture");
+        let mut owner = owner();
+        owner.enqueue(RatingPersistRequest {
+            source_id: String::from("one"),
+            lifecycle_generation: Some(7),
+            root: source_root.path().to_path_buf(),
+            database_root: database_root.path().to_path_buf(),
+            relative_path: relative_path.clone(),
+            absolute_path: absolute_path.clone(),
+            rating: wavecrate::sample_sources::Rating::KEEP_3,
+            locked: true,
+        });
+
+        let result =
+            persist_rating_queue(Arc::clone(&owner.queue), Arc::clone(&owner.persist_gate));
+        assert_eq!(result.results.len(), 1);
+        assert_eq!(result.results[0].result, Some(Ok(())));
+
+        let database = SourceDatabase::open_for_user_metadata_write_with_database_root(
+            source_root.path(),
+            database_root.path(),
+        )
+        .expect("reopen source database");
+        assert_eq!(
+            database.tag_for_path(&relative_path).expect("read rating"),
+            Some(wavecrate::sample_sources::Rating::KEEP_3)
+        );
+        assert_eq!(
+            database.locked_for_path(&relative_path).expect("read lock"),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn worker_rejects_generation_mismatch_without_persisting() {
+        let source_root = tempfile::tempdir().expect("source root");
+        let database_root = tempfile::tempdir().expect("database root");
+        let relative_path = PathBuf::from("kick.wav");
+        let absolute_path = source_root.path().join(&relative_path);
+        std::fs::write(&absolute_path, b"fixture").expect("sample fixture");
+        let mut owner = owner();
+        owner.enqueue(RatingPersistRequest {
+            source_id: String::from("one"),
+            lifecycle_generation: Some(8),
+            root: source_root.path().to_path_buf(),
+            database_root: database_root.path().to_path_buf(),
+            relative_path: relative_path.clone(),
+            absolute_path,
+            rating: wavecrate::sample_sources::Rating::KEEP_3,
+            locked: true,
+        });
+
+        let result =
+            persist_rating_queue(Arc::clone(&owner.queue), Arc::clone(&owner.persist_gate));
+        assert_eq!(result.results.len(), 1);
+        assert_eq!(result.results[0].result, None);
+
+        let database = SourceDatabase::open_for_user_metadata_write_with_database_root(
+            source_root.path(),
+            database_root.path(),
+        )
+        .expect("reopen source database");
+        assert_eq!(
+            database.tag_for_path(&relative_path).expect("read rating"),
+            None
+        );
+        assert_eq!(
+            database.locked_for_path(&relative_path).expect("read lock"),
+            None
         );
     }
 }
@@ -282,7 +439,9 @@ impl BackgroundTaskState {
             deferred_sample_load_task: ui::LatestTask::new(),
             sample_load_tasks: ui::ResourceTasks::new(),
             harvest_touched_persist: HarvestTouchedPersistOwner::new(),
-            rating_persist: RatingPersistOwner::new(),
+            rating_persist: RatingPersistOwner::new_with_lifecycle_generations(
+                source_lifecycle_generations.clone(),
+            ),
             active_sample_load_key: None,
             sample_load_cancel: None,
             settled_sample_promotion_task: ui::LatestTask::new(),
@@ -335,6 +494,9 @@ const HARVEST_TOUCHED_ADMISSION_POLL_DELAY: Duration = Duration::from_millis(50)
 pub(in crate::native_app) struct RatingPersistOwner {
     task: ui::LatestTask,
     queue: Arc<Mutex<RatingPersistQueue>>,
+    /// Serializes source-database writes between the background worker and the
+    /// synchronous shutdown flush.  The UI path never takes this lock.
+    persist_gate: Arc<Mutex<()>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -386,18 +548,19 @@ struct RatingPersistWork {
 }
 
 impl RatingPersistOwner {
-    fn new() -> Self {
+    fn new_with_lifecycle_generations(lifecycle_generations: BTreeMap<String, u64>) -> Self {
         Self {
             task: ui::LatestTask::new(),
             queue: Arc::new(Mutex::new(RatingPersistQueue {
                 entries: std::collections::HashMap::new(),
                 desired: std::collections::HashMap::new(),
                 deferred_auto_trash: std::collections::HashMap::new(),
-                lifecycle_generations: BTreeMap::new(),
+                lifecycle_generations,
                 order: VecDeque::new(),
                 next_revision: 1,
                 closed: false,
             })),
+            persist_gate: Arc::new(Mutex::new(())),
         }
     }
 
@@ -774,12 +937,13 @@ impl RatingPersistOwner {
             return;
         }
         let queue = Arc::clone(&self.queue);
+        let persist_gate = Arc::clone(&self.persist_gate);
         context
             .business()
             .background("gui-rating-persist")
             .latest(&mut self.task)
             .run(
-                move |_| persist_rating_queue(queue),
+                move |_| persist_rating_queue(queue, persist_gate),
                 GuiMessage::RatingPersisted,
             );
     }
@@ -822,20 +986,87 @@ impl RatingPersistOwner {
 
     pub(in crate::native_app) fn close(&mut self) -> usize {
         self.task.cancel();
-        if let Ok(mut queue) = self.queue.lock() {
-            let lost = queue.entries.len();
+        let requests = {
+            let Ok(mut queue) = self.queue.lock() else {
+                tracing::error!("rating persistence queue lock poisoned during shutdown flush");
+                return 0;
+            };
+            if queue.closed {
+                return 0;
+            }
+            // Fence new UI requests before waiting for a worker that may still
+            // be finishing an older batch.  The worker's final current check
+            // observes this flag while holding the same persistence gate.
             queue.closed = true;
+            queue
+                .entries
+                .values()
+                .filter(|entry| {
+                    entry.request.lifecycle_generation.is_none_or(|generation| {
+                        queue.lifecycle_generations.get(&entry.request.source_id)
+                            == Some(&generation)
+                    })
+                })
+                .map(|entry| entry.request.clone())
+                .collect::<Vec<_>>()
+        };
+
+        if requests.is_empty() {
+            if let Ok(mut queue) = self.queue.lock() {
+                queue.entries.clear();
+                queue.order.clear();
+                queue.desired.clear();
+                queue.deferred_auto_trash.clear();
+            }
+            return 0;
+        }
+
+        // Shutdown is the one path allowed to synchronously wait for source
+        // database I/O.  This gate also ensures a worker that was already in
+        // flight cannot run after this flush and overwrite its latest state.
+        let Ok(_persist_gate) = self.persist_gate.lock() else {
+            tracing::error!(
+                count = requests.len(),
+                "rating persistence gate poisoned during shutdown flush"
+            );
+            return requests.len();
+        };
+        let persisted = persist_rating_requests(&requests, |_| true);
+        let mut unflushed = 0;
+        for (request, result) in requests.iter().zip(persisted) {
+            match result {
+                Some(Ok(())) => {}
+                Some(Err(error)) => {
+                    unflushed += 1;
+                    tracing::error!(
+                        path = %request.absolute_path.display(),
+                        error = %error,
+                        "rating persistence shutdown flush failed"
+                    );
+                }
+                None => {
+                    unflushed += 1;
+                    tracing::error!(
+                        path = %request.absolute_path.display(),
+                        "rating persistence shutdown flush did not attempt request"
+                    );
+                }
+            }
+        }
+        if let Ok(mut queue) = self.queue.lock() {
             queue.entries.clear();
             queue.order.clear();
             queue.desired.clear();
             queue.deferred_auto_trash.clear();
-            return lost;
         }
-        0
+        unflushed
     }
 }
 
-fn persist_rating_queue(queue: Arc<Mutex<RatingPersistQueue>>) -> RatingPersistBatchResult {
+fn persist_rating_queue(
+    queue: Arc<Mutex<RatingPersistQueue>>,
+    persist_gate: Arc<Mutex<()>>,
+) -> RatingPersistBatchResult {
     let work = queue
         .lock()
         .map(|mut queue| queue.claim_all())
@@ -844,6 +1075,20 @@ fn persist_rating_queue(queue: Arc<Mutex<RatingPersistQueue>>) -> RatingPersistB
         .iter()
         .map(|item| item.request.clone())
         .collect::<Vec<_>>();
+    let Ok(_persist_gate) = persist_gate.lock() else {
+        let results = work
+            .into_iter()
+            .map(|item| RatingPersistBatchItem {
+                key: item.key,
+                revision: item.revision,
+                absolute_path: item.request.absolute_path,
+                result: Some(Err(String::from(
+                    "rating persistence gate poisoned before database write",
+                ))),
+            })
+            .collect();
+        return RatingPersistBatchResult { results };
+    };
     let persisted = persist_rating_requests(&requests, |request| {
         let Some(item) = work.iter().find(|item| {
             item.request.source_id == request.source_id
@@ -852,13 +1097,15 @@ fn persist_rating_queue(queue: Arc<Mutex<RatingPersistQueue>>) -> RatingPersistB
             return false;
         };
         queue.lock().ok().is_some_and(|queue| {
-            queue.entries.get(&item.key).is_some_and(|entry| {
-                entry.revision == item.revision
-                    && entry.state == RatingPersistEntryState::InFlight
-                    && entry.request.lifecycle_generation.is_none_or(|generation| {
-                        queue.lifecycle_generations.get(&item.key.source_id) == Some(&generation)
-                    })
-            })
+            !queue.closed
+                && queue.entries.get(&item.key).is_some_and(|entry| {
+                    entry.revision == item.revision
+                        && entry.state == RatingPersistEntryState::InFlight
+                        && entry.request.lifecycle_generation.is_none_or(|generation| {
+                            queue.lifecycle_generations.get(&item.key.source_id)
+                                == Some(&generation)
+                        })
+                })
         })
     });
     let mut results = Vec::with_capacity(work.len());

@@ -72,6 +72,10 @@ impl NativeAppState {
             return;
         };
         let source_id = result.source_id.clone();
+        let current = self
+            .library
+            .folder_browser
+            .folder_tree_refresh_result_is_current(&result);
         let changed = self
             .library
             .folder_browser
@@ -80,12 +84,14 @@ impl NativeAppState {
         if changed {
             self.persist_user_configuration("folder_browser.folder_tree_refresh", started_at);
         }
-        self.queue_source_prep(
-            source_id.clone(),
-            VERIFIED_SOURCE_PREP_INTENTS,
-            VERIFIED_SOURCE_PREP_REASON,
-            context,
-        );
+        if current {
+            self.queue_source_prep(
+                source_id.clone(),
+                VERIFIED_SOURCE_PREP_INTENTS,
+                VERIFIED_SOURCE_PREP_REASON,
+                context,
+            );
+        }
         emit_gui_action(
             "folder_browser.folder_tree_refresh",
             Some("folder_browser"),

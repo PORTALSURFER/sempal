@@ -7,6 +7,7 @@ use super::super::{
     path_helpers::{folder_label, path_id},
     scan_types::{
         FolderScanDiscoveryBatch, FolderScanRequest, FolderScanResult, FolderTreeRefreshResult,
+        RatingHydrationStatus,
     },
     scanning::{merge_scan_discovery, placeholder_folder},
 };
@@ -469,14 +470,37 @@ impl FolderBrowserState {
         if root_folder.id != result.folder.id {
             return false;
         }
-        if !root_folder.replace_folder_structure(result.folder) {
+        let structure_changed = root_folder.replace_folder_structure(result.folder);
+        let ratings_changed = match result.rating_hydration {
+            RatingHydrationStatus::Complete { snapshot } => root_folder
+                .apply_rating_snapshot(&self.source.sources[source_index].root, &snapshot),
+            RatingHydrationStatus::Failed { error } => {
+                tracing::warn!(source_id = %result.source_id, %error, "Keeping cached browser ratings after folder refresh hydration failure");
+                false
+            }
+        };
+        let changed = structure_changed || ratings_changed;
+        if changed {
+            self.retain_tree_state_after_selected_source_refresh();
+            self.bump_file_content_revision();
+            self.mark_scan_content_refresh_pending();
+            self.refresh_missing_collection_state();
+        }
+        changed
+    }
+
+    pub(in crate::native_app) fn folder_tree_refresh_result_is_current(
+        &self,
+        result: &FolderTreeRefreshResult,
+    ) -> bool {
+        if self.source.selected_source != result.source_id {
             return false;
         }
-        self.retain_tree_state_after_selected_source_refresh();
-        self.bump_file_content_revision();
-        self.mark_scan_content_refresh_pending();
-        self.refresh_missing_collection_state();
-        true
+        self.source
+            .sources
+            .iter()
+            .find(|source| source.id == result.source_id)
+            .is_some_and(|source| path_id(&source.root) == result.folder.id)
     }
 
     #[cfg(test)]

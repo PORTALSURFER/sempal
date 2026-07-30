@@ -12,7 +12,7 @@ use super::{
     file_entry_metadata::file_entry_with_metadata,
 };
 use wavecrate::sample_sources::{
-    BrowserMetadataSnapshot, Rating, SampleCollection, SourceDatabase,
+    BrowserMetadataSnapshot, Rating, SampleCollection, SourceDatabase, SourceDatabaseConnectionRole,
 };
 
 pub(in crate::native_app::sample_library::folder_browser) type SourceMetadataMap = HashMap<
@@ -25,6 +25,8 @@ pub(in crate::native_app::sample_library::folder_browser) type SourceMetadataMap
         Option<i64>,
     ),
 >;
+
+pub(crate) type RatingSnapshot = HashMap<PathBuf, (Rating, bool)>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum SourceMetadataHydrationError {
@@ -66,6 +68,26 @@ pub(super) fn source_rating_map(
         })
         .collect();
     Ok((metadata, revision))
+}
+
+pub(super) fn source_rating_snapshot(
+    root: &Path,
+    database_root: &Path,
+) -> Result<RatingSnapshot, SourceMetadataHydrationError> {
+    let db = SourceDatabase::open_with_role_and_database_root(
+        root,
+        database_root,
+        SourceDatabaseConnectionRole::BackgroundRead,
+    )
+    .map_err(|error| SourceMetadataHydrationError::Open(error.to_string()))?;
+    let BrowserMetadataSnapshot { files, .. } = db
+        .browser_metadata_snapshot()
+        .map_err(|error| SourceMetadataHydrationError::Snapshot(error.to_string()))?;
+    let ratings = files
+        .into_iter()
+        .map(|entry| (entry.relative_path, (entry.rating, entry.locked)))
+        .collect();
+    Ok(ratings)
 }
 
 pub(in crate::native_app::sample_library::folder_browser) fn file_entry_for_source_path(

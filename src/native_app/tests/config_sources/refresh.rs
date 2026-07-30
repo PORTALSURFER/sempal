@@ -168,12 +168,10 @@ fn selecting_loaded_cached_source_keeps_tree_visible_and_reconciles_in_backgroun
         second_source_id
     );
     let task_id = state.next_folder_task_id();
-    let SourceSelectionRequest::Queued(request) = state
+    let selection = state
         .library
-        .begin_select_source(first_source_id.clone(), task_id)
-    else {
-        panic!("selecting a cached source should queue reconciliation");
-    };
+        .begin_select_source(first_source_id.clone(), task_id);
+    assert!(matches!(selection, SourceSelectionRequest::Settled));
 
     assert_eq!(
         state.library.folder_browser.selected_source_id(),
@@ -182,19 +180,11 @@ fn selecting_loaded_cached_source_keeps_tree_visible_and_reconciles_in_backgroun
     assert!(state.library.folder_browser.selected_source_loaded());
     assert!(
         state.background.folder_tree_refresh_task.active().is_none(),
-        "source switching should reconcile through the source scan worker"
+        "library source selection should not queue UI work directly"
     );
-    state.library.start_folder_scan(&request);
-    let progress = state
-        .library
-        .folder_progress()
-        .expect("selecting a loaded cached source should start a background scan");
     assert!(
-        state
-            .library
-            .folder_browser
-            .scan_is_active(&first_source_id, progress.task_id),
-        "the selected source should own the queued reconciliation scan"
+        state.library.folder_progress().is_none(),
+        "cached source selection must not queue a foreground scan"
     );
 }
 
