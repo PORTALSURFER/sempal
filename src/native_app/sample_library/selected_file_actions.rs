@@ -542,23 +542,10 @@ impl NativeAppState {
                     self.waveform.current.duration_seconds() as f64,
                     harvest_operation,
                 ) {
-                    let source_path = request.source_path.clone();
-                    let child_path = request.child_path.clone();
-                    context
-                        .business()
-                        .background("gui-harvest-selection-derivation")
-                        .run(
-                            move |_| {
-                                crate::native_app::sample_library::harvest_tracking::execute_harvest_selection_derivation(request)
-                            },
-                            move |result| {
-                                GuiMessage::HarvestSelectionDerivationFinished {
-                                    source_path,
-                                    child_path,
-                                    result,
-                                }
-                            },
-                        );
+                    self.background.harvest_selection_derivation.enqueue(request);
+                    self.background
+                        .harvest_selection_derivation
+                        .schedule_if_idle(context);
                 }
                 if let Some(position) = drag_position {
                     self.log_sample_identity_checkpoint(

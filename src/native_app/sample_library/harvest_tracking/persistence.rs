@@ -3,6 +3,7 @@ use super::{
     HarvestSeenPersistResult, HarvestSourceRange, NativeAppState, NewHarvestDerivation, Path,
     PathBuf, SelectionRange, persist_harvest_seen,
 };
+use crate::native_app::app::HarvestSelectionDerivationBatchResult;
 use radiant::prelude as ui;
 use wavecrate::sample_sources::{HarvestFileIdentity, HarvestFileKey, SampleSource};
 
@@ -21,13 +22,12 @@ pub(in crate::native_app) struct HarvestSelectionDerivationRequest {
 pub(in crate::native_app) fn execute_harvest_selection_derivation(
     request: HarvestSelectionDerivationRequest,
 ) -> Result<(), String> {
-    let Some(parent) = harvest_identity_for_source_path(&request.source, &request.source_path)
-    else {
-        return Ok(());
+    let Some(parent) = harvest_identity_for_source_path(&request.source, &request.source_path) else {
+        return Err(format!("source endpoint is unavailable: {}", request.source_path.display()));
     };
     let Some(child) = harvest_identity_for_source_path(&request.child_source, &request.child_path)
     else {
-        return Ok(());
+        return Err(format!("child endpoint is unavailable: {}", request.child_path.display()));
     };
     let duration = request.source_duration_seconds.max(0.0);
     let source_range = HarvestSourceRange {
@@ -95,18 +95,20 @@ fn source_db_entry_for_path(
 }
 
 impl NativeAppState {
-    pub(in crate::native_app) fn finish_harvest_selection_derivation(
+    pub(in crate::native_app) fn finish_harvest_selection_derivation_persisted(
         &mut self,
-        source_path: PathBuf,
-        child_path: PathBuf,
-        result: Result<(), String>,
+        completion: ui::TaskCompletion<HarvestSelectionDerivationBatchResult>,
+        context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
-        if let Err(error) = result {
-            tracing::warn!(
-                source = %source_path.display(),
-                child = %child_path.display(),
-                "failed to record harvest derivation in background: {error}"
-            );
+        if self
+            .background
+            .harvest_selection_derivation
+            .finish(completion)
+            .is_some()
+        {
+            self.background
+                .harvest_selection_derivation
+                .schedule_if_idle(context);
         }
     }
 
@@ -392,6 +394,9 @@ impl NativeAppState {
     }
 
     fn remap_harvest_file_key_for_move(&self, old_path: &Path, new_path: &Path) {
+        self.background
+            .harvest_selection_derivation
+            .rekey_file(old_path, new_path);
         let Some(old_key) = self.harvest_key_for_path(old_path) else {
             return;
         };
@@ -417,6 +422,9 @@ impl NativeAppState {
     ) {
         let old_path = source_root.join(old_prefix);
         let new_path = source_root.join(new_prefix);
+        self.background
+            .harvest_selection_derivation
+            .rekey_prefix(&old_path, &new_path);
         let Some(old_key) = self.harvest_key_for_path(&old_path) else {
             return;
         };

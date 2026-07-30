@@ -31,7 +31,9 @@ mod query;
 mod relationships;
 mod targets;
 
-pub(in crate::native_app) use persistence::execute_harvest_selection_derivation;
+pub(in crate::native_app) use persistence::{
+    HarvestSelectionDerivationRequest, execute_harvest_selection_derivation,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::native_app) struct HarvestFamilySummary {

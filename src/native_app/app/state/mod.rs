@@ -22,6 +22,7 @@ pub(in crate::native_app) use audio::{
 };
 pub(in crate::native_app) use background::{
     AudioOpenCompletion, AudioOpenTaskCompletion, BackgroundTaskState,
+    HarvestSelectionDerivationBatchResult,
     HarvestTouchedPersistAdmission, HarvestTouchedPersistBatchResult, RatingPersistBatchResult,
     WaveformDestructiveEditUiContext,
 };

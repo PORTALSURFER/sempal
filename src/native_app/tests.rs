@@ -310,9 +310,7 @@ fn run_command_for_tests(
                 | super::test_support::state::GuiMessage::WaveformDestructiveEditFinished(_)
                 | super::test_support::state::GuiMessage::WaveformSelectionCopyExtracted { .. }
                 | super::test_support::state::GuiMessage::PlaySelectionExtractionFinished { .. }
-                | super::test_support::state::GuiMessage::HarvestSelectionDerivationFinished {
-                    ..
-                }
+                | super::test_support::state::GuiMessage::HarvestSelectionDerivationPersisted(_)
                 | super::test_support::state::GuiMessage::SelectedWholeFilesHarvestExtractionFinished {
                     ..
                 }

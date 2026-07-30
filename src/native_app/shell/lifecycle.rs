@@ -464,6 +464,8 @@ impl NativeAppState {
         let started_at = Instant::now();
         let source_processing = self.background.source_processing.shutdown();
         let harvest_touched_unflushed = self.background.harvest_touched_persist.close();
+        let harvest_selection_derivation_unflushed =
+            self.background.harvest_selection_derivation.close();
         let rating_persist_unflushed = self.background.rating_persist.close();
         if rating_persist_unflushed != 0 {
             tracing::warn!(
@@ -477,12 +479,19 @@ impl NativeAppState {
                 "discarding admitted harvest-touch work during shutdown"
             );
         }
+        if harvest_selection_derivation_unflushed != 0 {
+            tracing::warn!(
+                count = harvest_selection_derivation_unflushed,
+                "harvest selection derivation stopped with unflushed requests"
+            );
+        }
         crate::native_app::waveform::flush_background_waveform_cache_stores_for_shutdown();
         let elapsed = started_at.elapsed();
         Some(serde_json::json!({
             "waveform_cache_shutdown_flush_ms": duration_ms(elapsed),
             "source_processing": source_processing,
             "harvest_touched_unflushed": harvest_touched_unflushed,
+            "harvest_selection_derivation_unflushed": harvest_selection_derivation_unflushed,
             "rating_persist_unflushed": rating_persist_unflushed,
         }))
     }

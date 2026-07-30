@@ -25,6 +25,9 @@ use crate::native_app::app::{
 use crate::native_app::sample_library::sample_ratings::{
     RatingPersistRequest, persist_rating_requests,
 };
+use crate::native_app::sample_library::harvest_tracking::{
+    HarvestSelectionDerivationRequest, execute_harvest_selection_derivation,
+};
 use crate::native_app::source_processing::SourceProcessingSupervisor;
 use crate::native_app::waveform::WaveformPreservedMarks;
 
@@ -36,6 +39,7 @@ pub(in crate::native_app) struct BackgroundTaskState {
     pub(in crate::native_app) deferred_sample_load_task: ui::LatestTask,
     pub(in crate::native_app) sample_load_tasks: ui::ResourceTasks,
     pub(in crate::native_app) harvest_touched_persist: HarvestTouchedPersistOwner,
+    pub(in crate::native_app) harvest_selection_derivation: HarvestSelectionDerivationOwner,
     pub(in crate::native_app) rating_persist: RatingPersistOwner,
     pub(in crate::native_app) active_sample_load_key: Option<ui::ResourceKey>,
     pub(in crate::native_app) sample_load_cancel: Option<ui::CancellationToken>,
@@ -439,6 +443,7 @@ impl BackgroundTaskState {
             deferred_sample_load_task: ui::LatestTask::new(),
             sample_load_tasks: ui::ResourceTasks::new(),
             harvest_touched_persist: HarvestTouchedPersistOwner::new(),
+            harvest_selection_derivation: HarvestSelectionDerivationOwner::new(),
             rating_persist: RatingPersistOwner::new_with_lifecycle_generations(
                 source_lifecycle_generations.clone(),
             ),
@@ -1167,6 +1172,366 @@ pub(in crate::native_app) enum HarvestTouchedPersistAdmission {
     Queued,
     Replaced,
     Saturated,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::native_app) struct HarvestSelectionDerivationBatchResult {
+    pub(in crate::native_app) results: Vec<HarvestSelectionDerivationBatchItem>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::native_app) struct HarvestSelectionDerivationBatchItem {
+    pub(in crate::native_app) id: u64,
+    pub(in crate::native_app) revision: u64,
+    pub(in crate::native_app) source_path: PathBuf,
+    pub(in crate::native_app) child_path: PathBuf,
+    pub(in crate::native_app) result: Result<(), String>,
+}
+
+#[derive(Clone)]
+pub(in crate::native_app) struct HarvestSelectionDerivationOwner {
+    task: ui::LatestTask,
+    queue: Arc<Mutex<HarvestSelectionDerivationQueue>>,
+    persist_gate: Arc<Mutex<()>>,
+}
+
+struct HarvestSelectionDerivationQueue {
+    entries: std::collections::HashMap<u64, HarvestSelectionDerivationEntry>,
+    order: VecDeque<u64>,
+    next_id: u64,
+    next_revision: u64,
+    closed: bool,
+}
+
+struct HarvestSelectionDerivationEntry {
+    request: HarvestSelectionDerivationRequest,
+    revision: u64,
+    state: HarvestSelectionDerivationEntryState,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HarvestSelectionDerivationEntryState {
+    Pending,
+    InFlight,
+    Failed,
+}
+
+struct HarvestSelectionDerivationWork {
+    id: u64,
+    revision: u64,
+}
+
+impl HarvestSelectionDerivationOwner {
+    fn new() -> Self {
+        Self {
+            task: ui::LatestTask::new(),
+            queue: Arc::new(Mutex::new(HarvestSelectionDerivationQueue {
+                entries: std::collections::HashMap::new(),
+                order: VecDeque::new(),
+                next_id: 1,
+                next_revision: 1,
+                closed: false,
+            })),
+            persist_gate: Arc::new(Mutex::new(())),
+        }
+    }
+
+    pub(in crate::native_app) fn enqueue(&mut self, request: HarvestSelectionDerivationRequest) {
+        let Ok(mut queue) = self.queue.lock() else {
+            tracing::error!("harvest selection derivation queue lock poisoned; dropping request");
+            return;
+        };
+        if queue.closed {
+            tracing::error!("harvest selection derivation queue closed; dropping request");
+            return;
+        }
+        let id = queue.next_id;
+        queue.next_id = queue.next_id.saturating_add(1);
+        let revision = queue.next_revision;
+        queue.next_revision = queue.next_revision.saturating_add(1);
+        queue.order.push_back(id);
+        queue.entries.insert(
+            id,
+            HarvestSelectionDerivationEntry {
+                request,
+                revision,
+                state: HarvestSelectionDerivationEntryState::Pending,
+            },
+        );
+    }
+
+    pub(in crate::native_app) fn schedule_if_idle(
+        &mut self,
+        context: &mut ui::UiUpdateContext<GuiMessage>,
+    ) {
+        let pending = self.queue.lock().ok().is_some_and(|queue| {
+            queue.entries.values().any(|entry| {
+                entry.state == HarvestSelectionDerivationEntryState::Pending
+            })
+        });
+        if !pending || self.task.active().is_some() {
+            return;
+        }
+        let queue = Arc::clone(&self.queue);
+        let persist_gate = Arc::clone(&self.persist_gate);
+        context
+            .business()
+            .background("gui-harvest-selection-derivation")
+            .latest(&mut self.task)
+            .run(
+                move |_| persist_harvest_selection_derivation_queue(queue, persist_gate),
+                GuiMessage::HarvestSelectionDerivationPersisted,
+            );
+    }
+
+    pub(in crate::native_app) fn finish(
+        &mut self,
+        completion: ui::TaskCompletion<HarvestSelectionDerivationBatchResult>,
+    ) -> Option<HarvestSelectionDerivationBatchResult> {
+        let result = self.task.finish_completion(completion)?;
+        for item in &result.results {
+            if let Err(error) = &item.result {
+                tracing::warn!(
+                    source = %item.source_path.display(),
+                    child = %item.child_path.display(),
+                    "failed to record harvest derivation in background: {error}"
+                );
+            }
+        }
+        Some(result)
+    }
+
+    pub(in crate::native_app) fn rekey_file(&self, old_path: &std::path::Path, new_path: &std::path::Path) {
+        self.rekey_paths(|path| {
+            if path == old_path {
+                Some(new_path.to_path_buf())
+            } else {
+                None
+            }
+        });
+    }
+
+    pub(in crate::native_app) fn rekey_prefix(
+        &self,
+        old_prefix: &std::path::Path,
+        new_prefix: &std::path::Path,
+    ) {
+        self.rekey_paths(|path| {
+            let suffix = path.strip_prefix(old_prefix).ok()?;
+            Some(new_prefix.join(suffix))
+        });
+    }
+
+    fn rekey_paths<F>(&self, mut rekey: F)
+    where
+        F: FnMut(&std::path::Path) -> Option<PathBuf>,
+    {
+        let Ok(mut queue) = self.queue.lock() else {
+            tracing::error!("harvest selection derivation queue lock poisoned during rekey");
+            return;
+        };
+        let ids = queue.entries.keys().copied().collect::<Vec<_>>();
+        for id in ids {
+            let changed = {
+                let Some(entry) = queue.entries.get_mut(&id) else {
+                    continue;
+                };
+                let mut changed = false;
+                if let Some(path) = rekey(&entry.request.source_path) {
+                    entry.request.source_path = path;
+                    changed = true;
+                }
+                if let Some(path) = rekey(&entry.request.child_path) {
+                    entry.request.child_path = path;
+                    changed = true;
+                }
+                changed
+            };
+            if changed {
+                let revision = queue.next_revision;
+                queue.next_revision = queue.next_revision.saturating_add(1);
+                let was_pending = {
+                    let Some(entry) = queue.entries.get_mut(&id) else {
+                        continue;
+                    };
+                    let was_pending = entry.state == HarvestSelectionDerivationEntryState::Pending;
+                    entry.revision = revision;
+                    if !was_pending {
+                        entry.state = HarvestSelectionDerivationEntryState::Pending;
+                    }
+                    was_pending
+                };
+                if !was_pending {
+                    queue.order.push_back(id);
+                }
+            }
+        }
+    }
+
+    pub(in crate::native_app) fn close(&mut self) -> usize {
+        self.task.cancel();
+        let Ok(_persist_gate) = self.persist_gate.lock() else {
+            tracing::error!("harvest selection derivation gate poisoned during shutdown flush");
+            return self.queue.lock().map(|queue| queue.entries.len()).unwrap_or(0);
+        };
+        let requests = {
+            let Ok(mut queue) = self.queue.lock() else {
+                tracing::error!("harvest selection derivation queue lock poisoned during shutdown flush");
+                return 0;
+            };
+            if queue.closed {
+                return 0;
+            }
+            queue.closed = true;
+            queue
+                .entries
+                .values()
+                .map(|entry| (entry.request.clone(), entry.revision))
+                .collect::<Vec<_>>()
+        };
+        let mut unflushed = 0;
+        for (request, _) in &requests {
+            if let Err(error) = execute_harvest_selection_derivation(request.clone()) {
+                unflushed += 1;
+                tracing::error!(
+                    source = %request.source_path.display(),
+                    child = %request.child_path.display(),
+                    "harvest derivation shutdown flush failed: {error}"
+                );
+            }
+        }
+        if let Ok(mut queue) = self.queue.lock() {
+            queue.entries.clear();
+            queue.order.clear();
+        }
+        unflushed
+    }
+}
+
+fn persist_harvest_selection_derivation_queue(
+    queue: Arc<Mutex<HarvestSelectionDerivationQueue>>,
+    persist_gate: Arc<Mutex<()>>,
+) -> HarvestSelectionDerivationBatchResult {
+    let work = queue
+        .lock()
+        .map(|mut queue| queue.claim_all())
+        .unwrap_or_default();
+    let Ok(_persist_gate) = persist_gate.lock() else {
+        tracing::error!("harvest selection derivation gate poisoned in background worker");
+        return HarvestSelectionDerivationBatchResult {
+            results: work
+                .into_iter()
+                .map(|item| HarvestSelectionDerivationBatchItem {
+                    id: item.id,
+                    revision: item.revision,
+                    source_path: PathBuf::new(),
+                    child_path: PathBuf::new(),
+                    result: Err(String::from("persistence gate poisoned")),
+                })
+                .collect(),
+        };
+    };
+    let mut results = Vec::with_capacity(work.len());
+    for item in work {
+        let request = queue
+            .lock()
+            .ok()
+            .and_then(|queue| queue.entries.get(&item.id).map(|entry| entry.request.clone()));
+        let Some(request) = request else {
+            continue;
+        };
+        let revision = queue
+            .lock()
+            .ok()
+            .and_then(|queue| queue.entries.get(&item.id).map(|entry| entry.revision))
+            .unwrap_or(item.revision);
+        let result = execute_harvest_selection_derivation(request.clone());
+        if let Ok(mut queue) = queue.lock() {
+            queue.acknowledge(item.id, revision, result.is_ok());
+        }
+        results.push(HarvestSelectionDerivationBatchItem {
+            id: item.id,
+            revision,
+            source_path: request.source_path,
+            child_path: request.child_path,
+            result,
+        });
+    }
+    HarvestSelectionDerivationBatchResult { results }
+}
+
+impl HarvestSelectionDerivationQueue {
+    fn claim_all(&mut self) -> Vec<HarvestSelectionDerivationWork> {
+        let ids = std::mem::take(&mut self.order);
+        ids.into_iter()
+            .filter_map(|id| {
+                let entry = self.entries.get_mut(&id)?;
+                if entry.state != HarvestSelectionDerivationEntryState::Pending {
+                    return None;
+                }
+                entry.state = HarvestSelectionDerivationEntryState::InFlight;
+                Some(HarvestSelectionDerivationWork { id, revision: entry.revision })
+            })
+            .collect()
+    }
+
+    fn acknowledge(&mut self, id: u64, revision: u64, successful: bool) {
+        let Some(entry) = self.entries.get_mut(&id) else {
+            return;
+        };
+        if entry.revision != revision || entry.state != HarvestSelectionDerivationEntryState::InFlight {
+            return;
+        }
+        if successful {
+            self.entries.remove(&id);
+        } else {
+            entry.state = HarvestSelectionDerivationEntryState::Failed;
+        }
+    }
+}
+
+#[cfg(test)]
+mod harvest_selection_derivation_owner_tests {
+    use super::*;
+    use wavecrate::sample_sources::{HarvestDerivationOperation, SampleSource};
+    use wavecrate::selection::SelectionRange;
+
+    fn request(root: &std::path::Path) -> HarvestSelectionDerivationRequest {
+        let source = SampleSource::new_with_id(SourceId::new(), root.to_path_buf());
+        HarvestSelectionDerivationRequest {
+            source_path: root.join("old/source.wav"),
+            child_path: root.join("old/child.wav"),
+            source: source.clone(),
+            child_source: source,
+            selection: SelectionRange::new(0.25, 0.75),
+            source_duration_seconds: 4.0,
+            operation: HarvestDerivationOperation::Extract,
+            inherited_tags: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn move_rekeys_pending_parent_and_child_paths() {
+        let root = tempfile::tempdir().expect("root");
+        let mut owner = HarvestSelectionDerivationOwner::new();
+        owner.enqueue(request(root.path()));
+        owner.rekey_prefix(&root.path().join("old"), &root.path().join("new"));
+        let queue = owner.queue.lock().expect("queue lock");
+        let entry = queue.entries.values().next().expect("queued request");
+        assert_eq!(entry.request.source_path, root.path().join("new/source.wav"));
+        assert_eq!(entry.request.child_path, root.path().join("new/child.wav"));
+    }
+
+    #[test]
+    fn shutdown_flush_attempts_admitted_request_and_closes_queue() {
+        let root = tempfile::tempdir().expect("root");
+        let mut owner = HarvestSelectionDerivationOwner::new();
+        owner.enqueue(request(root.path()));
+        let unflushed = owner.close();
+        assert_eq!(unflushed, 0);
+        assert!(owner.queue.lock().expect("queue lock").closed);
+        assert!(owner.queue.lock().expect("queue lock").entries.is_empty());
+    }
 }
 
 struct HarvestTouchedPersistQueue {
