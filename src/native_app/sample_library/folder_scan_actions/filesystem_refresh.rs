@@ -174,7 +174,18 @@ impl NativeAppState {
                 } else {
                     false
                 };
-                if incomplete_error.is_none() && !browser_delta_applied {
+                let projection_accepted = if incomplete_error.is_none() && browser_delta_applied {
+                    success
+                        .projection_handoff_ticket
+                        .as_ref()
+                        .is_some_and(|ticket| ticket.accept())
+                } else {
+                    if let Some(ticket) = success.projection_handoff_ticket.as_ref() {
+                        ticket.reject("projection_handoff_projection_rejected");
+                    }
+                    false
+                };
+                if incomplete_error.is_none() && !projection_accepted {
                     incomplete_error = Some(String::from(
                         "committed filesystem sync did not apply an exact browser projection",
                     ));
@@ -195,15 +206,7 @@ impl NativeAppState {
                     renames_reconciled,
                     "Committed filesystem source delta"
                 );
-                if !result.cancelled && incomplete_error.is_none() {
-                    self.background.source_processing.request_source_delta(
-                        &source_id,
-                        result.lifecycle_generation,
-                        &delta,
-                        "filesystem_sync_committed_delta",
-                    );
-                }
-                if !result.cancelled && !delta.is_empty() && incomplete_error.is_none() {
+                if !result.cancelled && !delta.is_empty() && projection_accepted {
                     self.ui.status.sample = format!("Synced {changed_count} filesystem change(s)");
                     self.queue_source_prep(
                         source_id.clone(),
@@ -221,7 +224,7 @@ impl NativeAppState {
                         );
                 }
                 if !result.cancelled
-                    && incomplete_error.is_none()
+                    && projection_accepted
                     && let (Some(watcher), Some(event_id)) = (
                         self.library.source_watcher.as_ref(),
                         journal_checkpoint_event_id,
@@ -233,16 +236,6 @@ impl NativeAppState {
                     self.queue_filesystem_source_refresh(
                         source_id,
                         SourceRefreshCause::FilesystemSyncIncomplete,
-                        Some(result.lifecycle_generation),
-                        Instant::now(),
-                        context,
-                    );
-                } else if !browser_delta_applied {
-                    self.queue_filesystem_source_refresh(
-                        source_id,
-                        SourceRefreshCause::ProjectionRevisionGap {
-                            committed_revision: delta.revision,
-                        },
                         Some(result.lifecycle_generation),
                         Instant::now(),
                         context,
@@ -587,15 +580,27 @@ impl NativeAppState {
                     },
                 );
                 result.journal_checkpoint_event_id = journal_checkpoint_event_id;
-                let handoff = match &result.result {
-                    Ok(success) if !result.cancelled && success.incomplete_error.is_none() => {
-                        ExternalScanHandoff::CommittedDelta(success.committed_delta.clone())
+                let projection_ticket = match &mut result.result {
+                    Ok(success)
+                        if !result.cancelled
+                            && success.incomplete_error.is_none()
+                            && success.browser_projection_delta.is_some() =>
+                    {
+                        Some(
+                            permit
+                                .release_after_projection_handoff(success.committed_delta.clone()),
+                        )
                     }
-                    _ => ExternalScanHandoff::FullReconciliation {
-                        reason: "targeted_source_sync_incomplete",
-                    },
+                    _ => {
+                        permit.release_after_handoff(ExternalScanHandoff::FullReconciliation {
+                            reason: "targeted_source_sync_incomplete",
+                        });
+                        None
+                    }
                 };
-                permit.release_after_handoff(handoff);
+                if let Ok(success) = &mut result.result {
+                    success.projection_handoff_ticket = projection_ticket;
+                }
                 result
             },
             GuiMessage::SourceFilesystemSyncFinished,
@@ -754,6 +759,7 @@ mod tests {
                     ..CommittedSourceDelta::default()
                 },
                 browser_projection_delta: projection,
+                projection_handoff_ticket: None,
             }),
         }
     }

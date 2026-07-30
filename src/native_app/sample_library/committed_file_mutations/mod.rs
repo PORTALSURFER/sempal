@@ -20,6 +20,7 @@ use crate::native_app::sample_library::source_prep::{
     CacheWarmIntent, MetadataRefreshIntent, ReadinessIntent, SourceFeedbackIntent,
     SourcePrepIntents, SourcePriorityIntent,
 };
+use crate::native_app::source_processing::ProjectionHandoffTicket;
 
 #[cfg(test)]
 mod tests;
@@ -29,9 +30,11 @@ mod worker;
 pub(in crate::native_app) use watcher_echo::{
     CommittedWatcherEcho, CommittedWatcherPathState, observed_watcher_path_state,
 };
+#[cfg(test)]
+use worker::reconcile_file_mutation_requests;
 use worker::{
     build_source_requests, capture_expected_filesystem_state, merge_file_mutation_failures,
-    mutation_completion_is_stale_or_duplicate, reconcile_file_mutation_requests,
+    mutation_completion_is_stale_or_duplicate, reconcile_file_mutation_requests_with_handoff,
 };
 
 pub(in crate::native_app) const COMMITTED_MUTATION_PREP_INTENTS: SourcePrepIntents =
@@ -361,6 +364,7 @@ pub(in crate::native_app) struct CommittedFileMutation {
     pub(in crate::native_app) watcher_echoes: Vec<CommittedWatcherEcho>,
     pub(in crate::native_app) browser_projection_delta:
         Option<crate::native_app::app::BrowserProjectionDelta>,
+    pub(in crate::native_app) projection_handoff_ticket: Option<ProjectionHandoffTicket>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -471,13 +475,14 @@ impl NativeAppState {
         work: FileMutationWork,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
+        let budget = self.background.source_processing.budget_handle();
         context
             .business()
             .background("gui-committed-file-mutation")
             .run(
                 move |_| {
                     merge_file_mutation_failures(
-                        reconcile_file_mutation_requests(work.requests),
+                        reconcile_file_mutation_requests_with_handoff(work.requests, budget),
                         work.failures,
                     )
                 },
@@ -605,7 +610,16 @@ impl NativeAppState {
                             .folder_browser
                             .apply_committed_projection_delta(&event.source_id, projection)
                     });
-            if event.operation == FileMutationOperation::Extract && !browser_projection_applied {
+            let projection_accepted = event
+                .projection_handoff_ticket
+                .as_ref()
+                .is_some_and(|ticket| browser_projection_applied && ticket.accept());
+            if !projection_accepted {
+                if let Some(ticket) = event.projection_handoff_ticket.as_ref()
+                    && !browser_projection_applied
+                {
+                    ticket.reject("committed_mutation_projection_rejected");
+                }
                 // This is the conservative recovery path: the exact committed projection could
                 // not be applied at the expected revision, so do not acknowledge the watcher or
                 // publish readiness. Affected-path refresh keeps the durable metadata completion
@@ -627,6 +641,13 @@ impl NativeAppState {
                         post_commit,
                         metadata_error.as_deref(),
                     );
+                }
+                for projection in event
+                    .changes
+                    .iter()
+                    .filter_map(|change| change.projection.as_ref())
+                {
+                    self.apply_committed_file_mutation_projection(projection, context);
                 }
                 self.queue_full_source_reconciliation_after_committed_mutation(
                     event.source_id.clone(),
@@ -764,12 +785,6 @@ impl NativeAppState {
                 changes = event.changes.len(),
                 invalidated_stages = ?event.invalidated_stages,
                 "Committed Wavecrate-owned file mutation"
-            );
-            self.background.source_processing.request_source_delta(
-                &event.source_id,
-                event.lifecycle_generation,
-                &event.committed_delta,
-                "committed_file_mutation_delta",
             );
             // This call refreshes metadata projections and wakes the source-owned readiness
             // reconciler. It deliberately happens after the source DB and browser projection.

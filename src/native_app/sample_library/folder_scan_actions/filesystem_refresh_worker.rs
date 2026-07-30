@@ -200,6 +200,7 @@ fn sync_source_database_paths_once(
                 incomplete_error,
                 committed_delta: completed.committed_delta,
                 browser_projection_delta,
+                projection_handoff_ticket: None,
             })
         })
 }

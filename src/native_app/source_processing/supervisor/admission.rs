@@ -15,6 +15,163 @@ pub(in crate::native_app) enum ExternalScanHandoff {
     FullReconciliation { reason: &'static str },
 }
 
+/// Clone-safe one-shot handoff from a worker's committed source mutation to the GUI projection.
+///
+/// The worker installs the source-scoped fence before releasing its scarce scan permit. The GUI
+/// must resolve the ticket only after applying the exact hydrated projection. Dropping the last
+/// unresolved clone takes the conservative full-reconciliation path.
+#[derive(Clone)]
+pub(in crate::native_app) struct ProjectionHandoffTicket {
+    shared: Arc<Shared>,
+    state: Arc<super::Mutex<ProjectionTicketState>>,
+    source_id: String,
+    lifecycle_generation: u64,
+    delta: CommittedSourceDelta,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ProjectionTicketState {
+    Pending,
+    Accepted,
+    Rejected,
+}
+
+impl std::fmt::Debug for ProjectionHandoffTicket {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ProjectionHandoffTicket")
+            .field("source_id", &self.source_id)
+            .field("lifecycle_generation", &self.lifecycle_generation)
+            .field("revision", &self.delta.revision)
+            .finish()
+    }
+}
+
+impl PartialEq for ProjectionHandoffTicket {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.state, &other.state)
+    }
+}
+
+impl Eq for ProjectionHandoffTicket {}
+
+impl ProjectionHandoffTicket {
+    fn new(
+        shared: Arc<Shared>,
+        source_id: String,
+        lifecycle_generation: u64,
+        delta: CommittedSourceDelta,
+    ) -> Self {
+        Self {
+            shared,
+            state: Arc::new(super::Mutex::new(ProjectionTicketState::Pending)),
+            source_id,
+            lifecycle_generation,
+            delta,
+        }
+    }
+
+    /// Accept the handoff after the GUI has applied the exact projection.
+    ///
+    /// `false` means the ticket was stale, invalid, rejected by the supervisor, or resolved more
+    /// than once. Every false outcome is conservative: it requests complete source
+    /// reconciliation and never publishes a targeted readiness delta.
+    pub(in crate::native_app) fn accept(&self) -> bool {
+        if !self.claim_resolution(ProjectionTicketState::Accepted) {
+            self.request_full_reconciliation("projection_handoff_duplicate_resolution");
+            return false;
+        }
+        let mut control = self.shared.control();
+        let fence_matches = control
+            .pending_projection_fences
+            .get(&self.source_id)
+            .is_some_and(|fence| {
+                fence.lifecycle_generation == self.lifecycle_generation
+                    && fence.revision == self.delta.revision
+            });
+        let current = control.source_is_active(&self.source_id)
+            && control.source_lifecycle_generations.get(&self.source_id)
+                == Some(&self.lifecycle_generation);
+        if !current || !fence_matches {
+            drop(control);
+            self.request_full_reconciliation("projection_handoff_stale_or_invalid");
+            return false;
+        }
+        control.pending_projection_fences.remove(&self.source_id);
+        let accepted = self.delta.is_empty()
+            || matches!(
+                control.queue_source_delta(
+                    &self.source_id,
+                    self.lifecycle_generation,
+                    &self.delta,
+                    "projection_handoff_accepted",
+                ),
+                SourceDeltaQueueResult::Queued | SourceDeltaQueueResult::Ignored
+            );
+        if !accepted {
+            control.pending_readiness_deltas.remove(&self.source_id);
+            control.cancel_source_work(&self.source_id);
+            control.mark_source_dirty(&self.source_id, "projection_handoff_delta_rejected");
+        }
+        drop(control);
+        self.shared.wake.notify_one();
+        accepted
+    }
+
+    /// Reject the handoff after projection absence, hydration failure, cancellation, or an
+    /// unsuccessful exact-revision apply.
+    pub(in crate::native_app) fn reject(&self, reason: &'static str) {
+        if !self.claim_resolution(ProjectionTicketState::Rejected) {
+            self.request_full_reconciliation("projection_handoff_duplicate_rejection");
+            return;
+        }
+        self.request_full_reconciliation(reason);
+    }
+
+    fn claim_resolution(&self, resolution: ProjectionTicketState) -> bool {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        if *state != ProjectionTicketState::Pending {
+            return false;
+        }
+        *state = resolution;
+        true
+    }
+
+    fn request_full_reconciliation(&self, reason: &'static str) {
+        let mut control = self.shared.control();
+        control.pending_projection_fences.remove(&self.source_id);
+        control.pending_readiness_deltas.remove(&self.source_id);
+        if control.source_is_active(&self.source_id)
+            && control.source_lifecycle_generations.get(&self.source_id)
+                == Some(&self.lifecycle_generation)
+        {
+            control.cancel_source_work(&self.source_id);
+            control.mark_source_dirty(&self.source_id, reason);
+        }
+        drop(control);
+        self.shared.wake.notify_one();
+    }
+}
+
+impl Drop for ProjectionHandoffTicket {
+    fn drop(&mut self) {
+        if Arc::strong_count(&self.state) != 1 {
+            return;
+        }
+        let pending = *self
+            .state
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            == ProjectionTicketState::Pending;
+        if pending {
+            self.reject("projection_handoff_dropped_unresolved");
+        }
+    }
+}
+
 #[derive(Clone)]
 pub(in crate::native_app) struct SourceProcessingBudgetHandle {
     pub(super) shared: Arc<Shared>,
@@ -245,6 +402,49 @@ impl SourceProcessingBudgetPermit {
 
     pub(in crate::native_app) fn scan_writer(&self) -> DatabaseWriterGate {
         self.shared.database_writer.clone()
+    }
+
+    /// Install the source-scoped projection fence and release the scarce worker capacity before
+    /// handing the exact committed delta to the GUI.
+    pub(in crate::native_app) fn release_after_projection_handoff(
+        mut self,
+        delta: CommittedSourceDelta,
+    ) -> ProjectionHandoffTicket {
+        let source_id = self
+            .permit
+            .as_ref()
+            .map(|permit| permit.source_id().to_string())
+            .unwrap_or_default();
+        let ticket = ProjectionHandoffTicket::new(
+            Arc::clone(&self.shared),
+            source_id.clone(),
+            self.lifecycle_generation,
+            delta,
+        );
+        let mut control = self.shared.control();
+        let current = control.source_is_active(&source_id)
+            && control.source_lifecycle_generations.get(&source_id)
+                == Some(&self.lifecycle_generation);
+        if current && !control.pending_projection_fences.contains_key(&source_id) {
+            control.pending_projection_fences.insert(
+                source_id,
+                super::PendingProjectionFence {
+                    lifecycle_generation: self.lifecycle_generation,
+                    revision: ticket.delta.revision,
+                },
+            );
+            self.handoff_registered = true;
+        } else {
+            drop(control);
+            ticket.reject("projection_handoff_fence_install_rejected");
+            self.handoff_registered = true;
+            drop(self);
+            return ticket;
+        }
+        drop(control);
+        self.shared.wake.notify_one();
+        drop(self);
+        ticket
     }
 
     /// Register the committed scan result before releasing the source-processing budget.

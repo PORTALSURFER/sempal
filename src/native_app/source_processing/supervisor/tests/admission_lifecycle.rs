@@ -230,6 +230,101 @@ fn targeted_scan_handoff_is_registered_before_delayed_gui_delivery() {
 }
 
 #[test]
+fn projection_handoff_rejection_keeps_delta_and_readiness_fenced_until_gui_resolution() {
+    let (_directory, source) = unhashed_source("projection-handoff-rejection");
+    let mut supervisor = SourceProcessingSupervisor::dormant();
+    supervisor
+        .replace_sources(vec![source.clone()])
+        .expect("configure source");
+    {
+        let mut control = supervisor.shared.control();
+        control.dirty_sources.clear();
+    }
+    let generation = supervisor.lifecycle_generations()[source.id.as_str()];
+    let permit = supervisor
+        .budget_handle()
+        .acquire_scan_for_generation(source.id.as_str(), generation)
+        .expect("admit targeted sync");
+    let ticket = permit.release_after_projection_handoff(CommittedSourceDelta {
+        revision: 11,
+        changed: vec![wavecrate::sample_sources::scanner::ManifestIdentityDelta {
+            identity: String::from("projection.wav"),
+            relative_path: PathBuf::from("projection.wav"),
+            content_generation: String::from("generation-11"),
+            source_metadata_changed: true,
+        }],
+        ..CommittedSourceDelta::default()
+    });
+
+    let control = supervisor.shared.control();
+    assert!(
+        control
+            .pending_projection_fences
+            .contains_key(source.id.as_str())
+    );
+    assert!(
+        !control
+            .pending_readiness_deltas
+            .contains_key(source.id.as_str())
+    );
+    drop(control);
+
+    ticket.reject("projection_handoff_test_rejection");
+    let control = supervisor.shared.control();
+    assert!(
+        !control
+            .pending_projection_fences
+            .contains_key(source.id.as_str())
+    );
+    assert!(
+        !control
+            .pending_readiness_deltas
+            .contains_key(source.id.as_str())
+    );
+    assert!(control.dirty_sources.contains(source.id.as_str()));
+    drop(control);
+    assert_eq!(supervisor.shutdown()["joined"], true);
+}
+
+#[test]
+fn accepted_empty_projection_handoff_is_a_checkpoint_only_noop() {
+    let (_directory, source) = unhashed_source("projection-handoff-empty");
+    let mut supervisor = SourceProcessingSupervisor::dormant();
+    supervisor
+        .replace_sources(vec![source.clone()])
+        .expect("configure source");
+    {
+        let mut control = supervisor.shared.control();
+        control.dirty_sources.clear();
+    }
+    let generation = supervisor.lifecycle_generations()[source.id.as_str()];
+    let permit = supervisor
+        .budget_handle()
+        .acquire_scan_for_generation(source.id.as_str(), generation)
+        .expect("admit targeted sync");
+    let ticket = permit.release_after_projection_handoff(CommittedSourceDelta {
+        revision: 11,
+        ..CommittedSourceDelta::default()
+    });
+
+    assert!(ticket.accept());
+    let control = supervisor.shared.control();
+    assert!(
+        !control
+            .pending_projection_fences
+            .contains_key(source.id.as_str())
+    );
+    assert!(
+        !control
+            .pending_readiness_deltas
+            .contains_key(source.id.as_str())
+    );
+    assert!(!control.dirty_sources.contains(source.id.as_str()));
+    drop(control);
+    assert_eq!(supervisor.shutdown()["joined"], true);
+}
+
+#[test]
 fn foreground_scan_handoff_uses_full_fallback_before_capacity_release() {
     let (_directory, source) = unhashed_source("foreground-scan-fallback");
     let mut supervisor = SourceProcessingSupervisor::dormant();

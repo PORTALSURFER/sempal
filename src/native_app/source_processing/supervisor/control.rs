@@ -1,7 +1,7 @@
 use super::{
     AcceptedManifestRevision, Arc, AtomicBool, BTreeMap, BTreeSet, CommittedSourceDelta, Ordering,
-    PendingReadinessDelta, PendingReadinessDeltaMerge, PendingSourceRetirement, PriorityContext,
-    SampleSource, source_storage_identity_matches,
+    PendingProjectionFence, PendingReadinessDelta, PendingReadinessDeltaMerge,
+    PendingSourceRetirement, PriorityContext, SampleSource, source_storage_identity_matches,
 };
 
 pub(super) struct ControlState {
@@ -17,6 +17,7 @@ pub(super) struct ControlState {
     pub(super) lifecycle_audits_deferred_until_watcher_ready: bool,
     pub(super) deferred_lifecycle_audit_sources: BTreeSet<String>,
     pub(super) pending_readiness_deltas: BTreeMap<String, PendingReadinessDelta>,
+    pub(super) pending_projection_fences: BTreeMap<String, PendingProjectionFence>,
     pub(super) accepted_manifest_revisions: BTreeMap<String, AcceptedManifestRevision>,
     pub(super) awaiting_foreground_refresh_sources: BTreeSet<String>,
     pub(super) force_manifest_audit_sources: BTreeSet<String>,

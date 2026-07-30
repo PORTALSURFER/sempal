@@ -36,6 +36,7 @@ pub(super) fn run_coordinator(shared: Arc<Shared>) {
             force_manifest_audit_sources,
             force_reanalysis_sources,
             pending_readiness_deltas,
+            pending_projection_fences,
             source_work_cancels,
             source_lifecycle_generations,
             priority,
@@ -143,6 +144,19 @@ pub(super) fn run_coordinator(shared: Arc<Shared>) {
             let force_manifest_audit_sources = control.force_manifest_audit_sources.clone();
             let force_reanalysis_sources = control.force_reanalysis_sources.clone();
             let pending_readiness_deltas = control.pending_readiness_deltas.clone();
+            let pending_projection_fences = control.pending_projection_fences.clone();
+            let blocked_dirty_sources = dirty_sources
+                .iter()
+                .filter(|source_id| pending_projection_fences.contains_key(*source_id))
+                .cloned()
+                .collect::<BTreeSet<_>>();
+            control
+                .dirty_sources
+                .extend(blocked_dirty_sources.iter().cloned());
+            let dirty_sources = dirty_sources
+                .difference(&blocked_dirty_sources)
+                .cloned()
+                .collect::<BTreeSet<_>>();
             (
                 control
                     .sources
@@ -156,6 +170,7 @@ pub(super) fn run_coordinator(shared: Arc<Shared>) {
                 force_manifest_audit_sources,
                 force_reanalysis_sources,
                 pending_readiness_deltas,
+                pending_projection_fences,
                 control.source_work_cancels.clone(),
                 control.source_lifecycle_generations.clone(),
                 control.priority.clone(),
@@ -210,12 +225,18 @@ pub(super) fn run_coordinator(shared: Arc<Shared>) {
         }
         let sources_to_discover = sources
             .iter()
-            .filter(|source| discovery_source_id.as_deref() == Some(source.id.as_str()))
+            .filter(|source| {
+                discovery_source_id.as_deref() == Some(source.id.as_str())
+                    && !pending_projection_fences.contains_key(source.id.as_str())
+            })
             .cloned()
             .collect::<Vec<_>>();
         candidates.retain(|candidate| {
             let source_id = candidate.source.id.as_str();
             if !configured_source_ids.contains(source_id) {
+                return false;
+            }
+            if pending_projection_fences.contains_key(source_id) {
                 return false;
             }
             if !dirty_sources.contains(source_id) {
@@ -231,6 +252,9 @@ pub(super) fn run_coordinator(shared: Arc<Shared>) {
         source_stats.retain(|source_id, _| configured_source_ids.contains(source_id));
         let sweep_started = Instant::now();
         for source in &sources_to_discover {
+            if pending_projection_fences.contains_key(source.id.as_str()) {
+                continue;
+            }
             if !discovery_is_safety_probe
                 && !pending_readiness_deltas.contains_key(source.id.as_str())
             {

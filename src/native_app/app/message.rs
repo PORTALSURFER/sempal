@@ -450,6 +450,8 @@ pub(in crate::native_app) struct SourceFilesystemSyncSuccess {
     pub(in crate::native_app) committed_delta:
         wavecrate::sample_sources::scanner::CommittedSourceDelta,
     pub(in crate::native_app) browser_projection_delta: Option<BrowserProjectionDelta>,
+    pub(in crate::native_app) projection_handoff_ticket:
+        Option<crate::native_app::source_processing::ProjectionHandoffTicket>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

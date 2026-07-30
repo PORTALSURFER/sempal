@@ -13,6 +13,7 @@ use super::{
     FileMutationOperation, FileMutationOutcome, FileMutationSemantics,
 };
 use crate::native_app::sample_library::folder_scan_actions::sync_source_database_paths;
+use crate::native_app::source_processing::{ExternalScanHandoff, SourceProcessingBudgetHandle};
 
 #[derive(Clone, Debug)]
 pub(super) struct SourceMutationRequest {
@@ -181,6 +182,7 @@ fn source_for_path(sources: &[SampleSource], path: &Path) -> Option<String> {
         .map(|(source, _)| source.id.as_str().to_string())
 }
 
+#[cfg(test)]
 pub(super) fn reconcile_file_mutation_requests(
     requests: Vec<SourceMutationRequest>,
 ) -> FileMutationOutcome {
@@ -191,6 +193,72 @@ pub(super) fn reconcile_file_mutation_requests(
     })
 }
 
+pub(super) fn reconcile_file_mutation_requests_with_handoff(
+    requests: Vec<SourceMutationRequest>,
+    budget: SourceProcessingBudgetHandle,
+) -> FileMutationOutcome {
+    let mut committed = Vec::new();
+    let mut failures = Vec::new();
+    for request in requests {
+        let source_id = request.source.id.as_str().to_string();
+        let Some(permit) =
+            budget.acquire_scan_for_generation(&source_id, request.lifecycle_generation)
+        else {
+            failures.push(FileMutationFailure {
+                source_id: Some(source_id),
+                operation_id: request.operation_id,
+                operation: request.operation,
+                error: String::from("source mutation reconciliation canceled"),
+            });
+            continue;
+        };
+        match request
+            .source
+            .database_root()
+            .map_err(|error| format!("resolve source metadata location: {error}"))
+            .and_then(|database_root| {
+                reconcile_source_mutation_with_cancel(
+                    request.clone(),
+                    database_root,
+                    &permit.cancel_token(),
+                )
+            }) {
+            Ok(mut event) => {
+                if event.browser_projection_delta.is_some() {
+                    let ticket =
+                        permit.release_after_projection_handoff(event.committed_delta.clone());
+                    event.projection_handoff_ticket = Some(ticket);
+                } else {
+                    permit.release_after_handoff(ExternalScanHandoff::FullReconciliation {
+                        reason: "committed_mutation_projection_unavailable",
+                    });
+                }
+                committed.push(event);
+            }
+            Err(error) => {
+                permit.release_after_handoff(ExternalScanHandoff::FullReconciliation {
+                    reason: "committed_mutation_reconciliation_failed",
+                });
+                failures.push(FileMutationFailure {
+                    source_id: Some(source_id),
+                    operation_id: request.operation_id,
+                    operation: request.operation,
+                    error,
+                });
+            }
+        }
+    }
+    if failures.is_empty() {
+        FileMutationOutcome::Committed(committed)
+    } else {
+        FileMutationOutcome::Failed {
+            committed,
+            failures,
+        }
+    }
+}
+
+#[cfg(test)]
 pub(super) fn reconcile_file_mutation_requests_with_database_roots(
     requests: Vec<SourceMutationRequest>,
     database_root_for: impl Fn(&SampleSource) -> Result<PathBuf, String>,
@@ -223,7 +291,16 @@ pub(super) fn reconcile_file_mutation_requests_with_database_roots(
     }
 }
 
+#[cfg(test)]
 pub(super) fn reconcile_source_mutation(
+    request: SourceMutationRequest,
+    database_root: PathBuf,
+    cancel: &AtomicBool,
+) -> Result<CommittedFileMutation, String> {
+    reconcile_source_mutation_with_cancel(request, database_root, &cancel)
+}
+
+fn reconcile_source_mutation_with_cancel(
     request: SourceMutationRequest,
     database_root: PathBuf,
     cancel: &AtomicBool,
@@ -315,6 +392,7 @@ pub(super) fn reconcile_source_mutation(
         affected_relative_paths: request.affected_relative_paths,
         watcher_echoes: request.watcher_echoes,
         browser_projection_delta: success.browser_projection_delta,
+        projection_handoff_ticket: None,
     })
 }
 
