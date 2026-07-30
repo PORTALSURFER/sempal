@@ -698,6 +698,67 @@ fn source_filesystem_change_removes_nested_folder_from_descendant_event() {
 }
 
 #[test]
+fn source_filesystem_change_removes_unsupported_only_nested_folder_from_descendant_event() {
+    let source_root = tempfile::tempdir().expect("source root");
+    let removed_folder = source_root.path().join("removed-folder");
+    let removed_nested = removed_folder.join("nested");
+    fs::create_dir_all(&removed_nested).expect("create removed nested folder");
+    fs::write(removed_nested.join("notes.txt"), b"not an indexed sample")
+        .expect("write unsupported file");
+
+    let mut state = gui_state_for_span_tests();
+    let request = state
+        .library
+        .folder_browser
+        .begin_add_source_path(source_root.path().to_path_buf(), 100)
+        .expect("new source requests scan");
+    let source_id = request.source_id.clone();
+    let result = crate::native_app::sample_library::folder_browser::scan::scan_source_with_progress(
+        request,
+        |_| {},
+        |_| {},
+    );
+    state.finish_folder_scan(result, &mut ui::UiUpdateContext::default());
+    assert!(state
+        .library
+        .folder_browser
+        .folder_path(&removed_folder.to_string_lossy())
+        .is_some());
+    let db = wavecrate::sample_sources::SourceDatabase::open_for_test_fixture_source_write(
+        source_root.path(),
+    )
+    .expect("db");
+    assert!(db.list_files().expect("initial rows").is_empty());
+
+    fs::remove_dir_all(&removed_folder).expect("remove nested folder");
+    let mut context = ui::UiUpdateContext::default();
+    state.apply_message(
+        crate::native_app::test_support::state::GuiMessage::SourceFilesystemChanged {
+            source_id,
+            paths: vec![PathBuf::from("removed-folder/nested/notes.txt")],
+            overflowed: false,
+            source_root_available: true,
+            journal_checkpoint_event_id: None,
+        },
+        &mut context,
+    );
+    let sync_finished = crate::native_app::tests::run_worker_message_for_tests(
+        context.into_command(),
+        "gui-source-db-sync",
+    )
+    .expect("targeted source sync command");
+    state.apply_message(sync_finished, &mut ui::UiUpdateContext::default());
+
+    assert!(state.library.folder_progress().is_none());
+    assert!(state
+        .library
+        .folder_browser
+        .folder_path(&removed_folder.to_string_lossy())
+        .is_none());
+    assert!(db.list_files().expect("synced rows").is_empty());
+}
+
+#[test]
 fn source_filesystem_change_removes_empty_folder_without_manifest_file_delta() {
     let source_root = tempfile::tempdir().expect("source root");
     let empty_folder = source_root.path().join("empty-folder");

@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::atomic::{AtomicBool, Ordering},
     thread,
@@ -317,11 +317,26 @@ fn prepare_folder_projections(
     let policy = db
         .source_traversal_policy()
         .map_err(|error| format!("read source traversal policy: {error}"))?;
-    let mut target_candidates = paths
+    let committed_manifest_paths = delta
+        .created
         .iter()
-        .filter(|path| path.is_relative())
-        .cloned()
-        .collect::<Vec<_>>();
+        .map(|entry| entry.relative_path.clone())
+        .chain(delta.changed.iter().map(|entry| entry.relative_path.clone()))
+        .chain(delta.deleted.iter().map(|entry| entry.relative_path.clone()))
+        .chain(delta.moved.iter().flat_map(|moved| {
+            [
+                moved.old_relative_path.clone(),
+                moved.new_relative_path.clone(),
+            ]
+        }))
+        .collect::<HashSet<_>>();
+    let mut target_candidates = Vec::new();
+    for path in paths.iter().filter(|path| path.is_relative()) {
+        target_candidates.push(path.clone());
+        if !committed_manifest_paths.contains(path) {
+            append_directory_ancestors(&mut target_candidates, path);
+        }
+    }
     for entry in &delta.deleted {
         append_directory_ancestors(&mut target_candidates, &entry.relative_path);
     }
