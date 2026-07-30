@@ -374,6 +374,11 @@ pub(in crate::native_app) enum GuiMessage {
         focus_derivative: bool,
         started_at: Instant,
     },
+    HarvestSelectionDerivationFinished {
+        source_path: PathBuf,
+        child_path: PathBuf,
+        result: Result<(), String>,
+    },
     SelectedWholeFilesHarvestExtractionFinished {
         started_at: Instant,
         result: wavecrate::sample_sources::WholeFileHarvestExtractionResult,

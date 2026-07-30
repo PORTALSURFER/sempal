@@ -187,6 +187,11 @@ impl NativeAppState {
                 started_at,
                 context,
             ),
+            GuiMessage::HarvestSelectionDerivationFinished {
+                source_path,
+                child_path,
+                result,
+            } => self.finish_harvest_selection_derivation(source_path, child_path, result),
             GuiMessage::SelectedWholeFilesHarvestExtractionFinished { started_at, result } => {
                 self.finish_selected_whole_files_harvest_extraction(started_at, result, context);
             }

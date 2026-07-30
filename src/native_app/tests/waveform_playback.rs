@@ -772,6 +772,55 @@ fn playmark_selection_copy_uses_interactive_handoff_worker() {
 }
 
 #[test]
+fn playmark_extraction_completion_queues_background_harvest_derivation() {
+    let config_base = tempfile::tempdir().expect("config base");
+    let _base_guard = wavecrate::app_dirs::ConfigBaseGuard::set(config_base.path().to_path_buf());
+    let mut scenario = WaveformPlaybackScenario::with_temp_wav(
+        "playmark-extract-async-derivation.wav",
+        &[0, 1024, -1024, 512],
+    );
+    load_selected_sample_into_waveform(&mut scenario);
+    let parent_key = harvest_key_for_selected_sample(&scenario.state);
+    scenario.select_play_range(0.25, 0.60);
+    let extracted = extraction_path_for_loaded_sample(&scenario);
+
+    let mut context = ui::UiUpdateContext::default();
+    scenario.state.apply_message(
+        crate::native_app::test_support::state::GuiMessage::ExtractPlaymarkedRange,
+        &mut context,
+    );
+    let extraction_command = context.into_command();
+    assert_eq!(
+        extraction_command.business_task_priority("gui-waveform-extract"),
+        Some(ui::TaskPriority::Interactive),
+        "playmark extraction must stay ahead of background maintenance"
+    );
+    let extraction_message =
+        run_worker_message_for_tests(extraction_command, "gui-waveform-extract")
+            .expect("playmark extraction should complete");
+    let mut finish_context = ui::UiUpdateContext::default();
+    scenario
+        .state
+        .apply_message(extraction_message, &mut finish_context);
+    let derivation_command = finish_context.into_command();
+    assert_eq!(
+        derivation_command.business_task_priority("gui-harvest-selection-derivation"),
+        Some(ui::TaskPriority::Background),
+        "harvest derivation persistence must be queued off the UI thread"
+    );
+    run_command_for_tests(&mut scenario.state, derivation_command);
+
+    assert!(extracted.is_file());
+    let edges = wavecrate::sample_sources::library::harvest_derivations_for_parent(&parent_key)
+        .expect("load harvest derivations");
+    assert_eq!(edges.len(), 1);
+    assert_eq!(
+        edges[0].child.key.relative_path,
+        PathBuf::from("playmark-extract-async-derivation_extraction.wav")
+    );
+}
+
+#[test]
 fn playmark_selection_copy_extracts_into_current_folder_before_clipboard_handoff() {
     let config_base = tempfile::tempdir().expect("config base");
     let _base_guard = wavecrate::app_dirs::ConfigBaseGuard::set(config_base.path().to_path_buf());

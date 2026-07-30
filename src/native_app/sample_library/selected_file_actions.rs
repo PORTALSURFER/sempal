@@ -270,7 +270,7 @@ impl NativeAppState {
                     return;
                 }
                 self.ui.status.sample = String::from(target.status_text());
-                context.business().background("gui-waveform-extract").run(
+                context.business().interactive("gui-waveform-extract").run(
                     move |_| execute_waveform_extraction(request),
                     move |completion| GuiMessage::PlaySelectionExtractionFinished {
                         completion,
@@ -535,13 +535,31 @@ impl NativeAppState {
                 let metadata_error = self
                     .assign_extracted_file_metadata(&path, playback_type, context)
                     .err();
-                self.record_harvest_selection_derivation_with_source_duration(
+                if let Some(request) = self.harvest_selection_derivation_request(
                     &completion.source_path,
-                    completion.selection,
                     &path,
+                    completion.selection,
                     self.waveform.current.duration_seconds() as f64,
                     harvest_operation,
-                );
+                ) {
+                    let source_path = request.source_path.clone();
+                    let child_path = request.child_path.clone();
+                    context
+                        .business()
+                        .background("gui-harvest-selection-derivation")
+                        .run(
+                            move |_| {
+                                crate::native_app::sample_library::harvest_tracking::execute_harvest_selection_derivation(request)
+                            },
+                            move |result| {
+                                GuiMessage::HarvestSelectionDerivationFinished {
+                                    source_path,
+                                    child_path,
+                                    result,
+                                }
+                            },
+                        );
+                }
                 if let Some(position) = drag_position {
                     self.log_sample_identity_checkpoint(
                         "waveform.extract.drag_started",
