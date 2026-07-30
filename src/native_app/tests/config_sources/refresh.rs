@@ -456,3 +456,62 @@ fn source_filesystem_change_patches_new_folder_after_targeted_commit() {
         .iter()
         .any(|entry| entry.relative_path == Path::new("created-folder/nested/new.wav")));
 }
+
+#[cfg(unix)]
+#[test]
+fn source_filesystem_change_removes_folder_replaced_by_symlink() {
+    use std::os::unix::fs as unix_fs;
+
+    let source_root = tempfile::tempdir().expect("source root");
+    let replaced = source_root.path().join("replaced");
+    fs::create_dir_all(&replaced).expect("create replaced folder");
+    write_test_wav_i16(&replaced.join("old.wav"), &[0, 512, -512]);
+    let outside = tempfile::tempdir().expect("outside root");
+    write_test_wav_i16(&outside.path().join("outside.wav"), &[0, 1024, -1024]);
+
+    let mut state = gui_state_for_span_tests();
+    let request = state
+        .library
+        .folder_browser
+        .begin_add_source_path(source_root.path().to_path_buf(), 100)
+        .expect("new source requests scan");
+    let source_id = request.source_id.clone();
+    let result = crate::native_app::sample_library::folder_browser::scan::scan_source_with_progress(
+        request,
+        |_| {},
+        |_| {},
+    );
+    state.finish_folder_scan(result, &mut ui::UiUpdateContext::default());
+    assert!(state
+        .library
+        .folder_browser
+        .folder_path(&replaced.to_string_lossy())
+        .is_some());
+
+    fs::remove_dir_all(&replaced).expect("remove replaced folder");
+    unix_fs::symlink(outside.path(), &replaced).expect("replace folder with symlink");
+    let mut context = ui::UiUpdateContext::default();
+    state.apply_message(
+        crate::native_app::test_support::state::GuiMessage::SourceFilesystemChanged {
+            source_id,
+            paths: vec![PathBuf::from("replaced")],
+            overflowed: false,
+            source_root_available: true,
+            journal_checkpoint_event_id: None,
+        },
+        &mut context,
+    );
+    let sync_finished = crate::native_app::tests::run_worker_message_for_tests(
+        context.into_command(),
+        "gui-source-db-sync",
+    )
+    .expect("targeted source sync command");
+    state.apply_message(sync_finished, &mut ui::UiUpdateContext::default());
+
+    assert!(state
+        .library
+        .folder_browser
+        .folder_path(&replaced.to_string_lossy())
+        .is_none());
+    assert!(state.library.folder_progress().is_none());
+}

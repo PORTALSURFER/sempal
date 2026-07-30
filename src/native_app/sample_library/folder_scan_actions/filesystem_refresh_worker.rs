@@ -339,6 +339,7 @@ fn prepare_folder_projections(
                 {
                     Some(relative_path.clone())
                 }
+                Ok(_) => Some(relative_path.clone()),
                 _ => None,
             }
         })
@@ -372,7 +373,8 @@ fn prepare_folder_projections(
                 )
             }
             Err(SourceEntryProbeError::Missing) => None,
-            _ => continue,
+            Ok(_) => None,
+            Err(_) => continue,
         };
         projections.push(PreparedFolderProjection {
             relative_path,
