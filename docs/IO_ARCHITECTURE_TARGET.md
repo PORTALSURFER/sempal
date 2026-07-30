@@ -144,6 +144,17 @@ These are normative target invariants.
     requests a conservative source audit.
 14. User status describes the operation's durable disposition, not the last worker callback.
     It remains actionable across retries, restart, and partial failure.
+15. Protected recovery capacity is a separate admission invariant. For every distinct
+    affected writable volume, the initial target preserves a non-sparse 256 MiB protected
+    floor. Before any application-owned journal, filesystem, SQLite, WAL, or SHM side
+    effect, admission aggregates and claims a conservative peak allocation on each such
+    volume for destination staging, a final/direct non-atomic destination, the journal,
+    source and global databases plus their WAL/SHM, and any coexisting backup, replacement,
+    or recovery payload. A same-volume rename does not double-count one identical
+    allocation; coexisting allocations do count separately. Unbounded output requires an
+    initial bounded claim and a bounded claim before each chunk write. A failed claim leaves
+    the last durable checkpoint with `PartialNeedsRetry` plus `RecoveryReserveLow` or
+    `DiskPressureRecoveryOnly`; it never borrows the protected floor.
 
 ## Identities, lifecycle, and revision fences
 
@@ -211,9 +222,15 @@ verification to agree that takeover is safe. An active owner is never taken over
 that cannot acquire the profile lock must not open the journal writable, mutate recovery,
 admit durable work, open writable database connections, or acquire source leases. It remains a
 bounded read-only process, or forwards a typed command to the owner, and surfaces the distinct
-profile status `ProfileOwnedByAnotherProcess`; a separately held source lease surfaces
-`WritableSourceOwnedByAnotherProcess`. SQLite's own commit serialization does not coordinate
-these locks, leases, or the app-local multi-database saga.
+profile status `ProfileOwnedByAnotherProcess`. A source lease conflict is evaluated only after
+this process has established profile ownership and surfaces
+`WritableSourceOwnedByAnotherProcess`. These statuses are non-aliasing: the profile status
+means exclusively failure to acquire the live profile lock, while the source status means
+exclusively an independently live source lease/epoch conflict after profile ownership is
+established. A process that has not established profile ownership must never report the
+source status, and a process with profile ownership must not relabel an independent source
+lease conflict as profile ownership failure. SQLite's own commit serialization does not
+coordinate these locks, leases, or the app-local multi-database saga.
 
 The profile lock is released last: after admission is closed, high-value journal and
 participant checkpoints are durable, source leases/epochs are released, the writable journal
@@ -241,6 +258,9 @@ An operation record contains at least:
   collision policy;
 - intended side effects and inherited metadata snapshot references, without embedding
   unbounded file contents or full source snapshots;
+- a per-distinct-volume capacity plan containing the protected floor, conservative peak
+  allocation classes and amounts, existing/coexisting claims, claim/release state, and
+  volume identity for every affected writable volume;
 - publication mode (`AtomicDestinationRename` or `NonAtomicCopyValidatePublish`), visibility
   boundary (`VisibilityVerified` or `VisibilityUnverified`), namespace result
   (`AtomicNamespace` or `NonAtomicNamespace`),
@@ -287,14 +307,25 @@ For a destination classified as local and supported, the target sequences are:
 | Unsupported, remote, or removable filesystem | Attempt the separately journaled non-atomic protocol below only when the operation is allowed. Record `VisibilityVerified` after reopen/content verification and an explicit downgrade such as `NamespaceAtomicityUnavailable` and `PowerLossSynchronizationUnverified`. Never record `AtomicNamespace` or `PowerLossSynchronized`, even when a flush-like call succeeds. |
 
 The non-atomic path is not a weaker spelling of atomic rename. `NonAtomicCopyValidatePublish`
-has its own ordered checkpoints: `CopyStarted` (source and destination identities captured),
-`CopyProgress` (bounded byte offsets), `DestinationFlushAttempted` (with the actual result and
-media caveat), `CopyValidated` (identity/length or hash), `PublishStarted`,
-`PublishObserved` (the destination namespace was observed), and `ReopenedVerified`. A crash or
-verification failure leaves the record at the last checkpoint with `PartialNeedsRetry`; recovery
-compares both source and destination live state before resuming, replacing, retaining as an
-explicit partial/orphan, or requesting user action. It never upgrades this path to atomicity
-or power-loss durability. If a destination cannot be reopened or verified, it remains partial
+has seven participant checkpoints, not seven journal phases. The normative mapping is:
+
+| Participant checkpoint | Journal phase after the checkpoint | Interruption or advancement guard |
+| --- | --- | --- |
+| `CopyStarted` | `FilesystemStaged` | Capture source/destination identities; interruption leaves `PartialNeedsRetry` at this checkpoint. |
+| `CopyProgress` | `FilesystemStaged` | Record bounded byte offsets; interruption leaves `PartialNeedsRetry` at the last durable offset and the next chunk requires a fresh pre-write capacity claim. |
+| `DestinationFlushAttempted` | `FilesystemStaged` | Record the actual flush result and media caveat; interruption leaves `PartialNeedsRetry`. |
+| `CopyValidated` | `FilesystemStaged` | Verify identity/length or hash; interruption leaves `PartialNeedsRetry`. |
+| `PublishStarted` | `FilesystemStaged` | Interruption leaves `PartialNeedsRetry`; live inspection of final and staging paths must guard any resume or discard decision. |
+| `PublishObserved` | `FilesystemStaged` | Observe the destination namespace; interruption leaves `PartialNeedsRetry`; live inspection must guard whether publication occurred. |
+| `ReopenedVerified` | `FilesystemPublished` | Reopen and verify the final object. Only this checkpoint advances the non-atomic operation, with `VisibilityVerified`, `NonAtomicNamespace`, and downgraded synchronization evidence. |
+
+The first six checkpoints therefore remain `FilesystemStaged` even when a direct final
+destination exists; that phase does not imply atomicity for the fallback and the fallback
+branch contains no `AtomicNamespace` or `PowerLossSynchronized` claim. A crash or verification
+failure leaves the record at the last checkpoint with `PartialNeedsRetry`; recovery compares
+both source and destination live state before resuming, replacing, retaining as an explicit
+partial/orphan, or requesting user action. It never upgrades this path to atomicity or
+power-loss durability. If a destination cannot be reopened or verified, it remains partial
 and does not enter `FilesystemPublished`.
 
 On either path, a failed synchronization call is evidence of a failed or downgraded step, not
@@ -312,7 +343,9 @@ The normal phase order is:
    are resolved without touching the UI.
 4. `FilesystemStaged`: bytes or edit output are in an app-owned staging location on the
    destination filesystem when atomic publication is selected, and are verified enough to
-   publish. The required platform sequence is recorded before advancing.
+   publish. For the non-atomic fallback, this phase is only the participant-checkpoint
+   container described above; it does not imply `AtomicNamespace` or completed publication.
+   The required platform sequence is recorded before advancing.
 5. `FilesystemPublished`: the final namespace is visible and the reopened final object is
    verified. The record separately reports namespace atomicity and power-loss synchronization
    evidence according to [Publication durability contract](#publication-durability-contract).
@@ -385,13 +418,34 @@ source reconciliation (then any required global, Harvest, projection, or readine
 checkpoint) without repeating filesystem work, and emits terminal `CancelledAfterPublish`
 only after the durable operation has a complete required recovery record.
 
+The diagram uses `ReopenedVerified` as the shared participant checkpoint for the atomic path's
+final reopen/verify convergence as well as for the non-atomic path. The atomic path retains its
+`AtomicNamespace` and applicable synchronization evidence from the platform sequence; the
+non-atomic mapping above is the only path that assigns `NonAtomicNamespace` and downgraded sync
+evidence.
+
 ```mermaid
 stateDiagram-v2
     [*] --> Accepted
     Accepted --> IntentDurable
     IntentDurable --> Prepared
     Prepared --> FilesystemStaged
-    FilesystemStaged --> FilesystemPublished
+    FilesystemStaged --> ReopenedVerified : atomic final reopen/verify
+    Prepared --> CopyStarted : non-atomic participant checkpoint
+    CopyStarted --> CopyProgress
+    CopyProgress --> CopyProgress : next chunk after pre-write capacity claim
+    CopyProgress --> DestinationFlushAttempted : bounded output complete
+    DestinationFlushAttempted --> CopyValidated
+    CopyValidated --> PublishStarted
+    PublishStarted --> PublishObserved : live namespace inspection
+    PublishObserved --> ReopenedVerified : live final inspection
+    CopyStarted --> FilesystemStaged : interrupted / PartialNeedsRetry
+    CopyProgress --> FilesystemStaged : interrupted / PartialNeedsRetry
+    DestinationFlushAttempted --> FilesystemStaged : interrupted / PartialNeedsRetry
+    CopyValidated --> FilesystemStaged : interrupted / PartialNeedsRetry
+    PublishStarted --> FilesystemStaged : interrupted / inspect live state
+    PublishObserved --> FilesystemStaged : interrupted / inspect live state
+    ReopenedVerified --> FilesystemPublished : mode-specific verified publish
     FilesystemStaged --> Prepared : verified no publish
     FilesystemPublished --> SourceReconciled
     SourceReconciled --> GlobalReconciled
@@ -435,8 +489,12 @@ stateDiagram-v2
 
 1. Validate selection, destination source, protected-source/Harvest policy, output format,
    collision policy, and capability-relative destination.
-2. Persist intent with source/content identity, destination, inherited rating/lock/metadata
-   policy, and expected output fingerprint.
+2. Pass both queue and capacity admission before any application-owned side effect. Build
+   and claim the per-volume plan for source/destination staging, final/direct fallback,
+   journal, source/global DB plus WAL/SHM, and coexisting recovery payloads, then persist
+   intent with source/content identity, destination, inherited rating/lock/metadata policy,
+   and expected output fingerprint. For unbounded output, claim the initial bounded amount
+   now and claim each bounded chunk before writing it.
 3. The file-operation owner delegates bounded rendering/copying to a worker. For atomic
    publication it writes to destination-local staging beside the final path, outside all
    SQLite transactions. If that path or atomic rename is unavailable, the worker enters the
@@ -618,17 +676,19 @@ Readers have explicit classes and different guarantees:
 | Losing-process Wavecrate reader | Read-only and subject to the same bounded lifetime/row/byte budgets. It cannot open the journal writable, recover, admit durable work, or retain a snapshot across waits. | `ProfileOwnedByAnotherProcess` plus `WalReaderBudgetExpired`/`WalCheckpointCatchUp` as applicable; continue read-only with stale data. |
 | External/unknown reader | Ungoverned by Wavecrate; it may retain a WAL snapshot indefinitely. Wavecrate uses passive checkpoints, never blocks or kills the reader, and measures the retained frames. | `ExternalReaderRetainingWal` and, at the hard watermark, `WalHardWatermark`; pause/reject WAL-growing work while preserving recovery capacity. |
 
-The initial target also reserves a non-sparse 256 MiB recovery reserve on every writable
-volume. The reserve is not available to routine work: durable admission accounts for the
-journal record and bounded source/global foreground commit reservation before accepting work,
-and already-admitted required commits may consume only their recorded reservation. If free
-capacity reaches the reserve floor or a required reservation cannot fit, new user operations
-and background writes are rejected with `DiskPressureRecoveryOnly`; only bounded journal,
-recovery, ownership-release, and required already-admitted commit work may run. If the hard WAL
-watermark is reached while capacity remains above the protected reserve, new WAL-growing
+The initial target also reserves a non-sparse 256 MiB recovery reserve on every distinct
+affected writable volume. The reserve is not available to routine work: the capacity plan in
+each journal record accounts for destination staging, a final/direct non-atomic destination,
+the journal, source/global DB plus WAL/SHM, and coexisting backup/replacement/recovery
+payloads before any side effect. Identical allocation is counted once for a same-volume
+rename, while coexisting allocations are counted separately. If free capacity reaches the
+reserve floor or a required reservation cannot fit, new user operations and background writes
+are rejected with `RecoveryReserveLow` or `DiskPressureRecoveryOnly`; only bounded journal,
+recovery, ownership-release, and required already-admitted commit work may run. If the hard
+WAL watermark is reached while capacity remains above the protected reserve, new WAL-growing
 admission is paused/retried and routine work is rejected first. This reserve is a target
 default and must be provisioned as real non-sparse capacity, not merely a quota or sparse
-file.
+file. Capacity failure never borrows the floor.
 
 WAL telemetry records WAL size (`wal_bytes_before/after`), soft/hard watermark crossings,
 retained frames (where `log_frames - checkpointed_frames` is available), reader class and
@@ -691,7 +751,13 @@ The coordinator uses typed lanes and bounded queues:
 6. artifact preparation and analysis;
 7. routine maintenance and cache cleanup.
 
-Admission is rejected or coalesced before side effects when a queue is full. A rejected
+Queue admission and capacity admission are independent gates. A queue slot does not imply
+that the per-volume peak allocation can fit above the protected floor, and available
+capacity does not bypass a bounded queue, lane, priority, or fairness limit. A request waits
+in its bounded lane when capacity is temporarily unavailable, with no application-owned
+side effect; when its capacity claim cannot be made within the retry policy it becomes
+`PartialNeedsRetry` plus `RecoveryReserveLow` or `DiskPressureRecoveryOnly` as applicable.
+When a queue is full, admission is rejected or coalesced before side effects. A rejected
 low-priority request becomes `Deferred` with a retry cause; it is not silently dropped. Same
 sample/source keys coalesce only when the contract says the latest intent subsumes earlier
 intent. Distinct user operations retain distinct IDs.
@@ -721,7 +787,7 @@ Every error has a stable class, retry policy, diagnostic context, and user messa
 | --- | --- | --- | --- |
 | `TransientContention` | SQLite busy/locked, temporary sharing violation | Backoff, retry lease, preserve intent | “Waiting for library access…” |
 | `ProfileOwnedByAnotherProcess` | Universal journal/profile lock held by a live owner | Do not open the journal writable, mutate recovery, admit durable work, open writers, or acquire source leases; remain bounded read-only or forward a typed command | “This profile is writable in another Wavecrate process.” with retry/read-only actions |
-| `WritableSourceOwnedByAnotherProcess` | Profile lock or source lease/epoch held by a live owner | Do not open writable; retry ownership or continue with read-only access | “Source is writable in another Wavecrate process.” with retry/read-only actions |
+| `WritableSourceOwnedByAnotherProcess` | Independently live source lease/epoch conflict after this process established profile ownership | Do not open that source writable; retry ownership or continue with read-only access | “Source is writable in another Wavecrate process.” with retry/read-only actions |
 | `TransientAvailability` | Source temporarily offline, removable volume absent | Retry on source availability | “Waiting for source…” |
 | `CapabilityDenied` | Protected source policy, unsafe symlink/path, permission | No blind retry; request user action | “Wavecrate cannot safely access this location.” |
 | `Collision` | Destination exists or changed during plan | Re-plan with explicit policy | “Choose how to handle the existing file.” |
@@ -736,6 +802,7 @@ Every error has a stable class, retry policy, diagnostic context, and user messa
 | `WalHardWatermark` | WAL reaches the initial 64 MiB write-admission watermark | Pause/reject new WAL-growing work; allow only already-admitted bounded commits that fit reserved capacity and recovery-only work | “Database maintenance is catching up; new work is paused.” |
 | `WalReaderBudgetExpired` | Governed Wavecrate snapshot exceeds its time/row/byte budget | Cancel/close at a safe boundary and resume from a new snapshot | “Library view is catching up.” |
 | `RecoveryReserveLow` | Writable-volume free space reaches the non-sparse 256 MiB reserve floor or cannot fit an existing required reservation | Enter recovery-only admission; preserve journal/source/recovery data and reject new durable work | “Storage is reserved for recovery; new work is paused.” |
+| `DiskPressureRecoveryOnly` | A conservative per-volume peak claim cannot fit without borrowing the protected floor | Allow only bounded recovery, journal, ownership-release, or already-admitted work whose claim fits; do not start the side effect | “Storage is reserved for recovery; new work is paused.” |
 | `DiskPressure` | Insufficient space above the reserve for staging, journal, database, or artifacts | Pause low-priority writes, preserve durable data, retry after safe checkpoint/space recovery | “Storage is low; background work is paused.” with recovery guidance |
 | `IntegrityFailure` | Corrupt DB, malformed journal, duplicate identity | Preserve data, isolate, escalate | “Recovery needs attention.” |
 | `Cancelled` | User cancellation at a safe boundary | Roll back or continue reconciliation | “Cancelled” plus whether a file was published. |
@@ -836,7 +903,10 @@ Provisional targets for implementation benchmarking, not current guarantees:
   mutation, journal admission, source-lease acquisition, and final release order.
 
 Metrics must be split by operation kind, source size, region kind, watcher backend, database
-contention, and cache/artifact kind. Do not infer UI starvation from end-to-end latency alone.
+contention, and cache/artifact kind. Per-volume telemetry also records the capacity plan,
+allocation class, peak/current claim, claim/release outcome, protected-floor headroom, and
+whether a same-volume allocation was deduplicated or coexisted. Do not infer UI starvation
+from end-to-end latency alone.
 
 ## Failure and recovery matrix
 
@@ -847,6 +917,7 @@ contention, and cache/artifact kind. Do not infer UI starvation from end-to-end 
 | Copy/render fails in staging | Remove only verified staging payload | Failed before publish; source unchanged. |
 | Staged-file or namespace synchronization fails | Record the primitive/result, stop the stronger claim, reopen/verify if safe, and downgrade or retain `PartialNeedsRetry` | Visibility, atomicity, and power-loss status remain distinct; no false durability claim. |
 | Destination filesystem cannot provide atomic rename | Run journaled non-atomic copy/validate/publish recovery | Explicit non-atomic partial or completed status; never an atomicity claim. |
+| Capacity claim fails before a journal/filesystem/SQLite/WAL/SHM side effect or before an output chunk | Retain the last durable checkpoint, release only proven unused claims, and retry only after the per-volume plan fits above the protected floor | `PartialNeedsRetry` plus `RecoveryReserveLow` or `DiskPressureRecoveryOnly`; never borrow the reserve. |
 | Remote/removable output is visible but synchronization is unverified | Reopen and verify content, record `VisibilityVerified` plus explicit downgrade, and retain evidence | File is visible; no atomic or power-loss guarantee. |
 | Publish succeeds, source DB busy | Keep published file; retry source reconciliation | Created/changed; registration pending. |
 | Source commit succeeds, global DB busy | Retry global participant by operation ID | Source visible; global links pending. |
@@ -876,15 +947,15 @@ event captures where available.
 
 | Area | Required coverage |
 | --- | --- |
-| Journal | Profile lock before writable journal open, recovery mutation, and durable admission; power loss at every phase, torn/truncated records, duplicate recovery, unknown phase, retry lease, cancellation before/after publish. |
+| Journal | Profile lock before writable journal open, recovery mutation, and durable admission; per-volume capacity plans and claims for every allocation class and order; power loss at every phase, torn/truncated records, duplicate recovery, unknown phase, retry lease, cancellation before/after publish. |
 | File owner | No-follow roots, protected sources, collisions, macOS `F_FULLFSYNC`/`fsync` downgrade evidence, Windows `FlushFileBuffers`/write-through replace, directory-sync support, destination-local same-device staging/rename, cross-device/remote/removable non-atomic fallback, reopen verification, crash recovery, partial status, trash/restore, delete uncertainty, and hash/identity verification. |
 | Source writer | One-writer serialization across processes, profile-lock rejection, distinct profile/source ownership statuses, source lease/epoch fencing and verified stale recovery, bounded transactions, busy/locked backoff, stale revision, lifecycle replacement, idempotent manifest delta, directory-only entries, metadata-only revision neutrality. |
-| WAL/readers | Current evidence versus target soft 32 MiB/hard 64 MiB watermarks, `journal_size_limit` non-cap semantics, 15 s throttle, 250 ms busy timeout, passive/incomplete checkpoints, all three reader classes, retained-frame metrics, bounded owner/losing-process snapshots, uncooperative external readers, non-sparse 256 MiB reserve, admission/pause/reject/recovery-only behavior, and no interactive checkpoint wait. |
+| WAL/readers | Current evidence versus target soft 32 MiB/hard 64 MiB watermarks, `journal_size_limit` non-cap semantics, 15 s throttle, 250 ms busy timeout, passive/incomplete checkpoints, all three reader classes, retained-frame metrics, bounded owner/losing-process snapshots, uncooperative external readers, non-sparse 256 MiB reserve on each affected volume, WAL/SHM capacity claims and per-chunk claims, admission/pause/reject/recovery-only behavior, and no interactive checkpoint wait. |
 | Finder contract | Real copy/rename/reparent/delete event shapes, empty folders, unsupported-only folders, duplicate/reordered events, missing ancestors, overflow, watcher restart, scan overlap, raw evidence retention. |
 | Cross-DB saga | Source success/global retry, global success/projection retry, Harvest retry, duplicate operation delivery, destination/source rekey, rating and history coalescing. |
 | Projection | Exact contiguous delta, stale delta, gap fallback, bounded preparation, last-good retention, no UI-thread file/SQLite calls, no per-event full hydration. |
 | Readiness/artifacts | Path-only vs content change, cache eviction, artifact version change, failure/deferred state, source revision wake ordering, lease reclamation. |
-| Scheduler | Queue saturation, fairness across sources, priority inversion, cancellation at each phase, busy backoff, shutdown drain, no dropped accepted intent. |
+| Scheduler | Queue saturation distinct from capacity exhaustion, per-volume allocation ordering, fairness across sources, priority inversion, cancellation at each phase, busy backoff, shutdown drain, no dropped accepted intent, and output chunk claims before writes. |
 | Status/diagnostics | Stable profile/source ownership codes, visibility/atomicity/power-loss downgrade wording, WAL watermark/external-reader/reserve statuses, partial wording, retry/reveal/restore actions, restart status continuity, redacted path context, metrics cardinality. |
 | Compatibility | Old source/global DB opens, migration-free read-only roles, journal adapters, schema failure preservation; follow `docs/DATABASE_MIGRATIONS.md`. |
 
