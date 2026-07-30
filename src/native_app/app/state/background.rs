@@ -1473,6 +1473,10 @@ fn persist_harvest_selection_derivation_queue(
         let Some(request) = request else {
             continue;
         };
+        // Test-only rendezvous for the exact validation/execute interleaving.
+        // Production behavior has no hook or additional synchronization here.
+        #[cfg(test)]
+        harvest_selection_derivation_test_boundary();
         let result = execute_harvest_selection_derivation(request.clone());
         if let Ok(mut queue) = queue.lock() {
             queue.acknowledge(item.id, item.revision, result.is_ok());
@@ -1519,9 +1523,28 @@ impl HarvestSelectionDerivationQueue {
 }
 
 #[cfg(test)]
+type HarvestSelectionDerivationTestBoundaryHook =
+    Arc<dyn Fn() + Send + Sync + 'static>;
+
+#[cfg(test)]
+static HARVEST_SELECTION_DERIVATION_TEST_BOUNDARY_HOOK:
+    Mutex<Option<HarvestSelectionDerivationTestBoundaryHook>> = Mutex::new(None);
+
+#[cfg(test)]
+fn harvest_selection_derivation_test_boundary() {
+    let hook = HARVEST_SELECTION_DERIVATION_TEST_BOUNDARY_HOOK
+        .lock()
+        .ok()
+        .and_then(|hook| hook.clone());
+    if let Some(hook) = hook {
+        hook();
+    }
+}
+
+#[cfg(test)]
 mod harvest_selection_derivation_owner_tests {
     use super::*;
-    use wavecrate::sample_sources::{HarvestDerivationOperation, SampleSource};
+    use wavecrate::sample_sources::{HarvestDerivationOperation, HarvestFileKey, SampleSource};
     use wavecrate::selection::SelectionRange;
 
     fn request(root: &std::path::Path) -> HarvestSelectionDerivationRequest {
@@ -1608,6 +1631,124 @@ mod harvest_selection_derivation_owner_tests {
         assert_eq!(unflushed, 0);
         assert!(owner.queue.lock().expect("queue lock").closed);
         assert!(owner.queue.lock().expect("queue lock").entries.is_empty());
+    }
+
+    #[test]
+    fn worker_move_boundary_persists_only_remapped_harvest_edge() {
+        let config_base = tempfile::tempdir().expect("config base");
+        let _config_guard =
+            wavecrate::app_dirs::ConfigBaseGuard::set(config_base.path().to_path_buf());
+        let source_root = tempfile::tempdir().expect("source root");
+        let source = SampleSource::new_with_id(SourceId::new(), source_root.path().to_path_buf());
+        let old_parent_path = source_root.path().join("old/source.wav");
+        let old_child_path = source_root.path().join("old/child.wav");
+        let derivation_request = HarvestSelectionDerivationRequest {
+            source_path: old_parent_path.clone(),
+            child_path: old_child_path.clone(),
+            source: source.clone(),
+            child_source: source.clone(),
+            selection: SelectionRange::new(0.25, 0.75),
+            source_duration_seconds: 4.0,
+            operation: HarvestDerivationOperation::Extract,
+            inherited_tags: Vec::new(),
+        };
+
+        let (validated_tx, validated_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_channel_rx) = std::sync::mpsc::channel();
+        let release_rx = Arc::new(Mutex::new(release_channel_rx));
+        let hook = Arc::new(move || {
+            validated_tx.send(()).expect("worker validation rendezvous");
+            release_rx
+                .lock()
+                .expect("worker release lock")
+                .recv()
+                .expect("worker release rendezvous");
+        });
+        *HARVEST_SELECTION_DERIVATION_TEST_BOUNDARY_HOOK
+            .lock()
+            .expect("install test hook") = Some(hook);
+        struct BoundaryHookGuard;
+        impl Drop for BoundaryHookGuard {
+            fn drop(&mut self) {
+                *HARVEST_SELECTION_DERIVATION_TEST_BOUNDARY_HOOK
+                    .lock()
+                    .expect("clear test hook") = None;
+            }
+        }
+        let _hook_guard = BoundaryHookGuard;
+
+        let mut owner = HarvestSelectionDerivationOwner::new();
+        owner.enqueue(derivation_request);
+        let worker_queue = Arc::clone(&owner.queue);
+        let worker_gate = Arc::clone(&owner.persist_gate);
+        let worker_config_base = config_base.path().to_path_buf();
+        let worker = std::thread::spawn(move || {
+            let _worker_config_guard =
+                wavecrate::app_dirs::ConfigBaseGuard::set(worker_config_base);
+            persist_harvest_selection_derivation_queue(worker_queue, worker_gate)
+        });
+
+        validated_rx
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("worker must hold old validated request");
+
+        let (move_started_tx, move_started_rx) = std::sync::mpsc::channel();
+        let move_owner = owner.clone();
+        let move_source_id = source.id.clone();
+        let move_config_base = config_base.path().to_path_buf();
+        let old_abs_prefix = source_root.path().join("old");
+        let new_abs_prefix = source_root.path().join("new");
+        let old_prefix = std::path::PathBuf::from("old");
+        let new_prefix = std::path::PathBuf::from("new");
+        let mover = std::thread::spawn(move || {
+            let _move_config_guard = wavecrate::app_dirs::ConfigBaseGuard::set(move_config_base);
+            move_started_tx.send(()).expect("move rendezvous");
+            move_owner.rekey_prefix(&old_abs_prefix, &new_abs_prefix);
+            wavecrate::sample_sources::library::remap_harvest_file_prefix(
+                &move_source_id,
+                &old_prefix,
+                &new_prefix,
+            )
+            .expect("remap harvest graph");
+        });
+        move_started_rx
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("move must reach rekey boundary");
+        release_tx.send(()).expect("release worker");
+
+        let worker_result = worker.join().expect("worker join");
+        assert_eq!(worker_result.results.len(), 1);
+        assert!(worker_result.results[0].result.is_ok());
+        mover.join().expect("move join");
+
+        let old_parent_key =
+            HarvestFileKey::new(source.id.clone(), PathBuf::from("old/source.wav"));
+        let old_child_key =
+            HarvestFileKey::new(source.id.clone(), PathBuf::from("old/child.wav"));
+        let new_parent_key =
+            HarvestFileKey::new(source.id.clone(), PathBuf::from("new/source.wav"));
+        let new_child_key =
+            HarvestFileKey::new(source.id.clone(), PathBuf::from("new/child.wav"));
+        let new_parent_edges = wavecrate::sample_sources::library::harvest_derivations_for_parent(
+            &new_parent_key,
+        )
+        .expect("load remapped parent edges");
+        assert_eq!(new_parent_edges.len(), 1);
+        assert_eq!(new_parent_edges[0].parent.key, new_parent_key);
+        assert_eq!(new_parent_edges[0].child.key, new_child_key);
+        assert!(wavecrate::sample_sources::library::harvest_derivations_for_parent(
+            &old_parent_key,
+        )
+        .expect("load stale parent edges")
+        .is_empty());
+        assert!(wavecrate::sample_sources::library::harvest_parents_for_child(&old_child_key)
+            .expect("load stale child parents")
+            .is_empty());
+        let new_child_parents =
+            wavecrate::sample_sources::library::harvest_parents_for_child(&new_child_key)
+                .expect("load remapped child parents");
+        assert_eq!(new_child_parents.len(), 1);
+        assert_eq!(new_child_parents[0].parent.key, new_parent_key);
     }
 }
 
