@@ -3,6 +3,7 @@ use std::{
     sync::Arc,
 };
 
+use wavecrate::sample_sources::{SourceFileEvidence, capture_source_file_evidence};
 use wavecrate::selection::SelectionRange;
 
 use super::{
@@ -19,6 +20,7 @@ pub(in crate::native_app) struct WaveformExtractionCompletion {
     pub(in crate::native_app) source_path: PathBuf,
     pub(in crate::native_app) selection: SelectionRange,
     pub(in crate::native_app) result: Result<PathBuf, String>,
+    pub(in crate::native_app) evidence: Option<SourceFileEvidence>,
 }
 
 #[derive(Clone, Debug)]
@@ -372,6 +374,10 @@ pub(in crate::native_app) fn execute_waveform_extraction(
     WaveformExtractionCompletion {
         source_path: request.source_path,
         selection: request.selection,
+        evidence: result
+            .as_ref()
+            .ok()
+            .map(|path| capture_source_file_evidence(path)),
         result,
     }
 }

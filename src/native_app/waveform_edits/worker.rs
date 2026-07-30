@@ -4,7 +4,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use wavecrate::sample_sources::SourceDatabase;
+use wavecrate::sample_sources::{SourceDatabase, SourceFileEvidence, capture_source_file_evidence};
 use wavecrate::selection::SelectionRange;
 use wavecrate_library::timestamps::system_time_to_unix_nanos;
 
@@ -73,6 +73,7 @@ pub(in crate::native_app) struct AppliedWaveformEdit {
     pub(super) before_content_identity: Option<String>,
     pub(super) backup: OverwriteBackup,
     pub(super) extracted: Option<AppliedExtractedFile>,
+    pub(super) absolute_evidence: SourceFileEvidence,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -80,6 +81,7 @@ pub(super) struct AppliedExtractedFile {
     pub(super) path: PathBuf,
     pub(super) relative_path: PathBuf,
     backup_path: PathBuf,
+    pub(super) evidence: SourceFileEvidence,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -242,10 +244,12 @@ fn execute_destructive_edit_write(
         .map(|path| {
             let relative_path = source_relative_path(&request.source.root, &path)?;
             let backup_path = backup.capture_extracted(&path)?;
+            let evidence = capture_source_file_evidence(&path);
             Ok::<_, String>(AppliedExtractedFile {
                 path,
                 relative_path,
                 backup_path,
+                evidence,
             })
         })
         .transpose()?;
@@ -274,6 +278,7 @@ fn execute_destructive_edit_write(
         before_content_identity,
         backup,
         extracted,
+        absolute_evidence: capture_source_file_evidence(&request.absolute_path),
     })
 }
 

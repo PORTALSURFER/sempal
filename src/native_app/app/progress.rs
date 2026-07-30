@@ -2,8 +2,8 @@ use std::{collections::BTreeMap, path::PathBuf};
 
 use crate::native_app::sample_library::folder_browser::RefreshedFileEntry;
 use crate::native_app::source_processing::SourceProcessingPresentation;
-use wavecrate::sample_sources::HarvestDerivationOperation;
 use wavecrate::sample_sources::readiness::{ReadinessStage, ReadinessStageCounts};
+use wavecrate::sample_sources::{HarvestDerivationOperation, SourceFileEvidence};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::native_app) struct NormalizationProgress {
@@ -100,6 +100,7 @@ pub(in crate::native_app) struct NormalizationResult {
     pub(in crate::native_app) restart_ratio: f32,
     pub(in crate::native_app) restart_span: Option<(f32, f32)>,
     pub(in crate::native_app) normalized: Vec<PathBuf>,
+    pub(in crate::native_app) normalized_evidence: Vec<(PathBuf, SourceFileEvidence)>,
     pub(in crate::native_app) refreshed_files: Vec<RefreshedFileEntry>,
     pub(in crate::native_app) skipped: Vec<PathBuf>,
     pub(in crate::native_app) failed: Vec<NormalizationFailure>,

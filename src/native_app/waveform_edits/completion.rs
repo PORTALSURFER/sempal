@@ -7,7 +7,7 @@ use crate::native_app::app::{
     sample_path_label,
 };
 use crate::native_app::sample_library::committed_file_mutations::{
-    FileMutationChange, FileMutationOperation, FileMutationProjection,
+    FileMutationOperation, FileMutationProjection, PreparedCommittedFileMutationChange,
 };
 use crate::native_app::sample_library::folder_browser::BrowserListingRevealReason;
 use crate::native_app::waveform::{WaveformPreservedMarks, WaveformState};
@@ -82,10 +82,16 @@ impl NativeAppState {
             );
         }
         let mut primary_change = if active.harvest_whole_file_derivation.is_some() {
-            FileMutationChange::created(applied.absolute_path.clone())
+            PreparedCommittedFileMutationChange::created(
+                applied.absolute_path.clone(),
+                applied.absolute_evidence.clone(),
+            )
         } else {
-            FileMutationChange::content_changed(applied.absolute_path.clone())
-                .with_before_content_identity(applied.before_content_identity.clone())
+            PreparedCommittedFileMutationChange::content_changed(
+                applied.absolute_path.clone(),
+                applied.absolute_evidence.clone(),
+            )
+            .with_before_content_identity(applied.before_content_identity.clone())
         };
         if let Some(output_path) = active.output_focus_path.as_ref() {
             primary_change = primary_change.with_projection(FileMutationProjection::FocusAndLoad {
@@ -95,9 +101,12 @@ impl NativeAppState {
         }
         let mut mutation_changes = vec![primary_change];
         if let Some(extracted) = applied.extracted.as_ref() {
-            mutation_changes.push(FileMutationChange::created(extracted.path.clone()));
+            mutation_changes.push(PreparedCommittedFileMutationChange::created(
+                extracted.path.clone(),
+                extracted.evidence.clone(),
+            ));
         }
-        self.queue_partially_committed_file_mutation(
+        self.queue_prepared_partially_committed_file_mutation(
             FileMutationOperation::Edit,
             mutation_changes,
             extracted_metadata_error

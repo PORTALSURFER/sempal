@@ -4,7 +4,7 @@ use radiant::runtime::NativeFileDrop;
 use radiant::widgets::{DragHandleMessage, PointerModifiers};
 use std::{path::PathBuf, time::Instant};
 use wavecrate::sample_sources::{
-    HarvestDerivationOperation, HarvestSeenPersistResult, SampleCollection,
+    HarvestDerivationOperation, HarvestSeenPersistResult, SampleCollection, SourceFileEvidence,
     StarmapLayoutLoadResult, config::AppSettingsCore,
 };
 use wavecrate::selection::SelectionRange;
@@ -270,6 +270,7 @@ pub(in crate::native_app) enum GuiMessage {
         playback_type: ExtractedFilePlaybackType,
         source_duration_seconds: f64,
         started_at: Instant,
+        evidence: SourceFileEvidence,
         result: Result<(), String>,
     },
     FileMoveProgress(FileMoveProgress),

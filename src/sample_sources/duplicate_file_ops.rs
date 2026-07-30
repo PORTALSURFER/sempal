@@ -37,6 +37,7 @@ pub struct DuplicateDoubleRequest {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ContextSampleDoubleResult {
     pub destination: PathBuf,
+    pub destination_evidence: SourceFileEvidence,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -57,6 +58,7 @@ pub struct WholeFileHarvestExtractionCopy {
     pub source_path: PathBuf,
     pub output_path: PathBuf,
     pub operation: HarvestDerivationOperation,
+    pub output_evidence: SourceFileEvidence,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -103,7 +105,10 @@ pub fn execute_duplicate_context_sample_double(
     if result.is_err() {
         let _ = fs::remove_file(&destination);
     }
-    result.map(|()| ContextSampleDoubleResult { destination })
+    result.map(|()| ContextSampleDoubleResult {
+        destination: destination.clone(),
+        destination_evidence: capture_source_file_evidence(&destination),
+    })
 }
 
 pub fn execute_whole_file_harvest_extraction(
@@ -133,10 +138,14 @@ pub fn execute_whole_file_harvest_extraction(
                         "Could not copy selected sample",
                     )
                 })
-                .map(|()| WholeFileHarvestExtractionCopy {
-                    source_path: source_path.clone(),
-                    output_path,
-                    operation: operation.clone(),
+                .map(|()| {
+                    let output_evidence = capture_source_file_evidence(&output_path);
+                    WholeFileHarvestExtractionCopy {
+                        source_path: source_path.clone(),
+                        output_path,
+                        operation: operation.clone(),
+                        output_evidence,
+                    }
                 })
         });
         match result {
