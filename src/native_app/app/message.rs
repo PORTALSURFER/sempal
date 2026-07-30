@@ -42,6 +42,7 @@ use crate::native_app::sample_library::native_file_drop_actions::PreparedFileMut
 use crate::native_app::sample_library::native_file_open_actions::NativeAudioDocumentOpenValidation;
 use crate::native_app::sample_library::similarity_scores::SimilarityScoresResult;
 use crate::native_app::sample_library::trash_actions::movement::TrashMoveOutcome;
+use crate::native_app::transaction_history::{HistoryFileIoCommand, HistoryFileIoResult};
 use crate::native_app::waveform::{PlaymarkLabelMessage, WaveformInteraction};
 use crate::native_app::waveform::{SimilarSectionsResult, WaveformExtractionCompletion};
 use crate::native_app::waveform_edits::WaveformDestructiveEditResult;
@@ -104,6 +105,8 @@ pub(in crate::native_app) enum GuiMessage {
     SourceFilesystemSyncFinished(SourceFilesystemSyncResult),
     CommittedFileMutationRequested(FileMutationWork),
     CommittedFileMutationFinished(FileMutationOutcome),
+    HistoryFileIoRequested(HistoryFileIoCommand),
+    HistoryFileIoFinished(HistoryFileIoResult),
     SourceManifestAuditCommitted {
         source_id: String,
         lifecycle_generation: u64,

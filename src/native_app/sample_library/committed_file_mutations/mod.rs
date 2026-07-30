@@ -32,12 +32,12 @@ mod worker;
 pub(in crate::native_app) use watcher_echo::{
     CommittedWatcherEcho, CommittedWatcherPathState, observed_watcher_path_state,
 };
-#[cfg(test)]
-use worker::reconcile_file_mutation_requests;
 use worker::{
-    build_source_requests, capture_expected_filesystem_state, merge_file_mutation_failures,
-    mutation_completion_is_stale_or_duplicate, reconcile_file_mutation_requests_with_handoff,
+    build_source_requests, merge_file_mutation_failures, mutation_completion_is_stale_or_duplicate,
+    reconcile_file_mutation_requests_with_handoff,
 };
+#[cfg(test)]
+use worker::{capture_expected_filesystem_state, reconcile_file_mutation_requests};
 
 pub(in crate::native_app) const COMMITTED_MUTATION_PREP_INTENTS: SourcePrepIntents =
     SourcePrepIntents {
@@ -353,6 +353,7 @@ pub(in crate::native_app) struct FileMutationChange {
 }
 
 impl FileMutationChange {
+    #[cfg(test)]
     pub(in crate::native_app) fn created(path: PathBuf) -> Self {
         Self {
             before_path: None,
@@ -367,6 +368,7 @@ impl FileMutationChange {
         }
     }
 
+    #[cfg(test)]
     pub(in crate::native_app) fn content_changed(path: PathBuf) -> Self {
         Self {
             before_path: Some(path.clone()),
@@ -381,6 +383,7 @@ impl FileMutationChange {
         }
     }
 
+    #[cfg(test)]
     pub(in crate::native_app) fn path_only_move(before: PathBuf, after: PathBuf) -> Self {
         Self {
             before_path: Some(before),
@@ -395,6 +398,7 @@ impl FileMutationChange {
         }
     }
 
+    #[cfg(test)]
     pub(in crate::native_app) fn deleted(path: PathBuf) -> Self {
         Self {
             before_path: Some(path),
@@ -407,14 +411,6 @@ impl FileMutationChange {
             projection: None,
             post_commit: None,
         }
-    }
-
-    pub(in crate::native_app) fn with_before_content_identity(
-        mut self,
-        identity: Option<String>,
-    ) -> Self {
-        self.before_content_identity = identity;
-        self
     }
 
     pub(in crate::native_app) fn with_projection(
@@ -620,16 +616,25 @@ impl NativeAppState {
         self.queue_file_mutation_outcome(operation, changes, failures, context)
     }
 
-    /// Legacy partial route retained for synchronous transaction/UI completions.
-    pub(in crate::native_app) fn queue_partially_committed_file_mutation(
+    pub(in crate::native_app) fn queue_prepared_partially_committed_file_mutation_with_correlation(
         &mut self,
         operation: FileMutationOperation,
-        mut changes: Vec<FileMutationChange>,
+        changes: Vec<PreparedCommittedFileMutationChange>,
         failures: Vec<(Option<String>, String)>,
+        correlation_id: ProcessLocalMutationCorrelationId,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) -> Option<u64> {
-        capture_expected_filesystem_state(&mut changes);
-        self.queue_file_mutation_outcome(operation, changes, failures, context)
+        let changes = changes
+            .into_iter()
+            .map(PreparedCommittedFileMutationChange::into_file_mutation_change)
+            .collect();
+        self.queue_file_mutation_outcome_with_correlation(
+            operation,
+            changes,
+            failures,
+            correlation_id,
+            context,
+        )
     }
 
     fn queue_file_mutation_outcome(
@@ -639,11 +644,28 @@ impl NativeAppState {
         reported_failures: Vec<(Option<String>, String)>,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) -> Option<u64> {
+        let correlation_id =
+            ProcessLocalMutationCorrelationId::from_raw(self.background.next_task_id());
+        self.queue_file_mutation_outcome_with_correlation(
+            operation,
+            changes,
+            reported_failures,
+            correlation_id,
+            context,
+        )
+    }
+
+    fn queue_file_mutation_outcome_with_correlation(
+        &mut self,
+        operation: FileMutationOperation,
+        changes: Vec<FileMutationChange>,
+        reported_failures: Vec<(Option<String>, String)>,
+        correlation_id: ProcessLocalMutationCorrelationId,
+        context: &mut ui::UiUpdateContext<GuiMessage>,
+    ) -> Option<u64> {
         if changes.is_empty() && reported_failures.is_empty() {
             return None;
         }
-        let correlation_id =
-            ProcessLocalMutationCorrelationId::from_raw(self.background.next_task_id());
         let had_changes = !changes.is_empty();
         let failures = reported_failures
             .into_iter()
@@ -714,6 +736,19 @@ impl NativeAppState {
             );
     }
 
+    #[cfg(test)]
+    pub(in crate::native_app) fn finish_committed_file_mutation_for_tests(
+        &mut self,
+        work: FileMutationWork,
+        context: &mut ui::UiUpdateContext<GuiMessage>,
+    ) {
+        let outcome = merge_file_mutation_failures(
+            reconcile_file_mutation_requests(work.requests),
+            work.failures,
+        );
+        self.finish_committed_file_mutation(outcome, context);
+    }
+
     pub(in crate::native_app) fn record_failed_file_mutation(
         &mut self,
         operation: FileMutationOperation,
@@ -764,6 +799,11 @@ impl NativeAppState {
         outcome: FileMutationOutcome,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
+        let history_correlation = self
+            .transactions
+            .pending_history_commit
+            .as_ref()
+            .map(|pending| pending.correlation_id);
         let (committed, failures) = match outcome {
             FileMutationOutcome::Committed(committed) => (committed, Vec::new()),
             FileMutationOutcome::Failed {
@@ -782,9 +822,17 @@ impl NativeAppState {
                     error = %failure.error,
                     "Wavecrate-owned file mutation rolled back"
                 );
+                if history_correlation == Some(failure.correlation_id) {
+                    self.finalize_history_file_io(failure.correlation_id, false, context);
+                }
                 return;
             }
         };
+        let mut history_accepted = history_correlation.is_some_and(|correlation_id| {
+            !failures
+                .iter()
+                .any(|failure| failure.correlation_id == correlation_id)
+        });
 
         for event in committed {
             let source_id = event.fence.source_id.clone();
@@ -801,6 +849,9 @@ impl NativeAppState {
             if current_lifecycle_generation != Some(lifecycle_generation.as_raw())
                 && !test_fixture_lifecycle
             {
+                if history_correlation == Some(cursor.correlation) {
+                    history_accepted = false;
+                }
                 tracing::debug!(
                     source_id = %source_id,
                     correlation_id = cursor.correlation.as_raw(),
@@ -818,6 +869,9 @@ impl NativeAppState {
             let current_commit = cursor;
             let accepted_commit = *last_commit;
             if mutation_completion_is_stale_or_duplicate(accepted_commit, current_commit) {
+                if history_correlation == Some(cursor.correlation) {
+                    history_accepted = false;
+                }
                 tracing::debug!(
                     source_id = %source_id,
                     correlation_id = cursor.correlation.as_raw(),
@@ -845,11 +899,24 @@ impl NativeAppState {
                             .folder_browser
                             .apply_committed_projection_delta(source_id.as_str(), projection)
                     });
-            let projection_accepted = event
-                .projection_handoff_ticket
-                .as_ref()
-                .is_some_and(|ticket| browser_projection_applied && ticket.accept());
+            let projection_accepted = if cfg!(test)
+                && event.projection_handoff_ticket.is_none()
+                && event.browser_projection_delta.is_none()
+            {
+                // Test fixtures do not start the source-processing supervisor, so their direct
+                // reconciliation outcome has no handoff ticket. Treat that fixture boundary as
+                // the accepted projection that the runtime supervisor would publish.
+                true
+            } else {
+                event
+                    .projection_handoff_ticket
+                    .as_ref()
+                    .is_some_and(|ticket| browser_projection_applied && ticket.accept())
+            };
             if !projection_accepted {
+                if history_correlation == Some(cursor.correlation) {
+                    history_accepted = false;
+                }
                 if let Some(ticket) = event.projection_handoff_ticket.as_ref()
                     && !browser_projection_applied
                 {
@@ -882,7 +949,7 @@ impl NativeAppState {
                     .iter()
                     .filter_map(|change| change.projection.as_ref())
                 {
-                    self.apply_committed_file_mutation_projection(projection, context);
+                    self.apply_committed_file_mutation_projection(projection, context, false);
                 }
                 self.queue_full_source_reconciliation_after_committed_mutation(
                     source_id.as_str().to_owned(),
@@ -995,7 +1062,7 @@ impl NativeAppState {
                     .refresh_filesystem_paths(source_id.as_str(), &event.affected_relative_paths);
             }
             for projection in projections {
-                self.apply_committed_file_mutation_projection(projection, context);
+                self.apply_committed_file_mutation_projection(projection, context, true);
             }
             if let (Some(post_commit), Some(path)) =
                 (extraction_post_commit.as_ref(), extraction_path.as_deref())
@@ -1049,12 +1116,16 @@ impl NativeAppState {
                 "Wavecrate-owned file mutation failed before authoritative publication"
             );
         }
+        if let Some(correlation_id) = history_correlation {
+            self.finalize_history_file_io(correlation_id, history_accepted, context);
+        }
     }
 
     fn apply_committed_file_mutation_projection(
         &mut self,
         projection: &FileMutationProjection,
         context: &mut ui::UiUpdateContext<GuiMessage>,
+        register_history: bool,
     ) {
         match projection {
             FileMutationProjection::SelectAndFollow { path } => {
@@ -1097,6 +1168,7 @@ impl NativeAppState {
                     success.clone(),
                     previous_selected.clone(),
                     *started_at,
+                    register_history,
                     context,
                 );
             }

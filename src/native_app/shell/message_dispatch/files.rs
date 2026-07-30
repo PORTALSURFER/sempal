@@ -193,6 +193,12 @@ impl NativeAppState {
             GuiMessage::CommittedFileMutationFinished(outcome) => {
                 self.finish_committed_file_mutation(outcome, context)
             }
+            GuiMessage::HistoryFileIoRequested(command) => {
+                self.start_history_file_io(command, context)
+            }
+            GuiMessage::HistoryFileIoFinished(result) => {
+                self.finish_history_file_io(result, context)
+            }
             GuiMessage::NativeAudioDocumentOpenValidated {
                 started_at,
                 validation,

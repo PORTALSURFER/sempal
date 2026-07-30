@@ -5,6 +5,7 @@ use std::{
 };
 
 use wavecrate::sample_sources::{SampleSource, SourceDatabase, readiness::ReadinessStage};
+#[cfg(test)]
 use wavecrate_library::timestamps::system_time_to_unix_nanos;
 
 use super::watcher_echo::{capture_expected_path_state, watcher_echoes_for_changes};
@@ -83,6 +84,7 @@ pub(super) fn merge_file_mutation_failures(
     }
 }
 
+#[cfg(test)]
 pub(super) fn capture_expected_filesystem_state(changes: &mut [FileMutationChange]) {
     for change in changes {
         if change.after_content_identity.is_none() {
@@ -104,6 +106,7 @@ pub(super) fn capture_expected_filesystem_state(changes: &mut [FileMutationChang
     }
 }
 
+#[cfg(test)]
 pub(in crate::native_app) fn cache_content_identity(path: &Path) -> Option<String> {
     let metadata = std::fs::metadata(path).ok()?;
     let modified_ns = system_time_to_unix_nanos(metadata.modified().ok()?);

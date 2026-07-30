@@ -1,17 +1,17 @@
-use std::path::Path;
-
-use crate::native_app::sample_library::committed_file_mutations::FileMutationChange;
 use crate::native_app::transaction_history::TransactionContext;
 
-use super::worker::{self, AppliedWaveformEdit};
+#[cfg(test)]
+use super::worker::AppliedWaveformEdit;
+#[cfg(test)]
+use std::path::Path;
 
 impl TransactionContext<'_> {
+    #[cfg(test)]
     pub(in crate::native_app) fn restore_edited_waveform(
         &mut self,
         backup_path: &Path,
         applied: &AppliedWaveformEdit,
     ) -> Result<(), String> {
-        self.state.transactions.pending_file_mutation_attempted = true;
         if let Some(error) = self
             .state
             .library
@@ -20,23 +20,9 @@ impl TransactionContext<'_> {
         {
             return Err(error);
         }
-        let before_content_identity = worker::restore_edited_waveform(backup_path, applied)?;
-        self.state.transactions.pending_file_mutations.push(
-            FileMutationChange::content_changed(applied.absolute_path.clone())
-                .with_before_content_identity(before_content_identity),
-        );
-        if let Some(extracted) = applied.extracted.as_ref() {
-            worker::restore_extracted_file_for_transaction(backup_path, applied, extracted)?;
-            let change = if backup_path == applied.backup.before.as_path() {
-                FileMutationChange::deleted(extracted.path.clone())
-            } else {
-                FileMutationChange::created(extracted.path.clone())
-            };
-            self.state.transactions.pending_file_mutations.push(change);
-        }
-        self.state.evict_waveform_cache_path(&applied.absolute_path);
-        self.state
-            .reload_waveform_path_now_if_loaded(&applied.absolute_path)?;
-        Ok(())
+        let _ = (backup_path, applied);
+        Err(String::from(
+            "file-backed waveform history must use the async owner",
+        ))
     }
 }

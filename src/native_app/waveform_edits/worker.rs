@@ -17,9 +17,9 @@ use self::atomic_write::{AtomicWriteFailure, write_wav_atomically};
 mod atomic_write;
 
 #[derive(Clone, Debug, PartialEq)]
-pub(super) struct OverwriteBackup {
-    pub(super) before: PathBuf,
-    pub(super) after: PathBuf,
+pub(in crate::native_app) struct OverwriteBackup {
+    pub(in crate::native_app) before: PathBuf,
+    pub(in crate::native_app) after: PathBuf,
     dir: Option<PathBuf>,
 }
 
@@ -67,21 +67,21 @@ impl Drop for OverwriteBackup {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::native_app) struct AppliedWaveformEdit {
-    pub(super) source_id: String,
-    pub(super) relative_path: PathBuf,
-    pub(super) absolute_path: PathBuf,
-    pub(super) before_content_identity: Option<String>,
-    pub(super) backup: OverwriteBackup,
-    pub(super) extracted: Option<AppliedExtractedFile>,
-    pub(super) absolute_evidence: SourceFileEvidence,
+    pub(in crate::native_app) source_id: String,
+    pub(in crate::native_app) relative_path: PathBuf,
+    pub(in crate::native_app) absolute_path: PathBuf,
+    pub(in crate::native_app) before_content_identity: Option<String>,
+    pub(in crate::native_app) backup: OverwriteBackup,
+    pub(in crate::native_app) extracted: Option<AppliedExtractedFile>,
+    pub(in crate::native_app) absolute_evidence: SourceFileEvidence,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(super) struct AppliedExtractedFile {
-    pub(super) path: PathBuf,
-    pub(super) relative_path: PathBuf,
-    backup_path: PathBuf,
-    pub(super) evidence: SourceFileEvidence,
+pub(in crate::native_app) struct AppliedExtractedFile {
+    pub(in crate::native_app) path: PathBuf,
+    pub(in crate::native_app) relative_path: PathBuf,
+    pub(in crate::native_app) backup_path: PathBuf,
+    pub(in crate::native_app) evidence: SourceFileEvidence,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -282,7 +282,7 @@ fn execute_destructive_edit_write(
     })
 }
 
-pub(super) fn restore_edited_waveform(
+pub(in crate::native_app) fn restore_edited_waveform(
     backup_path: &Path,
     applied: &AppliedWaveformEdit,
 ) -> Result<Option<String>, String> {
@@ -292,7 +292,7 @@ pub(super) fn restore_edited_waveform(
     Ok(before_content_identity)
 }
 
-pub(super) fn restore_extracted_file_for_transaction(
+pub(in crate::native_app) fn restore_extracted_file_for_transaction(
     backup_path: &Path,
     applied: &AppliedWaveformEdit,
     extracted: &AppliedExtractedFile,

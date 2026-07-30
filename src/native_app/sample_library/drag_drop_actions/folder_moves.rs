@@ -16,12 +16,11 @@ use crate::native_app::sample_library::committed_file_mutations::{
 use crate::native_app::sample_library::folder_browser::commands::{
     FileMoveConflictCompletion, FolderDropResult, FolderMoveCompletion, FolderMoveDropInput,
     FolderMoveRequest, FolderMoveSuccess, execute_file_move_conflict_request_with_progress,
-    execute_folder_move_request_with_progress, execute_folder_move_transaction,
-    file_move_conflict_progress_label, file_move_conflict_progress_total,
-    folder_move_progress_label, folder_move_progress_total,
+    execute_folder_move_request_with_progress, file_move_conflict_progress_label,
+    file_move_conflict_progress_total, folder_move_progress_label, folder_move_progress_total,
 };
 use crate::native_app::shell::message_dispatch::waveform::PLAY_SELECTION_TRANSACTION_LABEL;
-use crate::native_app::transaction_history::TransactionContext;
+use crate::native_app::transaction_history::HistoryFileAction;
 
 impl NativeAppState {
     pub(in crate::native_app) fn drop_browser_drag_on_folder(
@@ -599,6 +598,7 @@ impl NativeAppState {
         success: FolderMoveSuccess,
         previous_selected: Option<String>,
         started_at: Instant,
+        register_history: bool,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
         let moved_paths = success.moved_paths.clone();
@@ -610,11 +610,12 @@ impl NativeAppState {
         );
         match result {
             Ok(result) => {
-                if let FolderMoveRequest::Folder {
-                    source_root,
-                    source_database_root,
-                    ..
-                } = &request
+                if register_history
+                    && let FolderMoveRequest::Folder {
+                        source_root,
+                        source_database_root,
+                        ..
+                    } = &request
                 {
                     self.register_folder_move_transaction(
                         source_root.clone(),
@@ -799,21 +800,17 @@ impl NativeAppState {
         let undo_source_root = source_root.clone();
         let undo_source_database_root = source_database_root.clone();
         self.begin_transaction(label);
-        self.register_transaction_action(
+        self.register_file_transaction_action(
             "Move folders",
-            move |transaction| {
-                transaction.apply_folder_move_paths(
-                    &undo_source_root,
-                    &undo_source_database_root,
-                    &undo_moves,
-                )
+            HistoryFileAction::FolderMove {
+                source_root: undo_source_root,
+                source_database_root: undo_source_database_root,
+                moves: undo_moves,
             },
-            move |transaction| {
-                transaction.apply_folder_move_paths(
-                    &source_root,
-                    &source_database_root,
-                    &redo_moves,
-                )
+            HistoryFileAction::FolderMove {
+                source_root,
+                source_database_root,
+                moves: redo_moves,
             },
         );
         self.commit_transaction();
@@ -833,43 +830,6 @@ impl NativeAppState {
         self.transactions
             .history
             .remove_transactions_with_action_label(PLAY_SELECTION_TRANSACTION_LABEL);
-    }
-
-    fn apply_folder_move_paths_for_transaction(
-        &mut self,
-        source_root: &Path,
-        source_database_root: &Path,
-        moves: &[(PathBuf, PathBuf)],
-    ) -> Result<(), String> {
-        self.transactions.pending_file_mutation_attempted = true;
-        let (completed, metadata_error) =
-            execute_folder_move_transaction(source_root, source_database_root, moves)?;
-        if let Some(error) = metadata_error {
-            tracing::warn!("folder move transaction metadata update failed: {error}");
-            self.transactions.pending_file_mutation_failures.push(error);
-        }
-        let mut changes = completed
-            .iter()
-            .map(|(before, after)| {
-                FileMutationChange::path_only_move(before.clone(), after.clone())
-            })
-            .collect::<Vec<_>>();
-        let target_path = completed
-            .first()
-            .map(|(_, target_path)| target_path.clone());
-        if let Some(target_path) = target_path {
-            attach_move_completion_projection(
-                &mut changes,
-                FileMutationProjection::MoveTransaction {
-                    target_path,
-                    source_root: source_root.to_path_buf(),
-                    source_database_root: source_database_root.to_path_buf(),
-                    moves: completed,
-                },
-            );
-        }
-        self.transactions.pending_file_mutations.extend(changes);
-        Ok(())
     }
 }
 
@@ -927,16 +887,6 @@ fn prepared_path_only_moves(
         .collect()
 }
 
-fn attach_move_completion_projection(
-    changes: &mut [FileMutationChange],
-    projection: FileMutationProjection,
-) {
-    let Some(change) = changes.first_mut() else {
-        return;
-    };
-    *change = change.clone().with_projection(projection);
-}
-
 fn attach_prepared_move_completion_projection(
     changes: &mut [PreparedCommittedFileMutationChange],
     projection: FileMutationProjection,
@@ -945,16 +895,4 @@ fn attach_prepared_move_completion_projection(
         return;
     };
     *change = change.clone().with_projection(projection);
-}
-
-impl TransactionContext<'_> {
-    fn apply_folder_move_paths(
-        &mut self,
-        source_root: &Path,
-        source_database_root: &Path,
-        moves: &[(PathBuf, PathBuf)],
-    ) -> Result<(), String> {
-        self.state
-            .apply_folder_move_paths_for_transaction(source_root, source_database_root, moves)
-    }
 }

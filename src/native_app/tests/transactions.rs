@@ -1,4 +1,8 @@
 use super::gui_state_for_span_tests;
+use crate::native_app::sample_library::committed_file_mutations::PreparedCommittedFileMutationChange;
+use crate::native_app::transaction_history::{
+    HistoryFileAction, HistoryFileIoDirection, HistoryFileIoOutput, HistoryFileIoResult,
+};
 use crate::native_app::{
     test_support::state::{GuiMessage, WaveformInteraction},
     waveform::{
@@ -8,6 +12,46 @@ use crate::native_app::{
 };
 use radiant::prelude::{self as ui, IntoView};
 use wavecrate::selection::SelectionRange;
+
+#[test]
+fn undo_file_history_without_source_restores_stack_and_clears_in_flight() {
+    let mut state = gui_state_for_span_tests();
+    state.register_file_transaction_action(
+        "Missing source move",
+        HistoryFileAction::FolderMove {
+            source_root: "/missing".into(),
+            source_database_root: "/missing/.db".into(),
+            moves: vec![("/missing/old".into(), "/missing/new".into())],
+        },
+        HistoryFileAction::FolderMove {
+            source_root: "/missing".into(),
+            source_database_root: "/missing/.db".into(),
+            moves: vec![("/missing/new".into(), "/missing/old".into())],
+        },
+    );
+    let mut context = ui::UiUpdateContext::default();
+    state.undo_transaction(&mut context);
+    state.finish_history_file_io(
+        HistoryFileIoResult {
+            execution_id: 1,
+            transaction_id: 1,
+            direction: HistoryFileIoDirection::Undo,
+            through_target: None,
+            result: Ok(HistoryFileIoOutput {
+                changes: vec![PreparedCommittedFileMutationChange::created(
+                    "/missing/new".into(),
+                    wavecrate::sample_sources::SourceFileEvidence::Missing,
+                )],
+                failures: Vec::new(),
+                waveform_paths: Vec::new(),
+            }),
+        },
+        &mut context,
+    );
+    assert!(state.transactions.history.can_undo());
+    assert!(!state.transactions.history.file_io_in_flight());
+    assert!(state.transactions.pending_history_commit.is_none());
+}
 
 #[test]
 fn transaction_group_undoes_and_redoes_as_one_entry() {

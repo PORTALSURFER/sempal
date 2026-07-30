@@ -35,7 +35,7 @@ pub(in crate::native_app) use source_scan_workflow::{
     SourceFilesystemChangePlan, SourceRefreshRequest, SourceScanFinish, SourceScanWorkflow,
     SourceSelectionRequest,
 };
-pub(in crate::native_app) use transactions::TransactionState;
+pub(in crate::native_app) use transactions::{PendingHistoryCommit, TransactionState};
 #[cfg(test)]
 pub(in crate::native_app) use ui_state::ReleaseUpdateStatus;
 pub(in crate::native_app) use ui_state::{

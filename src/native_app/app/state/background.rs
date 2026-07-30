@@ -22,11 +22,11 @@ use crate::native_app::app::{
     NormalizationQueueItem, PendingWaveformDestructiveEdit, SourceProcessingHealth,
     SourceProcessingProgress,
 };
-use crate::native_app::sample_library::sample_ratings::{
-    RatingPersistRequest, persist_rating_requests,
-};
 use crate::native_app::sample_library::harvest_tracking::{
     HarvestSelectionDerivationRequest, execute_harvest_selection_derivation,
+};
+use crate::native_app::sample_library::sample_ratings::{
+    RatingPersistRequest, persist_rating_requests,
 };
 use crate::native_app::source_processing::SourceProcessingSupervisor;
 use crate::native_app::waveform::WaveformPreservedMarks;
@@ -61,6 +61,7 @@ pub(in crate::native_app) struct BackgroundTaskState {
     pub(in crate::native_app) waveform_destructive_edit_task: ui::LatestTask,
     pub(in crate::native_app) waveform_destructive_edit_context:
         Option<WaveformDestructiveEditUiContext>,
+    pub(in crate::native_app) history_file_io_gate: Arc<Mutex<()>>,
     pub(in crate::native_app) normalization_progress: Option<NormalizationProgress>,
     pub(in crate::native_app) normalization_active_paths: HashSet<PathBuf>,
     pub(in crate::native_app) normalization_queue: VecDeque<NormalizationQueueItem>,
@@ -466,6 +467,7 @@ impl BackgroundTaskState {
             global_storage_usage_task: ui::LatestTask::new(),
             waveform_destructive_edit_task: ui::LatestTask::new(),
             waveform_destructive_edit_context: None,
+            history_file_io_gate: Arc::new(Mutex::new(())),
             normalization_progress: None,
             normalization_active_paths: HashSet::new(),
             normalization_queue: VecDeque::new(),
@@ -1265,9 +1267,10 @@ impl HarvestSelectionDerivationOwner {
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
         let pending = self.queue.lock().ok().is_some_and(|queue| {
-            queue.entries.values().any(|entry| {
-                entry.state == HarvestSelectionDerivationEntryState::Pending
-            })
+            queue
+                .entries
+                .values()
+                .any(|entry| entry.state == HarvestSelectionDerivationEntryState::Pending)
         });
         if !pending || self.task.active().is_some() {
             return;
@@ -1301,7 +1304,11 @@ impl HarvestSelectionDerivationOwner {
         Some(result)
     }
 
-    pub(in crate::native_app) fn rekey_file(&self, old_path: &std::path::Path, new_path: &std::path::Path) {
+    pub(in crate::native_app) fn rekey_file(
+        &self,
+        old_path: &std::path::Path,
+        new_path: &std::path::Path,
+    ) {
         self.rekey_paths(|request| {
             let mut changed = false;
             if request.source_path == old_path {
@@ -1405,11 +1412,17 @@ impl HarvestSelectionDerivationOwner {
         self.task.cancel();
         let Ok(_persist_gate) = self.persist_gate.lock() else {
             tracing::error!("harvest selection derivation gate poisoned during shutdown flush");
-            return self.queue.lock().map(|queue| queue.entries.len()).unwrap_or(0);
+            return self
+                .queue
+                .lock()
+                .map(|queue| queue.entries.len())
+                .unwrap_or(0);
         };
         let requests = {
             let Ok(mut queue) = self.queue.lock() else {
-                tracing::error!("harvest selection derivation queue lock poisoned during shutdown flush");
+                tracing::error!(
+                    "harvest selection derivation queue lock poisoned during shutdown flush"
+                );
                 return 0;
             };
             if queue.closed {
@@ -1447,7 +1460,9 @@ fn persist_harvest_selection_derivation_queue(
 ) -> HarvestSelectionDerivationBatchResult {
     let Ok(_persist_gate) = persist_gate.lock() else {
         tracing::error!("harvest selection derivation gate poisoned in background worker");
-        return HarvestSelectionDerivationBatchResult { results: Vec::new() };
+        return HarvestSelectionDerivationBatchResult {
+            results: Vec::new(),
+        };
     };
     let work = queue
         .lock()
@@ -1459,17 +1474,14 @@ fn persist_harvest_selection_derivation_queue(
         // database mutation.  Rekeys take the same gate first, so they either
         // happen before this check (and supersede the old work) or after the
         // old mutation has committed.
-        let request = queue
-            .lock()
-            .ok()
-            .and_then(|queue| {
-                queue.entries.get(&item.id).and_then(|entry| {
-                    (entry.revision == item.revision
-                        && entry.state == HarvestSelectionDerivationEntryState::InFlight
-                        && !queue.closed)
-                        .then(|| entry.request.clone())
-                })
-            });
+        let request = queue.lock().ok().and_then(|queue| {
+            queue.entries.get(&item.id).and_then(|entry| {
+                (entry.revision == item.revision
+                    && entry.state == HarvestSelectionDerivationEntryState::InFlight
+                    && !queue.closed)
+                    .then(|| entry.request.clone())
+            })
+        });
         let Some(request) = request else {
             continue;
         };
@@ -1502,7 +1514,10 @@ impl HarvestSelectionDerivationQueue {
                     return None;
                 }
                 entry.state = HarvestSelectionDerivationEntryState::InFlight;
-                Some(HarvestSelectionDerivationWork { id, revision: entry.revision })
+                Some(HarvestSelectionDerivationWork {
+                    id,
+                    revision: entry.revision,
+                })
             })
             .collect()
     }
@@ -1511,7 +1526,9 @@ impl HarvestSelectionDerivationQueue {
         let Some(entry) = self.entries.get_mut(&id) else {
             return;
         };
-        if entry.revision != revision || entry.state != HarvestSelectionDerivationEntryState::InFlight {
+        if entry.revision != revision
+            || entry.state != HarvestSelectionDerivationEntryState::InFlight
+        {
             return;
         }
         if successful {
@@ -1523,12 +1540,12 @@ impl HarvestSelectionDerivationQueue {
 }
 
 #[cfg(test)]
-type HarvestSelectionDerivationTestBoundaryHook =
-    Arc<dyn Fn() + Send + Sync + 'static>;
+type HarvestSelectionDerivationTestBoundaryHook = Arc<dyn Fn() + Send + Sync + 'static>;
 
 #[cfg(test)]
-static HARVEST_SELECTION_DERIVATION_TEST_BOUNDARY_HOOK:
-    Mutex<Option<HarvestSelectionDerivationTestBoundaryHook>> = Mutex::new(None);
+static HARVEST_SELECTION_DERIVATION_TEST_BOUNDARY_HOOK: Mutex<
+    Option<HarvestSelectionDerivationTestBoundaryHook>,
+> = Mutex::new(None);
 
 #[cfg(test)]
 fn harvest_selection_derivation_test_boundary() {
@@ -1569,7 +1586,10 @@ mod harvest_selection_derivation_owner_tests {
         owner.rekey_prefix(&root.path().join("old"), &root.path().join("new"));
         let queue = owner.queue.lock().expect("queue lock");
         let entry = queue.entries.values().next().expect("queued request");
-        assert_eq!(entry.request.source_path, root.path().join("new/source.wav"));
+        assert_eq!(
+            entry.request.source_path,
+            root.path().join("new/source.wav")
+        );
         assert_eq!(entry.request.child_path, root.path().join("new/child.wav"));
     }
 
@@ -1588,7 +1608,10 @@ mod harvest_selection_derivation_owner_tests {
         let entry = queue.entries.values().next().expect("rekeyed request");
         assert_eq!(entry.state, HarvestSelectionDerivationEntryState::Pending);
         assert!(entry.revision > claimed[0].revision);
-        assert_eq!(entry.request.source_path, root.path().join("new/source.wav"));
+        assert_eq!(
+            entry.request.source_path,
+            root.path().join("new/source.wav")
+        );
         assert_eq!(entry.request.child_path, root.path().join("new/child.wav"));
         assert!(!queue.order.is_empty(), "rekeyed edge must be rescheduled");
     }
@@ -1723,27 +1746,26 @@ mod harvest_selection_derivation_owner_tests {
 
         let old_parent_key =
             HarvestFileKey::new(source.id.clone(), PathBuf::from("old/source.wav"));
-        let old_child_key =
-            HarvestFileKey::new(source.id.clone(), PathBuf::from("old/child.wav"));
+        let old_child_key = HarvestFileKey::new(source.id.clone(), PathBuf::from("old/child.wav"));
         let new_parent_key =
             HarvestFileKey::new(source.id.clone(), PathBuf::from("new/source.wav"));
-        let new_child_key =
-            HarvestFileKey::new(source.id.clone(), PathBuf::from("new/child.wav"));
-        let new_parent_edges = wavecrate::sample_sources::library::harvest_derivations_for_parent(
-            &new_parent_key,
-        )
-        .expect("load remapped parent edges");
+        let new_child_key = HarvestFileKey::new(source.id.clone(), PathBuf::from("new/child.wav"));
+        let new_parent_edges =
+            wavecrate::sample_sources::library::harvest_derivations_for_parent(&new_parent_key)
+                .expect("load remapped parent edges");
         assert_eq!(new_parent_edges.len(), 1);
         assert_eq!(new_parent_edges[0].parent.key, new_parent_key);
         assert_eq!(new_parent_edges[0].child.key, new_child_key);
-        assert!(wavecrate::sample_sources::library::harvest_derivations_for_parent(
-            &old_parent_key,
-        )
-        .expect("load stale parent edges")
-        .is_empty());
-        assert!(wavecrate::sample_sources::library::harvest_parents_for_child(&old_child_key)
-            .expect("load stale child parents")
-            .is_empty());
+        assert!(
+            wavecrate::sample_sources::library::harvest_derivations_for_parent(&old_parent_key,)
+                .expect("load stale parent edges")
+                .is_empty()
+        );
+        assert!(
+            wavecrate::sample_sources::library::harvest_parents_for_child(&old_child_key)
+                .expect("load stale child parents")
+                .is_empty()
+        );
         let new_child_parents =
             wavecrate::sample_sources::library::harvest_parents_for_child(&new_child_key)
                 .expect("load remapped child parents");
