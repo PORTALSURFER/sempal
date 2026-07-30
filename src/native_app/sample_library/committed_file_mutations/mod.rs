@@ -134,9 +134,16 @@ pub(in crate::native_app) struct FileMutationPostCommit {
     pub(in crate::native_app) playback_type: ExtractedFilePlaybackType,
     pub(in crate::native_app) focus_derivative: bool,
     pub(in crate::native_app) started_at: Instant,
+    pub(in crate::native_app) presentation: FileMutationPostCommitPresentation,
 }
 
 impl Eq for FileMutationPostCommit {}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::native_app) enum FileMutationPostCommitPresentation {
+    Extracted,
+    Drag,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum ExpectedMutationPathState {

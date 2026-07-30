@@ -3,7 +3,8 @@ use crate::native_app::app::{
 };
 use crate::native_app::app::{emit_gui_action, sample_path_label};
 use crate::native_app::sample_library::committed_file_mutations::{
-    FileMutationChange, FileMutationOperation, FileMutationPostCommit, FileMutationProjection,
+    FileMutationChange, FileMutationOperation, FileMutationPostCommit,
+    FileMutationPostCommitPresentation, FileMutationProjection,
 };
 use crate::native_app::sample_library::folder_browser::BrowserListingRevealReason;
 use crate::native_app::sample_library::sample_list::{
@@ -539,6 +540,7 @@ impl NativeAppState {
                         playback_type,
                         focus_derivative: effective_focus_derivative,
                         started_at,
+                        presentation: FileMutationPostCommitPresentation::Extracted,
                     });
                     self.queue_committed_file_mutation(
                         FileMutationOperation::Extract,
@@ -575,9 +577,12 @@ impl NativeAppState {
                         "same_source_derivative"
                     }),
                 );
-                let metadata_error = self
-                    .assign_extracted_file_metadata(&path, playback_type, context)
-                    .err();
+                let metadata_error = if drag_position.is_some() {
+                    self.project_extracted_file_metadata(&path, playback_type)
+                        .err()
+                } else {
+                    None
+                };
                 if let Some(request) = self.harvest_selection_derivation_request(
                     &completion.source_path,
                     &path,
@@ -659,15 +664,34 @@ impl NativeAppState {
                 }
                 self.queue_partially_committed_file_mutation(
                     FileMutationOperation::Extract,
-                    vec![if focus_derivative && drag_position.is_none() {
-                        FileMutationChange::created(path.clone()).with_projection(
-                            FileMutationProjection::FocusAndLoad {
-                                path,
-                                reason: BrowserListingRevealReason::LoadedFileFocus,
-                            },
-                        )
+                    vec![if drag_position.is_none() {
+                        let change = if focus_derivative {
+                            FileMutationChange::created(path.clone()).with_projection(
+                                FileMutationProjection::FocusAndLoad {
+                                    path,
+                                    reason: BrowserListingRevealReason::LoadedFileFocus,
+                                },
+                            )
+                        } else {
+                            FileMutationChange::created(path)
+                        };
+                        change.with_post_commit(FileMutationPostCommit {
+                            source_path: completion.source_path.clone(),
+                            selection: completion.selection,
+                            playback_type,
+                            focus_derivative,
+                            started_at,
+                            presentation: FileMutationPostCommitPresentation::Extracted,
+                        })
                     } else {
-                        FileMutationChange::created(path)
+                        FileMutationChange::created(path).with_post_commit(FileMutationPostCommit {
+                            source_path: completion.source_path.clone(),
+                            selection: completion.selection,
+                            playback_type,
+                            focus_derivative: false,
+                            started_at,
+                            presentation: FileMutationPostCommitPresentation::Drag,
+                        })
                     }],
                     metadata_error
                         .into_iter()
@@ -719,6 +743,15 @@ impl NativeAppState {
         post_commit: &FileMutationPostCommit,
         metadata_error: Option<&str>,
     ) {
+        if post_commit.presentation == FileMutationPostCommitPresentation::Drag {
+            if let Some(error) = metadata_error {
+                self.ui.status.sample = format!(
+                    "Dragging {}; extracted metadata incomplete: {error}",
+                    sample_path_label(path)
+                );
+            }
+            return;
+        }
         self.evict_waveform_cache_path(path);
         self.waveform
             .current

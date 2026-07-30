@@ -33,6 +33,32 @@ const CLEAR_LAST_CURATED_AT_SQL: &str =
     "UPDATE wav_files SET last_curated_at = NULL WHERE path = ?1";
 
 impl<'conn> SourceWriteBatch<'conn> {
+    /// Check that an existing live row is present without changing scanner-owned facts.
+    ///
+    /// Auxiliary metadata writers use this guard in their own transaction so a stale file
+    /// observation cannot overwrite the manifest's size, mtime, or missing state while an
+    /// external scanner update is racing with the write.
+    pub fn ensure_existing_live_file(
+        &self,
+        relative_path: &Path,
+    ) -> Result<ExistingFileMetadataUpdate, SourceDbError> {
+        let exists = self
+            .tx
+            .query_row(
+                "SELECT 1 FROM wav_files WHERE path = ?1 AND missing = 0 LIMIT 1",
+                [relative_path.to_string_lossy().as_ref()],
+                |_| Ok(()),
+            )
+            .optional()
+            .map_err(map_sql_error)?
+            .is_some();
+        Ok(if exists {
+            ExistingFileMetadataUpdate::Updated
+        } else {
+            ExistingFileMetadataUpdate::Missing
+        })
+    }
+
     /// Update filesystem facts for an existing live row without inserting or dirtying path or
     /// identity revisions.
     pub fn update_existing_file_metadata(

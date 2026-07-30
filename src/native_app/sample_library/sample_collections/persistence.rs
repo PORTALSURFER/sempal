@@ -4,7 +4,6 @@ use std::{
 };
 
 use wavecrate::sample_sources::{ExistingFileMetadataUpdate, SourceDatabase};
-use wavecrate_library::timestamps::system_time_to_unix_nanos;
 
 use crate::native_app::sample_library::folder_browser::view_contract::MissingCollectionFile;
 
@@ -32,10 +31,9 @@ pub(super) fn persist_collection_updates(
         .map_err(|err| err.to_string())?;
     let mut batch = db.write_batch().map_err(|err| err.to_string())?;
     for update in updates {
-        let (file_size, modified_ns) = file_metadata(&update.absolute_path)?;
         if matches!(
             batch
-                .update_existing_file_metadata(&update.relative_path, file_size, modified_ns)
+                .ensure_existing_live_file(&update.relative_path)
                 .map_err(|err| err.to_string())?,
             ExistingFileMetadataUpdate::Missing
         ) {
@@ -87,17 +85,6 @@ pub(super) fn persist_missing_collection_cleanup(
     batch
         .commit_auxiliary_state()
         .map_err(|err| err.to_string())
-}
-
-fn file_metadata(path: &Path) -> Result<(u64, i64), String> {
-    let metadata = std::fs::metadata(path)
-        .map_err(|err| format!("Failed to read {}: {err}", path.display()))?;
-    let modified_ns = system_time_to_unix_nanos(
-        metadata
-            .modified()
-            .map_err(|err| format!("Missing modified time for {}: {err}", path.display()))?,
-    );
-    Ok((metadata.len(), modified_ns))
 }
 
 #[cfg(test)]

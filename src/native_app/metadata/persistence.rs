@@ -8,7 +8,6 @@ use std::{
 use wavecrate::sample_sources::{
     ExistingFileMetadataUpdate, SourceDatabase, SourceDbError, db::SourceWriteBatch,
 };
-use wavecrate_library::timestamps::system_time_to_unix_nanos;
 
 pub(super) fn persist_metadata_tag_assignment(
     request: MetadataTagPersistRequest,
@@ -67,7 +66,6 @@ fn unique_request_tags(requests: &[MetadataTagPersistRequest]) -> Vec<String> {
 fn persist_metadata_tag_assignment_inner(
     request: &MetadataTagPersistRequest,
 ) -> Result<(), String> {
-    let (file_size, modified_ns) = file_metadata(&request.absolute_path)?;
     let db = SourceDatabase::open_for_user_metadata_write_with_database_root(
         &request.source_root,
         &request.source_database_root,
@@ -76,13 +74,14 @@ fn persist_metadata_tag_assignment_inner(
     let mut batch = db.write_batch().map_err(|err| err.to_string())?;
     if matches!(
         batch
-            .update_existing_file_metadata(&request.relative_path, file_size, modified_ns)
+            .ensure_existing_live_file(&request.relative_path)
             .map_err(|err| err.to_string())?,
         ExistingFileMetadataUpdate::Missing
     ) {
         return Err(format!(
-            "metadata tag persistence deferred until source row exists: {}",
-            request.relative_path.display()
+            "metadata tag persistence deferred until source row exists: {} ({})",
+            request.relative_path.display(),
+            request.absolute_path.display()
         ));
     }
     for tag in &request.tags {
@@ -238,12 +237,88 @@ fn repair_persisted_metadata_tag_conflicts(
         .map_err(|err| err.to_string())
 }
 
-fn file_metadata(path: &Path) -> Result<(u64, i64), String> {
-    let metadata = std::fs::metadata(path)
-        .map_err(|err| format!("Sample metadata unavailable for {}: {err}", path.display()))?;
-    let modified_ns = metadata
-        .modified()
-        .map(system_time_to_unix_nanos)
-        .unwrap_or_default();
-    Ok((metadata.len(), modified_ns))
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::native_app::sample_library::sample_ratings::{
+        RatingPersistRequest, persist_rating_requests,
+    };
+    use wavecrate::sample_sources::{Rating, SourceDatabase};
+
+    #[test]
+    fn extracted_metadata_retry_after_authoritative_row_persists_rating_and_playback_tag() {
+        let root = tempfile::tempdir().expect("source root");
+        let relative_path = PathBuf::from("extracted.wav");
+        let absolute_path = root.path().join(&relative_path);
+        std::fs::write(&absolute_path, b"extracted").expect("extracted file");
+
+        let rating_request = RatingPersistRequest {
+            source_id: String::from("source"),
+            lifecycle_generation: None,
+            root: root.path().to_path_buf(),
+            database_root: root.path().to_path_buf(),
+            relative_path: relative_path.clone(),
+            absolute_path: absolute_path.clone(),
+            rating: Rating::KEEP_1,
+            locked: false,
+        };
+        assert!(
+            persist_rating_requests(std::slice::from_ref(&rating_request), |_| true)[0]
+                .as_ref()
+                .expect("missing-row result")
+                .is_err()
+        );
+        assert!(
+            persist_metadata_tag_additions_for_tests(
+                absolute_path.clone(),
+                root.path().to_path_buf(),
+                relative_path.clone(),
+                vec![String::from("loop")],
+            )
+            .is_err()
+        );
+
+        let database = SourceDatabase::open_for_user_metadata_write_with_database_root(
+            root.path(),
+            root.path(),
+        )
+        .expect("source database");
+        let metadata = std::fs::metadata(&absolute_path).expect("file metadata");
+        let mut batch = database.write_batch().expect("write batch");
+        batch
+            .upsert_file(
+                &relative_path,
+                metadata.len(),
+                metadata
+                    .modified()
+                    .expect("modified")
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .expect("epoch")
+                    .as_nanos() as i64,
+            )
+            .expect("authoritative row");
+        batch.commit().expect("commit source row");
+
+        assert!(
+            persist_metadata_tag_additions_for_tests(
+                absolute_path.clone(),
+                root.path().to_path_buf(),
+                relative_path.clone(),
+                vec![String::from("loop")],
+            )
+            .is_ok()
+        );
+        assert_eq!(
+            persist_rating_requests(std::slice::from_ref(&rating_request), |_| true)[0],
+            Some(Ok(()))
+        );
+        assert_eq!(
+            database.tag_for_path(&relative_path).expect("rating"),
+            Some(Rating::KEEP_1)
+        );
+        assert_eq!(
+            database.tag_labels_for_path(&relative_path).expect("tags"),
+            vec![String::from("loop")]
+        );
+    }
 }
