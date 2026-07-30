@@ -372,23 +372,6 @@ impl FileMutationChange {
         }
     }
 
-    pub(in crate::native_app) fn created_prepared(
-        path: PathBuf,
-        evidence: SourceFileEvidence,
-    ) -> Self {
-        Self {
-            before_path: None,
-            after_path: Some(path),
-            before_content_identity: None,
-            after_content_identity: None,
-            semantics: FileMutationSemantics::Create,
-            expected_before_state: None,
-            expected_after_state: Some(evidence),
-            projection: None,
-            post_commit: None,
-        }
-    }
-
     pub(in crate::native_app) fn content_changed(path: PathBuf) -> Self {
         Self {
             before_path: Some(path.clone()),
@@ -467,6 +450,40 @@ impl FileMutationChange {
     }
 }
 
+/// A committed mutation change whose post-filesystem evidence was captured before it crossed the
+/// UI boundary. The inner change is intentionally private so prepared evidence can only be
+/// constructed through this narrow create path.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::native_app) struct PreparedCommittedFileMutationChange(FileMutationChange);
+
+impl PreparedCommittedFileMutationChange {
+    pub(in crate::native_app) fn created(path: PathBuf, evidence: SourceFileEvidence) -> Self {
+        Self(FileMutationChange {
+            before_path: None,
+            after_path: Some(path),
+            before_content_identity: None,
+            after_content_identity: None,
+            semantics: FileMutationSemantics::Create,
+            expected_before_state: None,
+            expected_after_state: Some(evidence),
+            projection: None,
+            post_commit: None,
+        })
+    }
+
+    pub(in crate::native_app) fn with_projection(
+        mut self,
+        projection: FileMutationProjection,
+    ) -> Self {
+        self.0 = self.0.with_projection(projection);
+        self
+    }
+
+    fn into_file_mutation_change(self) -> FileMutationChange {
+        self.0
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::native_app) struct CommittedFileMutation {
     pub(in crate::native_app) fence: CommittedMutationFence,
@@ -513,43 +530,48 @@ impl NativeAppState {
     pub(in crate::native_app) fn queue_committed_file_mutation(
         &mut self,
         operation: FileMutationOperation,
-        changes: Vec<FileMutationChange>,
+        mut changes: Vec<FileMutationChange>,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) -> Option<u64> {
-        self.queue_file_mutation_outcome(operation, changes, Vec::new(), false, context)
+        capture_expected_filesystem_state(&mut changes);
+        self.queue_file_mutation_outcome(operation, changes, Vec::new(), context)
     }
 
     /// Reconcile a mutation whose filesystem evidence was captured by its source-owned worker.
     ///
     /// Unlike the legacy route, this does not inspect the filesystem on the UI thread. Callers
-    /// must provide changes created with `FileMutationChange::created_prepared` (or otherwise
-    /// carrying their expected path evidence); the worker still verifies that evidence before
-    /// touching source metadata, so an intervening rewrite is rejected.
+    /// must provide changes created with `PreparedCommittedFileMutationChange::created`; the
+    /// worker still verifies that evidence before touching source metadata, so an intervening
+    /// rewrite is rejected.
     pub(in crate::native_app) fn queue_prepared_committed_file_mutation(
         &mut self,
         operation: FileMutationOperation,
-        changes: Vec<FileMutationChange>,
+        changes: Vec<PreparedCommittedFileMutationChange>,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) -> Option<u64> {
-        self.queue_file_mutation_outcome(operation, changes, Vec::new(), true, context)
+        let changes = changes
+            .into_iter()
+            .map(PreparedCommittedFileMutationChange::into_file_mutation_change)
+            .collect();
+        self.queue_file_mutation_outcome(operation, changes, Vec::new(), context)
     }
 
     pub(in crate::native_app) fn queue_partially_committed_file_mutation(
         &mut self,
         operation: FileMutationOperation,
-        changes: Vec<FileMutationChange>,
+        mut changes: Vec<FileMutationChange>,
         failures: Vec<(Option<String>, String)>,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) -> Option<u64> {
-        self.queue_file_mutation_outcome(operation, changes, failures, false, context)
+        capture_expected_filesystem_state(&mut changes);
+        self.queue_file_mutation_outcome(operation, changes, failures, context)
     }
 
     fn queue_file_mutation_outcome(
         &mut self,
         operation: FileMutationOperation,
-        mut changes: Vec<FileMutationChange>,
+        changes: Vec<FileMutationChange>,
         reported_failures: Vec<(Option<String>, String)>,
-        prepared: bool,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) -> Option<u64> {
         if changes.is_empty() && reported_failures.is_empty() {
@@ -558,9 +580,6 @@ impl NativeAppState {
         let correlation_id =
             ProcessLocalMutationCorrelationId::from_raw(self.background.next_task_id());
         let had_changes = !changes.is_empty();
-        if !prepared {
-            capture_expected_filesystem_state(&mut changes);
-        }
         let failures = reported_failures
             .into_iter()
             .map(|(source_id, error)| FileMutationFailure {

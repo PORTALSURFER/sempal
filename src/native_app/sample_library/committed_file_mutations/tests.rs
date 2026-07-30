@@ -33,9 +33,16 @@ fn request(
 fn prepared_request(
     root: &Path,
     operation: FileMutationOperation,
-    changes: Vec<FileMutationChange>,
+    changes: Vec<PreparedCommittedFileMutationChange>,
 ) -> SourceMutationRequest {
-    request_without_capture(root, operation, changes)
+    request_without_capture(
+        root,
+        operation,
+        changes
+            .into_iter()
+            .map(PreparedCommittedFileMutationChange::into_file_mutation_change)
+            .collect(),
+    )
 }
 
 fn request_without_capture(
@@ -266,8 +273,8 @@ fn prepared_create_commits_small_and_large_captured_evidence() {
             root.path(),
             FileMutationOperation::Duplicate,
             vec![
-                FileMutationChange::created_prepared(small_path, small_evidence),
-                FileMutationChange::created_prepared(large_path, large_evidence),
+                PreparedCommittedFileMutationChange::created(small_path, small_evidence),
+                PreparedCommittedFileMutationChange::created(large_path, large_evidence),
             ],
         ),
         &AtomicBool::new(false),
@@ -289,7 +296,7 @@ fn prepared_create_rejects_an_intervening_rewrite() {
         prepared_request(
             root.path(),
             FileMutationOperation::Duplicate,
-            vec![FileMutationChange::created_prepared(path, evidence)],
+            vec![PreparedCommittedFileMutationChange::created(path, evidence)],
         ),
         &AtomicBool::new(false),
     )
