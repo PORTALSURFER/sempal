@@ -418,8 +418,11 @@ qualify remain implementation-time validation, not an undecided semantic boundar
 Every mode that produces staging, including a qualified all-atomic path, durably records
 `CopyValidated` immediately after complete staged identity/content validation and before any
 final-name claim, adoption, cleanup that treats staging as publish-ready, or recovery
-continuation. Before that checkpoint, recovery may only preserve, retry, or audit the staging
-payload; it must not continue toward publication or treat the payload as publish-ready. This
+continuation. Before that checkpoint, recovery must not advance toward publication, adoption,
+publish-ready treatment, or recovery continuation toward final publication. It may preserve,
+retry, or audit the staging payload; an independently qualified, capability-bound
+cancellation/rollback cleanup may remove unvalidated staging only when followed by verified
+staged absence and durable capacity release. This
 checkpoint remains participant evidence while the journal phase is `FilesystemStaged`; it is
 not the `FilesystemPublished` gate. `ReopenedVerified` plus the qualified descriptor/handle-
 bound atomic no-replace claim remains the separate gate for `FilesystemPublished`.
@@ -428,8 +431,8 @@ For a destination classified as local and supported, the target sequences are:
 
 | Profile | Ordered target sequence and resulting claims |
 | --- | --- |
-| macOS/local POSIX | Use live source/staging/final device or volume identities and the actual source-to-staging primitive. Only when source=staging=final and every applicable transfer is qualified atomic may the sequence be considered for `WholePublicationAtomic`: 1. Open the verified no-follow target-root capability and create or receive the staging object beside the final name. 2. Validate staged identity/length or hash. 3. Durably record `CopyValidated`; a crash before this checkpoint leaves `FilesystemStaged` and permits only preservation, retry, or audit of staging. 4. Synchronize the staged file with `F_FULLFSYNC` where supported; if unavailable or rejected, use `fsync` and record downgraded synchronization evidence. 5. Use the qualified descriptor-relative atomic no-replace final claim; an existing final entry is a collision, not a replacement. 6. Synchronize destination directory metadata where supported and record unsupported-directory-sync evidence otherwise. 7. Reopen the claimed final through the same capability, verify identity/content, and record ownership. Record `AtomicNamespace`; record `WholePublicationAtomic` only for the qualified all-atomic sequence. Any bytewise source-to-staging copy, even same-volume, uses `NonAtomicCopyValidatePublish` and records `WholePublicationNonAtomic`. |
-| Windows/local | Use live source/staging/final device or volume identities and the actual source-to-staging primitive. Only when source=staging=final and every applicable transfer is qualified atomic may the sequence be considered for `WholePublicationAtomic`: 1. Open the verified no-follow target-root capability and create or receive the staging object on the destination volume beside the final name. 2. Validate staged identity/length or hash. 3. Durably record `CopyValidated`; a crash before this checkpoint leaves `FilesystemStaged` and permits only preservation, retry, or audit of staging. 4. Call `FlushFileBuffers` on the staged handle. 5. Use the qualified handle-bound atomic no-replace final claim with the platform's write-through option; an existing final entry is a collision, not a replace/move target. 6. Synchronize destination metadata where a tested primitive supports it and record downgrade evidence otherwise. 7. Reopen the claimed final through the bound handle/capability, flush/verify it, and record ownership. Record `AtomicNamespace`; record `WholePublicationAtomic` only for the qualified all-atomic sequence. Any bytewise source-to-staging copy, even same-volume, uses `NonAtomicCopyValidatePublish` and records `WholePublicationNonAtomic`. |
+| macOS/local POSIX | Use live source/staging/final device or volume identities and the actual source-to-staging primitive. Only when source=staging=final and every applicable transfer is qualified atomic may the sequence be considered for `WholePublicationAtomic`: 1. Open the verified no-follow target-root capability and create or receive the staging object beside the final name. 2. Validate staged identity/length or hash. 3. Durably record `CopyValidated`; a crash before this checkpoint leaves `FilesystemStaged` and must not advance toward publication, adoption, publish-ready treatment, or recovery continuation toward final publication. Recovery may preserve, retry, or audit staging; independently qualified, capability-bound cancellation/rollback cleanup may remove unvalidated staging only when followed by verified absence and durable capacity release. 4. Synchronize the staged file with `F_FULLFSYNC` where supported; if unavailable or rejected, use `fsync` and record downgraded synchronization evidence. 5. Use the qualified descriptor-relative atomic no-replace final claim; an existing final entry is a collision, not a replacement. 6. Synchronize destination directory metadata where supported and record unsupported-directory-sync evidence otherwise. 7. Reopen the claimed final through the same capability, verify identity/content, and record ownership. Record `AtomicNamespace`; record `WholePublicationAtomic` only for the qualified all-atomic sequence. Any bytewise source-to-staging copy, even same-volume, uses `NonAtomicCopyValidatePublish` and records `WholePublicationNonAtomic`. |
+| Windows/local | Use live source/staging/final device or volume identities and the actual source-to-staging primitive. Only when source=staging=final and every applicable transfer is qualified atomic may the sequence be considered for `WholePublicationAtomic`: 1. Open the verified no-follow target-root capability and create or receive the staging object on the destination volume beside the final name. 2. Validate staged identity/length or hash. 3. Durably record `CopyValidated`; a crash before this checkpoint leaves `FilesystemStaged` and must not advance toward publication, adoption, publish-ready treatment, or recovery continuation toward final publication. Recovery may preserve, retry, or audit staging; independently qualified, capability-bound cancellation/rollback cleanup may remove unvalidated staging only when followed by verified absence and durable capacity release. 4. Call `FlushFileBuffers` on the staged handle. 5. Use the qualified handle-bound atomic no-replace final claim with the platform's write-through option; an existing final entry is a collision, not a replace/move target. 6. Synchronize destination metadata where a tested primitive supports it and record downgrade evidence otherwise. 7. Reopen the claimed final through the bound handle/capability, flush/verify it, and record ownership. Record `AtomicNamespace`; record `WholePublicationAtomic` only for the qualified all-atomic sequence. Any bytewise source-to-staging copy, even same-volume, uses `NonAtomicCopyValidatePublish` and records `WholePublicationNonAtomic`. |
 | Cross-device, remote, removable, or otherwise unqualified synchronization | Use `NonAtomicCopyValidatePublish`: copy completely into staging beside the final on the final live device/volume, validate it, durably record `CopyValidated`, and use the qualified descriptor/handle-bound atomic no-replace final claim before reopen/source reconciliation. Record `AtomicNamespace` only if that final claim succeeds, then record `WholePublicationNonAtomic` and explicit synchronization downgrade. If staging != final, re-stage beside final or fail closed. If no qualified final no-replace primitive exists, fail closed before final publication; cleanup/disposition must separately qualify its own handle-bound operation. Retain staging, source, claims, and journal evidence. |
 
 `NonAtomicCopyValidatePublish` is selected for source != staging or any bytewise/unqualified
@@ -439,8 +442,11 @@ only when staging/final live identities are co-located and the claim succeeds. I
 final, re-stage beside final or fail closed. It has seven participant
 checkpoints, not seven journal phases. A qualified all-atomic path uses the same durable
 `CopyValidated` checkpoint after identity/content validation and before synchronization or
-the final-name claim; a crash before it remains `FilesystemStaged` and may only preserve,
-retry, or audit staging. The normative mapping is:
+the final-name claim; a crash before it remains `FilesystemStaged` and must not advance toward
+publication, adoption, publish-ready treatment, or recovery continuation toward final
+publication. Recovery may preserve, retry, or audit staging; independently qualified,
+capability-bound cancellation/rollback cleanup may remove unvalidated staging only when
+followed by verified absence and durable capacity release. The normative mapping is:
 
 | Participant checkpoint | Journal phase after the checkpoint | Interruption or advancement guard |
 | --- | --- | --- |
@@ -456,8 +462,9 @@ All checkpoints through `PublishObserved` therefore remain `FilesystemStaged`; `
 is the explicit gate for completeness and publish eligibility. Before that gate, the fallback
 copies only into destination-local staging: a crash or verification failure preserves the
 possibly incomplete payload for retry or audit under the existing recovery rules, and no
-recovery, adoption, publication, or cleanup path may treat it as publish-ready. Cleanup of an
-unvalidated payload still requires the independently qualified capability-bound cleanup rules.
+recovery, adoption, publication, or publish-ready treatment may advance from or treat it as
+publish-ready. An independently qualified capability-bound cancellation/rollback cleanup may
+remove unvalidated staging only when followed by verified absence and durable capacity release.
 After `CopyValidated`, the fallback does not claim `WholePublicationAtomic` or
 `PowerLossSynchronized`. Its final no-replace claim may still record `AtomicNamespace`. A
 crash or verification failure leaves the record at the last checkpoint with
@@ -530,9 +537,11 @@ phase order is:
    in progress; this phase does not itself establish completeness, verification, or publish
    eligibility. For every staging-producing mode, including a qualified all-atomic path, the
    durable participant checkpoint `CopyValidated` is the explicit completeness and
-   publish-eligibility gate. Before it, recovery may only preserve, retry, or audit staging;
-   it may not adopt, publish, perform publish-ready cleanup, or continue recovery toward a
-   final-name claim. After `CopyValidated`, the complete copy is in staging, but the final claim
+   publish-eligibility gate. Before it, recovery must not advance toward publication, adoption,
+   publish-ready treatment, or recovery continuation toward final publication. It may preserve,
+   retry, or audit staging; independently qualified, capability-bound cancellation/rollback
+   cleanup may remove unvalidated staging only when followed by verified absence and durable
+   capacity release. After `CopyValidated`, the complete copy is in staging, but the final claim
    has not yet occurred. It does not imply completed publication or `WholePublicationAtomic`;
    the later qualified no-replace claim may still establish `AtomicNamespace`.
 4. `FilesystemPublished`: the final namespace is visible after a qualified descriptor/handle-
@@ -570,7 +579,7 @@ must name the guard and the participant checkpoint that proved it.
 | Phase | Legal resumable overlay | Guard to advance or terminate |
 | --- | --- | --- |
 | `IntentDurable`, `Prepared` | None, `RetryPending`, `CancelRequestedBeforePublish` | Admission/retry may continue. `CancelledBeforePublish` or `BlockedByUser` may enter `Terminal` only after no publish evidence exists and any staging cleanup has verified absence and released its claim. Preserved or uncertain staging stays nonterminal and capacity-accounted. |
-| `FilesystemStaged` | None, `RetryPending`, `PartialNeedsRetry`, `CancelRequestedBeforePublish` | For every staging-producing mode, including a qualified all-atomic path, resume incomplete copy until durable `CopyValidated`; only then may recovery or adoption treat staging as publish-ready. Any recovery, adoption, publication, or cleanup path must not treat an unvalidated payload as publish-ready; cleanup must use independently qualified capability-bound removal, preservation, and capacity-release rules. Live staging/final inspection must still prove whether a no-replace claim occurred and classify filesystem ownership. Pre-publish cancellation must record staging removal/absence and capacity-release evidence, or preserve staging with an actionable nonterminal disposition. No terminal success is legal here. |
+| `FilesystemStaged` | None, `RetryPending`, `PartialNeedsRetry`, `CancelRequestedBeforePublish` | For every staging-producing mode, including a qualified all-atomic path, resume incomplete copy until durable `CopyValidated`; only then may recovery or adoption treat staging as publish-ready. Any recovery, adoption, or publication path must not advance from or treat an unvalidated payload as publish-ready; independently qualified capability-bound cancellation/rollback cleanup may remove it only when followed by verified absence and durable capacity release. Live staging/final inspection must still prove whether a no-replace claim occurred and classify filesystem ownership. Pre-publish cancellation must record staging removal/absence and capacity-release evidence, or preserve staging with an actionable nonterminal disposition. No terminal success is legal here. |
 | `FilesystemPublished` | None, `RetryPending`, `PartialNeedsRetry`, `AuditRequired`, `CancelRequestedAfterPublish` | Source reconciliation must consume the verified output without repeating filesystem work. Cross-source moves must complete the ordered origin-removal checkpoints. Cancellation remains resumable until required reconciliation or verified compensation completes. |
 | `SourceReconciled` | None, `RetryPending`, `PartialNeedsRetry`, `AuditRequired`, `CancelRequestedAfterPublish` | Required global/Harvest work deferred or failed stays `SourceReconciled + PartialNeedsRetry`; it must not be called globally reconciled or successful. A source/projection evidence gap stays auditable. |
 | `GlobalReconciled` | None, `RetryPending`, `AuditRequired`, `CancelRequestedAfterPublish` | Every required global and Harvest participant is `Applied` or `NotApplicable`; otherwise the phase cannot advance. |
@@ -638,8 +647,11 @@ stateDiagram-v2
     FilesystemStaged --> FilesystemPublished : CopyValidated + ReopenedVerified / qualified no-replace claim and verified publication
     note right of FilesystemStaged
         Non-journal participant checkpoints: publication checkpoints;
-        cross-source move checkpoints; cancellation cleanup or
-        preserved-for-recovery checkpoints
+        pre-publish cancellation cleanup or preserved-for-recovery checkpoints
+    end note
+    note right of FilesystemPublished
+        Non-journal participant checkpoints: cross-source move checkpoints
+        until origin retirement
     end note
     FilesystemPublished --> SourceReconciled
     SourceReconciled --> GlobalReconciled
@@ -665,7 +677,9 @@ stateDiagram-v2
   or the verified completion of the explicitly non-atomic publication protocol, succeeds.
   Before `CopyValidated`, including on a qualified all-atomic path, a copy that is interrupted or cannot be verified remains
   partial/recoverable under the existing retry/audit rules; no recovery, adoption, publication,
-  or cleanup path treats its staging payload as publish-ready. After `CopyValidated`, the
+  or publish-ready treatment may advance from or treat its staging payload as publish-ready. An
+  independently qualified capability-bound cancellation/rollback cleanup may remove unvalidated
+  staging only when followed by verified absence and durable capacity release. After `CopyValidated`, the
   explicitly non-atomic protocol still requires the qualified no-replace claim and
   `ReopenedVerified` before `FilesystemPublished`.
 - After `FilesystemPublished`, recovery never simply deletes the output because a later DB
@@ -1146,9 +1160,12 @@ reveal, restore, audit, choose destination, or dismiss after preserving evidence
    reconstitution is verified and durable.
 4. Recover operations in order of durable phase, but reacquire live no-follow capabilities and
    inspect filesystem and DB truth instead of trusting stage or a recovery hint. Before
-   continuing any staging-producing operation, require durable `CopyValidated`; a crash before
-   that checkpoint, including on a qualified all-atomic path, may only preserve, retry, or audit
-   staging and never adopt it or treat it as publish-ready. Resume idempotent steps; adopt a
+   continuing any staging-producing operation toward publication, adoption, publish-ready
+   treatment, or recovery continuation toward final publication, require durable `CopyValidated`;
+   a crash before that checkpoint, including on a qualified all-atomic path, does not permit
+   those advances. Recovery may preserve, retry, or audit staging; independently qualified,
+   capability-bound cancellation/rollback cleanup may remove unvalidated staging only when
+   followed by verified absence and durable capacity release. Resume idempotent steps; adopt a
    published output only after its bound handle is reopened,
    filesystem identity proves it is transaction-owned, and content verification passes.
    Otherwise recompute live source/staging/final identities and the actual transfer primitive:
@@ -1157,7 +1174,8 @@ reveal, restore, audit, choose destination, or dismiss after preserving evidence
    `RetryPending` if the evidence cannot be qualified. `NonAtomicNamespace` remains attempted,
    unverified, nonterminal evidence and can never advance to `FilesystemPublished`. Never
    replace/delete an observed entry. Restore safe staged data, run the cross-source
-   origin-removal/absence checks, and complete or preserve pre-publish cancellation staging.
+   origin-removal/absence checks, and complete pre-publish cancellation cleanup or preserve
+   staging with its capacity claim.
    Cleanup/disposition reacquires and independently qualifies its own handle-bound operation;
    it never relies on final-publication qualification or a pathname fallback. Unproven watcher
    continuity retains the last good projection and starts an affected-region/source audit;
@@ -1267,7 +1285,7 @@ reconstitution failure.
 | Crash before durable intent | No app-owned mutation to recover | Command may be retried. |
 | Validation, ownership, queue, or initial-capacity admission fails before durable intent | Release provisional claims and perform no journal, filesystem, SQLite, WAL, or SHM mutation | `RejectedBeforeIntent`; work was not started and is not durable, with a new-attempt retry action. |
 | Crash after intent, before staging | Resume or cancel intent safely after live capability reacquisition | Pending/recovering status. |
-| Crash after staged identity/content validation but before durable `CopyValidated`, including on a qualified all-atomic path | Keep the operation at `FilesystemStaged`; preserve, retry, or audit staging only, and do not claim, adopt, publish, clean up as publish-ready, or continue recovery from the uncheckpointed payload | `PartialNeedsRetry` or `AuditRequired`; no `FilesystemPublished` and no publish-ready staging. |
+| Crash after staged identity/content validation but before durable `CopyValidated`, including on a qualified all-atomic path | Keep the operation at `FilesystemStaged`; do not advance toward publication, adoption, publish-ready treatment, or recovery continuation toward final publication. Preserve, retry, or audit staging, except that independently qualified capability-bound cancellation/rollback cleanup may remove unvalidated staging when followed by verified absence and durable capacity release | `PartialNeedsRetry` or `AuditRequired`; no `FilesystemPublished` and no publish-ready staging. |
 | Copy/render fails in staging | Remove only verified staging payload through the target-root capability, or preserve it with its claim | Failed before publish; source unchanged. |
 | Pre-publish cancellation with staging | Record `CancelRequestedBeforePublish`; inspect final/staging, verify staged absence and capacity release, or preserve staging with its claim | Terminal `CancelledBeforePublish` only after verified cleanup; uncertain/preserved staging remains actionable and nonterminal. |
 | Final name is absent during planning but appears before claim | Fail the no-replace claim; preserve source and complete staging, then classify the live entry by filesystem identity | Collision policy, `RetryPending`, or `AuditRequired`; never replace/delete/modify the observed entry. |
@@ -1282,7 +1300,7 @@ reconstitution failure.
 | Capacity claim fails after `IntentDurable` before a durable participant checkpoint proves incomplete work | Retain the durable record, release only proven unused claims, and retry only after the per-volume plan fits above the protected floor | `RetryPending` plus `RecoveryReserveLow` or `DiskPressureRecoveryOnly`; ordinary work cannot consume the floor and recovery-only use requires a durable charge. |
 | Capacity claim fails after a durable participant checkpoint proves incomplete work | Retain the last durable checkpoint, release only proven unused claims, and retry only after the per-volume plan fits above the protected floor | `PartialNeedsRetry` plus `RecoveryReserveLow` or `DiskPressureRecoveryOnly`; ordinary work cannot consume the floor and recovery-only use requires a durable charge. |
 | Recovery-only reserve charge or spend is interrupted | Reconcile the durable per-volume charge with live state; keep the exact budget and control-plane margin unavailable until physical reconstitution is verified and recorded | `RecoveryReserveReconstitutionRequired`; ordinary admission remains closed for that volume. |
-| Remote/removable output is visible but synchronization is unverified | Reopen and verify content, record `VisibilityVerified` plus explicit downgrade, and retain evidence | File is visible; no atomic or power-loss guarantee. |
+| Remote/removable output is visible but synchronization is unverified | Reopen and verify content, record `VisibilityVerified` plus explicit synchronization downgrade, retain evidence, and preserve separately recorded `AtomicNamespace` when the qualified final no-replace claim succeeded | File is visible; `AtomicNamespace` remains final-name claim evidence when qualified, while whole-publication atomicity is `WholePublicationNonAtomic` and power-loss synchronization is `PowerLossSynchronizationUnverified`; neither is guaranteed. |
 | Publish succeeds, source DB busy | Keep published file; retry source reconciliation | Created/changed; registration pending. |
 | Copy-then-remove move destination staging/final claim/reopen verification and destination source commit succeed, including one source across devices | Durably record `DestinationSourceReconciled`, then durably record origin-removal intent before origin mutation | Move remains in progress; no origin retirement yet. |
 | Crash after cross-source origin-removal intent | Inspect operation identity and both origin/destination objects; retry physical mutation, verify absence, or preserve evidence for audit | `CrossSourceOriginRemovalPending`; both copies or ambiguity remains nonterminal. |
