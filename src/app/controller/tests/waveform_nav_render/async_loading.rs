@@ -112,6 +112,7 @@ fn loading_flag_clears_after_audio_load() {
     controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     let rel = PathBuf::from("load.wav");
+    controller.sample_view.wav.selected_wav = Some(rel.clone());
     write_test_wav(&source.root.join(&rel), &[0.0, 0.5, -0.5]);
     controller.set_wav_entries_for_tests(vec![sample_entry(
         "load.wav",

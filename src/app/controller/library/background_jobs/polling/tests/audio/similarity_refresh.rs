@@ -17,6 +17,7 @@ fn audio_visual_message_queues_one_follow_loaded_similarity_refresh() {
     let relative_path = Path::new("match.wav");
     write_test_wav(&source.root.join(relative_path), &[0.0, 0.25, -0.25, 0.5]);
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
+    controller.sample_view.wav.selected_wav = Some(relative_path.to_path_buf());
     controller.ui.browser.search.sort = crate::app::state::SampleBrowserSort::Similarity;
     controller.ui.browser.search.similarity_sort_follow_loaded = true;
     controller.ui.waveform.loading = Some(relative_path.to_path_buf());

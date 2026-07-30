@@ -56,7 +56,9 @@ impl AppController {
                 let Some(pending) = self.runtime.jobs.pending_audio() else {
                     return;
                 };
-                if !pending_audio_matches(&pending, request_id, &source_id, &relative_path) {
+                if !pending_audio_matches(&pending, request_id, &source_id, &relative_path)
+                    || !self.audio_target_matches_current(&source_id, &relative_path)
+                {
                     return;
                 }
                 self.runtime.jobs.set_pending_audio(None);
