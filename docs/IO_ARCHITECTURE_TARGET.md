@@ -98,6 +98,11 @@ on their exact timings or messages.
   and must not own foreground user progress.
 - **Physical owner**: the serialized component allowed to perform a named class of side
   effects. A task may request work but may not perform another owner's side effect directly.
+- **RejectedBeforeIntent**: a typed, non-durable coordinator admission result returned when
+  validation, ownership, bounded-queue, or initial-capacity admission fails before journal
+  intent commits. It creates no durable `OperationId`, journal record, participant checkpoint,
+  retry lease, or restart-visible status. It carries a stable cause, user message, retry
+  condition, and safe action; retry is a new attempt.
 
 ## Principles and invariants
 
@@ -110,9 +115,10 @@ These are normative target invariants.
 2. Filesystem work always occurs outside SQLite transactions. Transactions are bounded by
    known row/page work and never span copy, move, hashing, decoding, recursive traversal,
    user prompts, watcher debounce, or retry sleep.
-3. Accepted user operations have durable intent before application-owned filesystem change.
-   Once filesystem state changes, reconciliation remains recoverable until a terminal
-   disposition is durably recorded.
+3. An operation is accepted only after `IntentDurable`. Validation, ownership, bounded-queue,
+   and initial-capacity admission all precede every application-owned journal, filesystem,
+   SQLite, WAL, or SHM side effect. Once filesystem state changes, reconciliation remains
+   recoverable until a terminal disposition is durably recorded.
 4. A filesystem publish before source reconciliation is a recoverable partial operation,
    not an implicit success and not a reason to make the user repeat the command blindly.
 5. Watchers provide raw evidence. The committed source revision, source identity, and
@@ -143,7 +149,9 @@ These are normative target invariants.
     verification, or missing directory truth widens the affected region and eventually
     requests a conservative source audit.
 14. User status describes the operation's durable disposition, not the last worker callback.
-    It remains actionable across retries, restart, and partial failure.
+    It remains actionable across retries, restart, and partial failure. A pre-intent
+    `RejectedBeforeIntent` result instead says that work was not started and is not durable;
+    it has no restart-visible operation status.
 15. Protected recovery capacity is a separate admission invariant. For every distinct
     affected writable volume, the initial target preserves a non-sparse 256 MiB protected
     floor. Before any application-owned journal, filesystem, SQLite, WAL, or SHM side
@@ -152,9 +160,12 @@ These are normative target invariants.
     source and global databases plus their WAL/SHM, and any coexisting backup, replacement,
     or recovery payload. A same-volume rename does not double-count one identical
     allocation; coexisting allocations do count separately. Unbounded output requires an
-    initial bounded claim and a bounded claim before each chunk write. A failed claim leaves
-    the last durable checkpoint with `PartialNeedsRetry` plus `RecoveryReserveLow` or
-    `DiskPressureRecoveryOnly`; it never borrows the protected floor.
+    initial bounded claim and a bounded claim before each chunk write. If the initial claim
+    fails, the coordinator releases provisional claims and returns `RejectedBeforeIntent`
+    with `RecoveryReserveLow` or `DiskPressureRecoveryOnly`; it creates no journal or
+    disposition. After `IntentDurable`, a failed claim is `RetryPending` when no incomplete
+    participant is known, or `PartialNeedsRetry` only when a durable participant checkpoint
+    proves incomplete work. It never borrows the protected floor.
 
 ## Identities, lifecycle, and revision fences
 
@@ -249,6 +260,12 @@ the sole record of extraction, global persistence, or projection state.
 
 ### Record shape
 
+No operation record shape exists until both bounded-queue and initial-capacity admission
+have passed. The coordinator may hold only provisional, non-durable claims while evaluating
+those gates. Once they pass, the capacity plan and claims are included in the journal record
+shape and committed together with `IntentDurable`. A request rejected at either gate is
+`RejectedBeforeIntent` and has no operation record, durable ID, or disposition.
+
 An operation record contains at least:
 
 - operation ID, parent/compound operation ID, command kind, actor (`User` or `ExternalFs`),
@@ -275,7 +292,8 @@ An operation record contains at least:
 
 Durable intent is committed before application-owned filesystem mutation. Journal updates
 are small and bounded; large metadata snapshots live in a separately managed durable record
-or are re-read from authoritative owners during recovery.
+or are re-read from authoritative owners during recovery. `Accepted` may acknowledge the
+request at an API boundary only after `IntentDurable`; it is not a journal phase.
 
 ### Publication durability contract
 
@@ -335,30 +353,31 @@ or widen the claim without guessing.
 
 ### Phases and dispositions
 
-The normal phase order is:
+The durable phase machine begins at `IntentDurable`; `Accepted` is not a phase. The normal
+phase order is:
 
-1. `Accepted`: command validated and assigned an operation ID.
-2. `IntentDurable`: journal intent is durable; no application filesystem mutation has run.
-3. `Prepared`: capabilities, collision plan, source participants, and safe staging paths
+1. `IntentDurable`: queue and initial-capacity admission passed, the journal record shape,
+   capacity plan, and claims are durable, and no application filesystem mutation has run.
+2. `Prepared`: capabilities, collision plan, source participants, and safe staging paths
    are resolved without touching the UI.
-4. `FilesystemStaged`: bytes or edit output are in an app-owned staging location on the
+3. `FilesystemStaged`: bytes or edit output are in an app-owned staging location on the
    destination filesystem when atomic publication is selected, and are verified enough to
    publish. For the non-atomic fallback, this phase is only the participant-checkpoint
    container described above; it does not imply `AtomicNamespace` or completed publication.
    The required platform sequence is recorded before advancing.
-5. `FilesystemPublished`: the final namespace is visible and the reopened final object is
+4. `FilesystemPublished`: the final namespace is visible and the reopened final object is
    verified. The record separately reports namespace atomicity and power-loss synchronization
    evidence according to [Publication durability contract](#publication-durability-contract).
-6. `SourceReconciled`: each affected physical source has committed its manifest, identity,
+5. `SourceReconciled`: each affected physical source has committed its manifest, identity,
    directory, and source-local metadata delta.
-7. `GlobalReconciled`: all required global-library and Harvest participants are `Applied` or
+6. `GlobalReconciled`: all required global-library and Harvest participants are `Applied` or
    `NotApplicable`; only optional rebuildable artifact work may remain deferred, represented
    by the later `SucceededWithDeferredArtifacts` terminal disposition.
-8. `ProjectionPublished`: the bounded projection for the committed revision is visible;
+7. `ProjectionPublished`: the bounded projection for the committed revision is visible;
    a gap may instead record `AuditRequired`.
-9. `ReadinessScheduled`: exact desired artifact deficits are durable and a coordinator wake
+8. `ReadinessScheduled`: exact desired artifact deficits are durable and a coordinator wake
    is published after source publication.
-10. `Terminal`: a success, cancelled, rolled-back, blocked, or manual-recovery disposition
+9. `Terminal`: a success, cancelled, rolled-back, blocked, or manual-recovery disposition
     is durable. A retryable participant checkpoint is durable but remains resumable until
     it reaches a terminal disposition.
 
@@ -377,7 +396,7 @@ must name the guard and the participant checkpoint that proved it.
 
 | Phase | Legal resumable overlay | Guard to advance or terminate |
 | --- | --- | --- |
-| `Accepted`, `IntentDurable`, `Prepared` | None, `RetryPending`, `CancelRequestedBeforePublish` | Admission/retry may continue. `CancelledBeforePublish` or `BlockedByUser` may enter `Terminal` only after no filesystem mutation or publish evidence is found. |
+| `IntentDurable`, `Prepared` | None, `RetryPending`, `CancelRequestedBeforePublish` | Admission/retry may continue. `CancelledBeforePublish` or `BlockedByUser` may enter `Terminal` only after no filesystem mutation or publish evidence is found. |
 | `FilesystemStaged` | None, `RetryPending`, `PartialNeedsRetry`, `CancelRequestedBeforePublish` | Resume or discard only after live staging/final inspection proves whether publication occurred. No terminal success is legal here. |
 | `FilesystemPublished` | None, `RetryPending`, `PartialNeedsRetry`, `AuditRequired`, `CancelRequestedAfterPublish` | Source reconciliation must consume the verified output without repeating filesystem work. Cancellation remains resumable until required reconciliation completes. |
 | `SourceReconciled` | None, `RetryPending`, `PartialNeedsRetry`, `AuditRequired`, `CancelRequestedAfterPublish` | Required global/Harvest work deferred or failed stays `SourceReconciled + PartialNeedsRetry`; it must not be called globally reconciled or successful. A source/projection evidence gap stays auditable. |
@@ -385,13 +404,17 @@ must name the guard and the participant checkpoint that proved it.
 | `ProjectionPublished`, `ReadinessScheduled` | None, `RetryPending`, `AuditRequired`, `CancelRequestedAfterPublish` | A projection gap remains `AuditRequired` until the authoritative revision is republished. Optional artifact deficits may remain deferred, but required participants must be complete. |
 | `Terminal` | None | `Succeeded` requires all required participants `Applied`/`NotApplicable` and no unresolved audit. `SucceededWithDeferredArtifacts` permits only optional rebuildable artifacts to be deferred. `CancelledBeforePublish` requires no publish evidence; `CancelledAfterPublish` requires verified publish plus complete required reconciliation. `RolledBack` requires verified compensating work. `BlockedByUser`, `FailedPreservingData`, and `FailedDataLossRisk` require their explicit safe-state/escalation guards and preserve evidence. |
 
-The disposition guards are also explicit: `RetryPending` requires a transient error and a
-durable retry lease; `PartialNeedsRetry` requires a known incomplete participant or
-non-atomic publication checkpoint; `AuditRequired` requires uncertain evidence or a revision
-gap and forbids success until the audit closes; `CancelRequestedBeforePublish` requires a
-cancel request before any verified publish; and `CancelRequestedAfterPublish` requires a
-verified publish with unfinished required reconciliation. `Succeeded` requires every required
-participant to be `Applied` or `NotApplicable` and every projection gap closed.
+`RejectedBeforeIntent` is outside this phase/disposition table: it is a non-durable
+coordinator result, not a journal phase or durable disposition. Pre-intent cancellation is
+also non-durable and returns no operation record. `RetryPending` requires `IntentDurable`, a
+transient error, and a durable retry lease. `PartialNeedsRetry` requires `IntentDurable` plus
+a known incomplete participant or non-atomic publication checkpoint; the checkpoint must be
+durable and prove incomplete work, so an initial admission denial can never select it.
+`AuditRequired` requires uncertain evidence or a revision gap and forbids success until the
+audit closes; `CancelRequestedBeforePublish` requires a cancel request before any verified
+publish; and `CancelRequestedAfterPublish` requires a verified publish with unfinished
+required reconciliation. `Succeeded` requires every required participant to be `Applied` or
+`NotApplicable` and every projection gap closed.
 `SucceededWithDeferredArtifacts` permits only optional rebuildable artifacts to be deferred.
 `CancelledBeforePublish` requires a live-state proof of no publish, `CancelledAfterPublish`
 requires verified publish plus complete required reconciliation, `RolledBack` requires
@@ -426,8 +449,7 @@ evidence.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Accepted
-    Accepted --> IntentDurable
+    [*] --> IntentDurable
     IntentDurable --> Prepared
     Prepared --> FilesystemStaged
     FilesystemStaged --> ReopenedVerified : atomic final reopen/verify
@@ -452,7 +474,6 @@ stateDiagram-v2
     GlobalReconciled --> ProjectionPublished
     ProjectionPublished --> ReadinessScheduled
     ReadinessScheduled --> Terminal
-    Accepted --> Terminal : guarded pre-publish outcome
     Prepared --> Terminal : guarded pre-publish outcome
     FilesystemStaged --> Terminal : guarded pre-publish outcome
     FilesystemPublished --> Terminal : guarded post-publish outcome
@@ -489,12 +510,16 @@ stateDiagram-v2
 
 1. Validate selection, destination source, protected-source/Harvest policy, output format,
    collision policy, and capability-relative destination.
-2. Pass both queue and capacity admission before any application-owned side effect. Build
-   and claim the per-volume plan for source/destination staging, final/direct fallback,
-   journal, source/global DB plus WAL/SHM, and coexisting recovery payloads, then persist
-   intent with source/content identity, destination, inherited rating/lock/metadata policy,
-   and expected output fingerprint. For unbounded output, claim the initial bounded amount
-   now and claim each bounded chunk before writing it.
+2. Pass bounded queue admission and then initial capacity admission before any
+   application-owned side effect. Build and provisionally claim the per-volume plan for
+   source/destination staging, final/direct fallback, journal, source/global DB plus WAL/SHM,
+   and coexisting recovery payloads. Validation, ownership, queue saturation, or an initial
+   claim failure returns `RejectedBeforeIntent` with no journal record or disposition; release
+   provisional claims. Only after both gates pass does the coordinator commit the record shape,
+   capacity plan, claims, and source/content identity, destination, inherited rating/lock/
+   metadata policy, and expected output fingerprint as `IntentDurable`. For unbounded output,
+   claim the initial bounded amount at that boundary and claim each bounded chunk before
+   writing it.
 3. The file-operation owner delegates bounded rendering/copying to a worker. For atomic
    publication it writes to destination-local staging beside the final path, outside all
    SQLite transactions. If that path or atomic rename is unavailable, the worker enters the
@@ -751,20 +776,27 @@ The coordinator uses typed lanes and bounded queues:
 6. artifact preparation and analysis;
 7. routine maintenance and cache cleanup.
 
-Queue admission and capacity admission are independent gates. A queue slot does not imply
-that the per-volume peak allocation can fit above the protected floor, and available
-capacity does not bypass a bounded queue, lane, priority, or fairness limit. A request waits
-in its bounded lane when capacity is temporarily unavailable, with no application-owned
-side effect; when its capacity claim cannot be made within the retry policy it becomes
-`PartialNeedsRetry` plus `RecoveryReserveLow` or `DiskPressureRecoveryOnly` as applicable.
-When a queue is full, admission is rejected or coalesced before side effects. A rejected
-low-priority request becomes `Deferred` with a retry cause; it is not silently dropped. Same
-sample/source keys coalesce only when the contract says the latest intent subsumes earlier
-intent. Distinct user operations retain distinct IDs.
+Queue admission and initial capacity admission are independent, ordered gates. A queue slot
+does not imply that the per-volume peak allocation can fit above the protected floor, and
+available capacity does not bypass a bounded queue, lane, priority, or fairness limit. A
+validation, ownership, queue-saturation, or initial-capacity denial returns
+`RejectedBeforeIntent` with a stable cause, retry condition, and safe action; it creates no
+durable operation ID, journal record, participant checkpoint, retry lease, or restart-visible
+status. Provisional claims are released. Same sample/source keys coalesce only when the
+contract says the latest intent subsumes earlier intent. Distinct accepted user operations
+retain distinct durable IDs.
+
+After `IntentDurable`, a capacity claim that cannot be made within the retry policy becomes
+`RetryPending` with `RecoveryReserveLow` or `DiskPressureRecoveryOnly` when no incomplete
+participant is known. It becomes `PartialNeedsRetry` only when a durable participant
+checkpoint proves incomplete work. It never borrows the protected floor. A full queue does
+not create a durable rejection or disposition; a low-priority request may be described as
+deferred with its retry cause, but the typed result remains `RejectedBeforeIntent`.
 
 Cancellation rules:
 
-- before `IntentDurable`: cancel without a durable filesystem side effect;
+- before `IntentDurable`: cancel as a non-durable `RejectedBeforeIntent` result, without a
+  durable filesystem side effect or operation record;
 - after intent and before filesystem publish: stop before the next safe boundary and record
   `CancelledBeforePublish`;
 - after publish: first record the resumable `CancelRequestedAfterPublish` checkpoint; recovery
@@ -781,35 +813,42 @@ hashing, SQL batches, projection deltas, and artifact writes each have byte/row/
 
 ## Error classification and user status
 
-Every error has a stable class, retry policy, diagnostic context, and user message key.
+Every error has a stable class, retry policy, diagnostic context, and user message key. Before
+`IntentDurable`, validation, ownership, queue, and initial-capacity errors use the typed
+non-durable result `RejectedBeforeIntent`; after `IntentDurable`, the same cause uses only a
+legal durable overlay such as `RetryPending`, `PartialNeedsRetry`, or `AuditRequired`.
 
-| Class | Examples | Scheduler disposition | User-facing status |
+| Class | Examples | Coordinator result / durable disposition | User-facing status |
 | --- | --- | --- | --- |
-| `TransientContention` | SQLite busy/locked, temporary sharing violation | Backoff, retry lease, preserve intent | “Waiting for library access…” |
-| `ProfileOwnedByAnotherProcess` | Universal journal/profile lock held by a live owner | Do not open the journal writable, mutate recovery, admit durable work, open writers, or acquire source leases; remain bounded read-only or forward a typed command | “This profile is writable in another Wavecrate process.” with retry/read-only actions |
-| `WritableSourceOwnedByAnotherProcess` | Independently live source lease/epoch conflict after this process established profile ownership | Do not open that source writable; retry ownership or continue with read-only access | “Source is writable in another Wavecrate process.” with retry/read-only actions |
-| `TransientAvailability` | Source temporarily offline, removable volume absent | Retry on source availability | “Waiting for source…” |
-| `CapabilityDenied` | Protected source policy, unsafe symlink/path, permission | No blind retry; request user action | “Wavecrate cannot safely access this location.” |
-| `Collision` | Destination exists or changed during plan | Re-plan with explicit policy | “Choose how to handle the existing file.” |
-| `InputInvalid` | Invalid range/name/format or unsupported audio | Terminal before publish | Specific correction; no fake progress. |
-| `VerificationFailed` | Output identity, size, or containment mismatch | Preserve staged data; audit/retry | “Output needs verification.” |
-| `NamespaceAtomicityUnavailable` | Remote, removable, cross-device, or untested replace/rename | Use `NonAtomicCopyValidatePublish`; retain explicit downgrade | “File is visible, but atomic replacement was unavailable.” |
-| `PowerLossSynchronizationUnverified` | `fsync`/`FlushFileBuffers` unavailable, downgraded, or medium not classifiable | Retain visibility result and evidence; never claim power-loss durability | “File is visible; storage durability could not be verified.” |
-| `SourceReconciliationDelayed` | Filesystem published; source commit busy/failed | Retry and retain published path | “Created; finishing library registration.” |
-| `ProjectionGap` | Delta base/revision gap, incomplete hydration | Retain last good view; full snapshot/audit | “Library view is catching up.” |
+| `TransientContention` | SQLite busy/locked, temporary sharing violation | Before intent: `RejectedBeforeIntent`; after intent: backoff with durable retry lease and `RetryPending` | “Waiting for library access…” |
+| `QueueSaturated` | Bounded lane or coordinator queue is full | `RejectedBeforeIntent`; coalesce only when the latest intent subsumes the earlier request | “Not started; Wavecrate is busy.” with Retry |
+| `ProfileOwnedByAnotherProcess` | Universal journal/profile lock held by a live owner | `RejectedBeforeIntent`; do not open the journal writable, mutate recovery, admit durable work, open writers, or acquire source leases; remain bounded read-only or forward a typed command | “This profile is writable in another Wavecrate process.” with retry/read-only actions |
+| `WritableSourceOwnedByAnotherProcess` | Independently live source lease/epoch conflict after this process established profile ownership | `RejectedBeforeIntent`; do not open that source writable; retry ownership or continue with read-only access | “Source is writable in another Wavecrate process.” with retry/read-only actions |
+| `TransientAvailability` | Source temporarily offline, removable volume absent | Before intent: `RejectedBeforeIntent`; after intent: retry on source availability with `RetryPending` | “Waiting for source…” |
+| `CapabilityDenied` | Protected source policy, unsafe symlink/path, permission | `RejectedBeforeIntent`; no blind retry; request user action | “Wavecrate cannot safely access this location.” |
+| `Collision` | Destination exists or changed during plan | Before intent: `RejectedBeforeIntent` and re-plan with explicit policy; after intent: legal retry/audit overlay | “Choose how to handle the existing file.” |
+| `InputInvalid` | Invalid range/name/format or unsupported audio | `RejectedBeforeIntent`; specific correction and no fake progress | Specific correction; no fake progress. |
+| `VerificationFailed` | Output identity, size, or containment mismatch | After intent, preserve staged data and use `RetryPending`, `PartialNeedsRetry` only with a durable incomplete checkpoint, or `AuditRequired` | “Output needs verification.” |
+| `NamespaceAtomicityUnavailable` | Remote, removable, cross-device, or untested replace/rename | After intent, use `NonAtomicCopyValidatePublish` with a legal retry/partial overlay and retain the explicit downgrade | “File is visible, but atomic replacement was unavailable.” |
+| `PowerLossSynchronizationUnverified` | `fsync`/`FlushFileBuffers` unavailable, downgraded, or medium not classifiable | After intent, retain visibility result and evidence with a legal retry/partial overlay; never claim power-loss durability | “File is visible; storage durability could not be verified.” |
+| `SourceReconciliationDelayed` | Filesystem published; source commit busy/failed | `RetryPending` and retain the published path | “Created; finishing library registration.” |
+| `ProjectionGap` | Delta base/revision gap, incomplete hydration | `AuditRequired`; retain last good view and use full snapshot/audit | “Library view is catching up.” |
 | `ArtifactDeferred` | Cache or analysis write failed/evicted | Retryable readiness deficit | “Available; analysis is pending.” |
-| `ExternalReaderRetainingWal` | External/unknown reader prevents passive WAL checkpoint progress | Never block or kill the reader; pause WAL-growing work at the hard watermark and retain recovery reserve | “Another process is retaining database history.” with retry/close-other-process guidance |
-| `WalHardWatermark` | WAL reaches the initial 64 MiB write-admission watermark | Pause/reject new WAL-growing work; allow only already-admitted bounded commits that fit reserved capacity and recovery-only work | “Database maintenance is catching up; new work is paused.” |
+| `ExternalReaderRetainingWal` | External/unknown reader prevents passive WAL checkpoint progress | Before intent: `RejectedBeforeIntent`; after intent: never block or kill the reader, pause WAL-growing work at the hard watermark, and retain recovery reserve with a legal retry overlay | “Another process is retaining database history.” with retry/close-other-process guidance |
+| `WalHardWatermark` | WAL reaches the initial 64 MiB write-admission watermark | Before intent: `RejectedBeforeIntent`; after intent: pause/reject new WAL-growing work and allow only already-admitted bounded commits that fit reserved capacity and recovery-only work | “Database maintenance is catching up; new work is paused.” |
 | `WalReaderBudgetExpired` | Governed Wavecrate snapshot exceeds its time/row/byte budget | Cancel/close at a safe boundary and resume from a new snapshot | “Library view is catching up.” |
-| `RecoveryReserveLow` | Writable-volume free space reaches the non-sparse 256 MiB reserve floor or cannot fit an existing required reservation | Enter recovery-only admission; preserve journal/source/recovery data and reject new durable work | “Storage is reserved for recovery; new work is paused.” |
-| `DiskPressureRecoveryOnly` | A conservative per-volume peak claim cannot fit without borrowing the protected floor | Allow only bounded recovery, journal, ownership-release, or already-admitted work whose claim fits; do not start the side effect | “Storage is reserved for recovery; new work is paused.” |
-| `DiskPressure` | Insufficient space above the reserve for staging, journal, database, or artifacts | Pause low-priority writes, preserve durable data, retry after safe checkpoint/space recovery | “Storage is low; background work is paused.” with recovery guidance |
-| `IntegrityFailure` | Corrupt DB, malformed journal, duplicate identity | Preserve data, isolate, escalate | “Recovery needs attention.” |
-| `Cancelled` | User cancellation at a safe boundary | Roll back or continue reconciliation | “Cancelled” plus whether a file was published. |
+| `RecoveryReserveLow` | Writable-volume free space reaches the non-sparse 256 MiB reserve floor or cannot fit an existing required reservation | Before intent: `RejectedBeforeIntent` after provisional-claim release; after intent: recovery-only admission with `RetryPending` unless a durable incomplete checkpoint proves `PartialNeedsRetry` | “Storage is reserved for recovery; new work is paused.” |
+| `DiskPressureRecoveryOnly` | A conservative per-volume peak claim cannot fit without borrowing the protected floor | Before intent: `RejectedBeforeIntent` after provisional-claim release; after intent: allow only bounded recovery or already-admitted work whose claim fits, with `RetryPending` unless a durable incomplete checkpoint proves `PartialNeedsRetry` | “Storage is reserved for recovery; new work is paused.” |
+| `DiskPressure` | Insufficient space above the reserve for staging, journal, database, or artifacts | Before intent: `RejectedBeforeIntent`; after intent: pause low-priority writes, preserve durable data, and use a legal retry/partial overlay after safe checkpoint/space recovery | “Storage is low; background work is paused.” with recovery guidance |
+| `IntegrityFailure` | Corrupt DB, malformed journal, duplicate identity | Before intent: `RejectedBeforeIntent`; after intent: preserve data, isolate, and use `FailedPreservingData` or another guarded durable disposition | “Recovery needs attention.” |
+| `Cancelled` | User cancellation at a safe boundary | Before intent: `RejectedBeforeIntent`; after intent: legal cancellation overlay or terminal disposition | “Cancelled” plus whether a file was published. |
 
 Status is attached to the operation ID and participant counts, not just a transient spinner.
 The UI may show optimistic result, waiting, retrying, partial success, complete, or needs
-attention. A terminal status always offers the next safe action when one exists: retry,
+attention. Whenever the coordinator result is `RejectedBeforeIntent`, the user-facing status
+must say that work was not started and offer a safe retry/action; any ordinary waiting message
+in a class row applies only after `IntentDurable`. A terminal status always offers the next
+safe action when one exists: retry,
 reveal, restore, audit, choose destination, or dismiss after preserving evidence.
 
 ## Startup, shutdown, and crash recovery
@@ -873,14 +912,18 @@ This design does not change schema. Future implementation must:
 
 ## Observability and provisional SLOs
 
-Each operation and worker span includes operation ID, source identity, lifecycle generation,
-source revision before/after, journal phase, owner, queue wait, attempt, SQL transaction
-duration, rows/bytes, filesystem path class (redacted where needed), artifact key, and
-disposition. Filesystem publication telemetry additionally records destination classification,
-staging/final device or volume comparison, publication mode, visibility verification result,
-namespace atomicity result, synchronization primitive/result, directory-sync support, and
-reopen verification. Logs distinguish queue wait, filesystem latency, SQLite busy time,
-transaction time, projection preparation, UI apply time, and readiness/artifact work.
+Each operation and worker span after `IntentDurable` includes operation ID, source identity,
+lifecycle generation, source revision before/after, journal phase, owner, queue wait, attempt,
+SQL transaction duration, rows/bytes, filesystem path class (redacted where needed), artifact
+key, and disposition. Pre-intent admission telemetry uses only a bounded request correlation
+and records `RejectedBeforeIntent`, stable cause, retry condition, safe action, and the
+asserted absence of journal/filesystem/SQLite/WAL/SHM side effects; it has no operation ID or
+restart-visible status. Filesystem publication telemetry additionally records destination
+classification, staging/final device or volume comparison, publication mode, visibility
+verification result, namespace atomicity result, synchronization primitive/result,
+directory-sync support, and reopen verification. Logs distinguish queue wait, filesystem
+latency, SQLite busy time, transaction time, projection preparation, UI apply time, and
+readiness/artifact work.
 
 Provisional targets for implementation benchmarking, not current guarantees:
 
@@ -892,15 +935,17 @@ Provisional targets for implementation benchmarking, not current guarantees:
   region, excluding unavailable volumes;
 - no unbounded queue, recursive hydration, or full-source metadata snapshot on the healthy
   exact-delta path;
-- accepted user operations show a durable status within 250 ms and remain observable until
-  terminal disposition;
+- operations reaching `IntentDurable` show a durable status within 250 ms and remain observable
+  until terminal disposition; `RejectedBeforeIntent` reports that work was not started and is
+  not durable without creating restart-visible status;
 - every busy retry records count, wait, owner, source, and final disposition;
 - source-wide audits expose discovered count, committed chunks, gaps, and remaining work;
 - WAL metrics expose soft/hard watermark crossings, reader class, retained frames, oldest
   governed snapshot age, external-reader retention when observable, and protected/free reserve
   bytes;
 - profile ownership metrics distinguish lock acquisition, read-only fallback, recovery
-  mutation, journal admission, source-lease acquisition, and final release order.
+  mutation, journal admission, source-lease acquisition, final release order, and
+  pre-intent ownership rejections.
 
 Metrics must be split by operation kind, source size, region kind, watcher backend, database
 contention, and cache/artifact kind. Per-volume telemetry also records the capacity plan,
@@ -913,11 +958,13 @@ from end-to-end latency alone.
 | Failure point | Required recovery | User result |
 | --- | --- | --- |
 | Crash before durable intent | No app-owned mutation to recover | Command may be retried. |
+| Validation, ownership, queue, or initial-capacity admission fails before durable intent | Release provisional claims and perform no journal, filesystem, SQLite, WAL, or SHM mutation | `RejectedBeforeIntent`; work was not started and is not durable, with a new-attempt retry action. |
 | Crash after intent, before staging | Resume or cancel intent safely | Pending/recovering status. |
 | Copy/render fails in staging | Remove only verified staging payload | Failed before publish; source unchanged. |
 | Staged-file or namespace synchronization fails | Record the primitive/result, stop the stronger claim, reopen/verify if safe, and downgrade or retain `PartialNeedsRetry` | Visibility, atomicity, and power-loss status remain distinct; no false durability claim. |
 | Destination filesystem cannot provide atomic rename | Run journaled non-atomic copy/validate/publish recovery | Explicit non-atomic partial or completed status; never an atomicity claim. |
-| Capacity claim fails before a journal/filesystem/SQLite/WAL/SHM side effect or before an output chunk | Retain the last durable checkpoint, release only proven unused claims, and retry only after the per-volume plan fits above the protected floor | `PartialNeedsRetry` plus `RecoveryReserveLow` or `DiskPressureRecoveryOnly`; never borrow the reserve. |
+| Capacity claim fails after `IntentDurable` before a durable participant checkpoint proves incomplete work | Retain the durable record, release only proven unused claims, and retry only after the per-volume plan fits above the protected floor | `RetryPending` plus `RecoveryReserveLow` or `DiskPressureRecoveryOnly`; never borrow the reserve. |
+| Capacity claim fails after a durable participant checkpoint proves incomplete work | Retain the last durable checkpoint, release only proven unused claims, and retry only after the per-volume plan fits above the protected floor | `PartialNeedsRetry` plus `RecoveryReserveLow` or `DiskPressureRecoveryOnly`; never borrow the reserve. |
 | Remote/removable output is visible but synchronization is unverified | Reopen and verify content, record `VisibilityVerified` plus explicit downgrade, and retain evidence | File is visible; no atomic or power-loss guarantee. |
 | Publish succeeds, source DB busy | Keep published file; retry source reconciliation | Created/changed; registration pending. |
 | Source commit succeeds, global DB busy | Retry global participant by operation ID | Source visible; global links pending. |
@@ -947,7 +994,7 @@ event captures where available.
 
 | Area | Required coverage |
 | --- | --- |
-| Journal | Profile lock before writable journal open, recovery mutation, and durable admission; per-volume capacity plans and claims for every allocation class and order; power loss at every phase, torn/truncated records, duplicate recovery, unknown phase, retry lease, cancellation before/after publish. |
+| Journal | Profile lock before writable journal open, recovery mutation, and durable admission; pre-intent validation/ownership/queue/initial-capacity rejection with no operation ID, record, checkpoint, retry lease, or restart status; acceptance exactly at `IntentDurable` with capacity plan/claims committed; no `Accepted` phase; per-volume capacity plans and claims for every allocation class and order; power loss at every phase, torn/truncated records, duplicate recovery, unknown phase, retry lease, cancellation before/after publish. |
 | File owner | No-follow roots, protected sources, collisions, macOS `F_FULLFSYNC`/`fsync` downgrade evidence, Windows `FlushFileBuffers`/write-through replace, directory-sync support, destination-local same-device staging/rename, cross-device/remote/removable non-atomic fallback, reopen verification, crash recovery, partial status, trash/restore, delete uncertainty, and hash/identity verification. |
 | Source writer | One-writer serialization across processes, profile-lock rejection, distinct profile/source ownership statuses, source lease/epoch fencing and verified stale recovery, bounded transactions, busy/locked backoff, stale revision, lifecycle replacement, idempotent manifest delta, directory-only entries, metadata-only revision neutrality. |
 | WAL/readers | Current evidence versus target soft 32 MiB/hard 64 MiB watermarks, `journal_size_limit` non-cap semantics, 15 s throttle, 250 ms busy timeout, passive/incomplete checkpoints, all three reader classes, retained-frame metrics, bounded owner/losing-process snapshots, uncooperative external readers, non-sparse 256 MiB reserve on each affected volume, WAL/SHM capacity claims and per-chunk claims, admission/pause/reject/recovery-only behavior, and no interactive checkpoint wait. |
@@ -955,8 +1002,8 @@ event captures where available.
 | Cross-DB saga | Source success/global retry, global success/projection retry, Harvest retry, duplicate operation delivery, destination/source rekey, rating and history coalescing. |
 | Projection | Exact contiguous delta, stale delta, gap fallback, bounded preparation, last-good retention, no UI-thread file/SQLite calls, no per-event full hydration. |
 | Readiness/artifacts | Path-only vs content change, cache eviction, artifact version change, failure/deferred state, source revision wake ordering, lease reclamation. |
-| Scheduler | Queue saturation distinct from capacity exhaustion, per-volume allocation ordering, fairness across sources, priority inversion, cancellation at each phase, busy backoff, shutdown drain, no dropped accepted intent, and output chunk claims before writes. |
-| Status/diagnostics | Stable profile/source ownership codes, visibility/atomicity/power-loss downgrade wording, WAL watermark/external-reader/reserve statuses, partial wording, retry/reveal/restore actions, restart status continuity, redacted path context, metrics cardinality. |
+| Scheduler | Queue saturation distinct from capacity exhaustion, `RejectedBeforeIntent` for pre-intent denials, post-intent `RetryPending` versus checkpoint-proven `PartialNeedsRetry`, per-volume allocation ordering, fairness across sources, priority inversion, cancellation at each phase, busy backoff, shutdown drain, no dropped accepted intent, and output chunk claims before writes. |
+| Status/diagnostics | Stable profile/source ownership codes, `RejectedBeforeIntent` wording that work was not started and is not durable, visibility/atomicity/power-loss downgrade wording, WAL watermark/external-reader/reserve statuses, partial wording, retry/reveal/restore actions, restart status continuity, redacted path context, metrics cardinality. |
 | Compatibility | Old source/global DB opens, migration-free read-only roles, journal adapters, schema failure preservation; follow `docs/DATABASE_MIGRATIONS.md`. |
 
 Benchmarks must compare at least:
