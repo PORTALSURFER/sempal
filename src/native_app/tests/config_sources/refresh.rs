@@ -1,5 +1,6 @@
 use super::*;
 use crate::native_app::app::SourceSelectionRequest;
+use std::path::Path;
 
 #[test]
 fn context_source_refresh_queues_scan_without_clearing_loaded_tree() {
@@ -384,4 +385,74 @@ fn source_filesystem_change_syncs_removed_file_to_source_database() {
         vec!["keep.wav"],
         "the browser projection should refresh only from committed background state"
     );
+}
+
+#[test]
+fn source_filesystem_change_patches_new_folder_after_targeted_commit() {
+    let source_root = tempfile::tempdir().expect("source root");
+    let existing = source_root.path().join("existing");
+    fs::create_dir_all(&existing).expect("create existing folder");
+    write_test_wav_i16(&existing.join("keep.wav"), &[0, 512, -512]);
+    let mut state = gui_state_for_span_tests();
+    let request = state
+        .library
+        .folder_browser
+        .begin_add_source_path(source_root.path().to_path_buf(), 100)
+        .expect("new source requests scan");
+    let source_id = request.source_id.clone();
+    let result = crate::native_app::sample_library::folder_browser::scan::scan_source_with_progress(
+        request,
+        |_| {},
+        |_| {},
+    );
+    state.finish_folder_scan(result, &mut ui::UiUpdateContext::default());
+
+    let created = source_root.path().join("created-folder");
+    let nested = created.join("nested");
+    fs::create_dir_all(&nested).expect("create nested folder");
+    write_test_wav_i16(&nested.join("new.wav"), &[0, 1024, -1024]);
+    let mut context = ui::UiUpdateContext::default();
+    state.apply_message(
+        crate::native_app::test_support::state::GuiMessage::SourceFilesystemChanged {
+            source_id: source_id.clone(),
+            paths: vec![PathBuf::from("created-folder")],
+            overflowed: false,
+            source_root_available: true,
+            journal_checkpoint_event_id: None,
+        },
+        &mut context,
+    );
+
+    let sync_finished = crate::native_app::tests::run_worker_message_for_tests(
+        context.into_command(),
+        "gui-source-db-sync",
+    )
+    .expect("targeted source sync command");
+    state.apply_message(sync_finished, &mut ui::UiUpdateContext::default());
+    assert!(
+        state
+            .library
+            .folder_progress()
+            .is_none(),
+        "a committed directory watcher event should not queue a source-wide folder scan"
+    );
+    assert!(state
+        .library
+        .folder_browser
+        .folder_path(&created.to_string_lossy())
+        .is_some());
+    assert!(state
+        .library
+        .folder_browser
+        .folder_path(&nested.to_string_lossy())
+        .is_some());
+    let db = wavecrate::sample_sources::SourceDatabase::open_for_test_fixture_source_write(
+        source_root.path(),
+    )
+    .expect("db");
+    assert!(db
+        .list_files()
+        .expect("synced rows")
+        .iter()
+        .any(|entry| entry.relative_path == Path::new("created-folder/nested/new.wav")));
 }

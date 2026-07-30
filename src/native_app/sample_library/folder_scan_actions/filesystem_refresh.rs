@@ -147,14 +147,12 @@ impl NativeAppState {
                 let renames_reconciled = success.renames_reconciled;
                 let incomplete_error = success.incomplete_error;
                 let delta = success.committed_delta;
-                let browser_delta_applied = success
-                    .browser_projection_delta
-                    .map(|projection| {
-                        self.library
-                            .folder_browser
-                            .apply_committed_projection_delta(&source_id, projection)
-                    })
-                    .unwrap_or(false);
+                let browser_projection_applied =
+                    self.library.folder_browser.apply_committed_projection(
+                        &source_id,
+                        success.browser_projection_delta,
+                        success.prepared_folder_projections,
+                    );
                 self.reapply_desired_rating_overlay();
                 tracing::info!(
                     source_id = %source_id,
@@ -208,7 +206,7 @@ impl NativeAppState {
                         Instant::now(),
                         context,
                     );
-                } else if !browser_delta_applied {
+                } else if !browser_projection_applied {
                     self.queue_filesystem_source_refresh(
                         source_id,
                         SourceRefreshCause::ProjectionRevisionGap {

@@ -1,4 +1,10 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
+
+use wavecrate::sample_sources::BrowserMetadataSnapshot;
+use wavecrate_library::sample_sources::BrowserFileMetadata;
 
 use super::{
     super::{
@@ -11,6 +17,7 @@ use super::{
         BrowserEntryKind, classify_path_without_following, read_sorted_entries,
         source_traversal_policy,
     },
+    file_entry_metadata::{file_entry, file_entry_with_snapshot_metadata},
     metadata::{SourceMetadataMap, rated_file_entry, source_rating_map, source_rating_snapshot},
 };
 
@@ -94,6 +101,24 @@ pub(in crate::native_app::sample_library::folder_browser) fn load_folder_at_path
     load_folder(path, source_root, &ratings, policy)
 }
 
+/// Build a no-follow folder subtree from a worker-owned committed metadata
+/// snapshot. The UI completion path receives the resulting value and never
+/// reopens the filesystem or source database.
+pub(in crate::native_app) fn load_folder_at_path_with_browser_metadata(
+    path: &Path,
+    source_root: &Path,
+    snapshot: &BrowserMetadataSnapshot,
+    policy: wavecrate::sample_sources::SourceTraversalPolicy,
+) -> Option<FolderEntry> {
+    let metadata = snapshot
+        .files
+        .iter()
+        .filter(|entry| !entry.missing)
+        .map(|entry| (entry.relative_path.clone(), entry.clone()))
+        .collect::<HashMap<_, _>>();
+    load_folder_with_browser_metadata(path, source_root, &metadata, policy)
+}
+
 pub(super) fn load_folder(
     path: &Path,
     source_root: &Path,
@@ -110,6 +135,51 @@ pub(super) fn load_folder(
         .iter()
         .filter(|entry| entry.kind == BrowserEntryKind::File)
         .map(|entry| rated_file_entry(&entry.path, source_root, ratings))
+        .collect::<Vec<_>>();
+    Some(FolderEntry {
+        id: path_id(path),
+        name: folder_label(path),
+        children,
+        files,
+    })
+}
+
+fn load_folder_with_browser_metadata(
+    path: &Path,
+    source_root: &Path,
+    metadata: &HashMap<PathBuf, BrowserFileMetadata>,
+    policy: wavecrate::sample_sources::SourceTraversalPolicy,
+) -> Option<FolderEntry> {
+    let entries = read_sorted_entries(path, source_root, policy)?;
+    let children = entries
+        .iter()
+        .filter(|entry| entry.kind == BrowserEntryKind::Directory)
+        .filter_map(|entry| {
+            load_folder_with_browser_metadata(&entry.path, source_root, metadata, policy)
+        })
+        .collect::<Vec<_>>();
+    let files = entries
+        .iter()
+        .filter(|entry| entry.kind == BrowserEntryKind::File)
+        .map(|entry| {
+            entry
+                .path
+                .strip_prefix(source_root)
+                .ok()
+                .and_then(|relative| metadata.get(relative))
+                .map(|metadata| {
+                    file_entry_with_snapshot_metadata(
+                        &entry.path,
+                        metadata.file_size,
+                        metadata.rating,
+                        metadata.locked,
+                        metadata.collections.clone(),
+                        metadata.last_played_at,
+                        metadata.last_curated_at,
+                    )
+                })
+                .unwrap_or_else(|| file_entry(&entry.path))
+        })
         .collect::<Vec<_>>();
     Some(FolderEntry {
         id: path_id(path),

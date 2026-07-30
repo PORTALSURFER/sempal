@@ -11,7 +11,7 @@ use super::super::{
     },
     scanning::{merge_scan_discovery, placeholder_folder},
 };
-use crate::native_app::app::BrowserProjectionDelta;
+use crate::native_app::app::{BrowserProjectionDelta, PreparedFolderProjection};
 
 impl FolderBrowserState {
     pub(in crate::native_app) fn source_projection_revision(&self, source_id: &str) -> Option<u64> {
@@ -27,6 +27,15 @@ impl FolderBrowserState {
         source_id: &str,
         delta: BrowserProjectionDelta,
     ) -> bool {
+        self.apply_committed_projection(source_id, Some(delta), Vec::new())
+    }
+
+    pub(in crate::native_app) fn apply_committed_projection(
+        &mut self,
+        source_id: &str,
+        delta: Option<BrowserProjectionDelta>,
+        folder_projections: Vec<PreparedFolderProjection>,
+    ) -> bool {
         let Some(source_index) = self
             .source
             .sources
@@ -38,16 +47,50 @@ impl FolderBrowserState {
         let Some(current_revision) = self.source.sources[source_index].projection_revision else {
             return false;
         };
-        if delta.manifest_revision <= current_revision {
-            return true;
-        }
-        if delta.manifest_revision != current_revision.saturating_add(1) {
+        let source_root = self.source.sources[source_index].root.clone();
+        let target_revision = delta
+            .as_ref()
+            .map(|delta| delta.manifest_revision)
+            .or_else(|| {
+                folder_projections
+                    .first()
+                    .map(|projection| projection.snapshot_revision)
+            });
+        let Some(target_revision) = target_revision else {
+            return false;
+        };
+        if let Some(delta) = &delta {
+            if delta.manifest_revision <= current_revision {
+                return true;
+            }
+            let folder_snapshot_covers_delta =
+                folder_projections_cover_delta(&source_root, delta, &folder_projections);
+            let revision_is_contiguous =
+                delta.manifest_revision == current_revision.saturating_add(1);
+            if (!revision_is_contiguous && !folder_snapshot_covers_delta)
+                || delta.snapshot_revision != delta.manifest_revision
+            {
+                tracing::info!(
+                    source_id,
+                    current_revision,
+                    incoming_revision = delta.manifest_revision,
+                    "Browser projection revision gap requires a full snapshot refresh"
+                );
+                return false;
+            }
+        } else if target_revision != current_revision {
             tracing::info!(
                 source_id,
                 current_revision,
-                incoming_revision = delta.manifest_revision,
-                "Browser projection revision gap requires a full snapshot refresh"
+                snapshot_revision = target_revision,
+                "Folder projection snapshot is not at the current committed revision"
             );
+            return false;
+        }
+        if folder_projections
+            .iter()
+            .any(|projection| projection.snapshot_revision != target_revision)
+        {
             return false;
         }
         let selected = self.source.selected_source == source_id && self.source.selected_tree_loaded;
@@ -60,29 +103,60 @@ impl FolderBrowserState {
             let Some(root) = root else {
                 return false;
             };
-            let removed = delta
-                .removed_file_ids
-                .iter()
-                .cloned()
-                .collect::<HashSet<_>>();
-            let mut changed = root.remove_files_by_ids(&removed);
-            for folder in &delta.folders {
-                if root.ensure_folder_path(folder).is_none() {
-                    return false;
+            let mut changed = false;
+            for projection in &folder_projections {
+                let folder_path = PathBuf::from(&root.id).join(&projection.relative_path);
+                let folder_id = path_id(&folder_path);
+                match &projection.folder {
+                    Some(folder) => {
+                        if root.id == folder_id {
+                            changed |= *root != *folder;
+                            *root = folder.clone();
+                        } else {
+                            let Some(parent) = folder_path.parent() else {
+                                return false;
+                            };
+                            let Some(parent_folder) = root.find_mut(&path_id(parent)) else {
+                                return false;
+                            };
+                            changed |= super::super::scanning::upsert_folder(
+                                &mut parent_folder.children,
+                                folder.clone(),
+                            );
+                        }
+                    }
+                    None => {
+                        changed |= root.take_child_by_id(&folder_id).is_some();
+                    }
                 }
             }
-            for file in delta.upserted_files {
-                let Some(parent) = PathBuf::from(&file.id).parent().map(PathBuf::from) else {
-                    return false;
-                };
-                let Some(folder) = root.ensure_folder_path(&parent) else {
-                    return false;
-                };
-                changed |= folder.upsert_projected_file(file);
+            if let Some(delta) = &delta {
+                let removed = delta
+                    .removed_file_ids
+                    .iter()
+                    .cloned()
+                    .collect::<HashSet<_>>();
+                changed |= root.remove_files_by_ids(&removed);
+                for folder in &delta.folders {
+                    if root.ensure_folder_path(folder).is_none() {
+                        return false;
+                    }
+                }
+                for file in &delta.upserted_files {
+                    let Some(parent) = PathBuf::from(&file.id).parent().map(PathBuf::from) else {
+                        return false;
+                    };
+                    let Some(folder) = root.ensure_folder_path(&parent) else {
+                        return false;
+                    };
+                    changed |= folder.upsert_projected_file(file.clone());
+                }
             }
             changed
         };
-        self.source.sources[source_index].projection_revision = Some(delta.snapshot_revision);
+        if delta.is_some() {
+            self.source.sources[source_index].projection_revision = Some(target_revision);
+        }
         if changed {
             if selected {
                 self.retain_tree_state_after_selected_source_refresh();
@@ -584,6 +658,31 @@ impl FolderBrowserState {
         }
         changed
     }
+}
+
+fn folder_projections_cover_delta(
+    source_root: &std::path::Path,
+    delta: &BrowserProjectionDelta,
+    folder_projections: &[PreparedFolderProjection],
+) -> bool {
+    if folder_projections.is_empty() {
+        return false;
+    }
+    let covered = |path: &std::path::Path| {
+        folder_projections.iter().any(|projection| {
+            let projection_path = source_root.join(&projection.relative_path);
+            path == projection_path || path.starts_with(&projection_path)
+        })
+    };
+    delta
+        .upserted_files
+        .iter()
+        .all(|file| covered(std::path::Path::new(&file.id)))
+        && delta
+            .removed_file_ids
+            .iter()
+            .all(|file_id| covered(std::path::Path::new(file_id)))
+        && delta.folders.iter().all(|folder| covered(folder))
 }
 
 fn retained_source_entry(root: &std::path::Path) -> Option<SourceEntry> {

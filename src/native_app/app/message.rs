@@ -450,6 +450,17 @@ pub(in crate::native_app) struct SourceFilesystemSyncSuccess {
     pub(in crate::native_app) committed_delta:
         wavecrate::sample_sources::scanner::CommittedSourceDelta,
     pub(in crate::native_app) browser_projection_delta: Option<BrowserProjectionDelta>,
+    pub(in crate::native_app) prepared_folder_projections: Vec<PreparedFolderProjection>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::native_app) struct PreparedFolderProjection {
+    pub(in crate::native_app) relative_path: PathBuf,
+    pub(in crate::native_app) snapshot_revision: u64,
+    /// `Some` is a worker-prepared no-follow subtree snapshot; `None` marks a
+    /// folder that was removed before the targeted sync completed.
+    pub(in crate::native_app) folder:
+        Option<crate::native_app::sample_library::folder_browser::FolderEntry>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

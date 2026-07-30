@@ -17,6 +17,7 @@ pub(in crate::native_app) use progress::INDEX_PROGRESS_REPORT_INTERVAL;
 #[cfg(test)]
 pub(in crate::native_app) use progress::scan_source_with_progress;
 pub(in crate::native_app) use progress::scan_source_with_progress_cancellable;
+pub(in crate::native_app) use traversal::load_folder_at_path_with_browser_metadata;
 pub(in crate::native_app) use traversal::refresh_folder_tree_only;
 pub(super) use traversal::{load_folder_at_path, load_source_snapshot, placeholder_folder};
 pub(in crate::native_app) use verification::verify_direct_folder;

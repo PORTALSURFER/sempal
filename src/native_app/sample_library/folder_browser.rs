@@ -34,7 +34,7 @@ mod path_helpers;
 use path_helpers::{folder_label, path_id, path_id_matches, rewrite_path_id};
 
 mod folder_entry;
-use folder_entry::FolderEntry;
+pub(in crate::native_app) use folder_entry::FolderEntry;
 
 mod drag_drop;
 use drag_drop::{BrowserDragDropState, FolderBrowserDropTarget};
@@ -80,6 +80,7 @@ mod scanning;
 #[cfg(test)]
 use scanning::load_source_snapshot;
 use scanning::{file_entry, placeholder_folder};
+pub(in crate::native_app) use scanning::load_folder_at_path_with_browser_metadata;
 
 mod curation;
 mod harvest_filter;

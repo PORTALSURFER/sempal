@@ -6,14 +6,21 @@ use std::{
 };
 
 use wavecrate::sample_sources::{BrowserMetadataSnapshot, SourceDatabase};
-use wavecrate_library::sample_sources::is_supported_audio;
+use wavecrate_library::sample_sources::{
+    SourceEntryKind, SourceEntryProbeError, classify_path_without_following_with_policy,
+};
 use wavecrate_scan::sample_sources::scanner::{
     self, ScanWritePhase, ScanWriter, UncoordinatedScanWriter,
 };
 
 use crate::native_app::{
-    app::{BrowserProjectionDelta, SourceFilesystemSyncResult, SourceFilesystemSyncSuccess},
-    sample_library::folder_browser::model::file_entry_with_snapshot_metadata,
+    app::{
+        BrowserProjectionDelta, PreparedFolderProjection, SourceFilesystemSyncResult,
+        SourceFilesystemSyncSuccess,
+    },
+    sample_library::folder_browser::{
+        load_folder_at_path_with_browser_metadata, model::file_entry_with_snapshot_metadata,
+    },
 };
 
 const MAX_SYNC_ATTEMPTS: usize = 3;
@@ -118,7 +125,6 @@ fn sync_source_database_paths_once(
     cancel: &AtomicBool,
     writer: &impl ScanWriter,
 ) -> Result<SourceFilesystemSyncSuccess, String> {
-    let browser_delta_eligible = paths.iter().all(|path| is_supported_audio(path));
     let _writer = writer.lock(ScanWritePhase::Open);
     if cancel.load(Ordering::Acquire) {
         return Err(String::from(
@@ -165,49 +171,66 @@ fn sync_source_database_paths_once(
                     }
                 }
             };
-            let browser_projection_delta = if browser_delta_eligible
-                && incomplete_error.is_none()
-                && completed.committed_delta.revision > 0
+            let (browser_projection_delta, prepared_folder_projections) = if incomplete_error
+                .is_none()
             {
-                match build_browser_projection_delta(root, &db, &completed.committed_delta) {
-                    Ok(projection) => projection,
+                match build_browser_projection_preparation(
+                    root,
+                    &db,
+                    &paths,
+                    &completed.committed_delta,
+                ) {
+                    Ok(preparation) => preparation,
                     Err(error) => {
                         tracing::warn!(
                             source_id,
                             error,
                             "Falling back to a full browser projection after delta hydration failed"
                         );
-                        None
+                        (None, Vec::new())
                     }
                 }
             } else {
-                None
+                (None, Vec::new())
             };
             Ok(SourceFilesystemSyncSuccess {
                 renames_reconciled: completed.renames_reconciled,
                 incomplete_error,
                 committed_delta: completed.committed_delta,
                 browser_projection_delta,
+                prepared_folder_projections,
             })
         })
 }
 
-fn build_browser_projection_delta(
+fn build_browser_projection_preparation(
     root: &std::path::Path,
     db: &SourceDatabase,
+    paths: &[PathBuf],
     delta: &scanner::CommittedSourceDelta,
-) -> Result<Option<BrowserProjectionDelta>, String> {
-    let BrowserMetadataSnapshot { revision, files } = db
+) -> Result<(Option<BrowserProjectionDelta>, Vec<PreparedFolderProjection>), String> {
+    let snapshot = db
         .browser_metadata_snapshot()
         .map_err(|error| format!("read committed browser projection delta: {error}"))?;
-    if revision != delta.revision {
+    if delta.revision > 0 && snapshot.revision != delta.revision {
         tracing::info!(
             committed_revision = delta.revision,
-            snapshot_revision = revision,
-            "Browser delta snapshot was not the exact committed revision"
+            snapshot_revision = snapshot.revision,
+            "Browser projection snapshot was not the exact committed revision"
         );
-        return Ok(None);
+        return Ok((None, Vec::new()));
     }
+    let browser_projection_delta = (delta.revision > 0)
+        .then(|| build_browser_projection_delta(root, &snapshot, delta));
+    let prepared_folder_projections = prepare_folder_projections(root, db, paths, &snapshot, delta)?;
+    Ok((browser_projection_delta, prepared_folder_projections))
+}
+
+fn build_browser_projection_delta(
+    root: &std::path::Path,
+    snapshot: &BrowserMetadataSnapshot,
+    delta: &scanner::CommittedSourceDelta,
+) -> BrowserProjectionDelta {
     let upsert_paths = delta
         .created
         .iter()
@@ -226,7 +249,10 @@ fn build_browser_projection_delta(
         )
         .collect::<std::collections::HashSet<_>>();
     let mut folders = std::collections::BTreeSet::new();
-    let upserted_files = files
+    let upserted_files = snapshot
+        .files
+        .iter()
+        .cloned()
         .into_iter()
         .filter(|entry| !entry.missing && upsert_paths.contains(entry.relative_path.as_path()))
         .map(|entry| {
@@ -259,13 +285,83 @@ fn build_browser_projection_delta(
                 .to_string()
         }))
         .collect();
-    Ok(Some(BrowserProjectionDelta {
+    BrowserProjectionDelta {
         manifest_revision: delta.revision,
-        snapshot_revision: revision,
+        snapshot_revision: snapshot.revision,
         folders: folders.into_iter().collect(),
         removed_file_ids,
         upserted_files,
-    }))
+    }
+}
+
+fn prepare_folder_projections(
+    root: &std::path::Path,
+    db: &SourceDatabase,
+    paths: &[PathBuf],
+    snapshot: &BrowserMetadataSnapshot,
+    delta: &scanner::CommittedSourceDelta,
+) -> Result<Vec<PreparedFolderProjection>, String> {
+    let policy = db
+        .source_traversal_policy()
+        .map_err(|error| format!("read source traversal policy: {error}"))?;
+    let mut targets = paths
+        .iter()
+        .filter(|path| path.is_relative())
+        .filter_map(|relative_path| {
+            match classify_path_without_following_with_policy(&root.join(relative_path), policy) {
+                Ok(classification)
+                    if classification.visible_kind() == Some(SourceEntryKind::Directory) =>
+                {
+                    Some(relative_path.clone())
+                }
+                Err(SourceEntryProbeError::Missing)
+                    if snapshot
+                        .files
+                        .iter()
+                        .all(|entry| entry.relative_path != *relative_path)
+                        && delta
+                            .deleted
+                            .iter()
+                            .all(|entry| entry.relative_path != *relative_path) =>
+                {
+                    Some(relative_path.clone())
+                }
+                _ => None,
+            }
+        })
+        .collect::<Vec<_>>();
+    targets.sort();
+    targets.dedup();
+    let target_set = targets.clone();
+    targets.retain(|path| {
+        !target_set.iter().any(|ancestor| {
+            ancestor != path && path.starts_with(ancestor) && ancestor < path
+        })
+    });
+
+    let mut projections = Vec::new();
+    for relative_path in targets {
+        let absolute_path = root.join(&relative_path);
+        let folder = match classify_path_without_following_with_policy(&absolute_path, policy) {
+            Ok(classification)
+                if classification.visible_kind() == Some(SourceEntryKind::Directory) => {
+                Some(
+                    load_folder_at_path_with_browser_metadata(&absolute_path, root, snapshot, policy)
+                        .ok_or_else(|| {
+                            format!("read folder projection: {}", absolute_path.display())
+                        })?,
+                )
+            }
+            Err(SourceEntryProbeError::Missing) => None,
+            _ => continue,
+        };
+        projections.push(PreparedFolderProjection {
+            relative_path,
+            snapshot_revision: snapshot.revision,
+            folder,
+        });
+    }
+    Ok(projections)
 }
 
 fn wait_for_retry(cancel: &AtomicBool, delay: Duration) -> bool {
@@ -292,9 +388,12 @@ mod tests {
 
     #[test]
     fn filesystem_sync_panic_returns_a_terminal_result() {
-        let result = recover_source_filesystem_sync(String::from("source"), 17, 2, || {
-            panic!("simulated targeted sync panic")
-        });
+        let result = recover_source_filesystem_sync(
+            String::from("source"),
+            17,
+            2,
+            || panic!("simulated targeted sync panic"),
+        );
 
         assert_eq!(result.source_id, "source");
         assert_eq!(result.lifecycle_generation, 17);
