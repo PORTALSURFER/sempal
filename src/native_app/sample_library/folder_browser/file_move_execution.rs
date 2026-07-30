@@ -22,13 +22,14 @@ use super::{
         move_existing_destination_to_backup, move_file_over_backup,
         move_file_to_unique_destination, remove_overwrite_backup,
         rename_files_with_rollback_and_progress, restore_overwrite_backup,
-        transfer_files_with_rollback_and_progress, unique_destination,
+        transfer_files_with_rollback_and_progress_with_commit_callback, unique_destination,
     },
 };
 use crate::native_app::{
     app::FileMoveProgress, sample_library::file_actions::sample_path_label,
     waveform::remap_persisted_waveform_cache_after_move,
 };
+use wavecrate::sample_sources::{SourceFileEvidence, capture_source_file_evidence};
 
 #[cfg(test)]
 pub(in crate::native_app) fn execute_folder_move_request(
@@ -139,6 +140,7 @@ where
     }
     let total = moves.len().saturating_add(2).max(2);
     let mut moved_paths = Vec::with_capacity(moves.len());
+    let mut moved_path_evidence = Vec::with_capacity(moves.len());
     for (index, (old_path, new_path)) in moves.iter().enumerate() {
         reporter.emit(
             index,
@@ -154,7 +156,9 @@ where
                 None => format!("Folder move failed: {error}"),
             });
         }
-        moved_paths.push((old_path.to_path_buf(), new_path.to_path_buf()));
+        let new_path = new_path.to_path_buf();
+        moved_paths.push((old_path.to_path_buf(), new_path.clone()));
+        moved_path_evidence.push((new_path.clone(), capture_source_file_evidence(&new_path)));
     }
     let completed_moves = moved_paths.len();
     reporter.emit(
@@ -173,6 +177,7 @@ where
     reporter.emit(total, total, String::from("Done"));
     Ok(FolderMoveSuccess {
         moved_paths,
+        moved_path_evidence,
         conflicts: Vec::new(),
         metadata_error,
     })
@@ -186,6 +191,15 @@ fn rollback_moved_folders(moved_paths: &[(PathBuf, PathBuf)]) -> Option<String> 
         }
     }
     (!errors.is_empty()).then(|| errors.join("; "))
+}
+
+fn capture_moved_path_evidence(
+    moved_paths: &[(PathBuf, PathBuf)],
+) -> Vec<(PathBuf, SourceFileEvidence)> {
+    moved_paths
+        .iter()
+        .map(|(_, after)| (after.clone(), capture_source_file_evidence(after)))
+        .collect()
 }
 
 pub(in crate::native_app) fn execute_folder_move_transaction(
@@ -260,13 +274,20 @@ where
     )?;
     let total = file_move_work_total(&plan);
     reporter.emit(0, total, String::from("Moving files"));
-    let moved_paths = transfer_files_with_rollback_and_progress(&plan.ready, |completed, path| {
-        reporter.emit(
-            completed,
-            total,
-            format!("Moved {}", sample_path_label(path)),
-        );
-    })?;
+    let mut moved_path_evidence = Vec::new();
+    let moved_paths = transfer_files_with_rollback_and_progress_with_commit_callback(
+        &plan.ready,
+        |completed, path| {
+            reporter.emit(
+                completed,
+                total,
+                format!("Moved {}", sample_path_label(path)),
+            );
+        },
+        |_, after| {
+            moved_path_evidence.push((after.to_path_buf(), capture_source_file_evidence(after)));
+        },
+    )?;
     let checked = moved_paths.len().saturating_add(plan.conflicts.len());
     reporter.emit(checked, total, String::from("Preserving waveform cache"));
     remap_persisted_waveform_cache_for_moves(&moved_paths);
@@ -281,6 +302,7 @@ where
     reporter.emit(total, total, String::from("Done"));
     Ok(FolderMoveSuccess {
         moved_paths,
+        moved_path_evidence,
         conflicts: plan.conflicts,
         metadata_error,
     })
@@ -304,13 +326,20 @@ where
     let plan = file_move_items_plan_to_folder(file_moves, target_folder, target_protected)?;
     let total = file_move_work_total(&plan);
     reporter.emit(0, total, String::from("Moving files"));
-    let moved_paths = transfer_files_with_rollback_and_progress(&plan.ready, |completed, path| {
-        reporter.emit(
-            completed,
-            total,
-            format!("Moved {}", sample_path_label(path)),
-        );
-    })?;
+    let mut moved_path_evidence = Vec::new();
+    let moved_paths = transfer_files_with_rollback_and_progress_with_commit_callback(
+        &plan.ready,
+        |completed, path| {
+            reporter.emit(
+                completed,
+                total,
+                format!("Moved {}", sample_path_label(path)),
+            );
+        },
+        |_, after| {
+            moved_path_evidence.push((after.to_path_buf(), capture_source_file_evidence(after)));
+        },
+    )?;
     let checked = moved_paths.len().saturating_add(plan.conflicts.len());
     reporter.emit(checked, total, String::from("Preserving waveform cache"));
     remap_persisted_waveform_cache_for_moves(&moved_paths);
@@ -327,6 +356,7 @@ where
     reporter.emit(total, total, String::from("Done"));
     Ok(FolderMoveSuccess {
         moved_paths,
+        moved_path_evidence,
         conflicts: plan.conflicts,
         metadata_error,
     })
@@ -355,8 +385,9 @@ where
     }
     reporter.emit(0, 2, format!("Moving {}", sample_path_label(path)));
     let completed = move_file_to_unique_destination(path, target_folder, "Sample move failed")?;
-    reporter.emit(1, 2, String::from("Preserving waveform cache"));
     let moved_paths = vec![completed];
+    let moved_path_evidence = capture_moved_path_evidence(&moved_paths);
+    reporter.emit(1, 2, String::from("Preserving waveform cache"));
     remap_persisted_waveform_cache_for_moves(&moved_paths);
     reporter.emit(1, 2, String::from("Updating metadata"));
     let metadata_error =
@@ -364,6 +395,7 @@ where
     reporter.emit(2, 2, String::from("Done"));
     Ok(FolderMoveSuccess {
         moved_paths,
+        moved_path_evidence,
         conflicts: Vec::new(),
         metadata_error,
     })
@@ -394,6 +426,7 @@ pub(in crate::native_app) fn execute_file_move_conflict_request_with_progress(
 
     let total = file_move_conflict_progress_total(&batch, request);
     let mut moved_paths = Vec::new();
+    let mut moved_path_evidence = Vec::new();
     let mut last_resolution = request.resolution;
     loop {
         let Some(conflict) = batch.conflicts.get(batch.current_index).cloned() else {
@@ -417,12 +450,14 @@ pub(in crate::native_app) fn execute_file_move_conflict_request_with_progress(
                     result: Err(FileMoveConflictExecutionFailure {
                         batch,
                         moved_paths,
+                        moved_path_evidence,
                         error,
                         metadata_error,
                     }),
                 };
             }
         };
+        moved_path_evidence.extend(capture_moved_path_evidence(&completed));
         remap_persisted_waveform_cache_for_moves(&completed);
         match resolution {
             FileMoveConflictResolution::Overwrite | FileMoveConflictResolution::Rename => {
@@ -459,6 +494,7 @@ pub(in crate::native_app) fn execute_file_move_conflict_request_with_progress(
         result: Ok(FileMoveConflictExecutionSuccess {
             batch,
             moved_paths,
+            moved_path_evidence,
             last_resolution,
             metadata_error,
         }),
@@ -604,9 +640,17 @@ mod tests {
         };
         let result = execute_folder_move_request(request).result;
 
+        let success = result.expect("move succeeds");
         assert_eq!(
-            result.expect("move succeeds").moved_paths,
+            success.moved_paths,
             vec![(source.clone(), destination.clone())]
+        );
+        assert_eq!(
+            success.moved_path_evidence,
+            vec![(
+                destination.clone(),
+                capture_source_file_evidence(&destination)
+            )]
         );
         assert!(!source.exists());
         assert_eq!(fs::read(&destination).expect("read destination"), b"source");
@@ -655,6 +699,39 @@ mod tests {
                 .last()
                 .is_some_and(|progress| progress.completed == progress.total),
             "file move worker should finish progress at total: {progress:?}"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn extracted_file_move_captures_evidence_before_preservation_progress() {
+        let root = temp_dir("wavecrate-extracted-file-move-evidence");
+        let source_dir = root.join("source");
+        let target_dir = root.join("target");
+        fs::create_dir_all(&source_dir).expect("create source");
+        fs::create_dir_all(&target_dir).expect("create target");
+        let source = source_dir.join("kick.wav");
+        let destination = target_dir.join("kick.wav");
+        fs::write(&source, b"source").expect("write source");
+        let original_evidence = capture_source_file_evidence(&source);
+        let request = FolderMoveRequest::ExtractedFile {
+            source_root: root.clone(),
+            source_database_root: root.clone(),
+            path: source,
+            target_folder: target_dir,
+        };
+
+        let completion = execute_folder_move_request_with_progress(request, 0, |progress| {
+            if progress.completed == 1 {
+                fs::write(&destination, b"replacement").expect("rewrite destination");
+            }
+            true
+        });
+        let success = completion.result.expect("move succeeds");
+
+        assert_eq!(
+            success.moved_path_evidence,
+            vec![(destination, original_evidence)]
         );
         let _ = fs::remove_dir_all(root);
     }
@@ -763,9 +840,17 @@ mod tests {
             FileMoveConflictResolutionRequest::new(FileMoveConflictResolution::Overwrite, false),
         );
 
+        let success = result.result.expect("overwrite succeeds");
         assert_eq!(
-            result.result.expect("overwrite succeeds").moved_paths,
+            success.moved_paths,
             vec![(source.clone(), destination.clone())]
+        );
+        assert_eq!(
+            success.moved_path_evidence,
+            vec![(
+                destination.clone(),
+                capture_source_file_evidence(&destination)
+            )]
         );
         assert!(!source.exists());
         assert_eq!(fs::read(&destination).expect("read destination"), b"source");

@@ -140,7 +140,15 @@ pub(super) fn rename_files_with_rollback_and_progress(
 
 pub(super) fn transfer_files_with_rollback_and_progress(
     transfers: &[FileTransfer],
+    progress: impl FnMut(usize, &Path),
+) -> Result<Vec<(PathBuf, PathBuf)>, String> {
+    transfer_files_with_rollback_and_progress_with_commit_callback(transfers, progress, |_, _| {})
+}
+
+pub(super) fn transfer_files_with_rollback_and_progress_with_commit_callback(
+    transfers: &[FileTransfer],
     mut progress: impl FnMut(usize, &Path),
+    mut on_commit: impl FnMut(&Path, &Path),
 ) -> Result<Vec<(PathBuf, PathBuf)>, String> {
     let mut completed = Vec::new();
     for transfer in transfers {
@@ -171,6 +179,7 @@ pub(super) fn transfer_files_with_rollback_and_progress(
                 return Err(error);
             }
         };
+        on_commit(&transfer.source_path, committed.path());
         progress(completed.len() + 1, committed.path());
         completed.push(CompletedTransfer {
             transfer: transfer.clone(),

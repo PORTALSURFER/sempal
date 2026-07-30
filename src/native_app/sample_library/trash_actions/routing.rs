@@ -9,7 +9,7 @@ use crate::native_app::app::{
     emit_gui_action, sample_path_label,
 };
 use crate::native_app::sample_library::committed_file_mutations::{
-    FileMutationChange, FileMutationOperation, FileMutationProjection,
+    FileMutationOperation, FileMutationProjection, PreparedCommittedFileMutationChange,
 };
 use crate::native_app::sample_library::context_menu_target::BrowserContextTargetKind;
 use crate::native_app::sample_library::sample_list::{
@@ -221,7 +221,7 @@ impl NativeAppState {
                     TrashMoveResult::Moved { .. } | TrashMoveResult::Missing
                 )
             })
-            .map(|outcome| outcome.source.clone())
+            .map(|outcome| (outcome.source.clone(), outcome.evidence.clone()))
             .collect::<Vec<_>>();
         let failed_mutations = outcomes
             .iter()
@@ -257,19 +257,19 @@ impl NativeAppState {
                 }
                 committed_paths
                     .iter()
-                    .any(|committed| committed == &path)
+                    .any(|(committed, _)| committed == &path)
                     .then_some(FileMutationProjection::TrashFolder { path })
             }
             TrashMoveTarget::Files(_) => self.finish_file_trash_move(&outcomes, action, started_at),
         };
         let mut committed_changes = committed_paths
             .into_iter()
-            .map(FileMutationChange::deleted)
+            .map(|(path, evidence)| PreparedCommittedFileMutationChange::deleted(path, evidence))
             .collect::<Vec<_>>();
         if let (Some(change), Some(projection)) = (committed_changes.first_mut(), projection) {
             *change = change.clone().with_projection(projection);
         }
-        self.queue_partially_committed_file_mutation(
+        self.queue_prepared_partially_committed_file_mutation(
             FileMutationOperation::Trash,
             committed_changes,
             failed_mutations

@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use crate::native_app::app::{GuiMessage, NativeAppState, emit_gui_action, logging};
 use crate::native_app::sample_library::committed_file_mutations::{
-    FileMutationChange, FileMutationOperation, FileMutationProjection,
+    FileMutationOperation, FileMutationProjection, PreparedCommittedFileMutationChange,
 };
 use crate::native_app::sample_library::context_menu_target::BrowserContextTargetKind;
 use crate::native_app::sample_library::folder_browser::commands::{
@@ -209,16 +209,23 @@ impl NativeAppState {
             return;
         };
         let metadata_error = rename_completion_metadata_error(&completion);
+        let evidence = completion
+            .post_filesystem_evidence
+            .clone()
+            .unwrap_or(wavecrate::sample_sources::SourceFileEvidence::Unverifiable);
         self.ui.status.sample = String::from("Finishing rename");
-        self.queue_partially_committed_file_mutation(
+        self.queue_prepared_partially_committed_file_mutation(
             FileMutationOperation::Rename,
             vec![
-                FileMutationChange::path_only_move(old_path, new_path.clone()).with_projection(
-                    FileMutationProjection::RenameCompletion {
-                        target_path: new_path,
-                        completion,
-                    },
-                ),
+                PreparedCommittedFileMutationChange::path_only_move(
+                    old_path,
+                    new_path.clone(),
+                    evidence,
+                )
+                .with_projection(FileMutationProjection::RenameCompletion {
+                    target_path: new_path,
+                    completion,
+                }),
             ],
             metadata_error
                 .into_iter()
@@ -273,19 +280,6 @@ impl NativeAppState {
     ) {
         if let Some(remap) = result.path_remap {
             self.apply_browser_rename_path_remap(&remap);
-            self.queue_partially_committed_file_mutation(
-                FileMutationOperation::Rename,
-                vec![FileMutationChange::path_only_move(
-                    remap.old_path.clone(),
-                    remap.new_path.clone(),
-                )],
-                result
-                    .metadata_error
-                    .into_iter()
-                    .map(|error| (None, error))
-                    .collect(),
-                context,
-            );
             self.queue_active_similarity_score_resolution(context);
         }
         self.ui.status.sample = result.status;

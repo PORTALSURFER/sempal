@@ -203,6 +203,56 @@ fn committed_mutation_prepared_boundary_is_typed() {
 }
 
 #[test]
+fn worker_backed_partial_mutations_cross_typed_prepared_boundary() {
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let rename_worker = fs::read_to_string(format!(
+        "{manifest_dir}/src/native_app/sample_library/folder_browser/rename_execution.rs"
+    ))
+    .expect("rename worker should be readable");
+    let rename_ui = fs::read_to_string(format!(
+        "{manifest_dir}/src/native_app/sample_library/folder_browser_rename_actions.rs"
+    ))
+    .expect("rename UI completion should be readable");
+    let move_worker = fs::read_to_string(format!(
+        "{manifest_dir}/src/native_app/sample_library/folder_browser/file_move_execution.rs"
+    ))
+    .expect("file move worker should be readable");
+    let move_ui = fs::read_to_string(format!(
+        "{manifest_dir}/src/native_app/sample_library/drag_drop_actions/folder_moves.rs"
+    ))
+    .expect("folder move UI completion should be readable");
+    let trash_worker = fs::read_to_string(format!(
+        "{manifest_dir}/src/native_app/sample_library/trash_actions/movement.rs"
+    ))
+    .expect("trash worker should be readable");
+    let trash_ui = fs::read_to_string(format!(
+        "{manifest_dir}/src/native_app/sample_library/trash_actions/routing.rs"
+    ))
+    .expect("trash UI completion should be readable");
+
+    for (worker, evidence_field) in [
+        (&rename_worker, "post_filesystem_evidence"),
+        (&move_worker, "moved_path_evidence"),
+        (&trash_worker, "pub evidence: SourceFileEvidence"),
+    ] {
+        assert!(
+            worker.contains("capture_source_file_evidence") && worker.contains(evidence_field),
+            "worker must capture filesystem evidence before completion DTO crosses the GUI boundary"
+        );
+    }
+    for ui in [&rename_ui, &move_ui, &trash_ui] {
+        assert!(
+            ui.contains("queue_prepared_partially_committed_file_mutation"),
+            "worker-backed partial completion must use the typed prepared partial handoff"
+        );
+        assert!(
+            !ui.contains("capture_source_file_evidence"),
+            "UI completion must not capture filesystem evidence"
+        );
+    }
+}
+
+#[test]
 fn sample_identity_fingerprints_require_wavecrate_debug_mode() {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let source = fs::read_to_string(format!(

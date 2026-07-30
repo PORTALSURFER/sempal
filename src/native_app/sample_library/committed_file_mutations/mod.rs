@@ -272,10 +272,6 @@ pub(in crate::native_app) enum FileMutationProjection {
         path: PathBuf,
         reason: BrowserListingRevealReason,
     },
-    LoadSelectedIfChanged {
-        target_path: PathBuf,
-        previous_selected: Option<String>,
-    },
     RenameCompletion {
         target_path: PathBuf,
         completion: RenameCommitCompletion,
@@ -319,8 +315,7 @@ impl FileMutationProjection {
             Self::SelectAndFollow { path }
             | Self::SelectAndLoad { path }
             | Self::FocusAndLoad { path, .. } => Some(path),
-            Self::LoadSelectedIfChanged { target_path, .. }
-            | Self::RenameCompletion { target_path, .. }
+            Self::RenameCompletion { target_path, .. }
             | Self::MoveCompletion { target_path, .. }
             | Self::MoveConflictCompletion { target_path, .. }
             | Self::MoveTransaction { target_path, .. }
@@ -488,7 +483,6 @@ impl PreparedCommittedFileMutationChange {
         })
     }
 
-    #[allow(dead_code)]
     pub(in crate::native_app) fn path_only_move(
         before: PathBuf,
         after: PathBuf,
@@ -507,7 +501,6 @@ impl PreparedCommittedFileMutationChange {
         })
     }
 
-    #[allow(dead_code)]
     pub(in crate::native_app) fn deleted(path: PathBuf, evidence: SourceFileEvidence) -> Self {
         Self(FileMutationChange {
             before_path: Some(path),
@@ -597,7 +590,7 @@ impl NativeAppState {
     /// Reconcile a mutation whose filesystem evidence was captured by its source-owned worker.
     ///
     /// Unlike the legacy route, this does not inspect the filesystem on the UI thread. Callers
-    /// must provide changes created with `PreparedCommittedFileMutationChange::created`; the
+    /// must provide changes created with a `PreparedCommittedFileMutationChange` constructor; the
     /// worker still verifies that evidence before touching source metadata, so an intervening
     /// rewrite is rejected.
     pub(in crate::native_app) fn queue_prepared_committed_file_mutation(
@@ -1086,24 +1079,6 @@ impl NativeAppState {
                         *reason,
                     );
                 self.load_navigation_sample(path.to_string_lossy().to_string(), context);
-            }
-            FileMutationProjection::LoadSelectedIfChanged {
-                previous_selected, ..
-            } => {
-                let Some(selected) = self
-                    .library
-                    .folder_browser
-                    .selected_file_id()
-                    .map(str::to_owned)
-                else {
-                    return;
-                };
-                if previous_selected.as_deref() == Some(selected.as_str()) {
-                    return;
-                }
-                self.cancel_metadata_tag_entry();
-                self.metadata.selected_tag = None;
-                self.load_navigation_sample(selected, context);
             }
             FileMutationProjection::RenameCompletion { completion, .. } => {
                 self.apply_committed_folder_browser_rename(completion.clone(), context);

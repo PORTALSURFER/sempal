@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use wavecrate::sample_sources::SampleCollection;
+use wavecrate::sample_sources::SourceFileEvidence;
 
 use super::FolderDropResult;
 
@@ -130,6 +131,8 @@ pub(in crate::native_app) struct FolderMoveCompletion {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::native_app) struct FolderMoveSuccess {
     pub(in crate::native_app) moved_paths: Vec<(PathBuf, PathBuf)>,
+    /// Evidence captured by the worker immediately after each destination was committed.
+    pub(in crate::native_app) moved_path_evidence: Vec<(PathBuf, SourceFileEvidence)>,
     pub(in crate::native_app) conflicts: Vec<FileMoveConflict>,
     pub(in crate::native_app) metadata_error: Option<String>,
 }
@@ -145,6 +148,7 @@ pub(in crate::native_app) struct FileMoveConflictCompletion {
 pub(in crate::native_app) struct FileMoveConflictExecutionSuccess {
     pub(in crate::native_app) batch: FileMoveConflictBatch,
     pub(in crate::native_app) moved_paths: Vec<(PathBuf, PathBuf)>,
+    pub(in crate::native_app) moved_path_evidence: Vec<(PathBuf, SourceFileEvidence)>,
     pub(in crate::native_app) last_resolution: FileMoveConflictResolution,
     pub(in crate::native_app) metadata_error: Option<String>,
 }
@@ -153,6 +157,7 @@ pub(in crate::native_app) struct FileMoveConflictExecutionSuccess {
 pub(in crate::native_app) struct FileMoveConflictExecutionFailure {
     pub(in crate::native_app) batch: FileMoveConflictBatch,
     pub(in crate::native_app) moved_paths: Vec<(PathBuf, PathBuf)>,
+    pub(in crate::native_app) moved_path_evidence: Vec<(PathBuf, SourceFileEvidence)>,
     pub(in crate::native_app) error: String,
     pub(in crate::native_app) metadata_error: Option<String>,
 }

@@ -1,6 +1,6 @@
 use std::fs;
 
-use wavecrate::sample_sources::SourceDatabase;
+use wavecrate::sample_sources::{SourceDatabase, capture_source_file_evidence};
 
 use super::{
     FileMetadataRemap, FolderEntry, RenameCommitCompletion, RenameCommitRequest,
@@ -11,6 +11,7 @@ use super::{
 pub(in crate::native_app) fn execute_rename_commit_request(
     request: RenameCommitRequest,
 ) -> RenameCommitCompletion {
+    let mut post_filesystem_evidence = None;
     let result = match &request {
         RenameCommitRequest::FolderRename {
             old_path,
@@ -21,7 +22,10 @@ pub(in crate::native_app) fn execute_rename_commit_request(
                 Err(format!("Folder rename failed: {new_name} already exists"))
             } else {
                 fs::rename(old_path, new_path)
-                    .map(|()| RenameCommitSuccess::FolderRenamed)
+                    .map(|()| {
+                        post_filesystem_evidence = Some(capture_source_file_evidence(new_path));
+                        RenameCommitSuccess::FolderRenamed
+                    })
                     .map_err(|error| format!("Folder rename failed: {error}"))
             }
         }
@@ -53,17 +57,24 @@ pub(in crate::native_app) fn execute_rename_commit_request(
                 Err(format!("File rename failed: {new_name} already exists"))
             } else {
                 fs::rename(old_path, new_path)
-                    .map(|()| RenameCommitSuccess::FileRenamed {
-                        metadata_remap_result: metadata_remap
-                            .as_ref()
-                            .map(persist_renamed_file_metadata)
-                            .unwrap_or(Ok(())),
+                    .map(|()| {
+                        post_filesystem_evidence = Some(capture_source_file_evidence(new_path));
+                        RenameCommitSuccess::FileRenamed {
+                            metadata_remap_result: metadata_remap
+                                .as_ref()
+                                .map(persist_renamed_file_metadata)
+                                .unwrap_or(Ok(())),
+                        }
                     })
                     .map_err(|error| format!("File rename failed: {error}"))
             }
         }
     };
-    RenameCommitCompletion { request, result }
+    RenameCommitCompletion {
+        request,
+        result,
+        post_filesystem_evidence,
+    }
 }
 
 fn persist_renamed_file_metadata(remap: &FileMetadataRemap) -> Result<(), String> {
@@ -77,4 +88,33 @@ fn persist_renamed_file_metadata(remap: &FileMetadataRemap) -> Result<(), String
         .remap_analysis_sample_identity(&remap.old_relative, &remap.new_relative)
         .map_err(|err| err.to_string())?;
     batch.commit().map_err(|err| err.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wavecrate::sample_sources::SourceFileEvidence;
+
+    #[test]
+    fn rename_worker_captures_destination_evidence_after_filesystem_success() {
+        let root = tempfile::tempdir().expect("rename root");
+        let old_path = root.path().join("old");
+        let new_path = root.path().join("new");
+        std::fs::create_dir(&old_path).expect("create old folder");
+
+        let completion = execute_rename_commit_request(RenameCommitRequest::FolderRename {
+            old_path,
+            new_path,
+            new_name: String::from("new"),
+        });
+
+        assert!(matches!(
+            completion.result,
+            Ok(RenameCommitSuccess::FolderRenamed)
+        ));
+        assert!(matches!(
+            completion.post_filesystem_evidence,
+            Some(SourceFileEvidence::Metadata { is_dir: true, .. })
+        ));
+    }
 }

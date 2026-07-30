@@ -11,6 +11,7 @@ use crate::native_app::app::{
 };
 use crate::native_app::sample_library::committed_file_mutations::{
     FileMutationChange, FileMutationOperation, FileMutationProjection,
+    PreparedCommittedFileMutationChange,
 };
 use crate::native_app::sample_library::folder_browser::commands::{
     FileMoveConflictCompletion, FolderDropResult, FolderMoveCompletion, FolderMoveDropInput,
@@ -363,9 +364,12 @@ impl NativeAppState {
             }
             Ok(success) => {
                 let metadata_error = success.metadata_error.clone();
-                let mut committed_changes =
-                    folder_move_mutation_changes(&request, &success.moved_paths);
-                attach_move_completion_projection(
+                let mut committed_changes = folder_move_prepared_mutation_changes(
+                    &request,
+                    &success.moved_paths,
+                    &success.moved_path_evidence,
+                );
+                attach_prepared_move_completion_projection(
                     &mut committed_changes,
                     FileMutationProjection::MoveCompletion {
                         target_path: success
@@ -381,7 +385,7 @@ impl NativeAppState {
                     },
                 );
                 self.ui.status.sample = String::from("Finishing file move");
-                self.queue_partially_committed_file_mutation(
+                self.queue_prepared_partially_committed_file_mutation(
                     FileMutationOperation::Move,
                     committed_changes,
                     metadata_error
@@ -397,7 +401,7 @@ impl NativeAppState {
     fn finish_folder_move_result(
         &mut self,
         started_at: Instant,
-        previous_selected: Option<String>,
+        _previous_selected: Option<String>,
         committed_changes: Vec<FileMutationChange>,
         metadata_error: Option<String>,
         result: Result<FolderDropResult, String>,
@@ -405,6 +409,7 @@ impl NativeAppState {
     ) {
         match result {
             Ok(result) => {
+                let _ = metadata_error;
                 let moved = !committed_changes.is_empty() || !result.moved_paths.is_empty();
                 self.apply_moved_sample_paths(&result.moved_paths);
                 if let Some(status) = result.status {
@@ -414,19 +419,6 @@ impl NativeAppState {
                     self.persist_source_scan_cache_after_move(
                         "browser.drag_drop.move.cache_persist",
                         started_at,
-                    );
-                }
-                if moved {
-                    let mut committed_changes = committed_changes;
-                    attach_move_projection(&mut committed_changes, previous_selected);
-                    self.queue_partially_committed_file_mutation(
-                        FileMutationOperation::Move,
-                        committed_changes,
-                        metadata_error
-                            .into_iter()
-                            .map(|error| (None, error))
-                            .collect(),
-                        context,
                     );
                 }
                 emit_gui_action(
@@ -451,12 +443,13 @@ impl NativeAppState {
                         context,
                     );
                 } else {
-                    let mut failures = vec![(None, error.clone())];
-                    failures.extend(metadata_error.map(|error| (None, error)));
-                    self.queue_partially_committed_file_mutation(
+                    let reported_error = metadata_error
+                        .map(|metadata| format!("{error}; {metadata}"))
+                        .unwrap_or_else(|| error.clone());
+                    self.record_failed_file_mutation(
                         FileMutationOperation::Move,
-                        committed_changes,
-                        failures,
+                        None,
+                        reported_error,
                         context,
                     );
                 }
@@ -508,12 +501,12 @@ impl NativeAppState {
             );
             return;
         }
-        let mut committed_changes = moved_paths
-            .iter()
-            .cloned()
-            .map(|(before, after)| FileMutationChange::path_only_move(before, after))
-            .collect::<Vec<_>>();
-        attach_move_completion_projection(
+        let moved_path_evidence = match &completion.result {
+            Ok(success) => &success.moved_path_evidence,
+            Err(failure) => &failure.moved_path_evidence,
+        };
+        let mut committed_changes = prepared_path_only_moves(&moved_paths, moved_path_evidence);
+        attach_prepared_move_completion_projection(
             &mut committed_changes,
             FileMutationProjection::MoveConflictCompletion {
                 target_path: moved_paths
@@ -533,7 +526,7 @@ impl NativeAppState {
             failures.push((None, failure.error.clone()));
         }
         self.ui.status.sample = String::from("Finishing file move");
-        self.queue_partially_committed_file_mutation(
+        self.queue_prepared_partially_committed_file_mutation(
             FileMutationOperation::Move,
             committed_changes,
             failures,
@@ -544,7 +537,7 @@ impl NativeAppState {
     fn finish_file_move_conflict_result(
         &mut self,
         started_at: Instant,
-        previous_selected: Option<String>,
+        _previous_selected: Option<String>,
         committed_moves: Vec<(PathBuf, PathBuf)>,
         metadata_error: Option<String>,
         result: Result<FolderDropResult, String>,
@@ -553,12 +546,6 @@ impl NativeAppState {
         match result {
             Ok(result) => {
                 let moved = !committed_moves.is_empty() || !result.moved_paths.is_empty();
-                let mut authoritative_moves = committed_moves;
-                for moved_path in &result.moved_paths {
-                    if !authoritative_moves.contains(moved_path) {
-                        authoritative_moves.push(moved_path.clone());
-                    }
-                }
                 self.apply_moved_sample_paths(&result.moved_paths);
                 if let Some(status) = result.status {
                     self.ui.status.sample = status;
@@ -567,22 +554,6 @@ impl NativeAppState {
                     self.persist_source_scan_cache_after_move(
                         "browser.drag_drop.file_conflict.cache_persist",
                         started_at,
-                    );
-                }
-                if moved {
-                    let mut committed_changes = authoritative_moves
-                        .into_iter()
-                        .map(|(before, after)| FileMutationChange::path_only_move(before, after))
-                        .collect::<Vec<_>>();
-                    attach_move_projection(&mut committed_changes, previous_selected);
-                    self.queue_partially_committed_file_mutation(
-                        FileMutationOperation::Move,
-                        committed_changes,
-                        metadata_error
-                            .into_iter()
-                            .map(|error| (None, error))
-                            .collect(),
-                        context,
                     );
                 }
                 emit_gui_action(
@@ -599,15 +570,13 @@ impl NativeAppState {
                 );
             }
             Err(error) => {
-                let mut failures = vec![(None, error.clone())];
-                failures.extend(metadata_error.map(|error| (None, error)));
-                self.queue_partially_committed_file_mutation(
+                let error = metadata_error
+                    .map(|metadata| format!("{error}; {metadata}"))
+                    .unwrap_or(error);
+                self.record_failed_file_mutation(
                     FileMutationOperation::Move,
-                    committed_moves
-                        .into_iter()
-                        .map(|(before, after)| FileMutationChange::path_only_move(before, after))
-                        .collect(),
-                    failures,
+                    None,
+                    error.clone(),
                     context,
                 );
                 self.ui.status.sample = error.clone();
@@ -904,13 +873,19 @@ impl NativeAppState {
     }
 }
 
-fn folder_move_mutation_changes(
+fn folder_move_prepared_mutation_changes(
     request: &FolderMoveRequest,
     moved_paths: &[(PathBuf, PathBuf)],
-) -> Vec<FileMutationChange> {
+    evidence: &[(PathBuf, wavecrate::sample_sources::SourceFileEvidence)],
+) -> Vec<PreparedCommittedFileMutationChange> {
     moved_paths
         .iter()
         .map(|(before, after)| {
+            let evidence = evidence
+                .iter()
+                .find(|(path, _)| path == after)
+                .map(|(_, evidence)| evidence.clone())
+                .unwrap_or(wavecrate::sample_sources::SourceFileEvidence::Unverifiable);
             let copy_only = match request {
                 FolderMoveRequest::SourcedFiles { file_moves, .. } => file_moves
                     .iter()
@@ -919,34 +894,51 @@ fn folder_move_mutation_changes(
                 _ => false,
             };
             if copy_only {
-                FileMutationChange::created(after.clone())
+                PreparedCommittedFileMutationChange::created(after.clone(), evidence)
             } else {
-                FileMutationChange::path_only_move(before.clone(), after.clone())
+                PreparedCommittedFileMutationChange::path_only_move(
+                    before.clone(),
+                    after.clone(),
+                    evidence,
+                )
             }
         })
         .collect()
 }
 
-fn attach_move_projection(changes: &mut [FileMutationChange], previous_selected: Option<String>) {
-    let Some(target_path) = changes
+fn prepared_path_only_moves(
+    moved_paths: &[(PathBuf, PathBuf)],
+    evidence: &[(PathBuf, wavecrate::sample_sources::SourceFileEvidence)],
+) -> Vec<PreparedCommittedFileMutationChange> {
+    moved_paths
         .iter()
-        .find_map(|change| change.after_path.as_ref().cloned())
-    else {
-        return;
-    };
-    let Some(change) = changes.first_mut() else {
-        return;
-    };
-    *change = change
-        .clone()
-        .with_projection(FileMutationProjection::LoadSelectedIfChanged {
-            target_path,
-            previous_selected,
-        });
+        .map(|(before, after)| {
+            let evidence = evidence
+                .iter()
+                .find(|(path, _)| path == after)
+                .map(|(_, evidence)| evidence.clone())
+                .unwrap_or(wavecrate::sample_sources::SourceFileEvidence::Unverifiable);
+            PreparedCommittedFileMutationChange::path_only_move(
+                before.clone(),
+                after.clone(),
+                evidence,
+            )
+        })
+        .collect()
 }
 
 fn attach_move_completion_projection(
     changes: &mut [FileMutationChange],
+    projection: FileMutationProjection,
+) {
+    let Some(change) = changes.first_mut() else {
+        return;
+    };
+    *change = change.clone().with_projection(projection);
+}
+
+fn attach_prepared_move_completion_projection(
+    changes: &mut [PreparedCommittedFileMutationChange],
     projection: FileMutationProjection,
 ) {
     let Some(change) = changes.first_mut() else {
