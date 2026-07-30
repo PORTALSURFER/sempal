@@ -13,7 +13,7 @@ use crate::native_app::app::{
     WaveformPlaybackResume, emit_gui_action, sample_path_label,
 };
 use crate::native_app::sample_library::committed_file_mutations::{
-    FileMutationChange, FileMutationOperation,
+    FileMutationOperation, PreparedCommittedFileMutationChange,
 };
 use crate::native_app::sample_library::file_actions::{
     WavNormalizationOutcome, normalize_wav_file_in_place_with_progress,
@@ -488,10 +488,16 @@ impl NativeAppState {
         let changes = normalized_paths
             .iter()
             .map(|path| {
+                let evidence = result
+                    .normalized_evidence
+                    .iter()
+                    .find(|(candidate, _)| candidate == path)
+                    .map(|(_, evidence)| evidence.clone())
+                    .unwrap_or(wavecrate::sample_sources::SourceFileEvidence::Unverifiable);
                 if copied_paths.contains(path) {
-                    FileMutationChange::created(path.clone())
+                    PreparedCommittedFileMutationChange::created(path.clone(), evidence)
                 } else {
-                    FileMutationChange::content_changed(path.clone())
+                    PreparedCommittedFileMutationChange::content_changed(path.clone(), evidence)
                 }
             })
             .collect::<Vec<_>>();
@@ -506,7 +512,7 @@ impl NativeAppState {
             .into_iter()
             .map(|failure| (Some(result.source_id.clone()), failure.error))
             .collect();
-        self.queue_partially_committed_file_mutation(
+        self.queue_prepared_partially_committed_file_mutation(
             FileMutationOperation::Normalize,
             changes,
             failures,
@@ -690,6 +696,7 @@ fn run_normalization_worker(
     let label = normalize_progress_label(total);
     let work_total = normalization_work_total(total);
     let mut normalized = Vec::new();
+    let mut normalized_evidence = Vec::new();
     let mut skipped = Vec::new();
     let mut failed = Vec::new();
     let mut pacer = NormalizationWorkerPacer::new(total > BULK_NORMALIZATION_BACKGROUND_THRESHOLD);
@@ -739,6 +746,10 @@ fn run_normalization_worker(
         }) {
             Ok(WavNormalizationOutcome::Normalized) => {
                 normalized.push(path.clone());
+                normalized_evidence.push((
+                    path.clone(),
+                    wavecrate::sample_sources::capture_source_file_evidence(path),
+                ));
                 log_normalization_worker_result(path, "normalized", None, file_started_at);
             }
             Ok(WavNormalizationOutcome::Skipped) => {
@@ -787,6 +798,7 @@ fn run_normalization_worker(
         restart_ratio: request.restart_ratio,
         restart_span: request.restart_span,
         normalized,
+        normalized_evidence,
         refreshed_files,
         skipped,
         failed,

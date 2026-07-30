@@ -306,6 +306,39 @@ fn prepared_create_rejects_an_intervening_rewrite() {
 }
 
 #[test]
+fn prepared_non_create_changes_carry_post_filesystem_evidence() {
+    let root = tempfile::tempdir().expect("source root");
+    let before = root.path().join("before.wav");
+    let after = root.path().join("after.wav");
+    fs::write(&after, b"moved content").expect("create moved file");
+    let after_evidence = capture_source_file_evidence(&after);
+
+    let content =
+        PreparedCommittedFileMutationChange::content_changed(after.clone(), after_evidence.clone())
+            .into_file_mutation_change();
+    assert_eq!(content.semantics, FileMutationSemantics::ContentChanged);
+    assert_eq!(content.expected_after_state, Some(after_evidence.clone()));
+
+    let moved =
+        PreparedCommittedFileMutationChange::path_only_move(before.clone(), after, after_evidence)
+            .into_file_mutation_change();
+    assert_eq!(moved.semantics, FileMutationSemantics::PathOnlyMove);
+    assert_eq!(
+        moved.expected_before_state,
+        Some(SourceFileEvidence::Missing)
+    );
+    assert!(moved.expected_after_state.is_some());
+
+    let deleted = PreparedCommittedFileMutationChange::deleted(before, SourceFileEvidence::Missing)
+        .into_file_mutation_change();
+    assert_eq!(deleted.semantics, FileMutationSemantics::Delete);
+    assert_eq!(
+        deleted.expected_before_state,
+        Some(SourceFileEvidence::Missing)
+    );
+}
+
+#[test]
 fn cross_source_requests_keep_one_operation_id_and_distinct_sources() {
     let first = tempfile::tempdir().expect("first source");
     let second = tempfile::tempdir().expect("second source");

@@ -1,5 +1,7 @@
 use super::*;
 use crate::native_app::app::NormalizationResult;
+use std::path::Path;
+use wavecrate::sample_sources::capture_source_file_evidence;
 
 #[test]
 fn normalize_wav_file_in_place_scales_loaded_sample_peak() {
@@ -548,6 +550,7 @@ fn normalize_finish_evicts_stale_memory_cache_before_reselect() {
             restart_ratio: 0.0,
             restart_span: None,
             normalized: vec![path.clone()],
+            normalized_evidence: vec![(path.clone(), capture_source_file_evidence(&path))],
             refreshed_files: Vec::new(),
             skipped: Vec::new(),
             failed: Vec::new(),
@@ -637,6 +640,10 @@ fn normalize_finish_marks_normalized_samples_harvest_touched() {
             restart_ratio: 0.0,
             restart_span: None,
             normalized: vec![PathBuf::from(&selected_file)],
+            normalized_evidence: vec![(
+                PathBuf::from(&selected_file),
+                capture_source_file_evidence(Path::new(&selected_file)),
+            )],
             refreshed_files: Vec::new(),
             skipped: Vec::new(),
             failed: Vec::new(),
@@ -752,6 +759,10 @@ fn normalize_finish_reloads_selected_sample_even_when_another_waveform_was_loade
             restart_ratio: 0.0,
             restart_span: None,
             normalized: vec![extracted_path.clone()],
+            normalized_evidence: vec![(
+                extracted_path.clone(),
+                capture_source_file_evidence(&extracted_path),
+            )],
             refreshed_files: Vec::new(),
             skipped: Vec::new(),
             failed: Vec::new(),
@@ -825,6 +836,10 @@ fn normalize_finish_reloads_current_sample_without_waiting_on_queued_normalizati
             restart_ratio: 0.0,
             restart_span: None,
             normalized: vec![PathBuf::from(&selected_file)],
+            normalized_evidence: vec![(
+                PathBuf::from(&selected_file),
+                capture_source_file_evidence(Path::new(&selected_file)),
+            )],
             refreshed_files: Vec::new(),
             skipped: Vec::new(),
             failed: Vec::new(),
@@ -902,6 +917,7 @@ fn normalize_finish_resumes_loaded_playback_when_current_sample_is_skipped() {
             restart_ratio: 0.35,
             restart_span: Some((0.20, 0.80)),
             normalized: Vec::new(),
+            normalized_evidence: Vec::new(),
             refreshed_files: Vec::new(),
             skipped: vec![path],
             failed: Vec::new(),
@@ -972,6 +988,7 @@ fn normalize_finish_resumes_loaded_playback_when_current_sample_fails_before_wri
             restart_ratio: 0.30,
             restart_span: Some((0.10, 0.90)),
             normalized: Vec::new(),
+            normalized_evidence: Vec::new(),
             refreshed_files: Vec::new(),
             skipped: Vec::new(),
             failed: vec![crate::native_app::app::NormalizationFailure {
@@ -1028,6 +1045,7 @@ fn normalize_finish_reports_failed_file_without_success_count() {
             restart_ratio: 0.0,
             restart_span: None,
             normalized: Vec::new(),
+            normalized_evidence: Vec::new(),
             refreshed_files: Vec::new(),
             skipped: Vec::new(),
             failed: vec![crate::native_app::app::NormalizationFailure {

@@ -1,4 +1,5 @@
 use super::*;
+use wavecrate::sample_sources::capture_source_file_evidence;
 
 #[test]
 fn folder_activation_schedules_cache_indicator_refresh_without_ui_thread_probe() {
@@ -1672,6 +1673,10 @@ fn normalize_finish_keeps_changed_file_in_active_folder_cache_warm_queue() {
             restart_ratio: 0.0,
             restart_span: None,
             normalized: vec![sample_path.clone()],
+            normalized_evidence: vec![(
+                sample_path.clone(),
+                capture_source_file_evidence(&sample_path),
+            )],
             refreshed_files: Vec::new(),
             skipped: Vec::new(),
             failed: Vec::new(),

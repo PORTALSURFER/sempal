@@ -89,6 +89,7 @@ impl NativeAppState {
                 playback_type,
                 source_duration_seconds,
                 started_at,
+                evidence,
                 result,
             } => self.finish_waveform_selection_copy(
                 source_path,
@@ -97,6 +98,7 @@ impl NativeAppState {
                 playback_type,
                 source_duration_seconds,
                 started_at,
+                evidence,
                 result,
                 context,
             ),

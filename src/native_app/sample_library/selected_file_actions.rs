@@ -3,8 +3,8 @@ use crate::native_app::app::{
 };
 use crate::native_app::app::{emit_gui_action, sample_path_label};
 use crate::native_app::sample_library::committed_file_mutations::{
-    FileMutationChange, FileMutationOperation, FileMutationPostCommit,
-    FileMutationPostCommitPresentation, FileMutationProjection,
+    FileMutationOperation, FileMutationPostCommit, FileMutationPostCommitPresentation,
+    FileMutationProjection, PreparedCommittedFileMutationChange,
 };
 use crate::native_app::sample_library::folder_browser::BrowserListingRevealReason;
 use crate::native_app::sample_library::sample_list::{
@@ -526,7 +526,13 @@ impl NativeAppState {
                     }
                     let cross_source_derivative =
                         self.extraction_derivative_crosses_sources(&completion.source_path, &path);
-                    let mut change = FileMutationChange::created(path.clone());
+                    let mut change = PreparedCommittedFileMutationChange::created(
+                        path.clone(),
+                        completion
+                            .evidence
+                            .clone()
+                            .unwrap_or(wavecrate::sample_sources::SourceFileEvidence::Unverifiable),
+                    );
                     let effective_focus_derivative = focus_derivative && cross_source_derivative;
                     if effective_focus_derivative {
                         change = change.with_projection(FileMutationProjection::FocusAndLoad {
@@ -542,7 +548,7 @@ impl NativeAppState {
                         started_at,
                         presentation: FileMutationPostCommitPresentation::Extracted,
                     });
-                    self.queue_committed_file_mutation(
+                    self.queue_prepared_committed_file_mutation(
                         FileMutationOperation::Extract,
                         vec![change],
                         context,
@@ -662,18 +668,29 @@ impl NativeAppState {
                         None,
                     );
                 }
-                self.queue_partially_committed_file_mutation(
+                self.queue_prepared_partially_committed_file_mutation(
                     FileMutationOperation::Extract,
                     vec![if drag_position.is_none() {
                         let change = if focus_derivative {
-                            FileMutationChange::created(path.clone()).with_projection(
+                            PreparedCommittedFileMutationChange::created(
+                                path.clone(),
+                                completion.evidence.clone().unwrap_or(
+                                    wavecrate::sample_sources::SourceFileEvidence::Unverifiable,
+                                ),
+                            )
+                            .with_projection(
                                 FileMutationProjection::FocusAndLoad {
                                     path,
                                     reason: BrowserListingRevealReason::LoadedFileFocus,
                                 },
                             )
                         } else {
-                            FileMutationChange::created(path)
+                            PreparedCommittedFileMutationChange::created(
+                                path,
+                                completion.evidence.clone().unwrap_or(
+                                    wavecrate::sample_sources::SourceFileEvidence::Unverifiable,
+                                ),
+                            )
                         };
                         change.with_post_commit(FileMutationPostCommit {
                             source_path: completion.source_path.clone(),
@@ -684,7 +701,13 @@ impl NativeAppState {
                             presentation: FileMutationPostCommitPresentation::Extracted,
                         })
                     } else {
-                        FileMutationChange::created(path).with_post_commit(FileMutationPostCommit {
+                        PreparedCommittedFileMutationChange::created(
+                            path,
+                            completion.evidence.clone().unwrap_or(
+                                wavecrate::sample_sources::SourceFileEvidence::Unverifiable,
+                            ),
+                        )
+                        .with_post_commit(FileMutationPostCommit {
                             source_path: completion.source_path.clone(),
                             selection: completion.selection,
                             playback_type,
@@ -818,12 +841,17 @@ impl NativeAppState {
                 .folder_browser
                 .flash_primary_source_acceptance();
         }
-        self.queue_partially_committed_file_mutation(
+        self.queue_prepared_partially_committed_file_mutation(
             FileMutationOperation::Extract,
             result
                 .copied
                 .iter()
-                .map(|copy| FileMutationChange::created(copy.output_path.clone()))
+                .map(|copy| {
+                    PreparedCommittedFileMutationChange::created(
+                        copy.output_path.clone(),
+                        copy.output_evidence.clone(),
+                    )
+                })
                 .collect(),
             result
                 .failed

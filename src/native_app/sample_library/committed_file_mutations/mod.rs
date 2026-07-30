@@ -471,11 +471,78 @@ impl PreparedCommittedFileMutationChange {
         })
     }
 
+    pub(in crate::native_app) fn content_changed(
+        path: PathBuf,
+        evidence: SourceFileEvidence,
+    ) -> Self {
+        Self(FileMutationChange {
+            before_path: Some(path.clone()),
+            after_path: Some(path),
+            before_content_identity: None,
+            after_content_identity: None,
+            semantics: FileMutationSemantics::ContentChanged,
+            expected_before_state: None,
+            expected_after_state: Some(evidence),
+            projection: None,
+            post_commit: None,
+        })
+    }
+
+    #[allow(dead_code)]
+    pub(in crate::native_app) fn path_only_move(
+        before: PathBuf,
+        after: PathBuf,
+        evidence: SourceFileEvidence,
+    ) -> Self {
+        Self(FileMutationChange {
+            before_path: Some(before),
+            after_path: Some(after),
+            before_content_identity: None,
+            after_content_identity: None,
+            semantics: FileMutationSemantics::PathOnlyMove,
+            expected_before_state: Some(ExpectedMutationPathState::Missing),
+            expected_after_state: Some(evidence),
+            projection: None,
+            post_commit: None,
+        })
+    }
+
+    #[allow(dead_code)]
+    pub(in crate::native_app) fn deleted(path: PathBuf, evidence: SourceFileEvidence) -> Self {
+        Self(FileMutationChange {
+            before_path: Some(path),
+            after_path: None,
+            before_content_identity: None,
+            after_content_identity: None,
+            semantics: FileMutationSemantics::Delete,
+            expected_before_state: Some(evidence),
+            expected_after_state: None,
+            projection: None,
+            post_commit: None,
+        })
+    }
+
+    pub(in crate::native_app) fn with_before_content_identity(
+        mut self,
+        identity: Option<String>,
+    ) -> Self {
+        self.0.before_content_identity = identity;
+        self
+    }
+
     pub(in crate::native_app) fn with_projection(
         mut self,
         projection: FileMutationProjection,
     ) -> Self {
         self.0 = self.0.with_projection(projection);
+        self
+    }
+
+    pub(in crate::native_app) fn with_post_commit(
+        mut self,
+        post_commit: FileMutationPostCommit,
+    ) -> Self {
+        self.0 = self.0.with_post_commit(post_commit);
         self
     }
 
@@ -527,16 +594,6 @@ pub(in crate::native_app) struct FileMutationWork {
 
 impl NativeAppState {
     /// Reconcile one successful Wavecrate-owned filesystem operation off the UI thread.
-    pub(in crate::native_app) fn queue_committed_file_mutation(
-        &mut self,
-        operation: FileMutationOperation,
-        mut changes: Vec<FileMutationChange>,
-        context: &mut ui::UiUpdateContext<GuiMessage>,
-    ) -> Option<u64> {
-        capture_expected_filesystem_state(&mut changes);
-        self.queue_file_mutation_outcome(operation, changes, Vec::new(), context)
-    }
-
     /// Reconcile a mutation whose filesystem evidence was captured by its source-owned worker.
     ///
     /// Unlike the legacy route, this does not inspect the filesystem on the UI thread. Callers
@@ -556,6 +613,21 @@ impl NativeAppState {
         self.queue_file_mutation_outcome(operation, changes, Vec::new(), context)
     }
 
+    pub(in crate::native_app) fn queue_prepared_partially_committed_file_mutation(
+        &mut self,
+        operation: FileMutationOperation,
+        changes: Vec<PreparedCommittedFileMutationChange>,
+        failures: Vec<(Option<String>, String)>,
+        context: &mut ui::UiUpdateContext<GuiMessage>,
+    ) -> Option<u64> {
+        let changes = changes
+            .into_iter()
+            .map(PreparedCommittedFileMutationChange::into_file_mutation_change)
+            .collect();
+        self.queue_file_mutation_outcome(operation, changes, failures, context)
+    }
+
+    /// Legacy partial route retained for synchronous transaction/UI completions.
     pub(in crate::native_app) fn queue_partially_committed_file_mutation(
         &mut self,
         operation: FileMutationOperation,

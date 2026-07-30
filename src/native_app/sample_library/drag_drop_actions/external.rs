@@ -13,7 +13,7 @@ use crate::native_app::app::{
     sample_path_label,
 };
 use crate::native_app::sample_library::committed_file_mutations::{
-    FileMutationChange, FileMutationOperation,
+    FileMutationOperation, PreparedCommittedFileMutationChange,
 };
 use crate::native_app::waveform::{
     WaveformExtractionCompletion, WaveformSelectionKind, execute_waveform_extraction,
@@ -221,6 +221,9 @@ impl NativeAppState {
         let selection = completion.selection;
         match completion.result {
             Ok(path) => {
+                let evidence = completion
+                    .evidence
+                    .unwrap_or(wavecrate::sample_sources::SourceFileEvidence::Unverifiable);
                 self.evict_waveform_cache_path(&path);
                 self.waveform
                     .current
@@ -238,6 +241,7 @@ impl NativeAppState {
                         playback_type,
                         source_duration_seconds,
                         started_at,
+                        evidence,
                         result: result.into_completed(),
                     }
                 });
@@ -250,6 +254,7 @@ impl NativeAppState {
                     playback_type,
                     self.waveform.current.duration_seconds() as f64,
                     started_at,
+                    wavecrate::sample_sources::SourceFileEvidence::Unverifiable,
                     Err(error),
                     context,
                 );
@@ -265,6 +270,7 @@ impl NativeAppState {
         playback_type: ExtractedFilePlaybackType,
         source_duration_seconds: f64,
         started_at: Instant,
+        evidence: wavecrate::sample_sources::SourceFileEvidence,
         result: Result<(), String>,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
@@ -296,9 +302,12 @@ impl NativeAppState {
                     started_at,
                     None,
                 );
-                self.queue_partially_committed_file_mutation(
+                self.queue_prepared_partially_committed_file_mutation(
                     FileMutationOperation::Extract,
-                    vec![FileMutationChange::created(copied_path)],
+                    vec![PreparedCommittedFileMutationChange::created(
+                        copied_path,
+                        evidence.clone(),
+                    )],
                     metadata_error
                         .into_iter()
                         .map(|error| (None, error))
@@ -325,9 +334,12 @@ impl NativeAppState {
                     );
                     let mut failures = vec![(None, error.clone())];
                     failures.extend(metadata_error.map(|error| (None, error)));
-                    self.queue_partially_committed_file_mutation(
+                    self.queue_prepared_partially_committed_file_mutation(
                         FileMutationOperation::Extract,
-                        vec![FileMutationChange::created(copied_path.clone())],
+                        vec![PreparedCommittedFileMutationChange::created(
+                            copied_path.clone(),
+                            evidence,
+                        )],
                         failures,
                         context,
                     );

@@ -10,6 +10,8 @@ mod random_audition;
 mod sample_loading;
 mod tagged_playback;
 
+use wavecrate::sample_sources::capture_source_file_evidence;
+
 use fixture::WaveformPlaybackScenario;
 
 static WAVEFORM_CONFIG_BASE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -843,11 +845,9 @@ fn playmark_selection_copy_extracts_into_current_folder_before_clipboard_handoff
 
     let mut context = ui::UiUpdateContext::default();
     scenario.state.copy_selected_files(&mut context);
-    let extraction_message = run_worker_message_for_tests(
-        context.into_command(),
-        "gui-copy-waveform-selection",
-    )
-    .expect("playmark copy extraction should complete");
+    let extraction_message =
+        run_worker_message_for_tests(context.into_command(), "gui-copy-waveform-selection")
+            .expect("playmark copy extraction should complete");
     let mut extraction_context = ui::UiUpdateContext::default();
     scenario
         .state
@@ -876,6 +876,7 @@ fn playmark_selection_copy_extracts_into_current_folder_before_clipboard_handoff
         crate::native_app::app::ExtractedFilePlaybackType::OneShot,
         source_duration_seconds,
         std::time::Instant::now(),
+        capture_source_file_evidence(&extracted),
         Ok(()),
         &mut copy_finished_context,
     );
@@ -994,6 +995,7 @@ fn playmark_extraction_completion_evicts_reused_output_cache() {
         crate::native_app::waveform::WaveformExtractionCompletion {
             source_path,
             selection,
+            evidence: Some(capture_source_file_evidence(&extracted)),
             result: Ok(extracted.clone()),
         },
         None,
@@ -1309,6 +1311,7 @@ fn protected_playmark_extraction_routes_to_primary_harvest_destination() {
         crate::native_app::waveform::WaveformExtractionCompletion {
             source_path: source_path.clone(),
             selection,
+            evidence: None,
             result: Err(String::from("simulated write failure")),
         },
         None,
@@ -2442,6 +2445,7 @@ fn playmark_selection_copy_flashes_on_submit_and_ready() {
         crate::native_app::app::ExtractedFilePlaybackType::OneShot,
         scenario.state.waveform.current.duration_seconds() as f64,
         std::time::Instant::now(),
+        wavecrate::sample_sources::SourceFileEvidence::Unverifiable,
         Ok(()),
         &mut context,
     );
@@ -2483,6 +2487,7 @@ fn playmark_selection_copy_ready_flash_ignores_stale_range() {
         crate::native_app::app::ExtractedFilePlaybackType::OneShot,
         scenario.state.waveform.current.duration_seconds() as f64,
         std::time::Instant::now(),
+        wavecrate::sample_sources::SourceFileEvidence::Unverifiable,
         Ok(()),
         &mut context,
     );
@@ -2567,6 +2572,7 @@ fn playmark_selection_copy_extracted_queues_platform_clipboard_handoff() {
     let completion = crate::native_app::waveform::WaveformExtractionCompletion {
         source_path,
         selection,
+        evidence: Some(capture_source_file_evidence(&extracted_path)),
         result: Ok(extracted_path.clone()),
     };
 

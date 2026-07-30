@@ -9,8 +9,7 @@ use wavecrate::sample_sources::{
 
 use crate::native_app::app::{GuiMessage, NativeAppState, emit_gui_action};
 use crate::native_app::sample_library::committed_file_mutations::{
-    FileMutationChange, FileMutationOperation, FileMutationProjection,
-    PreparedCommittedFileMutationChange,
+    FileMutationOperation, FileMutationProjection, PreparedCommittedFileMutationChange,
 };
 use crate::native_app::sample_library::context_menu_target as context_menu;
 use crate::native_app::sample_library::context_menu_target::{
@@ -259,14 +258,19 @@ impl NativeAppState {
                 );
                 self.ui.status.sample =
                     format!("Duplicated {}", sample_path_label(&completion.destination));
-                self.queue_committed_file_mutation(
+                self.queue_prepared_committed_file_mutation(
                     FileMutationOperation::Duplicate,
                     vec![
-                        FileMutationChange::created(completion.destination.clone())
-                            .with_projection(FileMutationProjection::FocusAndLoad {
+                        PreparedCommittedFileMutationChange::created(
+                            completion.destination.clone(),
+                            completion.destination_evidence,
+                        )
+                        .with_projection(
+                            FileMutationProjection::FocusAndLoad {
                                 path: completion.destination.clone(),
                                 reason: BrowserListingRevealReason::LoadedFileFocus,
-                            }),
+                            },
+                        ),
                     ],
                     context,
                 );
