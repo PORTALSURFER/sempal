@@ -26,8 +26,12 @@ fn request(
     capture_expected_filesystem_state(&mut changes);
     SourceMutationRequest {
         source: SampleSource::new_with_id(SourceId::from_string("source-a"), root.to_path_buf()),
-        lifecycle_generation: 0,
-        operation_id: 42,
+        fence: CommittedMutationFence::new(
+            SourceId::from_string("source-a"),
+            LifecycleGeneration::default(),
+            CommittedSourceRevision::default(),
+            ProcessLocalMutationCorrelationId::from_raw(42),
+        ),
         operation,
         affected_relative_paths: changes
             .iter()
@@ -85,7 +89,7 @@ fn create_commits_revision_and_invalidates_file_readiness() {
     )
     .expect("commit create");
 
-    assert!(event.committed_source_revision > 0);
+    assert!(event.fence.cursor.revision.as_raw() > 0);
     assert_eq!(event.committed_delta.created.len(), 1);
     assert!(
         event
@@ -234,14 +238,18 @@ fn cross_source_requests_keep_one_operation_id_and_distinct_sources() {
     ];
 
     let requests = build_source_requests(
-        88,
+        ProcessLocalMutationCorrelationId::from_raw(88),
         FileMutationOperation::Move,
         vec![FileMutationChange::path_only_move(before, after)],
         &sources,
     );
 
     assert_eq!(requests.len(), 2);
-    assert!(requests.iter().all(|request| request.operation_id == 88));
+    assert!(
+        requests
+            .iter()
+            .all(|request| request.fence.correlation().as_raw() == 88)
+    );
     assert_ne!(requests[0].source.id, requests[1].source.id);
 }
 
@@ -266,7 +274,7 @@ fn cross_source_database_root_failure_keeps_valid_commit_and_explicit_failure() 
         second.path().to_path_buf(),
     );
     let requests = build_source_requests(
-        88,
+        ProcessLocalMutationCorrelationId::from_raw(88),
         FileMutationOperation::Move,
         vec![FileMutationChange::path_only_move(before, after)],
         &[first_source.clone(), second_source.clone()],
@@ -288,12 +296,9 @@ fn cross_source_database_root_failure_keeps_valid_commit_and_explicit_failure() 
         panic!("cross-source partial failure must be explicit");
     };
     assert_eq!(committed.len(), 1);
-    assert_eq!(committed[0].source_id, first_source.id.as_str());
+    assert_eq!(committed[0].fence.source_id, first_source.id);
     assert_eq!(failures.len(), 1);
-    assert_eq!(
-        failures[0].source_id.as_deref(),
-        Some(second_source.id.as_str())
-    );
+    assert_eq!(failures[0].source_id.as_ref(), Some(&second_source.id));
     assert!(failures[0].error.contains("metadata root unavailable"));
 }
 
@@ -324,7 +329,12 @@ fn failed_reconciliation_does_not_apply_browser_projection() {
         ),
     ];
     capture_expected_filesystem_state(&mut changes);
-    let requests = build_source_requests(91, FileMutationOperation::Duplicate, changes, &[source]);
+    let requests = build_source_requests(
+        ProcessLocalMutationCorrelationId::from_raw(91),
+        FileMutationOperation::Duplicate,
+        changes,
+        &[source],
+    );
     let outcome = reconcile_file_mutation_requests_with_database_roots(requests, |_| {
         Err(String::from("metadata root unavailable"))
     });
@@ -400,11 +410,13 @@ fn stale_lifecycle_completion_has_no_committed_mutation_side_effects() {
     capture_expected_filesystem_state(&mut changes);
     let watcher_echoes = watcher_echoes_for_changes(root.path(), &changes);
     let event = CommittedFileMutation {
-        source_id: String::from("source-a"),
-        lifecycle_generation: stale_lifecycle_generation,
-        operation_id: 91,
+        fence: CommittedMutationFence::new(
+            SourceId::from_string("source-a"),
+            LifecycleGeneration::from_raw(stale_lifecycle_generation),
+            CommittedSourceRevision::from_raw(7),
+            ProcessLocalMutationCorrelationId::from_raw(91),
+        ),
         operation: FileMutationOperation::Edit,
-        committed_source_revision: 7,
         changes,
         invalidated_stages: BTreeSet::from([ReadinessStage::AnalysisFeatures]),
         committed_delta: CommittedSourceDelta {
@@ -513,8 +525,9 @@ fn stale_lifecycle_completion_has_no_committed_mutation_side_effects() {
 #[test]
 fn failed_and_rolled_back_outcomes_are_explicit() {
     let failure = FileMutationFailure {
-        source_id: Some(String::from("source-a")),
-        operation_id: 9,
+        source_id: Some(SourceId::from_string("source-a")),
+        lifecycle_generation: None,
+        correlation_id: ProcessLocalMutationCorrelationId::from_raw(9),
         operation: FileMutationOperation::Move,
         error: String::from("rolled back"),
     };
@@ -548,17 +561,57 @@ fn content_only_delta_is_still_a_committed_authoritative_event() {
 
 #[test]
 fn stale_and_duplicate_completions_are_fenced_by_revision_then_operation() {
-    assert!(!mutation_completion_is_stale_or_duplicate((0, 0), (0, 1)));
-    assert!(mutation_completion_is_stale_or_duplicate((7, 11), (7, 10)));
-    assert!(mutation_completion_is_stale_or_duplicate((7, 11), (7, 11)));
-    assert!(!mutation_completion_is_stale_or_duplicate((7, 11), (8, 2)));
+    let cursor = |revision, correlation| {
+        RevisionFirstCursor::new(
+            CommittedSourceRevision::from_raw(revision),
+            ProcessLocalMutationCorrelationId::from_raw(correlation),
+        )
+    };
+    assert!(!mutation_completion_is_stale_or_duplicate(
+        cursor(0, 0),
+        cursor(0, 1)
+    ));
+    assert!(mutation_completion_is_stale_or_duplicate(
+        cursor(7, 11),
+        cursor(7, 10)
+    ));
+    assert!(mutation_completion_is_stale_or_duplicate(
+        cursor(7, 11),
+        cursor(7, 11)
+    ));
+    assert!(!mutation_completion_is_stale_or_duplicate(
+        cursor(7, 11),
+        cursor(8, 2)
+    ));
+}
+
+#[test]
+fn committed_mutation_fence_keeps_source_lifecycle_and_revision_first_cursor_typed() {
+    let fence = CommittedMutationFence::new(
+        SourceId::from_string("source-a"),
+        LifecycleGeneration::from_raw(4),
+        CommittedSourceRevision::from_raw(12),
+        ProcessLocalMutationCorrelationId::from_raw(99),
+    );
+    assert_eq!(fence.source_id.as_str(), "source-a");
+    assert_eq!(fence.lifecycle_generation.as_raw(), 4);
+    assert_eq!(fence.cursor.revision.as_raw(), 12);
+    assert_eq!(fence.cursor.correlation.as_raw(), 99);
+    assert!(
+        fence.cursor
+            > RevisionFirstCursor::new(
+                CommittedSourceRevision::from_raw(11),
+                ProcessLocalMutationCorrelationId::from_raw(u64::MAX),
+            )
+    );
 }
 
 #[test]
 fn partial_failure_keeps_commits_under_one_operation_outcome() {
     let failure = FileMutationFailure {
-        source_id: Some(String::from("source-a")),
-        operation_id: 9,
+        source_id: Some(SourceId::from_string("source-a")),
+        lifecycle_generation: None,
+        correlation_id: ProcessLocalMutationCorrelationId::from_raw(9),
         operation: FileMutationOperation::Normalize,
         error: String::from("one file failed"),
     };

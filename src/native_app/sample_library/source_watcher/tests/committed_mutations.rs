@@ -1,8 +1,16 @@
 use super::super::SOURCE_CHANGE_DEBOUNCE;
 use super::{Event, EventKind, GuiSourceWatchState, Instant, PathBuf, SampleSource, SourceId};
 use crate::native_app::sample_library::committed_file_mutations::{
-    CommittedWatcherEcho, CommittedWatcherPathState, observed_watcher_path_state,
+    CommittedSourceRevision, CommittedWatcherEcho, CommittedWatcherPathState,
+    ProcessLocalMutationCorrelationId, RevisionFirstCursor, observed_watcher_path_state,
 };
+
+fn cursor() -> RevisionFirstCursor {
+    RevisionFirstCursor::new(
+        CommittedSourceRevision::from_raw(0),
+        ProcessLocalMutationCorrelationId::from_raw(42),
+    )
+}
 
 fn missing_echo(path: &str) -> CommittedWatcherEcho {
     CommittedWatcherEcho {
@@ -33,9 +41,9 @@ fn committed_mutation_acknowledgement_removes_matching_pending_echo() {
     );
 
     state.acknowledge_committed_paths(
-        "source_id::committed",
+        SourceId::from_string("source_id::committed").as_str(),
         &[missing_echo("kick.wav")],
-        42,
+        cursor(),
         started,
     );
 
@@ -60,9 +68,9 @@ fn watcher_acknowledgement_consumes_only_one_echo() {
     };
     let started = Instant::now();
     state.acknowledge_committed_paths(
-        "source_id::fallback",
+        SourceId::from_string("source_id::fallback").as_str(),
         &[missing_echo("kick.wav")],
-        42,
+        cursor(),
         started,
     );
     let event = Event {
@@ -108,12 +116,12 @@ fn watcher_acknowledgement_does_not_hide_external_change_before_internal_echo() 
     };
     let started = Instant::now();
     state.acknowledge_committed_paths(
-        "source_id::external",
+        SourceId::from_string("source_id::external").as_str(),
         &[CommittedWatcherEcho {
             relative_path: PathBuf::from("kick.wav"),
             expected_state,
         }],
-        42,
+        cursor(),
         started,
     );
 

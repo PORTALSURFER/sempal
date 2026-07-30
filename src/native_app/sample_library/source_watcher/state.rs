@@ -14,7 +14,7 @@ use super::roots::{
     source_root_is_available,
 };
 use crate::native_app::sample_library::committed_file_mutations::{
-    CommittedWatcherEcho, CommittedWatcherPathState,
+    CommittedWatcherEcho, CommittedWatcherPathState, RevisionFirstCursor,
 };
 
 #[derive(Default)]
@@ -182,7 +182,7 @@ impl GuiSourceWatchState {
         &mut self,
         source_id: &str,
         echoes: &[CommittedWatcherEcho],
-        operation_id: u64,
+        cursor: RevisionFirstCursor,
         now: Instant,
     ) {
         let deadline = now + super::SOURCE_CHANGE_DEBOUNCE.saturating_mul(2);
@@ -231,7 +231,8 @@ impl GuiSourceWatchState {
         }
         tracing::debug!(
             source_id,
-            operation_id,
+            revision = cursor.revision.as_raw(),
+            correlation_id = cursor.correlation.as_raw(),
             path_count = echoes.len(),
             "Acknowledged committed mutation paths in source watcher"
         );

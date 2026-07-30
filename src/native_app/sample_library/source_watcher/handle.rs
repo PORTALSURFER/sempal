@@ -12,7 +12,7 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use wavecrate::sample_sources::SampleSource;
+use wavecrate::sample_sources::{SampleSource, SourceId};
 
 use super::classification::retain_source_refresh_candidates;
 use super::journal::{self, JournalRecovery};
@@ -27,7 +27,9 @@ use super::{
     WATCHER_START_TIMEOUT,
 };
 use crate::native_app::app::GuiMessage;
-use crate::native_app::sample_library::committed_file_mutations::CommittedWatcherEcho;
+use crate::native_app::sample_library::committed_file_mutations::{
+    CommittedWatcherEcho, RevisionFirstCursor,
+};
 
 struct ActiveSourceWatcher {
     _watcher: Box<dyn Watcher + Send>,
@@ -270,16 +272,16 @@ impl GuiSourceWatcherHandle {
 
     pub(in crate::native_app) fn acknowledge_committed_paths(
         &self,
-        source_id: String,
+        source_id: SourceId,
         echoes: Vec<CommittedWatcherEcho>,
-        operation_id: u64,
+        cursor: RevisionFirstCursor,
     ) {
         let _ = self
             .command_tx
             .send(GuiSourceWatchCommand::AcknowledgeCommittedPaths {
                 source_id,
                 echoes,
-                operation_id,
+                cursor,
             });
     }
 
@@ -374,9 +376,9 @@ enum GuiSourceWatchCommand {
     #[cfg(test)]
     ReconcileAllSources,
     AcknowledgeCommittedPaths {
-        source_id: String,
+        source_id: SourceId,
         echoes: Vec<CommittedWatcherEcho>,
-        operation_id: u64,
+        cursor: RevisionFirstCursor,
     },
     AdvanceJournalCheckpoint {
         source_id: String,
@@ -442,12 +444,12 @@ fn run_source_watcher(
             Ok(GuiSourceWatchCommand::AcknowledgeCommittedPaths {
                 source_id,
                 echoes,
-                operation_id,
+                cursor,
             }) => {
                 state.acknowledge_committed_paths(
-                    &source_id,
+                    source_id.as_str(),
                     &echoes,
-                    operation_id,
+                    cursor,
                     Instant::now(),
                 );
             }

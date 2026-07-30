@@ -9,8 +9,10 @@ use wavecrate_library::timestamps::system_time_to_unix_nanos;
 
 use super::watcher_echo::{capture_expected_path_state, watcher_echoes_for_changes};
 use super::{
-    CommittedFileMutation, ExpectedMutationPathState, FileMutationChange, FileMutationFailure,
-    FileMutationOperation, FileMutationOutcome, FileMutationSemantics,
+    CommittedFileMutation, CommittedMutationFence, CommittedSourceRevision,
+    ExpectedMutationPathState, FileMutationChange, FileMutationFailure, FileMutationOperation,
+    FileMutationOutcome, FileMutationSemantics, LifecycleGeneration,
+    ProcessLocalMutationCorrelationId,
 };
 use crate::native_app::sample_library::folder_scan_actions::sync_source_database_paths;
 use crate::native_app::source_processing::{ExternalScanHandoff, SourceProcessingBudgetHandle};
@@ -18,8 +20,7 @@ use crate::native_app::source_processing::{ExternalScanHandoff, SourceProcessing
 #[derive(Clone, Debug)]
 pub(super) struct SourceMutationRequest {
     pub(super) source: SampleSource,
-    pub(super) lifecycle_generation: u64,
-    pub(super) operation_id: u64,
+    pub(super) fence: CommittedMutationFence,
     pub(super) operation: FileMutationOperation,
     pub(super) changes: Vec<FileMutationChange>,
     pub(super) affected_relative_paths: Vec<PathBuf>,
@@ -30,11 +31,10 @@ impl PartialEq for SourceMutationRequest {
     fn eq(&self, other: &Self) -> bool {
         self.source.id == other.source.id
             && self.source.root == other.source.root
-            && self.lifecycle_generation == other.lifecycle_generation
+            && self.fence == other.fence
             && self.source.is_protected() == other.source.is_protected()
             && self.source.is_primary() == other.source.is_primary()
             && self.source.primary_import_path() == other.source.primary_import_path()
-            && self.operation_id == other.operation_id
             && self.operation == other.operation
             && self.changes == other.changes
             && self.affected_relative_paths == other.affected_relative_paths
@@ -45,10 +45,10 @@ impl PartialEq for SourceMutationRequest {
 impl Eq for SourceMutationRequest {}
 
 pub(super) fn mutation_completion_is_stale_or_duplicate(
-    accepted: (u64, u64),
-    candidate: (u64, u64),
+    accepted: super::RevisionFirstCursor,
+    candidate: super::RevisionFirstCursor,
 ) -> bool {
-    accepted != (0, 0) && candidate <= accepted
+    accepted != super::RevisionFirstCursor::default() && candidate <= accepted
 }
 
 pub(super) fn merge_file_mutation_failures(
@@ -111,7 +111,7 @@ pub(in crate::native_app) fn cache_content_identity(path: &Path) -> Option<Strin
 }
 
 pub(super) fn build_source_requests(
-    operation_id: u64,
+    correlation_id: ProcessLocalMutationCorrelationId,
     operation: FileMutationOperation,
     changes: Vec<FileMutationChange>,
     sources: &[SampleSource],
@@ -135,8 +135,12 @@ pub(super) fn build_source_requests(
                     .entry(source_id.clone())
                     .or_insert_with(|| SourceMutationRequest {
                         source: source.clone(),
-                        lifecycle_generation: 0,
-                        operation_id,
+                        fence: CommittedMutationFence::new(
+                            source.id.clone(),
+                            LifecycleGeneration::default(),
+                            CommittedSourceRevision::default(),
+                            correlation_id,
+                        ),
                         operation,
                         changes: Vec::new(),
                         affected_relative_paths: Vec::new(),
@@ -200,13 +204,14 @@ pub(super) fn reconcile_file_mutation_requests_with_handoff(
     let mut committed = Vec::new();
     let mut failures = Vec::new();
     for request in requests {
-        let source_id = request.source.id.as_str().to_string();
-        let Some(permit) =
-            budget.acquire_scan_for_generation(&source_id, request.lifecycle_generation)
+        let source_id = request.source.id.as_str().to_owned();
+        let Some(permit) = budget
+            .acquire_scan_for_generation(&source_id, request.fence.lifecycle_generation.as_raw())
         else {
             failures.push(FileMutationFailure {
-                source_id: Some(source_id),
-                operation_id: request.operation_id,
+                source_id: Some(request.fence.source_id.clone()),
+                lifecycle_generation: Some(request.fence.lifecycle_generation),
+                correlation_id: request.fence.correlation(),
                 operation: request.operation,
                 error: String::from("source mutation reconciliation canceled"),
             });
@@ -240,8 +245,9 @@ pub(super) fn reconcile_file_mutation_requests_with_handoff(
                     reason: "committed_mutation_reconciliation_failed",
                 });
                 failures.push(FileMutationFailure {
-                    source_id: Some(source_id),
-                    operation_id: request.operation_id,
+                    source_id: Some(request.fence.source_id.clone()),
+                    lifecycle_generation: Some(request.fence.lifecycle_generation),
+                    correlation_id: request.fence.correlation(),
                     operation: request.operation,
                     error,
                 });
@@ -267,15 +273,15 @@ pub(super) fn reconcile_file_mutation_requests_with_database_roots(
     let mut committed = Vec::new();
     let mut failures = Vec::new();
     for request in requests {
-        let source_id = request.source.id.as_str().to_string();
         let result = database_root_for(&request.source).and_then(|database_root| {
             reconcile_source_mutation(request.clone(), database_root, &cancel)
         });
         match result {
             Ok(event) => committed.push(event),
             Err(error) => failures.push(FileMutationFailure {
-                source_id: Some(source_id),
-                operation_id: request.operation_id,
+                source_id: Some(request.fence.source_id.clone()),
+                lifecycle_generation: Some(request.fence.lifecycle_generation),
+                correlation_id: request.fence.correlation(),
                 operation: request.operation,
                 error,
             }),
@@ -381,11 +387,13 @@ fn reconcile_source_mutation_with_cancel(
         .collect::<Vec<_>>();
 
     Ok(CommittedFileMutation {
-        source_id: request.source.id.as_str().to_string(),
-        lifecycle_generation: request.lifecycle_generation,
-        operation_id: request.operation_id,
+        fence: CommittedMutationFence::new(
+            request.fence.source_id.clone(),
+            request.fence.lifecycle_generation,
+            CommittedSourceRevision::from_raw(committed_source_revision),
+            request.fence.correlation(),
+        ),
         operation: request.operation,
-        committed_source_revision,
         invalidated_stages: invalidated_stages(&changes),
         changes,
         committed_delta: success.committed_delta,
