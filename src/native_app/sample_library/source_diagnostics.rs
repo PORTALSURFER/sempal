@@ -6,8 +6,8 @@ use std::{
 
 use radiant::prelude as ui;
 use wavecrate::sample_sources::{
-    SourceDatabase, SourceDatabaseConnectionRole,
     readiness::{ReadinessClassification, ReadinessScopeKind, ReadinessView},
+    SourceDatabase, SourceDatabaseConnectionRole,
 };
 
 use crate::native_app::app::{GuiMessage, NativeAppState, UnsupportedFilesDialogState};
@@ -112,7 +112,7 @@ fn load_unsupported_files(
     let connection = SourceDatabase::open_connection_with_role_and_database_root(
         &source_root,
         &database_root,
-        SourceDatabaseConnectionRole::JobWorker,
+        SourceDatabaseConnectionRole::BackgroundRead,
     )
     .map_err(|error| format!("open source readiness database: {error}"))?;
     let now = SystemTime::now()
@@ -137,4 +137,40 @@ fn load_unsupported_files(
         }
     }
     Ok(paths.into_iter().collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_readiness_database_does_not_create_database_or_schema_artifacts() {
+        let source_root = tempfile::tempdir().expect("source root");
+        let database_root = tempfile::tempdir().expect("database root");
+
+        let result = load_unsupported_files(
+            source_root.path().to_path_buf(),
+            database_root.path().to_path_buf(),
+            String::from("source-id"),
+        );
+
+        assert!(
+            result.is_err(),
+            "a missing readiness database is not readable"
+        );
+        assert_eq!(
+            std::fs::read_dir(source_root.path())
+                .expect("inspect source root")
+                .count(),
+            0,
+            "diagnostics must not write into the audio source root"
+        );
+        assert_eq!(
+            std::fs::read_dir(database_root.path())
+                .expect("inspect database root")
+                .count(),
+            0,
+            "diagnostics must not create a database or schema artifacts"
+        );
+    }
 }

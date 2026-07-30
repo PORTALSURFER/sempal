@@ -10,7 +10,7 @@ use radiant::{
 };
 use std::sync::{Arc, Mutex};
 
-use super::{PlaymarkLabelMessage, WaveformState, WaveformWidget, playmark_label};
+use super::{playmark_label, PlaymarkLabelMessage, WaveformState, WaveformWidget};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::native_app) struct PlaymarkLabelEditorState {
@@ -336,9 +336,6 @@ pub(super) fn parsed_playmark_frame_range(
             "Playmark length must be at least one sample frame",
         ));
     }
-    if requested_frames > total_frames as f64 {
-        return Err(String::from("Playmark length exceeds the loaded sample"));
-    }
     let requested_frames = requested_frames as usize;
     let current = current.frame_bounds(total_frames);
     // Duration edits are anchored to the existing start edge.  The end edge
@@ -453,11 +450,23 @@ mod tests {
     }
 
     #[test]
+    fn duration_edits_longer_than_sample_clamp_end_without_moving_start() {
+        let current = wavecrate::selection::SelectionRange::from_frame_bounds(1_000, 250, 400);
+        assert_eq!(
+            parsed_playmark_frame_range("2s", 1_000, 1_000, 4, current),
+            Ok((250, 1_000))
+        );
+    }
+
+    #[test]
     fn rejects_invalid_too_short_and_too_long_lengths() {
         let current = wavecrate::selection::SelectionRange::from_frame_bounds(100, 20, 40);
         assert!(parse_length_seconds("NaNs", 4).is_err());
         assert!(parsed_playmark_frame_range("0.0001s", 1_000, 100, 4, current).is_err());
-        assert!(parsed_playmark_frame_range("1s", 1_000, 100, 4, current).is_err());
+        assert_eq!(
+            parsed_playmark_frame_range("1s", 1_000, 100, 4, current),
+            Ok((20, 100))
+        );
     }
 
     #[test]
