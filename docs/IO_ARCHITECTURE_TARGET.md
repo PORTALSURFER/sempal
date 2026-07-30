@@ -441,34 +441,24 @@ source reconciliation (then any required global, Harvest, projection, or readine
 checkpoint) without repeating filesystem work, and emits terminal `CancelledAfterPublish`
 only after the durable operation has a complete required recovery record.
 
-The diagram uses `ReopenedVerified` as the shared participant checkpoint for the atomic path's
-final reopen/verify convergence as well as for the non-atomic path. The atomic path retains its
-`AtomicNamespace` and applicable synchronization evidence from the platform sequence; the
-non-atomic mapping above is the only path that assigns `NonAtomicNamespace` and downgraded sync
-evidence.
+Only journal phases are state nodes in the diagram. The seven named checkpoints are non-journal
+participant checkpoints: `CopyStarted`, `CopyProgress`, `DestinationFlushAttempted`,
+`CopyValidated`, `PublishStarted`, and `PublishObserved` execute while the journal phase remains
+`FilesystemStaged`; `ReopenedVerified` is the participant checkpoint that advances to
+`FilesystemPublished`.
 
 ```mermaid
 stateDiagram-v2
     [*] --> IntentDurable
     IntentDurable --> Prepared
-    Prepared --> FilesystemStaged
-    FilesystemStaged --> ReopenedVerified : atomic final reopen/verify
-    Prepared --> CopyStarted : non-atomic participant checkpoint
-    CopyStarted --> CopyProgress
-    CopyProgress --> CopyProgress : next chunk after pre-write capacity claim
-    CopyProgress --> DestinationFlushAttempted : bounded output complete
-    DestinationFlushAttempted --> CopyValidated
-    CopyValidated --> PublishStarted
-    PublishStarted --> PublishObserved : live namespace inspection
-    PublishObserved --> ReopenedVerified : live final inspection
-    CopyStarted --> FilesystemStaged : interrupted / PartialNeedsRetry
-    CopyProgress --> FilesystemStaged : interrupted / PartialNeedsRetry
-    DestinationFlushAttempted --> FilesystemStaged : interrupted / PartialNeedsRetry
-    CopyValidated --> FilesystemStaged : interrupted / PartialNeedsRetry
-    PublishStarted --> FilesystemStaged : interrupted / inspect live state
-    PublishObserved --> FilesystemStaged : interrupted / inspect live state
-    ReopenedVerified --> FilesystemPublished : mode-specific verified publish
+    Prepared --> FilesystemStaged : atomic staging / non-atomic entry after CopyStarted
     FilesystemStaged --> Prepared : verified no publish
+    FilesystemStaged --> FilesystemPublished : ReopenedVerified participant checkpoint / mode-specific verified publication
+    note right of FilesystemStaged
+        Non-journal participant checkpoints: CopyStarted, CopyProgress,
+        DestinationFlushAttempted, CopyValidated, PublishStarted,
+        PublishObserved, ReopenedVerified
+    end note
     FilesystemPublished --> SourceReconciled
     SourceReconciled --> GlobalReconciled
     GlobalReconciled --> ProjectionPublished
