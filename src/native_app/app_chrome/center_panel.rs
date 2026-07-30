@@ -125,11 +125,31 @@ pub(in crate::native_app) fn sample_workspace_overlays(
 ) -> ui::Overlays<GuiMessage> {
     ui::overlays()
         .dismissible_context_menu_opt(context_menu_overlay(state), GuiMessage::CloseContextMenu)
+        .blocking_modal_opt(trash_folder_setup_overlay(state))
+        .blocking_modal_opt(unsupported_files_overlay(state))
         .blocking_modal_opt(folder_delete_confirmation_overlay(state))
         .blocking_modal_opt(protected_extraction_target_source_overlay(state))
         .blocking_modal_opt(waveform_destructive_edit_overlay(state))
         .blocking_modal_opt(file_move_conflict_overlay(state))
         .blocking_modal_opt(shortcut_help_overlay(state))
+}
+
+fn trash_folder_setup_overlay(state: &NativeAppState) -> Option<ui::View<GuiMessage>> {
+    state
+        .ui
+        .browser_interaction
+        .pending_trash_folder_setup
+        .is_some()
+        .then(modals::trash_folder_setup)
+}
+
+fn unsupported_files_overlay(state: &NativeAppState) -> Option<ui::View<GuiMessage>> {
+    state
+        .ui
+        .browser_interaction
+        .unsupported_files_dialog
+        .is_some()
+        .then(|| modals::unsupported_files(state))
 }
 
 fn context_menu_overlay(state: &NativeAppState) -> Option<ui::View<GuiMessage>> {

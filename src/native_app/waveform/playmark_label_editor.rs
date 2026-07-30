@@ -341,10 +341,12 @@ pub(super) fn parsed_playmark_frame_range(
     }
     let requested_frames = requested_frames as usize;
     let current = current.frame_bounds(total_frames);
-    let midpoint_twice = current.start_frame.saturating_add(current.end_frame);
-    let centered_start = midpoint_twice.saturating_sub(requested_frames) / 2;
-    let start = centered_start.min(total_frames - requested_frames);
-    Ok((start, start + requested_frames))
+    // Duration edits are anchored to the existing start edge.  The end edge
+    // grows or shrinks in place, and the waveform bound remains the final
+    // clamp when the requested duration extends past the sample.
+    let start = current.start_frame;
+    let end = start.saturating_add(requested_frames).min(total_frames);
+    Ok((start, end))
 }
 
 fn parse_length_seconds(text: &str, beat_count: u8) -> Result<f64, String> {
@@ -433,11 +435,20 @@ mod tests {
     }
 
     #[test]
-    fn preserves_frame_length_and_moves_centered_range_inside_edges() {
+    fn duration_edits_keep_start_edge_and_resize_end_edge() {
+        let current = wavecrate::selection::SelectionRange::from_frame_bounds(1_000, 250, 950);
+        assert_eq!(
+            parsed_playmark_frame_range("0.4s", 1_000, 1_000, 4, current),
+            Ok((250, 650))
+        );
+    }
+
+    #[test]
+    fn duration_edits_clamp_end_without_moving_start() {
         let current = wavecrate::selection::SelectionRange::from_frame_bounds(1_000, 850, 950);
         assert_eq!(
             parsed_playmark_frame_range("0.4s", 1_000, 1_000, 4, current),
-            Ok((600, 1_000))
+            Ok((850, 1_000))
         );
     }
 

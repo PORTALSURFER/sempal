@@ -50,6 +50,7 @@ pub(in crate::native_app) struct SourceRowViewModel {
     pub(in crate::native_app) scanning: bool,
     pub(in crate::native_app) health_label: Option<String>,
     pub(in crate::native_app) health_detail: Option<String>,
+    pub(in crate::native_app) unsupported_count: usize,
     pub(in crate::native_app) health_warning: bool,
     pub(in crate::native_app) missing: bool,
     pub(in crate::native_app) protected_source_error_flash: bool,
@@ -296,6 +297,7 @@ impl SourceRowViewModel {
             scanning: scanning_source_id == Some(source.id.as_str()),
             health_label: health.and_then(source_health_label).map(str::to_string),
             health_detail: health.map(source_health_detail),
+            unsupported_count: health.map(source_unsupported_count).unwrap_or(0),
             health_warning: health.is_some_and(source_health_warning),
             missing: source.is_missing(),
             protected_source_error_flash: folder_browser
@@ -340,6 +342,14 @@ fn source_health_warning(health: &SourceProcessingHealth) -> bool {
 fn known_unsupported_only_terminal(health: &SourceProcessingHealth) -> bool {
     let (permanent, unsupported, stale, deleted) = source_terminal_counts(health);
     unsupported > 0 && permanent == 0 && stale == 0 && deleted == 0
+}
+
+fn source_unsupported_count(health: &SourceProcessingHealth) -> usize {
+    health
+        .stage_counts
+        .values()
+        .map(|counts| counts.unsupported)
+        .sum()
 }
 
 fn source_terminal_counts(health: &SourceProcessingHealth) -> (usize, usize, usize, usize) {

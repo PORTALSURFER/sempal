@@ -25,6 +25,7 @@ const SHORTCUT_HELP_KEY_WIDTH: f32 = 190.0;
 const TRANSACTION_LIST_MODAL_WIDTH: f32 = 760.0;
 const TRANSACTION_LIST_MODAL_HEIGHT: f32 = 520.0;
 const TRANSACTION_LIST_ACTION_WIDTH: f32 = 70.0;
+const UNSUPPORTED_FILE_ACTION_WIDTH: f32 = 112.0;
 
 pub(in crate::native_app) fn transaction_list(state: &NativeAppState) -> ui::View<GuiMessage> {
     let projection = TransactionListProjection::from_state(state);
@@ -253,6 +254,126 @@ pub(in crate::native_app) fn protected_extraction_target_source(
         GuiMessage::CancelProtectedExtractionTargetSource,
     )
     .key(identity::PROTECTED_EXTRACTION_TARGET_SOURCE_MODAL_KEY)
+}
+
+pub(in crate::native_app) fn trash_folder_setup() -> ui::View<GuiMessage> {
+    let content = ui::column([
+        ui::text_line(
+            "Choose a trash folder before moving selected samples to trash.",
+            22.0,
+        )
+        .fill_width(),
+        ui::text_line(
+            "The selected samples will be moved after the folder is saved.",
+            20.0,
+        )
+        .fill_width(),
+        ui::button_row([
+            ui::button("Choose folder")
+                .primary()
+                .message(GuiMessage::ChooseTrashFolderForPendingMove)
+                .width(116.0),
+            ui::button("Cancel")
+                .message(GuiMessage::CancelTrashFolderSetup)
+                .width(72.0),
+        ]),
+    ])
+    .spacing(6.0)
+    .fill_width()
+    .fill_height();
+
+    ui::closeable_dialog_layer(
+        "Trash Folder Required",
+        content,
+        ui::WidgetTone::Warning,
+        ui::Vector2::new(560.0, 210.0),
+        GuiMessage::CancelTrashFolderSetup,
+    )
+    .key(identity::TRASH_FOLDER_SETUP_MODAL_KEY)
+}
+
+pub(in crate::native_app) fn unsupported_files(state: &NativeAppState) -> ui::View<GuiMessage> {
+    let dialog = state
+        .ui
+        .browser_interaction
+        .unsupported_files_dialog
+        .as_ref()
+        .expect("unsupported-files modal requires dialog state");
+    let source_label = dialog.source_label.clone();
+    let paths = dialog.paths.clone();
+    let body = if dialog.loading {
+        ui::text_line("Loading unsupported files…", 22.0)
+            .fill_width()
+            .fill_height()
+    } else if let Some(error) = dialog.error.as_deref() {
+        ui::text_line(format!("Could not load unsupported files: {error}"), 20.0)
+            .fill_width()
+            .fill_height()
+    } else if paths.is_empty() {
+        ui::text_line(
+            "No unsupported files are currently recorded for this source.",
+            20.0,
+        )
+        .fill_width()
+        .fill_height()
+    } else {
+        ui::scroll(
+            ui::column(
+                paths
+                    .into_iter()
+                    .map(unsupported_file_row)
+                    .collect::<Vec<_>>(),
+            )
+            .spacing(4.0)
+            .fill_width(),
+        )
+        .fill_width()
+        .fill_height()
+    };
+    let content = ui::column([
+        ui::text_line(
+            format!(
+                "{} unsupported file(s) recorded in {source_label}",
+                dialog.paths.len()
+            ),
+            22.0,
+        )
+        .fill_width(),
+        body,
+        ui::button_row([ui::button("Close").message(GuiMessage::CloseUnsupportedFiles)]),
+    ])
+    .spacing(6.0)
+    .fill_width()
+    .fill_height();
+
+    ui::closeable_dialog_layer(
+        "Unsupported Files",
+        content,
+        ui::WidgetTone::Warning,
+        ui::Vector2::new(820.0, 540.0),
+        GuiMessage::CloseUnsupportedFiles,
+    )
+    .key(identity::UNSUPPORTED_FILES_MODAL_KEY)
+}
+
+fn unsupported_file_row(path: std::path::PathBuf) -> ui::View<GuiMessage> {
+    let display_path = path.display().to_string();
+    ui::row([
+        ui::text_line(&display_path, 18.0).fill_width(),
+        ui::button("Reveal")
+            .message(GuiMessage::RevealUnsupportedFile(path.clone()))
+            .width(72.0)
+            .height(22.0),
+        ui::button("Move to Trash")
+            .danger()
+            .message(GuiMessage::MoveUnsupportedFileToTrash(path))
+            .width(UNSUPPORTED_FILE_ACTION_WIDTH)
+            .height(22.0),
+    ])
+    .key(format!("unsupported-file-{}", display_path))
+    .spacing(6.0)
+    .fill_width()
+    .height(28.0)
 }
 
 fn transaction_list_summary(projection: &TransactionListProjection) -> ui::View<GuiMessage> {

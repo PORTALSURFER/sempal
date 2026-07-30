@@ -3015,7 +3015,7 @@ fn fourth_negative_rating_moves_selected_file_to_trash() {
 }
 
 #[test]
-fn fourth_negative_rating_keeps_file_available_when_trash_move_fails() {
+fn fourth_negative_rating_requires_trash_folder_setup_before_moving() {
     let mut state = gui_state_for_span_tests();
     let source_root = tempfile::tempdir().expect("source root");
     let sample = source_root.path().join("blocked.wav");
@@ -3056,14 +3056,118 @@ fn fourth_negative_rating_keeps_file_available_when_trash_move_fails() {
         Some(Rating::TRASH_3),
         "rating must be durable even when the subsequent trash move is unavailable"
     );
+    let pending = state
+        .ui
+        .browser_interaction
+        .pending_trash_folder_setup
+        .as_ref()
+        .expect("threshold crossing should keep auto-trash pending for folder setup");
+    assert_eq!(pending.paths, vec![sample.clone()]);
+    assert!(sample.exists());
+}
+
+#[test]
+fn fourth_negative_rating_trash_setup_confirmation_resumes_auto_trash() {
+    let mut state = gui_state_for_span_tests();
+    let source_root = tempfile::tempdir().expect("source root");
+    let trash_root = tempfile::tempdir().expect("trash root");
+    let sample = source_root.path().join("confirmed.wav");
+    fs::write(&sample, []).expect("write sample");
+    state.library.folder_browser =
+        FolderBrowserState::from_sample_sources(&[wavecrate::sample_sources::SampleSource::new(
+            source_root.path().to_path_buf(),
+        )]);
+    state
+        .library
+        .folder_browser
+        .select_file(sample.display().to_string());
+    assert!(
+        state
+            .library
+            .folder_browser
+            .set_file_rating_state(&sample, Rating::TRASH_3, false)
+    );
+
+    let mut context = radiant::prelude::UiUpdateContext::default();
+    state.adjust_selected_rating(-1, &mut context);
+    run_command_for_tests(&mut state, context.into_command());
+    assert!(sample.exists());
     assert!(
         state
             .ui
-            .status
-            .sample
-            .contains("Set a trash folder in Settings > General"),
-        "{}",
-        state.ui.status.sample
+            .browser_interaction
+            .pending_trash_folder_setup
+            .is_some()
+    );
+
+    let mut picker_context = radiant::prelude::UiUpdateContext::default();
+    state.finish_trash_folder_dialog(
+        Ok(radiant::runtime::PlatformResponse::Path(
+            trash_root.path().to_path_buf(),
+        )),
+        &mut picker_context,
+    );
+    run_command_for_tests(&mut state, picker_context.into_command());
+
+    assert!(!sample.exists());
+    assert!(trash_root.path().join("confirmed.wav").exists());
+    assert!(
+        state
+            .ui
+            .browser_interaction
+            .pending_trash_folder_setup
+            .is_none()
+    );
+    assert_eq!(
+        state.ui.settings.persisted.trash_folder,
+        Some(trash_root.path().to_path_buf())
+    );
+}
+
+#[test]
+fn fourth_negative_rating_canceling_trash_setup_keeps_durable_rating_without_moving_file() {
+    let mut state = gui_state_for_span_tests();
+    let source_root = tempfile::tempdir().expect("source root");
+    let sample = source_root.path().join("canceled.wav");
+    fs::write(&sample, []).expect("write sample");
+    state.library.folder_browser =
+        FolderBrowserState::from_sample_sources(&[wavecrate::sample_sources::SampleSource::new(
+            source_root.path().to_path_buf(),
+        )]);
+    state
+        .library
+        .folder_browser
+        .select_file(sample.display().to_string());
+    assert!(
+        state
+            .library
+            .folder_browser
+            .set_file_rating_state(&sample, Rating::TRASH_3, false)
+    );
+
+    let mut context = radiant::prelude::UiUpdateContext::default();
+    state.adjust_selected_rating(-1, &mut context);
+    run_command_for_tests(&mut state, context.into_command());
+    state.cancel_trash_folder_setup();
+
+    assert!(sample.exists());
+    assert!(
+        state
+            .ui
+            .browser_interaction
+            .pending_trash_folder_setup
+            .is_none()
+    );
+    assert_eq!(
+        state.library.folder_browser.selected_audio_files()[0].rating,
+        Rating::TRASH_3
+    );
+    assert!(state.ui.status.sample.contains("Trash move canceled"));
+    let db = SourceDatabase::open_for_test_fixture_source_write(source_root.path())
+        .expect("durable rating database");
+    assert_eq!(
+        db.tag_for_path(Path::new("canceled.wav")).expect("rating"),
+        Some(Rating::TRASH_3)
     );
 }
 
@@ -3135,8 +3239,24 @@ fn delete_selected_file_requires_configured_trash_folder() {
             .ui
             .status
             .sample
-            .contains("Set a trash folder in Settings > General"),
+            .contains("Choose a trash folder before moving selected files to trash"),
         "{}",
         state.ui.status.sample
+    );
+    let pending = state
+        .ui
+        .browser_interaction
+        .pending_trash_folder_setup
+        .as_ref()
+        .expect("missing trash folder should keep the selected move pending");
+    assert_eq!(
+        pending.paths,
+        vec![std::path::PathBuf::from(&selected_file)]
+    );
+    assert!(
+        view(&state)
+            .view_frame_at_size_with_default_theme(Vector2::new(900.0, 620.0))
+            .paint_plan
+            .contains_text("Trash Folder Required")
     );
 }

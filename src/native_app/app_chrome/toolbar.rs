@@ -39,7 +39,7 @@ pub(in crate::native_app) fn main_toolbar_controls(
 ) -> Vec<ui::View<GuiMessage>> {
     let projection = ToolbarProjection::from_model(model);
     let mut utility_controls = Vec::with_capacity(projection.controls.len());
-    let mut playback_controls = Vec::with_capacity(2);
+    let mut playback_controls = Vec::with_capacity(4);
     for control in &projection.controls {
         let view = toolbar_control(*control, projection.help_tooltips_enabled);
         if control_is_playback(*control) {
@@ -49,6 +49,7 @@ pub(in crate::native_app) fn main_toolbar_controls(
         }
     }
     if !playback_controls.is_empty() {
+        utility_controls.push(ui::spacer().width(6.0).height(24.0));
         utility_controls.push(
             ui::row(playback_controls)
                 .spacing(2.0)
@@ -63,7 +64,10 @@ fn control_is_playback(control: ToolbarControlProjection) -> bool {
     matches!(
         control,
         ToolbarControlProjection::Icon(button)
-            if matches!(button.icon, ToolbarIcon::Play | ToolbarIcon::Stop)
+            if matches!(
+                button.icon,
+                ToolbarIcon::Play | ToolbarIcon::Stop | ToolbarIcon::Random | ToolbarIcon::Loop
+            )
     )
 }
 

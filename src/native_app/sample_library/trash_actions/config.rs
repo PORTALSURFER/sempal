@@ -24,11 +24,50 @@ impl NativeAppState {
         );
     }
 
-    pub(in crate::native_app) fn finish_trash_folder_dialog(&mut self, result: ui::PlatformResult) {
+    pub(in crate::native_app) fn choose_trash_folder_for_pending_move(
+        &mut self,
+        context: &mut ui::UiUpdateContext<GuiMessage>,
+    ) {
+        if self
+            .ui
+            .browser_interaction
+            .pending_trash_folder_setup
+            .is_some()
+        {
+            self.pick_trash_folder(context);
+        }
+    }
+
+    pub(in crate::native_app) fn cancel_trash_folder_setup(&mut self) {
+        if self
+            .ui
+            .browser_interaction
+            .pending_trash_folder_setup
+            .take()
+            .is_some()
+        {
+            self.ui.status.sample =
+                String::from("Trash move canceled: choose a trash folder first");
+        }
+    }
+
+    pub(in crate::native_app) fn finish_trash_folder_dialog(
+        &mut self,
+        result: ui::PlatformResult,
+        context: &mut ui::UiUpdateContext<GuiMessage>,
+    ) {
         let started_at = Instant::now();
+        let pending_move = self
+            .ui
+            .browser_interaction
+            .pending_trash_folder_setup
+            .take();
         let path = match result.into_path_or_canceled() {
             Ok(Some(path)) => path,
             Ok(None) => {
+                if pending_move.is_some() {
+                    self.ui.status.sample = String::from("Trash move canceled: no folder selected");
+                }
                 emit_gui_action(
                     "settings.trash_folder.pick",
                     Some("settings"),
@@ -64,6 +103,14 @@ impl NativeAppState {
             started_at,
             None,
         );
+        if let Some(pending_move) = pending_move {
+            self.move_file_paths_to_trash(
+                pending_move.paths,
+                pending_move.action,
+                pending_move.started_at,
+                context,
+            );
+        }
     }
 
     pub(in crate::native_app) fn clear_trash_folder(&mut self) {

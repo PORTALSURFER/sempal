@@ -57,12 +57,15 @@ pub(in crate::native_app) fn toolbar_icon_glyph(
 
 static FOCUS_LOADED_ICON: ui::SvgIconTintCache = ui::SvgIconTintCache::new(
     r#"<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
-  <rect x="3" y="3" width="2" height="2"/>
-  <rect x="6" y="3.25" width="7" height="1.5"/>
-  <rect x="3" y="7" width="2" height="2"/>
-  <rect x="6" y="7.25" width="7" height="1.5"/>
-  <rect x="3" y="11" width="2" height="2"/>
-  <rect x="6" y="11.25" width="7" height="1.5"/>
+  <rect x="2" y="3" width="1.5" height="1.5"/>
+  <rect x="4.5" y="3.25" width="5" height="1"/>
+  <rect x="2" y="6.75" width="1.5" height="1.5"/>
+  <rect x="4.5" y="7" width="5" height="1"/>
+  <rect x="9" y="5" width="3" height="1"/>
+  <rect x="9" y="10" width="3" height="1"/>
+  <rect x="9" y="6" width="1" height="4"/>
+  <rect x="11" y="6" width="1" height="4"/>
+  <circle cx="10" cy="8" r="0.8"/>
 </svg>"#,
 );
 
@@ -96,9 +99,8 @@ static SIMILAR_SECTIONS_ICON: ui::SvgIconTintCache = ui::SvgIconTintCache::new(
 
 static ZERO_CROSSING_SNAP_ICON: ui::SvgIconTintCache = ui::SvgIconTintCache::new(
     r#"<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
-  <rect x="2" y="7.25" width="12" height="1.5"/>
-  <path d="M2 10.8c2.2 0 2.7-5.6 5-5.6s2.8 5.6 5 5.6h2v1.5h-2c-2.9 0-3.4-5.6-5-5.6s-2.1 5.6-5 5.6z"/>
-  <rect x="7.25" y="2" width="1.5" height="12"/>
+  <rect x="11.5" y="2" width="1.5" height="12"/>
+  <path d="M2 9.5c1.8 0 2.3-5.5 4.4-5.5S8.8 9.5 11.5 9.5V11C8 11 7.6 5.5 6.4 5.5S4.2 11 2 11z"/>
 </svg>"#,
 );
 
@@ -122,10 +124,10 @@ static BEAT_GUIDES_ICON: ui::SvgIconTintCache = ui::SvgIconTintCache::new(
 
 static METRONOME_ICON: ui::SvgIconTintCache = ui::SvgIconTintCache::new(
     r#"<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
-  <path d="M8 2.2 11.8 13H10.2L9.5 10.8H6.5L5.8 13H4.2L8 2.2z"/>
-  <rect x="7.25" y="1.5" width="1.5" height="2.2"/>
-  <circle cx="8" cy="6.4" r="1.2"/>
-  <rect x="6.95" y="9.2" width="2.1" height="1.2"/>
+  <path d="M4 13 6.8 3h2.4L12 13H4z"/>
+  <rect x="3" y="13" width="10" height="1.5"/>
+  <rect x="7.25" y="1.5" width="1.5" height="2.8"/>
+  <rect x="8.25" y="5.25" width="1.25" height="1.25"/>
 </svg>"#,
 );
 

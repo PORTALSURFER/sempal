@@ -51,6 +51,7 @@ fn test_source_row_with_health(
         scanning,
         health_label: health_label.map(str::to_string),
         health_detail: Some(String::from("Readiness: diagnostics")),
+        unsupported_count: 0,
         health_warning,
         missing: false,
         protected_source_error_flash: false,
@@ -221,6 +222,7 @@ fn source_row_routes_drop_to_source_root() {
         scanning: false,
         health_label: None,
         health_detail: None,
+        unsupported_count: 0,
         health_warning: false,
         missing: false,
         protected_source_error_flash: false,
@@ -453,6 +455,17 @@ fn source_row_hides_routine_processing_suffixes() {
 }
 
 #[test]
+fn source_row_exposes_unsupported_file_count_action() {
+    let mut source = test_source_row_with_health(Some("limited"), true, false);
+    source.unsupported_count = 3;
+
+    let frame = source_row(&source)
+        .view_frame_at_size_with_default_theme(ui::Vector2::new(240.0, SOURCE_ROW_HEIGHT));
+
+    assert!(frame.paint_plan.contains_text("3 unsupported"));
+}
+
+#[test]
 fn scanning_source_projection_renders_base_label_without_suffix() {
     let root = tempfile::tempdir().expect("source root");
     let source = SampleSource::new_with_id(
@@ -541,6 +554,7 @@ fn unsupported_plus_stale_projects_limited_warning_row() {
         .rows
         .first()
         .expect("stale terminal source row");
+    assert_eq!(row.unsupported_count, 2);
     assert!(row.health_warning);
     let frame = source_row(row)
         .view_frame_at_size_with_default_theme(ui::Vector2::new(200.0, SOURCE_ROW_HEIGHT));

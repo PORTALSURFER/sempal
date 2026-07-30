@@ -20,6 +20,7 @@ pub(super) const SOURCE_ADD_BUTTON_WIDTH: f32 = 28.0;
 pub(super) const SOURCE_ADD_BUTTON_HEIGHT: f32 = 24.0;
 const SOURCE_ROLE_ICON_WIDTH: f32 = 32.0;
 const SOURCE_MISSING_BADGE_WIDTH: f32 = 56.0;
+const SOURCE_UNSUPPORTED_BADGE_WIDTH: f32 = 96.0;
 const SOURCE_MISSING_COLOR: ui::Rgba8 = DANGER.with_alpha(230);
 const SOURCE_ROLE_ICON_COLOR: ui::Rgba8 = TEXT_PRIMARY;
 const SOURCE_PROTECTED_ERROR_ICON_COLOR: ui::Rgba8 = DANGER;
@@ -205,7 +206,7 @@ fn source_status_indicator(source: &SourceRowViewModel) -> ui::View<GuiMessage> 
             .width(SOURCE_MISSING_BADGE_WIDTH)
             .height(SOURCE_ROW_HEIGHT);
     }
-    match source.role {
+    let role = match source.role {
         SourceRole::Protected => {
             source_role_icon(&SOURCE_ROLE_PROTECTED_ICON, source_role_icon_color(source))
         }
@@ -215,7 +216,21 @@ fn source_status_indicator(source: &SourceRowViewModel) -> ui::View<GuiMessage> 
         SourceRole::Normal => ui::spacer()
             .width(SOURCE_ROLE_ICON_WIDTH)
             .height(SOURCE_ROW_HEIGHT),
+    };
+    if source.unsupported_count == 0 {
+        return role;
     }
+    ui::row([
+        ui::button(format!("{} unsupported", source.unsupported_count))
+            .message(GuiMessage::OpenUnsupportedFiles(source.id.clone()))
+            .style(ui::WidgetStyle::subtle(ui::WidgetTone::Warning))
+            .tooltip("Show unsupported files and recovery actions")
+            .width(SOURCE_UNSUPPORTED_BADGE_WIDTH)
+            .height(SOURCE_ROW_HEIGHT),
+        role,
+    ])
+    .spacing(2.0)
+    .height(SOURCE_ROW_HEIGHT)
 }
 
 fn source_role_icon_color(source: &SourceRowViewModel) -> ui::Rgba8 {

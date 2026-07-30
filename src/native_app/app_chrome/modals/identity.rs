@@ -8,6 +8,8 @@ pub(super) const FOLDER_DELETE_CONFIRMATION_MODAL_KEY: &str = "folder-delete-con
 pub(super) const WAVEFORM_DESTRUCTIVE_EDIT_MODAL_KEY: &str = "waveform-destructive-edit-modal";
 pub(super) const PROTECTED_EXTRACTION_TARGET_SOURCE_MODAL_KEY: &str =
     "protected-extraction-target-source-modal";
+pub(super) const TRASH_FOLDER_SETUP_MODAL_KEY: &str = "trash-folder-setup-modal";
+pub(super) const UNSUPPORTED_FILES_MODAL_KEY: &str = "unsupported-files-modal";
 
 pub(super) fn transaction_list_row_key(id: u64) -> String {
     format!("transaction-list-row-{id}")

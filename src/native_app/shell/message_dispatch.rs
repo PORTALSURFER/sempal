@@ -176,6 +176,7 @@ impl NativeAppState {
             | GuiMessage::CancelFileMoveConflicts
             | GuiMessage::CopyContextPath
             | GuiMessage::TrashFolderDialogFinished(_)
+            | GuiMessage::UnsupportedFilesDialogFinished { .. }
             | GuiMessage::ContextPathCopyFinished { .. }
             | GuiMessage::OpenContextTarget { .. }
             | GuiMessage::ContextTargetOpenValidated { .. }
@@ -183,6 +184,10 @@ impl NativeAppState {
             | GuiMessage::RenameContextFolder
             | GuiMessage::ContextFolderCreateFinished { .. }
             | GuiMessage::MoveContextTargetToTrash
+            | GuiMessage::ChooseTrashFolderForPendingMove
+            | GuiMessage::CancelTrashFolderSetup
+            | GuiMessage::RevealUnsupportedFile(_)
+            | GuiMessage::MoveUnsupportedFileToTrash(_)
             | GuiMessage::UnlockContextSample
             | GuiMessage::ToggleContextFolderLock
             | GuiMessage::RequestDeleteContextFolder
@@ -243,6 +248,8 @@ impl NativeAppState {
             | GuiMessage::RequestExtractAndTrimPlaymarkSelection
             | GuiMessage::RequestApplyEditSelectionEffects
             | GuiMessage::OpenContextMenu
+            | GuiMessage::OpenUnsupportedFiles(_)
+            | GuiMessage::CloseUnsupportedFiles
             | GuiMessage::ConfirmPendingWaveformDestructiveEdit
             | GuiMessage::CancelPendingWaveformDestructiveEdit
             | GuiMessage::AddProtectedExtractionTargetSource
