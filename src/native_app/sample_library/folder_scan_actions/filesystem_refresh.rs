@@ -161,16 +161,29 @@ impl NativeAppState {
         match result.result {
             Ok(success) => {
                 let renames_reconciled = success.renames_reconciled;
-                let incomplete_error = success.incomplete_error;
+                let mut incomplete_error = success.incomplete_error;
                 let delta = success.committed_delta;
-                let browser_delta_applied = success
-                    .browser_projection_delta
-                    .map(|projection| {
-                        self.library
+                let browser_delta_applied = if incomplete_error.is_none() {
+                    match success.browser_projection_delta {
+                        Some(projection) => self
+                            .library
                             .folder_browser
-                            .apply_committed_projection_delta(&source_id, projection)
-                    })
-                    .unwrap_or(false);
+                            .apply_committed_projection_delta(&source_id, projection),
+                        None => false,
+                    }
+                } else {
+                    false
+                };
+                if incomplete_error.is_none() && !browser_delta_applied {
+                    incomplete_error = Some(String::from(
+                        "committed filesystem sync did not apply an exact browser projection",
+                    ));
+                    tracing::warn!(
+                        source_id = %source_id,
+                        revision = delta.revision,
+                        "Falling back to a full browser projection after committed projection completion failed"
+                    );
+                }
                 self.reapply_desired_rating_overlay();
                 tracing::info!(
                     source_id = %source_id,
@@ -636,7 +649,13 @@ mod tests {
     use std::path::PathBuf;
 
     use super::{ManifestAuditFollowup, manifest_audit_followup};
+    use crate::native_app::{
+        app::{BrowserProjectionDelta, SourceFilesystemSyncResult, SourceFilesystemSyncSuccess},
+        sample_library::folder_browser::{FolderBrowserState, scan::scan_source_with_progress},
+        test_support::state::NativeAppStateFixture,
+    };
     use wavecrate::sample_sources::scanner::{CommittedSourceDelta, ManifestIdentityDelta};
+    use wavecrate::sample_sources::{SampleSource, SourceId};
 
     #[test]
     fn content_generation_only_audit_reconciles_without_filesystem_rescan() {
@@ -674,5 +693,127 @@ mod tests {
             manifest_audit_followup(&delta),
             ManifestAuditFollowup::RefreshBrowserThenReconcile
         );
+    }
+
+    fn completion_test_state() -> (
+        tempfile::TempDir,
+        crate::native_app::app::NativeAppState,
+        String,
+        u64,
+    ) {
+        let root = tempfile::tempdir().expect("source root");
+        std::fs::write(root.path().join("sample.wav"), [0_u8; 8]).expect("write sample");
+        let mut browser = FolderBrowserState::from_root(root.path().to_path_buf());
+        let request = browser
+            .begin_add_source_path(root.path().to_path_buf(), 1)
+            .expect("initial scan request");
+        let source_id = request.source_id.clone();
+        let result = scan_source_with_progress(request, |_| {}, |_| {});
+        assert!(browser.apply_scan_finished(result));
+        let source = SampleSource::new_with_id(
+            SourceId::from_string(source_id.clone()),
+            root.path().to_path_buf(),
+        );
+        let mut state = NativeAppStateFixture::default()
+            .with_folder_browser(browser)
+            .build();
+        let generation = state
+            .background
+            .source_processing
+            .register_source_for_scan(source)
+            .expect("register source");
+        state
+            .background
+            .source_lifecycle_generations
+            .insert(source_id.clone(), generation);
+        (root, state, source_id, generation)
+    }
+
+    fn incomplete_result(
+        source_id: String,
+        generation: u64,
+        projection: Option<BrowserProjectionDelta>,
+    ) -> SourceFilesystemSyncResult {
+        SourceFilesystemSyncResult {
+            source_id,
+            lifecycle_generation: generation,
+            changed_count: 1,
+            journal_checkpoint_event_id: Some(73),
+            cancelled: false,
+            result: Ok(SourceFilesystemSyncSuccess {
+                renames_reconciled: 0,
+                incomplete_error: None,
+                committed_delta: CommittedSourceDelta {
+                    revision: 2,
+                    created: vec![ManifestIdentityDelta {
+                        identity: String::from("new-identity"),
+                        relative_path: PathBuf::from("new.wav"),
+                        content_generation: String::from("generation"),
+                        source_metadata_changed: true,
+                    }],
+                    ..CommittedSourceDelta::default()
+                },
+                browser_projection_delta: projection,
+            }),
+        }
+    }
+
+    #[test]
+    fn incomplete_completion_without_projection_schedules_full_recovery_without_side_effects() {
+        let (_root, mut state, source_id, generation) = completion_test_state();
+        let mut context = radiant::prelude::UiUpdateContext::default();
+
+        state.finish_source_filesystem_sync(
+            incomplete_result(source_id.clone(), generation, None),
+            &mut context,
+        );
+
+        assert!(
+            !state
+                .background
+                .source_processing
+                .pending_source_delta_contains_identity_for_tests(&source_id, "new-identity")
+        );
+        assert!(
+            state
+                .background
+                .source_processing
+                .source_dirty_for_tests(&source_id)
+        );
+        assert!(state.library.folder_scan_active());
+        assert!(state.library.source_watcher.is_none());
+    }
+
+    #[test]
+    fn rejected_completion_projection_schedules_full_recovery_without_side_effects() {
+        let (_root, mut state, source_id, generation) = completion_test_state();
+        let mut context = radiant::prelude::UiUpdateContext::default();
+        let rejected = BrowserProjectionDelta {
+            manifest_revision: 4,
+            snapshot_revision: 4,
+            folders: Vec::new(),
+            removed_file_ids: Vec::new(),
+            upserted_files: Vec::new(),
+        };
+
+        state.finish_source_filesystem_sync(
+            incomplete_result(source_id.clone(), generation, Some(rejected)),
+            &mut context,
+        );
+
+        assert!(
+            !state
+                .background
+                .source_processing
+                .pending_source_delta_contains_identity_for_tests(&source_id, "new-identity")
+        );
+        assert!(
+            state
+                .background
+                .source_processing
+                .source_dirty_for_tests(&source_id)
+        );
+        assert!(state.library.folder_scan_active());
+        assert!(state.library.source_watcher.is_none());
     }
 }
