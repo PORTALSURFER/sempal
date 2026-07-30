@@ -170,11 +170,11 @@ impl NativeAppState {
             );
             return;
         }
-        let Some((root, database_root, relative_path)) = self
-            .library
-            .folder_browser
-            .source_database_relative_file_path(&loaded_path)
-        else {
+        let Some(update) = self.unlock_rating_update_for_loaded_row(
+            loaded_path.clone(),
+            previous_rating,
+            previous_locked,
+        ) else {
             self.ui.status.sample = String::from("Sample is unavailable");
             emit_gui_action(
                 "browser.context_menu.sample.unlock",
@@ -186,37 +186,42 @@ impl NativeAppState {
             );
             return;
         };
-        let Some(source_id) = self
+        let target_is_in_explicit_multi_selection = self
             .library
             .folder_browser
-            .source_id_for_file_path(&loaded_path)
-        else {
-            self.ui.status.sample = String::from("Sample is unavailable");
-            return;
-        };
-        let update = RatingUpdate {
-            source_id: source_id.clone(),
-            lifecycle_generation: self
-                .background
-                .source_lifecycle_generations
-                .get(&source_id)
-                .copied(),
-            root,
-            database_root,
-            relative_path,
-            absolute_path: loaded_path.clone(),
-            previous_rating,
-            previous_locked,
-            rating: previous_rating,
-            locked: false,
-        };
+            .explicit_multi_file_selection_active()
+            && self
+                .library
+                .folder_browser
+                .explicit_selected_file_paths()
+                .iter()
+                .any(|path| normalized_rating_path(path) == path_key);
+        let mut updates = vec![update];
+        if target_is_in_explicit_multi_selection {
+            for path in self.library.folder_browser.explicit_selected_file_paths() {
+                if normalized_rating_path(&path) == path_key {
+                    continue;
+                }
+                let Some((loaded_path, rating, locked)) =
+                    self.rating_row_state_for_path(&normalized_rating_path(&path))
+                else {
+                    continue;
+                };
+                if rating != Rating::KEEP_3 || !locked {
+                    continue;
+                }
+                if let Some(update) =
+                    self.unlock_rating_update_for_loaded_row(loaded_path, rating, locked)
+                {
+                    updates.push(update);
+                }
+            }
+        }
         let previous_visible_ids = self
             .library
             .folder_browser
             .selected_audio_file_ids_matching_tags(&self.metadata.tags_by_file);
-        let applied = match self
-            .apply_rating_update_states(std::slice::from_ref(&update), RatingUpdateMode::After)
-        {
+        let applied = match self.apply_rating_update_states(&updates, RatingUpdateMode::After) {
             Ok(applied) => applied,
             Err(error) => {
                 self.ui.status.sample = format!("Unlock failed: {error}");
@@ -244,9 +249,22 @@ impl NativeAppState {
             );
             return;
         }
-        self.ui.status.sample = format!("Unlocked {}", sample_path_label(&loaded_path));
-        self.schedule_harvest_touched_for_paths(std::slice::from_ref(&loaded_path), context);
-        self.register_rating_transaction_with_label("Unlock sample", vec![update]);
+        if applied == 1 {
+            self.ui.status.sample = format!("Unlocked {}", sample_path_label(&loaded_path));
+        } else {
+            self.ui.status.sample = format!("Unlocked {applied} samples");
+        }
+        let touched_paths = updates
+            .iter()
+            .map(|update| update.absolute_path.clone())
+            .collect::<Vec<_>>();
+        self.schedule_harvest_touched_for_paths(&touched_paths, context);
+        let transaction_label = if applied == 1 {
+            "Unlock sample"
+        } else {
+            "Unlock selected samples"
+        };
+        self.register_rating_transaction_with_label(transaction_label, updates);
         self.library
             .folder_browser
             .reconcile_visible_file_selection_after_tag_filter(
@@ -261,6 +279,38 @@ impl NativeAppState {
             started_at,
             None,
         );
+    }
+
+    fn unlock_rating_update_for_loaded_row(
+        &self,
+        loaded_path: PathBuf,
+        previous_rating: Rating,
+        previous_locked: bool,
+    ) -> Option<RatingUpdate> {
+        let (root, database_root, relative_path) = self
+            .library
+            .folder_browser
+            .source_database_relative_file_path(&loaded_path)?;
+        let source_id = self
+            .library
+            .folder_browser
+            .source_id_for_file_path(&loaded_path)?;
+        Some(RatingUpdate {
+            lifecycle_generation: self
+                .background
+                .source_lifecycle_generations
+                .get(&source_id)
+                .copied(),
+            source_id,
+            root,
+            database_root,
+            relative_path,
+            absolute_path: loaded_path,
+            previous_rating,
+            previous_locked,
+            rating: previous_rating,
+            locked: false,
+        })
     }
 
     fn adjust_selected_rating_with_policy(

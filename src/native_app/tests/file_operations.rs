@@ -2246,6 +2246,121 @@ fn context_menu_unlock_drops_locked_keep_sample_to_keep_three() {
 }
 
 #[test]
+fn context_menu_unlock_selected_samples_unlocks_the_complete_selection() {
+    let mut state = gui_state_for_span_tests();
+    let source_root = tempfile::tempdir().expect("source root");
+    let kick = source_root.path().join("kick.wav");
+    let snare = source_root.path().join("snare.wav");
+    let hat = source_root.path().join("hat.wav");
+    for file in [&kick, &snare, &hat] {
+        fs::write(file, []).expect("write sample");
+    }
+    state.library.folder_browser =
+        FolderBrowserState::from_sample_sources(&[wavecrate::sample_sources::SampleSource::new(
+            source_root.path().to_path_buf(),
+        )]);
+    state
+        .library
+        .folder_browser
+        .select_file(kick.display().to_string());
+    state.library.folder_browser.select_file_with_modifiers(
+        snare.display().to_string(),
+        PointerModifiers {
+            command: true,
+            ..PointerModifiers::default()
+        },
+    );
+    for file in [&kick, &snare] {
+        assert!(
+            state
+                .library
+                .folder_browser
+                .set_file_rating_state(file, Rating::KEEP_3, true,)
+        );
+    }
+
+    state.open_sample_context_menu(kick.display().to_string(), Point::new(40.0, 120.0));
+    let mut context = radiant::prelude::UiUpdateContext::default();
+    state.apply_message(GuiMessage::UnlockContextSample, &mut context);
+    run_command_for_tests(&mut state, context.into_command());
+
+    assert_sample_rating(&state, &kick, Rating::KEEP_3, false);
+    assert_sample_rating(&state, &snare, Rating::KEEP_3, false);
+    assert_loaded_sample_rating(&state, &hat, Rating::NEUTRAL, false);
+    assert_eq!(
+        state.library.folder_browser.selected_file_paths(),
+        vec![kick.clone(), snare.clone()]
+    );
+    assert_eq!(state.transactions.history.list_items().len(), 1);
+    assert_eq!(
+        state.transactions.history.list_items()[0].label,
+        "Unlock selected samples"
+    );
+    assert!(state.ui.status.sample.contains("Unlocked 2 samples"));
+
+    let mut undo_context = radiant::prelude::UiUpdateContext::default();
+    state.apply_message(GuiMessage::UndoTransaction, &mut undo_context);
+    run_command_for_tests(&mut state, undo_context.into_command());
+    assert_sample_rating(&state, &kick, Rating::KEEP_3, true);
+    assert_sample_rating(&state, &snare, Rating::KEEP_3, true);
+
+    let mut redo_context = radiant::prelude::UiUpdateContext::default();
+    state.apply_message(GuiMessage::RedoTransaction, &mut redo_context);
+    run_command_for_tests(&mut state, redo_context.into_command());
+    assert_sample_rating(&state, &kick, Rating::KEEP_3, false);
+    assert_sample_rating(&state, &snare, Rating::KEEP_3, false);
+}
+
+#[test]
+fn context_menu_unlock_unselected_sample_does_not_change_selection() {
+    let mut state = gui_state_for_span_tests();
+    let source_root = tempfile::tempdir().expect("source root");
+    let kick = source_root.path().join("kick.wav");
+    let snare = source_root.path().join("snare.wav");
+    let hat = source_root.path().join("hat.wav");
+    for file in [&kick, &snare, &hat] {
+        fs::write(file, []).expect("write sample");
+    }
+    state.library.folder_browser =
+        FolderBrowserState::from_sample_sources(&[wavecrate::sample_sources::SampleSource::new(
+            source_root.path().to_path_buf(),
+        )]);
+    state
+        .library
+        .folder_browser
+        .select_file(kick.display().to_string());
+    state.library.folder_browser.select_file_with_modifiers(
+        snare.display().to_string(),
+        PointerModifiers {
+            command: true,
+            ..PointerModifiers::default()
+        },
+    );
+    for file in [&kick, &snare, &hat] {
+        assert!(
+            state
+                .library
+                .folder_browser
+                .set_file_rating_state(file, Rating::KEEP_3, true,)
+        );
+    }
+
+    state.open_sample_context_menu(hat.display().to_string(), Point::new(40.0, 120.0));
+    let mut context = radiant::prelude::UiUpdateContext::default();
+    state.apply_message(GuiMessage::UnlockContextSample, &mut context);
+    run_command_for_tests(&mut state, context.into_command());
+
+    assert_sample_rating(&state, &hat, Rating::KEEP_3, false);
+    assert_loaded_sample_rating(&state, &kick, Rating::KEEP_3, true);
+    assert_loaded_sample_rating(&state, &snare, Rating::KEEP_3, true);
+    assert_eq!(
+        state.library.folder_browser.selected_file_paths(),
+        vec![kick, snare]
+    );
+    assert!(state.ui.status.sample.contains("Unlocked hat.wav"));
+}
+
+#[test]
 fn third_negative_rating_does_not_auto_trash_selected_file() {
     let mut state = gui_state_for_span_tests();
     let source_root = tempfile::tempdir().expect("source root");
