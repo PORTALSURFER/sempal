@@ -1,14 +1,24 @@
-use crate::native_app::sample_library::committed_file_mutations::FileMutationChange;
+use crate::native_app::sample_library::committed_file_mutations::ProcessLocalMutationCorrelationId;
 use crate::native_app::sample_library::committed_file_mutations::RevisionFirstCursor;
+use crate::native_app::transaction_history::HistoryFileIoDirection;
 use crate::native_app::transaction_history::NativeTransactionHistory;
+use std::path::PathBuf;
+
+pub(in crate::native_app) struct PendingHistoryCommit {
+    pub(in crate::native_app) execution_id: u64,
+    pub(in crate::native_app) transaction_id: u64,
+    pub(in crate::native_app) direction: HistoryFileIoDirection,
+    pub(in crate::native_app) through_target: Option<u64>,
+    pub(in crate::native_app) correlation_id: ProcessLocalMutationCorrelationId,
+    pub(in crate::native_app) waveform_paths: Vec<PathBuf>,
+}
 
 #[derive(Default)]
 pub(in crate::native_app) struct TransactionState {
     pub(in crate::native_app) history: NativeTransactionHistory,
     pub(in crate::native_app) restoring: bool,
+    pub(in crate::native_app) history_through_count: usize,
+    pub(in crate::native_app) pending_history_commit: Option<PendingHistoryCommit>,
     pub(in crate::native_app) latest_committed_mutation:
         std::collections::HashMap<String, RevisionFirstCursor>,
-    pub(in crate::native_app) pending_file_mutations: Vec<FileMutationChange>,
-    pub(in crate::native_app) pending_file_mutation_failures: Vec<String>,
-    pub(in crate::native_app) pending_file_mutation_attempted: bool,
 }

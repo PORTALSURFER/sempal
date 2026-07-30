@@ -10,6 +10,7 @@ use crate::native_app::sample_library::committed_file_mutations::{
     FileMutationOperation, FileMutationProjection, PreparedCommittedFileMutationChange,
 };
 use crate::native_app::sample_library::folder_browser::BrowserListingRevealReason;
+use crate::native_app::transaction_history::HistoryFileAction;
 use crate::native_app::waveform::{WaveformPreservedMarks, WaveformState};
 
 use super::worker::{AppliedWaveformEdit, WaveformDestructiveEditResult};
@@ -204,19 +205,21 @@ impl NativeAppState {
         let undo_applied = applied.clone();
         let redo_applied = applied;
         self.begin_transaction(kind.transaction_label());
-        self.register_transaction_action(
+        self.register_file_transaction_action(
             kind.undo_label(),
-            move |transaction| {
-                transaction.restore_edited_waveform(&undo_applied.backup.before, &undo_applied)
+            HistoryFileAction::WaveformRestore {
+                backup_path: undo_applied.backup.before.clone(),
+                applied: undo_applied.clone(),
             },
-            move |transaction| {
-                transaction.restore_edited_waveform(&redo_applied.backup.after, &redo_applied)
+            HistoryFileAction::WaveformRestore {
+                backup_path: redo_applied.backup.after.clone(),
+                applied: redo_applied,
             },
         );
         self.commit_transaction();
     }
 
-    pub(super) fn reload_waveform_path_now_if_loaded(
+    pub(in crate::native_app) fn reload_waveform_path_now_if_loaded(
         &mut self,
         absolute_path: &Path,
     ) -> Result<(), String> {

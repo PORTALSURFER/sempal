@@ -205,6 +205,8 @@ impl NativeAppState {
             | GuiMessage::ExternalWaveformFileDropFinished { .. }
             | GuiMessage::CommittedFileMutationRequested(_)
             | GuiMessage::CommittedFileMutationFinished(_)
+            | GuiMessage::HistoryFileIoRequested(_)
+            | GuiMessage::HistoryFileIoFinished(_)
             | GuiMessage::NativeAudioDocumentOpenValidated { .. }
             | GuiMessage::WaveformFileDrop(_) => self.apply_file_dispatch(message, context),
             GuiMessage::ToggleJobDetails

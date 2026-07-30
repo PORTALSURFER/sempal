@@ -295,6 +295,8 @@ fn run_command_for_tests(
             message,
             super::test_support::state::GuiMessage::CommittedFileMutationRequested(_)
                 | super::test_support::state::GuiMessage::CommittedFileMutationFinished(_)
+                | super::test_support::state::GuiMessage::HistoryFileIoRequested(_)
+                | super::test_support::state::GuiMessage::HistoryFileIoFinished(_)
                 | super::test_support::state::GuiMessage::NormalizationFinished(_)
                 | super::test_support::state::GuiMessage::ExternalWaveformFileDropFinished {
                     ..
@@ -323,6 +325,16 @@ fn run_command_for_tests(
         for message in run_command_and_capture_messages_for_tests(command) {
             let continues = continues_committed_mutation(&message);
             let mut context = ui::UiUpdateContext::default();
+            if let super::test_support::state::GuiMessage::CommittedFileMutationRequested(work) =
+                message
+            {
+                state.finish_committed_file_mutation_for_tests(work, &mut context);
+                let followup = context.into_command();
+                if continues && !followup.is_empty() {
+                    commands.push_back(followup);
+                }
+                continue;
+            }
             state.apply_message(message, &mut context);
             let followup = context.into_command();
             if continues && !followup.is_empty() {

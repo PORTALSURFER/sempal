@@ -1,11 +1,17 @@
 mod app_state;
 mod context;
+mod file_io;
 #[cfg(test)]
 mod generic;
 mod native;
 mod summary;
 
 pub(in crate::native_app) use context::TransactionContext;
+#[cfg(test)]
+pub(in crate::native_app) use file_io::HistoryFileIoOutput;
+pub(in crate::native_app) use file_io::{
+    HistoryFileAction, HistoryFileIoCommand, HistoryFileIoDirection, HistoryFileIoResult,
+};
 pub(in crate::native_app) use native::NativeTransactionHistory;
 pub(in crate::native_app) use summary::{
     TransactionApplied, TransactionListItem, TransactionListState,

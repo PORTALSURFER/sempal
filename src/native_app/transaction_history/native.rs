@@ -2,16 +2,22 @@ use std::collections::VecDeque;
 
 use crate::native_app::app::NativeAppState;
 use crate::native_app::transaction_history::{
-    DEFAULT_TRANSACTION_LIMIT, TransactionApplied, TransactionContext, TransactionListItem,
-    TransactionListState, TransactionResult,
+    DEFAULT_TRANSACTION_LIMIT, HistoryFileAction, HistoryFileIoCommand, HistoryFileIoDirection,
+    TransactionApplied, TransactionContext, TransactionListItem, TransactionListState,
+    TransactionResult,
 };
 
 type NativeTransactionClosure = dyn for<'a> Fn(&mut TransactionContext<'a>) -> TransactionResult;
 
+enum NativeTransactionActionKind {
+    Closure(Box<NativeTransactionClosure>),
+    File(HistoryFileAction),
+}
+
 struct NativeTransactionAction {
     label: String,
-    undo: Box<NativeTransactionClosure>,
-    redo: Box<NativeTransactionClosure>,
+    undo: NativeTransactionActionKind,
+    redo: NativeTransactionActionKind,
 }
 
 impl NativeTransactionAction {
@@ -22,8 +28,34 @@ impl NativeTransactionAction {
     ) -> Self {
         Self {
             label: label.into(),
-            undo: Box::new(undo),
-            redo: Box::new(redo),
+            undo: NativeTransactionActionKind::Closure(Box::new(undo)),
+            redo: NativeTransactionActionKind::Closure(Box::new(redo)),
+        }
+    }
+
+    fn file(
+        label: impl Into<String>,
+        undo_action: HistoryFileAction,
+        redo_action: HistoryFileAction,
+    ) -> Self {
+        Self {
+            label: label.into(),
+            undo: NativeTransactionActionKind::File(undo_action),
+            redo: NativeTransactionActionKind::File(redo_action),
+        }
+    }
+
+    fn is_file(&self) -> bool {
+        matches!(self.undo, NativeTransactionActionKind::File(_))
+    }
+
+    fn file_action(&self, direction: HistoryFileIoDirection) -> Option<HistoryFileAction> {
+        match match direction {
+            HistoryFileIoDirection::Undo => &self.undo,
+            HistoryFileIoDirection::Redo => &self.redo,
+        } {
+            NativeTransactionActionKind::File(action) => Some(action.clone()),
+            NativeTransactionActionKind::Closure(_) => None,
         }
     }
 }
@@ -42,7 +74,14 @@ impl NativeTransaction {
     fn undo(&self, state: &mut NativeAppState) -> TransactionResult {
         let mut context = TransactionContext { state };
         for action in self.actions.iter().rev() {
-            (action.undo)(&mut context)?;
+            match &action.undo {
+                NativeTransactionActionKind::Closure(closure) => closure(&mut context)?,
+                NativeTransactionActionKind::File(_) => {
+                    return Err(String::from(
+                        "file-backed transaction requires async execution",
+                    ));
+                }
+            }
         }
         Ok(())
     }
@@ -50,7 +89,14 @@ impl NativeTransaction {
     fn redo(&self, state: &mut NativeAppState) -> TransactionResult {
         let mut context = TransactionContext { state };
         for action in &self.actions {
-            (action.redo)(&mut context)?;
+            match &action.redo {
+                NativeTransactionActionKind::Closure(closure) => closure(&mut context)?,
+                NativeTransactionActionKind::File(_) => {
+                    return Err(String::from(
+                        "file-backed transaction requires async execution",
+                    ));
+                }
+            }
         }
         Ok(())
     }
@@ -76,6 +122,13 @@ struct NativeTransactionDraft {
     depth: usize,
 }
 
+pub(in crate::native_app) struct PendingHistoryFileTransaction {
+    transaction: NativeTransaction,
+    direction: HistoryFileIoDirection,
+    through_target: Option<u64>,
+    execution_id: u64,
+}
+
 impl NativeTransactionDraft {
     fn new(label: String) -> Self {
         Self {
@@ -86,12 +139,57 @@ impl NativeTransactionDraft {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stale_history_file_completion_cannot_finish_new_execution() {
+        let mut history = NativeTransactionHistory::new();
+        let action = HistoryFileAction::FolderMove {
+            source_root: std::path::PathBuf::from("/tmp/source"),
+            source_database_root: std::path::PathBuf::from("/tmp/source/.db"),
+            moves: vec![(
+                std::path::PathBuf::from("/tmp/source/old"),
+                std::path::PathBuf::from("/tmp/source/new"),
+            )],
+        };
+        history.register_file_action("Move", action.clone(), action);
+        let command = history
+            .begin_file_io(HistoryFileIoDirection::Undo, None, 17)
+            .expect("start file history")
+            .expect("file action");
+        assert!(
+            history
+                .finish_file_io(
+                    command.execution_id + 1,
+                    command.transaction_id,
+                    command.direction,
+                    false,
+                )
+                .is_err()
+        );
+        assert!(history.file_io_in_flight());
+        history
+            .finish_file_io(
+                command.execution_id,
+                command.transaction_id,
+                command.direction,
+                false,
+            )
+            .expect("current completion should finish");
+        assert!(!history.file_io_in_flight());
+        assert!(history.can_undo());
+    }
+}
+
 pub(in crate::native_app) struct NativeTransactionHistory {
     undo: VecDeque<NativeTransaction>,
     redo: VecDeque<NativeTransaction>,
     active: Option<NativeTransactionDraft>,
     next_id: u64,
     limit: usize,
+    in_flight_file: Option<PendingHistoryFileTransaction>,
 }
 
 impl Default for NativeTransactionHistory {
@@ -108,6 +206,7 @@ impl NativeTransactionHistory {
             active: None,
             next_id: 1,
             limit: DEFAULT_TRANSACTION_LIMIT,
+            in_flight_file: None,
         }
     }
 
@@ -146,10 +245,131 @@ impl NativeTransactionHistory {
         let label = label.into();
         let action = NativeTransactionAction::new(label.clone(), undo, redo);
         if let Some(active) = self.active.as_mut() {
+            if active.actions.iter().any(NativeTransactionAction::is_file) {
+                return;
+            }
             active.actions.push(action);
         } else {
             self.push_transaction(label, vec![action]);
         }
+    }
+
+    pub(in crate::native_app) fn register_file_action(
+        &mut self,
+        label: impl Into<String>,
+        undo_action: HistoryFileAction,
+        redo_action: HistoryFileAction,
+    ) {
+        let action = NativeTransactionAction::file(label, undo_action, redo_action);
+        if let Some(active) = self.active.as_mut() {
+            if active.actions.iter().any(|existing| !existing.is_file()) {
+                return;
+            }
+            active.actions.push(action);
+        } else {
+            self.push_transaction(action.label.clone(), vec![action]);
+        }
+    }
+
+    pub(in crate::native_app) fn begin_file_io(
+        &mut self,
+        direction: HistoryFileIoDirection,
+        through_target: Option<u64>,
+        execution_id: u64,
+    ) -> Result<Option<HistoryFileIoCommand>, String> {
+        if self.in_flight_file.is_some() {
+            return Err(String::from(
+                "A history file operation is already in flight",
+            ));
+        }
+        let stack = match direction {
+            HistoryFileIoDirection::Undo => &mut self.undo,
+            HistoryFileIoDirection::Redo => &mut self.redo,
+        };
+        let Some(transaction) = stack.back() else {
+            return Ok(None);
+        };
+        if transaction.actions.iter().any(|action| !action.is_file()) {
+            return Ok(None);
+        }
+        let transaction = stack.pop_back().expect("history stack entry exists");
+        let actions = transaction
+            .actions
+            .iter()
+            .filter_map(|action| action.file_action(direction))
+            .collect::<Vec<_>>();
+        if actions.is_empty() {
+            stack.push_back(transaction);
+            return Ok(None);
+        }
+        let transaction_id = transaction.id;
+        self.in_flight_file = Some(PendingHistoryFileTransaction {
+            transaction,
+            direction,
+            through_target,
+            execution_id,
+        });
+        Ok(Some(HistoryFileIoCommand {
+            execution_id,
+            transaction_id,
+            direction,
+            through_target,
+            actions,
+        }))
+    }
+
+    pub(in crate::native_app) fn finish_file_io(
+        &mut self,
+        execution_id: u64,
+        transaction_id: u64,
+        direction: HistoryFileIoDirection,
+        success: bool,
+    ) -> Result<(TransactionApplied, Option<u64>), String> {
+        let Some(pending) = self.in_flight_file.take() else {
+            return Err(String::from("No history file operation is in flight"));
+        };
+        if pending.execution_id != execution_id
+            || pending.transaction.id != transaction_id
+            || pending.direction != direction
+        {
+            self.in_flight_file = Some(pending);
+            return Err(String::from("Stale history file operation completion"));
+        }
+        let applied = TransactionApplied {
+            label: pending.transaction.label.clone(),
+            action_count: pending.transaction.actions.len(),
+        };
+        let through_target = pending.through_target;
+        if !success {
+            match direction {
+                HistoryFileIoDirection::Undo => self.undo.push_back(pending.transaction),
+                HistoryFileIoDirection::Redo => self.redo.push_back(pending.transaction),
+            }
+            return Ok((applied, through_target));
+        }
+        match direction {
+            HistoryFileIoDirection::Undo => self.redo.push_back(pending.transaction),
+            HistoryFileIoDirection::Redo => self.undo.push_back(pending.transaction),
+        }
+        Ok((applied, through_target))
+    }
+
+    pub(in crate::native_app) fn file_io_in_flight(&self) -> bool {
+        self.in_flight_file.is_some()
+    }
+
+    pub(in crate::native_app) fn has_transaction_on_stack(
+        &self,
+        direction: HistoryFileIoDirection,
+        transaction_id: u64,
+    ) -> bool {
+        let stack = match direction {
+            HistoryFileIoDirection::Undo => &self.undo,
+            HistoryFileIoDirection::Redo => &self.redo,
+        };
+        stack
+            .iter()
+            .any(|transaction| transaction.id == transaction_id)
     }
 
     fn push_transaction(
@@ -205,62 +425,6 @@ impl NativeTransactionHistory {
         };
         self.undo.push_back(transaction);
         Ok(Some(applied))
-    }
-
-    pub(in crate::native_app) fn undo_through(
-        &mut self,
-        target_id: u64,
-        state: &mut NativeAppState,
-    ) -> Result<Vec<TransactionApplied>, String> {
-        if !self
-            .undo
-            .iter()
-            .any(|transaction| transaction.id == target_id)
-        {
-            return Ok(Vec::new());
-        }
-
-        let mut applied = Vec::new();
-        loop {
-            let Some(next_id) = self.undo.back().map(|transaction| transaction.id) else {
-                return Ok(applied);
-            };
-            let target_reached = next_id == target_id;
-            if let Some(transaction) = self.undo(state)? {
-                applied.push(transaction);
-            }
-            if target_reached {
-                return Ok(applied);
-            }
-        }
-    }
-
-    pub(in crate::native_app) fn redo_through(
-        &mut self,
-        target_id: u64,
-        state: &mut NativeAppState,
-    ) -> Result<Vec<TransactionApplied>, String> {
-        if !self
-            .redo
-            .iter()
-            .any(|transaction| transaction.id == target_id)
-        {
-            return Ok(Vec::new());
-        }
-
-        let mut applied = Vec::new();
-        loop {
-            let Some(next_id) = self.redo.back().map(|transaction| transaction.id) else {
-                return Ok(applied);
-            };
-            let target_reached = next_id == target_id;
-            if let Some(transaction) = self.redo(state)? {
-                applied.push(transaction);
-            }
-            if target_reached {
-                return Ok(applied);
-            }
-        }
     }
 
     pub(in crate::native_app) fn can_undo(&self) -> bool {
