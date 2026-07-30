@@ -1,6 +1,8 @@
 use super::super::FolderEntry;
 use super::*;
+use crate::native_app::sample_library::folder_browser::load_folder_at_path_with_browser_metadata;
 use std::os::unix::fs as unix_fs;
+use std::{collections::HashMap, sync::atomic::AtomicBool};
 
 struct SymlinkFixture {
     root: PathBuf,
@@ -99,6 +101,20 @@ fn source_scanning_initial_load_and_tree_refresh_skip_symlink_entries() {
         .find_folder(&path_id(&fixture.root))
         .expect("refreshed source root should remain available");
     fixture.assert_safe_tree(refreshed);
+}
+
+#[test]
+fn worker_projection_opens_directory_targets_without_following_links() {
+    let fixture = SymlinkFixture::new("wavecrate-browser-worker-symlink");
+    let folder = load_folder_at_path_with_browser_metadata(
+        &fixture.root,
+        &fixture.root,
+        &HashMap::new(),
+        wavecrate::sample_sources::SourceTraversalPolicy::default(),
+        &AtomicBool::new(false),
+    )
+    .expect("source root should project");
+    fixture.assert_safe_tree(&folder);
 }
 
 #[test]

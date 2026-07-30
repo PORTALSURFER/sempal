@@ -3,6 +3,8 @@ use std::{
     path::{Path, PathBuf},
     sync::atomic::{AtomicBool, Ordering},
 };
+use cap_fs_ext::{DirExt, ambient_authority};
+use cap_std::fs::Dir;
 
 use wavecrate_library::sample_sources::BrowserFileMetadata;
 
@@ -15,6 +17,7 @@ use super::{
     },
     entry::{
         BrowserEntryKind, classify_path_without_following, read_sorted_entries,
+        read_sorted_entries_nofollow,
         source_traversal_policy,
     },
     file_entry_metadata::{file_entry, file_entry_with_snapshot_metadata},
@@ -111,7 +114,21 @@ pub(in crate::native_app) fn load_folder_at_path_with_browser_metadata(
     policy: wavecrate::sample_sources::SourceTraversalPolicy,
     cancel: &AtomicBool,
 ) -> Option<FolderEntry> {
-    load_folder_with_browser_metadata(path, source_root, metadata, policy, cancel)
+    let mut directory = Dir::open_ambient_dir(source_root, ambient_authority()).ok()?;
+    for component in path.strip_prefix(source_root).ok()?.components() {
+        let std::path::Component::Normal(component) = component else {
+            return None;
+        };
+        directory = directory.open_dir_nofollow(component).ok()?;
+    }
+    load_folder_with_browser_metadata(
+        &directory,
+        path,
+        source_root,
+        metadata,
+        policy,
+        cancel,
+    )
 }
 
 pub(super) fn load_folder(
@@ -140,6 +157,7 @@ pub(super) fn load_folder(
 }
 
 fn load_folder_with_browser_metadata(
+    directory: &Dir,
     path: &Path,
     source_root: &Path,
     metadata: &HashMap<PathBuf, BrowserFileMetadata>,
@@ -149,7 +167,7 @@ fn load_folder_with_browser_metadata(
     if cancel.load(Ordering::Acquire) {
         return None;
     }
-    let entries = read_sorted_entries(path, source_root, policy, Some(cancel))?;
+    let entries = read_sorted_entries_nofollow(directory, path, source_root, policy, cancel)?;
     let mut children = Vec::new();
     for entry in entries
         .iter()
@@ -158,7 +176,14 @@ fn load_folder_with_browser_metadata(
         if cancel.load(Ordering::Acquire) {
             return None;
         }
+        let Some(name) = entry.path.file_name() else {
+            return None;
+        };
+        let Ok(child_directory) = directory.open_dir_nofollow(name) else {
+            continue;
+        };
         let Some(child) = load_folder_with_browser_metadata(
+            &child_directory,
             &entry.path,
             source_root,
             metadata,
