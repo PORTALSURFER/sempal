@@ -60,24 +60,29 @@ impl FolderBrowserState {
         let Some(target_revision) = target_revision else {
             return false;
         };
-        if let Some(delta) = &delta {
-            if delta.manifest_revision <= current_revision {
-                return true;
-            }
-            let folder_snapshot_covers_delta =
-                folder_projections_cover_delta(&source_root, delta, &folder_projections);
-            let revision_is_contiguous =
-                delta.manifest_revision == current_revision.saturating_add(1);
-            if (!revision_is_contiguous && !folder_snapshot_covers_delta)
-                || delta.snapshot_revision != delta.manifest_revision
-            {
-                tracing::info!(
-                    source_id,
-                    current_revision,
-                    incoming_revision = delta.manifest_revision,
-                    "Browser projection revision gap requires a full snapshot refresh"
-                );
+        let apply_manifest_delta = if let Some(delta) = &delta {
+            if delta.manifest_revision < current_revision {
                 return false;
+            }
+            if delta.manifest_revision == current_revision {
+                false
+            } else {
+                let folder_snapshot_covers_delta =
+                    folder_projections_cover_delta(&source_root, delta, &folder_projections);
+                let revision_is_contiguous =
+                    delta.manifest_revision == current_revision.saturating_add(1);
+                if (!revision_is_contiguous && !folder_snapshot_covers_delta)
+                    || delta.snapshot_revision != delta.manifest_revision
+                {
+                    tracing::info!(
+                        source_id,
+                        current_revision,
+                        incoming_revision = delta.manifest_revision,
+                        "Browser projection revision gap requires a full snapshot refresh"
+                    );
+                    return false;
+                }
+                true
             }
         } else if target_revision != current_revision {
             tracing::info!(
@@ -87,7 +92,9 @@ impl FolderBrowserState {
                 "Folder projection snapshot is not at the current committed revision"
             );
             return false;
-        }
+        } else {
+            false
+        };
         if folder_projections
             .iter()
             .any(|projection| projection.snapshot_revision != target_revision)
@@ -131,7 +138,7 @@ impl FolderBrowserState {
                     }
                 }
             }
-            if let Some(delta) = &delta {
+            if apply_manifest_delta && let Some(delta) = &delta {
                 let removed = delta
                     .removed_file_ids
                     .iter()
@@ -155,7 +162,7 @@ impl FolderBrowserState {
             }
             changed
         };
-        if delta.is_some() {
+        if apply_manifest_delta {
             self.source.sources[source_index].projection_revision = Some(target_revision);
         }
         if changed {

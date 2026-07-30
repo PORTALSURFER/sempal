@@ -1,5 +1,5 @@
 use super::*;
-use crate::native_app::app::BrowserProjectionDelta;
+use crate::native_app::app::{BrowserProjectionDelta, PreparedFolderProjection};
 use crate::native_app::sample_library::folder_browser::model::file_entry_with_snapshot_metadata;
 use crate::native_app::sample_library::folder_browser::scan_types::{
     FolderScanDiscovery, FolderScanItem, MetadataHydrationStatus,
@@ -287,6 +287,65 @@ fn committed_projection_delta_applies_only_at_the_next_revision() {
         },
     ));
     assert!(browser.tree.folders[0].find_file(&path_id(&new)).is_some());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn equal_revision_applies_structural_projection_but_stale_revision_remains_fenced() {
+    let root = temp_source_root("wavecrate-gui-equal-revision-structural-projection");
+    let empty = root.join("empty");
+    fs::create_dir_all(&empty).expect("create empty folder");
+    let mut browser = FolderBrowserState::load_default();
+    let request = browser
+        .begin_add_source_path(root.clone(), 52)
+        .expect("initial scan");
+    let source_id = request.source_id.clone();
+    assert!(browser.apply_scan_finished(scan_source_with_progress(request, |_| {}, |_| {})));
+    let revision = browser
+        .source
+        .sources
+        .iter()
+        .find(|source| source.id == source_id)
+        .and_then(|source| source.projection_revision)
+        .expect("projection revision");
+    assert!(revision > 0);
+
+    assert!(browser.apply_committed_projection(
+        &source_id,
+        Some(BrowserProjectionDelta {
+            manifest_revision: revision,
+            snapshot_revision: revision,
+            folders: Vec::new(),
+            removed_file_ids: Vec::new(),
+            upserted_files: Vec::new(),
+        }),
+        vec![PreparedFolderProjection {
+            relative_path: std::path::PathBuf::from("empty"),
+            snapshot_revision: revision,
+            folder: None,
+        }],
+    ));
+    assert!(browser.find_folder(&path_id(&empty)).is_none());
+    assert_eq!(
+        browser
+            .source
+            .sources
+            .iter()
+            .find(|source| source.id == source_id)
+            .and_then(|source| source.projection_revision),
+        Some(revision)
+    );
+
+    assert!(!browser.apply_committed_projection_delta(
+        &source_id,
+        BrowserProjectionDelta {
+            manifest_revision: revision.saturating_sub(1),
+            snapshot_revision: revision.saturating_sub(1),
+            folders: Vec::new(),
+            removed_file_ids: Vec::new(),
+            upserted_files: Vec::new(),
+        },
+    ));
     let _ = fs::remove_dir_all(root);
 }
 

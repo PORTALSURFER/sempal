@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::atomic::{AtomicBool, Ordering},
     thread,
     time::Duration,
@@ -317,11 +317,22 @@ fn prepare_folder_projections(
     let policy = db
         .source_traversal_policy()
         .map_err(|error| format!("read source traversal policy: {error}"))?;
-    let mut targets = paths
+    let mut target_candidates = paths
         .iter()
         .filter(|path| path.is_relative())
+        .cloned()
+        .collect::<Vec<_>>();
+    for entry in &delta.deleted {
+        append_directory_ancestors(&mut target_candidates, &entry.relative_path);
+    }
+    for moved in &delta.moved {
+        append_directory_ancestors(&mut target_candidates, &moved.old_relative_path);
+        append_directory_ancestors(&mut target_candidates, &moved.new_relative_path);
+    }
+    let mut targets = target_candidates
+        .into_iter()
         .filter_map(|relative_path| {
-            match classify_path_without_following_with_policy(&root.join(relative_path), policy) {
+            match classify_path_without_following_with_policy(&root.join(&relative_path), policy) {
                 Ok(classification)
                     if classification.visible_kind() == Some(SourceEntryKind::Directory) =>
                 {
@@ -383,6 +394,17 @@ fn prepare_folder_projections(
         });
     }
     Ok(projections)
+}
+
+fn append_directory_ancestors(targets: &mut Vec<PathBuf>, relative_path: &Path) {
+    let mut ancestor = relative_path.parent();
+    while let Some(path) = ancestor {
+        if path.as_os_str().is_empty() {
+            break;
+        }
+        targets.push(path.to_path_buf());
+        ancestor = path.parent();
+    }
 }
 
 fn wait_for_retry(cancel: &AtomicBool, delay: Duration) -> bool {

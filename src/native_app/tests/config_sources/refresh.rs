@@ -457,6 +457,354 @@ fn source_filesystem_change_patches_new_folder_after_targeted_commit() {
         .any(|entry| entry.relative_path == Path::new("created-folder/nested/new.wav")));
 }
 
+#[test]
+fn source_filesystem_change_renames_nested_folder_from_coalesced_descendant_events() {
+    let source_root = tempfile::tempdir().expect("source root");
+    let old_folder = source_root.path().join("old-folder");
+    let old_nested = old_folder.join("nested");
+    fs::create_dir_all(&old_nested).expect("create old nested folder");
+    write_test_wav_i16(&old_nested.join("kick.wav"), &[0, 512, -512]);
+
+    let mut state = gui_state_for_span_tests();
+    let request = state
+        .library
+        .folder_browser
+        .begin_add_source_path(source_root.path().to_path_buf(), 100)
+        .expect("new source requests scan");
+    let source_id = request.source_id.clone();
+    let result = crate::native_app::sample_library::folder_browser::scan::scan_source_with_progress(
+        request,
+        |_| {},
+        |_| {},
+    );
+    state.finish_folder_scan(result, &mut ui::UiUpdateContext::default());
+
+    let new_folder = source_root.path().join("new-folder");
+    fs::rename(&old_folder, &new_folder).expect("rename folder");
+    let mut context = ui::UiUpdateContext::default();
+    state.apply_message(
+        crate::native_app::test_support::state::GuiMessage::SourceFilesystemChanged {
+            source_id: source_id.clone(),
+            paths: vec![
+                PathBuf::from("old-folder/nested/kick.wav"),
+                PathBuf::from("new-folder/nested/kick.wav"),
+            ],
+            overflowed: false,
+            source_root_available: true,
+            journal_checkpoint_event_id: None,
+        },
+        &mut context,
+    );
+    let sync_finished = crate::native_app::tests::run_worker_message_for_tests(
+        context.into_command(),
+        "gui-source-db-sync",
+    )
+    .expect("targeted source sync command");
+    state.apply_message(sync_finished, &mut ui::UiUpdateContext::default());
+
+    assert!(state.library.folder_progress().is_none());
+    assert!(
+        state
+            .library
+            .folder_browser
+            .folder_path(&old_folder.to_string_lossy())
+            .is_none()
+    );
+    assert!(
+        state
+            .library
+            .folder_browser
+            .folder_path(&new_folder.to_string_lossy())
+            .is_some()
+    );
+    assert!(
+        state
+            .library
+            .folder_browser
+            .folder_path(&new_folder.join("nested").to_string_lossy())
+            .is_some()
+    );
+    let db = wavecrate::sample_sources::SourceDatabase::open_for_test_fixture_source_write(
+        source_root.path(),
+    )
+    .expect("db");
+    let rows = db.list_files().expect("synced rows");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        rows[0].relative_path,
+        Path::new("new-folder/nested/kick.wav")
+    );
+}
+
+#[test]
+fn source_filesystem_change_reparents_nested_folder_between_existing_parents() {
+    let source_root = tempfile::tempdir().expect("source root");
+    let old_parent = source_root.path().join("old-parent");
+    let old_folder = old_parent.join("old-folder");
+    let old_nested = old_folder.join("nested");
+    let new_parent = source_root.path().join("new-parent");
+    fs::create_dir_all(&old_nested).expect("create old nested folder");
+    fs::create_dir_all(&new_parent).expect("create new parent folder");
+    write_test_wav_i16(&old_nested.join("kick.wav"), &[0, 512, -512]);
+
+    let mut state = gui_state_for_span_tests();
+    let request = state
+        .library
+        .folder_browser
+        .begin_add_source_path(source_root.path().to_path_buf(), 100)
+        .expect("new source requests scan");
+    let source_id = request.source_id.clone();
+    let result = crate::native_app::sample_library::folder_browser::scan::scan_source_with_progress(
+        request,
+        |_| {},
+        |_| {},
+    );
+    state.finish_folder_scan(result, &mut ui::UiUpdateContext::default());
+
+    let new_folder = new_parent.join("new-folder");
+    fs::rename(&old_folder, &new_folder).expect("reparent and rename folder");
+    let mut context = ui::UiUpdateContext::default();
+    state.apply_message(
+        crate::native_app::test_support::state::GuiMessage::SourceFilesystemChanged {
+            source_id: source_id.clone(),
+            paths: vec![
+                PathBuf::from("old-parent/old-folder/nested/kick.wav"),
+                PathBuf::from("new-parent/new-folder/nested/kick.wav"),
+            ],
+            overflowed: false,
+            source_root_available: true,
+            journal_checkpoint_event_id: None,
+        },
+        &mut context,
+    );
+    let sync_finished = crate::native_app::tests::run_worker_message_for_tests(
+        context.into_command(),
+        "gui-source-db-sync",
+    )
+    .expect("targeted source sync command");
+    state.apply_message(sync_finished, &mut ui::UiUpdateContext::default());
+
+    assert!(state.library.folder_progress().is_none());
+    assert!(
+        state
+            .library
+            .folder_browser
+            .folder_path(&old_parent.to_string_lossy())
+            .is_some()
+    );
+    assert!(
+        state
+            .library
+            .folder_browser
+            .folder_path(&old_folder.to_string_lossy())
+            .is_none()
+    );
+    assert!(
+        state
+            .library
+            .folder_browser
+            .folder_path(&new_parent.to_string_lossy())
+            .is_some()
+    );
+    assert!(
+        state
+            .library
+            .folder_browser
+            .folder_path(&new_folder.to_string_lossy())
+            .is_some()
+    );
+    assert!(
+        state
+            .library
+            .folder_browser
+            .folder_path(&new_folder.join("nested").to_string_lossy())
+            .is_some()
+    );
+    let db = wavecrate::sample_sources::SourceDatabase::open_for_test_fixture_source_write(
+        source_root.path(),
+    )
+    .expect("db");
+    let rows = db.list_files().expect("synced rows");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        rows[0].relative_path,
+        Path::new("new-parent/new-folder/nested/kick.wav")
+    );
+}
+
+#[test]
+fn source_filesystem_change_removes_nested_folder_from_descendant_event() {
+    let source_root = tempfile::tempdir().expect("source root");
+    let removed_folder = source_root.path().join("removed-folder");
+    let removed_nested = removed_folder.join("nested");
+    fs::create_dir_all(&removed_nested).expect("create removed nested folder");
+    write_test_wav_i16(&removed_nested.join("kick.wav"), &[0, 512, -512]);
+    write_test_wav_i16(&source_root.path().join("keep.wav"), &[0, 1024, -1024]);
+
+    let mut state = gui_state_for_span_tests();
+    let request = state
+        .library
+        .folder_browser
+        .begin_add_source_path(source_root.path().to_path_buf(), 100)
+        .expect("new source requests scan");
+    let source_id = request.source_id.clone();
+    let result = crate::native_app::sample_library::folder_browser::scan::scan_source_with_progress(
+        request,
+        |_| {},
+        |_| {},
+    );
+    state.finish_folder_scan(result, &mut ui::UiUpdateContext::default());
+
+    fs::remove_dir_all(&removed_folder).expect("remove nested folder");
+    let mut context = ui::UiUpdateContext::default();
+    state.apply_message(
+        crate::native_app::test_support::state::GuiMessage::SourceFilesystemChanged {
+            source_id,
+            paths: vec![PathBuf::from("removed-folder/nested/kick.wav")],
+            overflowed: false,
+            source_root_available: true,
+            journal_checkpoint_event_id: None,
+        },
+        &mut context,
+    );
+    let sync_finished = crate::native_app::tests::run_worker_message_for_tests(
+        context.into_command(),
+        "gui-source-db-sync",
+    )
+    .expect("targeted source sync command");
+    state.apply_message(sync_finished, &mut ui::UiUpdateContext::default());
+
+    assert!(state.library.folder_progress().is_none());
+    assert!(
+        state
+            .library
+            .folder_browser
+            .folder_path(&removed_folder.to_string_lossy())
+            .is_none()
+    );
+    let db = wavecrate::sample_sources::SourceDatabase::open_for_test_fixture_source_write(
+        source_root.path(),
+    )
+    .expect("db");
+    let rows = db.list_files().expect("synced rows");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].relative_path, Path::new("keep.wav"));
+    assert!(state
+        .library
+        .folder_browser
+        .selected_audio_files()
+        .iter()
+        .any(|file| file.name == "keep.wav"));
+}
+
+#[test]
+fn source_filesystem_change_removes_empty_folder_without_manifest_file_delta() {
+    let source_root = tempfile::tempdir().expect("source root");
+    let empty_folder = source_root.path().join("empty-folder");
+    fs::create_dir_all(&empty_folder).expect("create empty folder");
+
+    let mut state = gui_state_for_span_tests();
+    let request = state
+        .library
+        .folder_browser
+        .begin_add_source_path(source_root.path().to_path_buf(), 100)
+        .expect("new source requests scan");
+    let source_id = request.source_id.clone();
+    let result = crate::native_app::sample_library::folder_browser::scan::scan_source_with_progress(
+        request,
+        |_| {},
+        |_| {},
+    );
+    state.finish_folder_scan(result, &mut ui::UiUpdateContext::default());
+    let manifest_revision = state
+        .library
+        .folder_browser
+        .source_projection_revision(&source_id)
+        .expect("initial manifest revision");
+    assert!(manifest_revision > 0);
+    assert!(state
+        .library
+        .folder_browser
+        .folder_path(&empty_folder.to_string_lossy())
+        .is_some());
+    let db = wavecrate::sample_sources::SourceDatabase::open_for_test_fixture_source_write(
+        source_root.path(),
+    )
+    .expect("db");
+    let rows_before = db.list_files().expect("initial rows");
+
+    fs::remove_dir(&empty_folder).expect("remove empty folder");
+    let mut context = ui::UiUpdateContext::default();
+    state.apply_message(
+        crate::native_app::test_support::state::GuiMessage::SourceFilesystemChanged {
+            source_id: source_id.clone(),
+            paths: vec![PathBuf::from("empty-folder")],
+            overflowed: false,
+            source_root_available: true,
+            journal_checkpoint_event_id: None,
+        },
+        &mut context,
+    );
+    let sync_finished = crate::native_app::tests::run_worker_message_for_tests(
+        context.into_command(),
+        "gui-source-db-sync",
+    )
+    .expect("targeted source sync command");
+    let committed_delta = match &sync_finished {
+        crate::native_app::test_support::state::GuiMessage::SourceFilesystemSyncFinished(result) => {
+            result
+                .result
+                .as_ref()
+                .expect("targeted source sync result")
+                .committed_delta
+                .clone()
+        }
+        message => panic!("expected source sync completion, got {message:?}"),
+    };
+    assert!(committed_delta.is_empty());
+    state.apply_message(sync_finished, &mut ui::UiUpdateContext::default());
+
+    assert!(state.library.folder_progress().is_none());
+    assert!(state
+        .library
+        .folder_browser
+        .folder_path(&empty_folder.to_string_lossy())
+        .is_none());
+    assert_eq!(
+        state
+            .library
+            .folder_browser
+            .source_projection_revision(&source_id),
+        Some(manifest_revision + 1)
+    );
+    let rows_after = db.list_files().expect("synced rows");
+    assert_eq!(rows_after.len(), rows_before.len());
+    assert_eq!(
+        rows_after
+            .iter()
+            .map(|row| row.relative_path.clone())
+            .collect::<Vec<_>>(),
+        rows_before
+            .iter()
+            .map(|row| row.relative_path.clone())
+            .collect::<Vec<_>>()
+    );
+
+    assert!(!state
+        .library
+        .folder_browser
+        .apply_committed_projection_delta(
+            &source_id,
+            crate::native_app::app::BrowserProjectionDelta {
+                manifest_revision: manifest_revision.saturating_sub(1),
+                snapshot_revision: manifest_revision.saturating_sub(1),
+                folders: Vec::new(),
+                removed_file_ids: Vec::new(),
+                upserted_files: Vec::new(),
+            },
+        ));
+}
+
 #[cfg(unix)]
 #[test]
 fn source_filesystem_change_removes_folder_replaced_by_symlink() {
