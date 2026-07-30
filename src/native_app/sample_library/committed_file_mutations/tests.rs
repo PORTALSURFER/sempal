@@ -6,7 +6,10 @@ use std::{
 };
 
 use wavecrate::sample_sources::scanner::ManifestIdentityDelta;
-use wavecrate::sample_sources::{SampleSource, SourceDatabase, SourceId, scanner};
+use wavecrate::sample_sources::{
+    SampleSource, SourceDatabase, SourceFileEvidence, SourceId, capture_source_file_evidence,
+    scanner,
+};
 
 use super::watcher_echo::capture_expected_path_state;
 use super::watcher_echo::watcher_echoes_for_changes;
@@ -24,6 +27,22 @@ fn request(
     mut changes: Vec<FileMutationChange>,
 ) -> SourceMutationRequest {
     capture_expected_filesystem_state(&mut changes);
+    request_without_capture(root, operation, changes)
+}
+
+fn prepared_request(
+    root: &Path,
+    operation: FileMutationOperation,
+    changes: Vec<FileMutationChange>,
+) -> SourceMutationRequest {
+    request_without_capture(root, operation, changes)
+}
+
+fn request_without_capture(
+    root: &Path,
+    operation: FileMutationOperation,
+    changes: Vec<FileMutationChange>,
+) -> SourceMutationRequest {
     SourceMutationRequest {
         source: SampleSource::new_with_id(SourceId::from_string("source-a"), root.to_path_buf()),
         fence: CommittedMutationFence::new(
@@ -224,6 +243,59 @@ fn large_create_commits_without_synchronous_deep_hashing() {
         event.watcher_echoes.is_empty(),
         "large files use conservative watcher reconciliation instead of synchronous hashing"
     );
+}
+
+#[test]
+fn prepared_create_commits_small_and_large_captured_evidence() {
+    let root = tempfile::tempdir().expect("source root");
+    let small_path = root.path().join("small.wav");
+    let large_path = root.path().join("large.wav");
+    fs::write(&small_path, b"small prepared duplicate").expect("create small file");
+    fs::write(&large_path, vec![7_u8; 9 * 1024 * 1024]).expect("create large file");
+
+    let small_evidence = capture_source_file_evidence(&small_path);
+    let large_evidence = capture_source_file_evidence(&large_path);
+    assert!(matches!(small_evidence, SourceFileEvidence::ContentHash(_)));
+    assert!(matches!(
+        large_evidence,
+        SourceFileEvidence::Metadata { .. }
+    ));
+
+    let event = reconcile_test_request(
+        prepared_request(
+            root.path(),
+            FileMutationOperation::Duplicate,
+            vec![
+                FileMutationChange::created_prepared(small_path, small_evidence),
+                FileMutationChange::created_prepared(large_path, large_evidence),
+            ],
+        ),
+        &AtomicBool::new(false),
+    )
+    .expect("commit prepared creates");
+
+    assert_eq!(event.committed_delta.created.len(), 2);
+}
+
+#[test]
+fn prepared_create_rejects_an_intervening_rewrite() {
+    let root = tempfile::tempdir().expect("source root");
+    let path = root.path().join("duplicate.wav");
+    fs::write(&path, b"captured before rewrite").expect("create file");
+    let evidence = capture_source_file_evidence(&path);
+    fs::write(&path, b"rewritten after capture").expect("rewrite file");
+
+    let error = reconcile_test_request(
+        prepared_request(
+            root.path(),
+            FileMutationOperation::Duplicate,
+            vec![FileMutationChange::created_prepared(path, evidence)],
+        ),
+        &AtomicBool::new(false),
+    )
+    .expect_err("intervening rewrite must supersede prepared mutation");
+
+    assert!(error.contains("superseded"));
 }
 
 #[test]

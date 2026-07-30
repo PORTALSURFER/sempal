@@ -9,7 +9,7 @@ use std::{collections::BTreeSet, path::PathBuf, time::Instant};
 
 use radiant::prelude as ui;
 use wavecrate::sample_sources::{
-    SourceId, readiness::ReadinessStage, scanner::CommittedSourceDelta,
+    SourceFileEvidence, SourceId, readiness::ReadinessStage, scanner::CommittedSourceDelta,
 };
 use wavecrate::selection::SelectionRange;
 
@@ -258,17 +258,7 @@ pub(in crate::native_app) enum FileMutationPostCommitPresentation {
     Drag,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) enum ExpectedMutationPathState {
-    Missing,
-    ContentHash([u8; 32]),
-    Metadata {
-        len: u64,
-        modified_ns: Option<i64>,
-        is_dir: bool,
-    },
-    Unverifiable,
-}
+pub(super) type ExpectedMutationPathState = SourceFileEvidence;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::native_app) enum FileMutationProjection {
@@ -377,6 +367,23 @@ impl FileMutationChange {
             semantics: FileMutationSemantics::Create,
             expected_before_state: None,
             expected_after_state: None,
+            projection: None,
+            post_commit: None,
+        }
+    }
+
+    pub(in crate::native_app) fn created_prepared(
+        path: PathBuf,
+        evidence: SourceFileEvidence,
+    ) -> Self {
+        Self {
+            before_path: None,
+            after_path: Some(path),
+            before_content_identity: None,
+            after_content_identity: None,
+            semantics: FileMutationSemantics::Create,
+            expected_before_state: None,
+            expected_after_state: Some(evidence),
             projection: None,
             post_commit: None,
         }
@@ -509,7 +516,22 @@ impl NativeAppState {
         changes: Vec<FileMutationChange>,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) -> Option<u64> {
-        self.queue_file_mutation_outcome(operation, changes, Vec::new(), context)
+        self.queue_file_mutation_outcome(operation, changes, Vec::new(), false, context)
+    }
+
+    /// Reconcile a mutation whose filesystem evidence was captured by its source-owned worker.
+    ///
+    /// Unlike the legacy route, this does not inspect the filesystem on the UI thread. Callers
+    /// must provide changes created with `FileMutationChange::created_prepared` (or otherwise
+    /// carrying their expected path evidence); the worker still verifies that evidence before
+    /// touching source metadata, so an intervening rewrite is rejected.
+    pub(in crate::native_app) fn queue_prepared_committed_file_mutation(
+        &mut self,
+        operation: FileMutationOperation,
+        changes: Vec<FileMutationChange>,
+        context: &mut ui::UiUpdateContext<GuiMessage>,
+    ) -> Option<u64> {
+        self.queue_file_mutation_outcome(operation, changes, Vec::new(), true, context)
     }
 
     pub(in crate::native_app) fn queue_partially_committed_file_mutation(
@@ -519,7 +541,7 @@ impl NativeAppState {
         failures: Vec<(Option<String>, String)>,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) -> Option<u64> {
-        self.queue_file_mutation_outcome(operation, changes, failures, context)
+        self.queue_file_mutation_outcome(operation, changes, failures, false, context)
     }
 
     fn queue_file_mutation_outcome(
@@ -527,6 +549,7 @@ impl NativeAppState {
         operation: FileMutationOperation,
         mut changes: Vec<FileMutationChange>,
         reported_failures: Vec<(Option<String>, String)>,
+        prepared: bool,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) -> Option<u64> {
         if changes.is_empty() && reported_failures.is_empty() {
@@ -535,7 +558,9 @@ impl NativeAppState {
         let correlation_id =
             ProcessLocalMutationCorrelationId::from_raw(self.background.next_task_id());
         let had_changes = !changes.is_empty();
-        capture_expected_filesystem_state(&mut changes);
+        if !prepared {
+            capture_expected_filesystem_state(&mut changes);
+        }
         let failures = reported_failures
             .into_iter()
             .map(|(source_id, error)| FileMutationFailure {

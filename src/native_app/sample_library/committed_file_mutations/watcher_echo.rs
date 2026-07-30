@@ -3,9 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use wavecrate_library::timestamps::system_time_to_unix_nanos;
-
-const MAX_WATCHER_ECHO_HASH_BYTES: u64 = 8 * 1024 * 1024;
+use wavecrate::sample_sources::{SourceFileEvidence, capture_source_file_evidence};
 
 use super::{ExpectedMutationPathState, FileMutationChange};
 
@@ -22,25 +20,7 @@ pub(in crate::native_app) struct CommittedWatcherEcho {
 }
 
 pub(super) fn capture_expected_path_state(path: &Path) -> ExpectedMutationPathState {
-    match std::fs::metadata(path) {
-        Ok(metadata) if metadata.is_file() && metadata.len() <= MAX_WATCHER_ECHO_HASH_BYTES => {
-            match std::fs::read(path) {
-                Ok(bytes) => {
-                    ExpectedMutationPathState::ContentHash(*blake3::hash(&bytes).as_bytes())
-                }
-                Err(_) => ExpectedMutationPathState::Unverifiable,
-            }
-        }
-        Ok(metadata) => ExpectedMutationPathState::Metadata {
-            len: metadata.len(),
-            modified_ns: metadata.modified().ok().map(system_time_to_unix_nanos),
-            is_dir: metadata.is_dir(),
-        },
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            ExpectedMutationPathState::Missing
-        }
-        Err(_) => ExpectedMutationPathState::Unverifiable,
-    }
+    capture_source_file_evidence(path)
 }
 
 pub(super) fn watcher_echoes_for_changes(
@@ -88,17 +68,9 @@ pub(super) fn watcher_echoes_for_changes(
 pub(in crate::native_app) fn observed_watcher_path_state(
     path: &Path,
 ) -> Option<CommittedWatcherPathState> {
-    match std::fs::metadata(path) {
-        Ok(metadata) if metadata.is_file() && metadata.len() <= MAX_WATCHER_ECHO_HASH_BYTES => {
-            let bytes = std::fs::read(path).ok()?;
-            Some(CommittedWatcherPathState::ContentHash(
-                *blake3::hash(&bytes).as_bytes(),
-            ))
-        }
-        Ok(_) => None,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            Some(CommittedWatcherPathState::Missing)
-        }
-        Err(_) => None,
+    match capture_source_file_evidence(path) {
+        SourceFileEvidence::ContentHash(hash) => Some(CommittedWatcherPathState::ContentHash(hash)),
+        SourceFileEvidence::Missing => Some(CommittedWatcherPathState::Missing),
+        SourceFileEvidence::Metadata { .. } | SourceFileEvidence::Unverifiable => None,
     }
 }
