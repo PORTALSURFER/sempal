@@ -106,6 +106,37 @@ fn source_processing_supervisor_uses_backend_neutral_events() {
 }
 
 #[test]
+fn same_source_duplicate_finish_uses_prepared_mutation_handoff() {
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let source = fs::read_to_string(format!(
+        "{manifest_dir}/src/native_app/workflows/context_menu_actions/duplicate.rs"
+    ))
+    .expect("context-menu duplicate workflow should be readable");
+    let body = source_between(
+        &source,
+        "pub(in crate::native_app) fn finish_context_sample_same",
+        "pub(in crate::native_app) fn finish_context_sample_double",
+    );
+
+    assert!(
+        body.contains("queue_prepared_committed_file_mutation"),
+        "same-source duplicate completion must hand off worker-captured evidence"
+    );
+    for forbidden in [
+        "queue_committed_file_mutation",
+        "capture_expected_filesystem_state",
+        "capture_source_file_evidence",
+        "SourceDatabase",
+        "rusqlite",
+    ] {
+        assert!(
+            !body.contains(forbidden),
+            "same-source duplicate UI completion must not perform {forbidden}"
+        );
+    }
+}
+
+#[test]
 fn sample_identity_fingerprints_require_wavecrate_debug_mode() {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let source = fs::read_to_string(format!(

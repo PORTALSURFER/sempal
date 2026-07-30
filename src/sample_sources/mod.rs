@@ -9,6 +9,7 @@
 pub mod config;
 #[doc(hidden)]
 pub mod duplicate_file_ops;
+mod file_evidence;
 mod file_move_metadata;
 #[doc(hidden)]
 pub mod harvest_file_ops;
@@ -79,6 +80,9 @@ pub use duplicate_file_ops::{
     WholeFileHarvestExtractionPlan, WholeFileHarvestExtractionRequest,
     WholeFileHarvestExtractionResult, execute_duplicate_context_sample_double,
     execute_duplicate_context_sample_same, execute_whole_file_harvest_extraction,
+};
+pub use file_evidence::{
+    MAX_SOURCE_FILE_EVIDENCE_HASH_BYTES, SourceFileEvidence, capture_source_file_evidence,
 };
 #[doc(hidden)]
 pub use file_move_metadata::{

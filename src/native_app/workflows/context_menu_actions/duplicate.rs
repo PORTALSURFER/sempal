@@ -198,13 +198,18 @@ impl NativeAppState {
             Ok(completion) => {
                 self.ui.status.sample =
                     format!("Duplicated {}", sample_path_label(&completion.destination));
-                self.queue_committed_file_mutation(
+                self.queue_prepared_committed_file_mutation(
                     FileMutationOperation::Duplicate,
                     vec![
-                        FileMutationChange::created(completion.destination.clone())
-                            .with_projection(FileMutationProjection::SelectAndFollow {
+                        FileMutationChange::created_prepared(
+                            completion.destination.clone(),
+                            completion.destination_evidence,
+                        )
+                        .with_projection(
+                            FileMutationProjection::SelectAndFollow {
                                 path: completion.destination.clone(),
-                            }),
+                            },
+                        ),
                     ],
                     context,
                 );

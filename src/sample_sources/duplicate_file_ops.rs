@@ -6,7 +6,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::sample_sources::{HarvestDerivationOperation, SourceDatabase};
+use crate::sample_sources::{
+    HarvestDerivationOperation, SourceDatabase, SourceFileEvidence, capture_source_file_evidence,
+};
 use wavecrate_library::timestamps::system_time_to_unix_nanos;
 
 use super::harvest_file_ops;
@@ -21,6 +23,7 @@ pub struct DuplicateSameRequest {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ContextSampleSameResult {
     pub destination: PathBuf,
+    pub destination_evidence: SourceFileEvidence,
 }
 
 #[derive(Clone, Debug)]
@@ -80,7 +83,11 @@ pub fn execute_duplicate_context_sample_same(
         &request.source_root,
         &request.source_database_root,
     )?;
-    Ok(ContextSampleSameResult { destination })
+    let destination_evidence = capture_source_file_evidence(&destination);
+    Ok(ContextSampleSameResult {
+        destination,
+        destination_evidence,
+    })
 }
 
 pub fn execute_duplicate_context_sample_double(
@@ -316,7 +323,7 @@ fn next_available_reserved_whole_file_harvest_copy_path(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sample_sources::{Rating, SourceDatabase};
+    use crate::sample_sources::{Rating, SourceDatabase, SourceFileEvidence};
 
     fn write_i16_wav(path: &Path, samples: &[i16]) {
         let spec = hound::WavSpec {
@@ -359,6 +366,10 @@ mod tests {
             vec![1, 2, 3, 4]
         );
         assert_eq!(
+            result.destination_evidence,
+            SourceFileEvidence::ContentHash(*blake3::hash(&[1_u8, 2, 3, 4]).as_bytes())
+        );
+        assert_eq!(
             db.tag_for_path(Path::new("kick_copy002.wav"))
                 .expect("read duplicate rating"),
             Some(Rating::new(2))
@@ -382,6 +393,30 @@ mod tests {
 
         assert!(error.contains("source file mismatch"));
         assert!(!destination.exists(), "failed duplicate should be removed");
+    }
+
+    #[test]
+    fn duplicate_same_large_destination_keeps_conservative_metadata_evidence() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+        let source = root.join("large.wav");
+        let bytes = vec![7_u8; 9 * 1024 * 1024];
+        fs::write(&source, &bytes).expect("write source");
+        let db = SourceDatabase::open_for_source_write(root).expect("open db");
+        db.upsert_file(Path::new("large.wav"), bytes.len() as u64, 1)
+            .expect("upsert source");
+
+        let result = execute_duplicate_context_sample_same(DuplicateSameRequest {
+            source_path: source,
+            source_root: root.to_path_buf(),
+            source_database_root: root.to_path_buf(),
+        })
+        .expect("duplicate large same");
+
+        assert!(matches!(
+            result.destination_evidence,
+            SourceFileEvidence::Metadata { len, .. } if len == bytes.len() as u64
+        ));
     }
 
     #[test]
