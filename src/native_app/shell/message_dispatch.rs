@@ -252,6 +252,7 @@ impl NativeAppState {
             | GuiMessage::ExtractPlaymarkedRange
             | GuiMessage::ExtractPlaymarkedRangeToHarvestDestination
             | GuiMessage::PlaySelectionExtractionFinished { .. }
+            | GuiMessage::HarvestSelectionDerivationPersisted(_)
             | GuiMessage::SelectedWholeFilesHarvestExtractionFinished { .. } => {
                 self.apply_chrome_dispatch(message, context);
             }

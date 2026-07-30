@@ -1,11 +1,117 @@
 use super::{
-    FolderMoveRequest, GuiMessage, HarvestDerivationOperation, HarvestSeenPersistResult,
-    HarvestSourceRange, NativeAppState, NewHarvestDerivation, Path, PathBuf, SelectionRange,
-    persist_harvest_seen,
+    FolderMoveRequest, GuiMessage, HarvestDerivationOperation, HarvestMetadataSnapshot,
+    HarvestSeenPersistResult, HarvestSourceRange, NativeAppState, NewHarvestDerivation, Path,
+    PathBuf, SelectionRange, persist_harvest_seen,
 };
+use crate::native_app::app::HarvestSelectionDerivationBatchResult;
 use radiant::prelude as ui;
+use wavecrate::sample_sources::{HarvestFileIdentity, HarvestFileKey, SampleSource};
+
+#[derive(Clone, Debug)]
+pub(in crate::native_app) struct HarvestSelectionDerivationRequest {
+    pub(in crate::native_app) source_path: PathBuf,
+    pub(in crate::native_app) child_path: PathBuf,
+    pub(in crate::native_app) source: SampleSource,
+    pub(in crate::native_app) child_source: SampleSource,
+    pub(in crate::native_app) selection: SelectionRange,
+    pub(in crate::native_app) source_duration_seconds: f64,
+    pub(in crate::native_app) operation: HarvestDerivationOperation,
+    pub(in crate::native_app) inherited_tags: Vec<String>,
+}
+
+pub(in crate::native_app) fn execute_harvest_selection_derivation(
+    request: HarvestSelectionDerivationRequest,
+) -> Result<(), String> {
+    let Some(parent) = harvest_identity_for_source_path(&request.source, &request.source_path) else {
+        return Err(format!("source endpoint is unavailable: {}", request.source_path.display()));
+    };
+    let Some(child) = harvest_identity_for_source_path(&request.child_source, &request.child_path)
+    else {
+        return Err(format!("child endpoint is unavailable: {}", request.child_path.display()));
+    };
+    let duration = request.source_duration_seconds.max(0.0);
+    let source_range = HarvestSourceRange {
+        start_seconds: request.selection.start() as f64 * duration,
+        end_seconds: request.selection.end() as f64 * duration,
+    };
+    let playback_type = request
+        .inherited_tags
+        .iter()
+        .find(|tag| super::tagged_playback_mode_for_tag(tag).is_some())
+        .cloned();
+    let rating = source_db_entry_for_path(&request.source, &parent.key.relative_path)
+        .map(|entry| entry.tag.as_i64());
+    let edge = NewHarvestDerivation {
+        parent,
+        child,
+        operation: request.operation,
+        source_range: Some(source_range),
+        output_duration_seconds: Some(
+            (source_range.end_seconds - source_range.start_seconds).max(0.0),
+        ),
+        destination_folder: request.child_path.parent().map(Path::to_path_buf),
+        inherited_metadata: HarvestMetadataSnapshot {
+            rating,
+            tags: request.inherited_tags,
+            playback_type,
+        },
+        tool_version: format!("wavecrate-{}", env!("CARGO_PKG_VERSION")),
+    };
+    wavecrate::sample_sources::library::record_harvest_derivation(&edge)
+        .map(|_| ())
+        .map_err(|error| {
+            format!(
+                "failed to record harvest derivation {} -> {}: {error}",
+                request.source_path.display(),
+                request.child_path.display()
+            )
+        })
+}
+
+fn harvest_identity_for_source_path(
+    source: &SampleSource,
+    path: &Path,
+) -> Option<HarvestFileIdentity> {
+    let relative_path = path.strip_prefix(&source.root).ok()?.to_path_buf();
+    let entry = source_db_entry_for_path(source, &relative_path);
+    let (file_size, modified_ns) =
+        wavecrate::sample_sources::harvest_file_ops::file_identity_metadata(path);
+    Some(HarvestFileIdentity {
+        key: HarvestFileKey::new(source.id.clone(), relative_path),
+        file_size: file_size.or_else(|| entry.as_ref().map(|entry| entry.file_size)),
+        modified_ns: modified_ns.or_else(|| entry.as_ref().map(|entry| entry.modified_ns)),
+        content_hash: entry.and_then(|entry| entry.content_hash),
+    })
+}
+
+fn source_db_entry_for_path(
+    source: &SampleSource,
+    relative_path: &Path,
+) -> Option<wavecrate::sample_sources::WavEntry> {
+    source
+        .open_db()
+        .ok()
+        .and_then(|db| db.entry_for_path(relative_path).ok().flatten())
+}
 
 impl NativeAppState {
+    pub(in crate::native_app) fn finish_harvest_selection_derivation_persisted(
+        &mut self,
+        completion: ui::TaskCompletion<HarvestSelectionDerivationBatchResult>,
+        context: &mut ui::UiUpdateContext<GuiMessage>,
+    ) {
+        if self
+            .background
+            .harvest_selection_derivation
+            .finish(completion)
+            .is_some()
+        {
+            self.background
+                .harvest_selection_derivation
+                .schedule_if_idle(context);
+        }
+    }
+
     pub(in crate::native_app) fn invalidate_harvest_touched_for_path(&mut self, path: &Path) {
         let Some(request) = self.harvest_touched_persist_request_for_path(path) else {
             return;
@@ -288,12 +394,28 @@ impl NativeAppState {
     }
 
     fn remap_harvest_file_key_for_move(&self, old_path: &Path, new_path: &Path) {
+        let Some((destination_source, _)) = self
+            .library
+            .folder_browser
+            .sample_source_for_file_path(new_path)
+        else {
+            return;
+        };
         let Some(old_key) = self.harvest_key_for_path(old_path) else {
             return;
         };
         let Some(new_key) = self.harvest_key_for_path(new_path) else {
             return;
         };
+        if old_key.source_id == new_key.source_id {
+            self.background
+                .harvest_selection_derivation
+                .rekey_file(old_path, new_path);
+        } else {
+            self.background
+                .harvest_selection_derivation
+                .rekey_file_cross_source(old_path, new_path, destination_source);
+        }
         if let Err(error) =
             wavecrate::sample_sources::library::remap_harvest_file_key(&old_key, &new_key)
         {
@@ -313,6 +435,9 @@ impl NativeAppState {
     ) {
         let old_path = source_root.join(old_prefix);
         let new_path = source_root.join(new_prefix);
+        self.background
+            .harvest_selection_derivation
+            .rekey_prefix(&old_path, &new_path);
         let Some(old_key) = self.harvest_key_for_path(&old_path) else {
             return;
         };

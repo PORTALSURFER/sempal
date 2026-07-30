@@ -1,11 +1,45 @@
 use super::{
-    HarvestFamilySummary, HarvestFileIdentity, HarvestFileKey, HarvestMetadataSnapshot,
-    HarvestSeenPersistRequest, HarvestState, NativeAppState, Path, PathBuf, SampleSource, WavEntry,
-    tagged_playback_mode_for_tag,
+    HarvestDerivationOperation, HarvestFamilySummary, HarvestFileIdentity, HarvestFileKey,
+    HarvestMetadataSnapshot, HarvestSeenPersistRequest, HarvestState, NativeAppState, Path,
+    PathBuf, SampleSource, WavEntry, tagged_playback_mode_for_tag,
 };
 use wavecrate::sample_sources::HarvestTouchedPersistRequest;
+use wavecrate::selection::SelectionRange;
 
 impl NativeAppState {
+    pub(in crate::native_app) fn harvest_selection_derivation_request(
+        &self,
+        source_path: &Path,
+        child_path: &Path,
+        selection: SelectionRange,
+        source_duration_seconds: f64,
+        operation: HarvestDerivationOperation,
+    ) -> Option<super::persistence::HarvestSelectionDerivationRequest> {
+        let (source, _) = self
+            .library
+            .folder_browser
+            .sample_source_for_file_path(source_path)?;
+        let (child_source, _) = self
+            .library
+            .folder_browser
+            .sample_source_for_file_path(child_path)?;
+        Some(super::persistence::HarvestSelectionDerivationRequest {
+            source_path: source_path.to_path_buf(),
+            child_path: child_path.to_path_buf(),
+            source,
+            child_source,
+            selection,
+            source_duration_seconds,
+            operation,
+            inherited_tags: self
+                .metadata
+                .tags_by_file
+                .get(&source_path.to_string_lossy().to_string())
+                .cloned()
+                .unwrap_or_default(),
+        })
+    }
+
     pub(in crate::native_app) fn selected_harvest_family_summary(
         &self,
     ) -> Option<HarvestFamilySummary> {

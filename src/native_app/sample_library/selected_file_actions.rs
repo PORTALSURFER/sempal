@@ -270,7 +270,7 @@ impl NativeAppState {
                     return;
                 }
                 self.ui.status.sample = String::from(target.status_text());
-                context.business().background("gui-waveform-extract").run(
+                context.business().interactive("gui-waveform-extract").run(
                     move |_| execute_waveform_extraction(request),
                     move |completion| GuiMessage::PlaySelectionExtractionFinished {
                         completion,
@@ -535,13 +535,18 @@ impl NativeAppState {
                 let metadata_error = self
                     .assign_extracted_file_metadata(&path, playback_type, context)
                     .err();
-                self.record_harvest_selection_derivation_with_source_duration(
+                if let Some(request) = self.harvest_selection_derivation_request(
                     &completion.source_path,
-                    completion.selection,
                     &path,
+                    completion.selection,
                     self.waveform.current.duration_seconds() as f64,
                     harvest_operation,
-                );
+                ) {
+                    self.background.harvest_selection_derivation.enqueue(request);
+                    self.background
+                        .harvest_selection_derivation
+                        .schedule_if_idle(context);
+                }
                 if let Some(position) = drag_position {
                     self.log_sample_identity_checkpoint(
                         "waveform.extract.drag_started",
