@@ -4,16 +4,9 @@ use crate::native_app::{
         waveform_panel::{WAVEFORM_PANEL_HEIGHT, WAVEFORM_VIEW_HEIGHT, waveform_panel},
     },
     test_support::state::NativeAppStateFixture,
-    ui::ids::{
-        WAVEFORM_LOADED_SAMPLE_DRAG_HANDLE_ID, WAVEFORM_PLAYMARK_BEAT_COUNT_ID,
-        WAVEFORM_PLAYMARK_BEAT_TOGGLE_ID,
-    },
+    ui::ids::{WAVEFORM_LOADED_SAMPLE_DRAG_HANDLE_ID, WAVEFORM_PLAYMARK_LABEL_ID},
 };
-use radiant::{
-    gui::automation::AutomationRole,
-    prelude::{self as ui, IntoView},
-    runtime::PaintPrimitive,
-};
+use radiant::prelude::{self as ui, IntoView};
 
 #[test]
 fn waveform_panel_uses_the_taller_editorial_viewport() {
@@ -135,86 +128,31 @@ fn waveform_help_tooltip_attaches_to_interaction_widget() {
 }
 
 #[test]
-fn playmark_beat_controls_project_shared_toolbar_state_and_semantics() {
+fn playmark_bottom_controls_keep_length_editing_with_toolbar_grid_controls() {
     let mut state = NativeAppStateFixture::default()
         .with_synthetic_waveform()
         .build();
     state.waveform.current.set_play_selection_range(0.25, 0.75);
     state.ui.chrome.beat_guides_enabled = true;
     state.ui.chrome.beat_guide_count = 16;
+    assert!(state.waveform.current.begin_playmark_label_edit(true, 16));
 
     let surface = waveform_panel(WaveformPanelViewModel::from_app_state(&state)).into_surface();
-    let toggle = surface
-        .find_widget(WAVEFORM_PLAYMARK_BEAT_TOGGLE_ID)
-        .expect("playmark beat toggle")
-        .widget_object()
-        .automation_semantics();
-    let count = surface
-        .find_widget(WAVEFORM_PLAYMARK_BEAT_COUNT_ID)
-        .expect("playmark beat count")
-        .widget_object()
-        .automation_semantics();
-
-    assert_eq!(toggle.role, AutomationRole::Toggle);
-    assert_eq!(toggle.label.as_deref(), Some("Playmark beat grid"));
-    assert_eq!(toggle.checked, Some(true));
-    assert_eq!(count.role, AutomationRole::TextInput);
-    assert_eq!(count.label.as_deref(), Some("Playmark beat count"));
-    assert_eq!(count.value_text.as_deref(), Some("16"));
-}
-
-#[test]
-fn playmark_beat_controls_are_absent_without_a_playmark() {
-    let state = NativeAppStateFixture::default()
-        .with_synthetic_waveform()
-        .build();
-    let surface = waveform_panel(WaveformPanelViewModel::from_app_state(&state)).into_surface();
-
-    assert!(
-        surface
-            .find_widget(WAVEFORM_PLAYMARK_BEAT_TOGGLE_ID)
-            .is_none()
-    );
-    assert!(
-        surface
-            .find_widget(WAVEFORM_PLAYMARK_BEAT_COUNT_ID)
-            .is_none()
-    );
-}
-
-#[test]
-fn playmark_beat_count_is_absent_until_the_grid_is_enabled() {
-    let mut state = NativeAppStateFixture::default()
-        .with_synthetic_waveform()
-        .build();
-    state.waveform.current.set_play_selection_range(0.25, 0.75);
-
-    let surface = waveform_panel(WaveformPanelViewModel::from_app_state(&state)).into_surface();
-    assert!(
-        surface
-            .find_widget(WAVEFORM_PLAYMARK_BEAT_TOGGLE_ID)
-            .is_some()
-    );
-    assert!(
-        surface
-            .find_widget(WAVEFORM_PLAYMARK_BEAT_COUNT_ID)
-            .is_none()
-    );
-}
-
-#[test]
-fn playmark_overlay_controls_paint_in_the_waveform_viewport() {
-    let mut state = NativeAppStateFixture::default()
-        .with_synthetic_waveform()
-        .build();
-    state.waveform.current.set_play_selection_range(0.25, 0.75);
-
     let frame = waveform_panel(WaveformPanelViewModel::from_app_state(&state))
         .view_frame_at_size_with_default_theme(ui::Vector2::new(800.0, WAVEFORM_PANEL_HEIGHT));
 
-    assert!(frame.paint_plan.primitives.iter().any(
-        |primitive| matches!(primitive, PaintPrimitive::Text(text) if text.widget_id == WAVEFORM_PLAYMARK_BEAT_TOGGLE_ID && text.text.as_str() == "G")
-    ));
+    assert!(surface.find_widget(WAVEFORM_PLAYMARK_LABEL_ID).is_some());
+    assert_eq!(
+        surface
+            .find_widget(WAVEFORM_PLAYMARK_LABEL_ID)
+            .expect("playmark length control")
+            .widget_object()
+            .automation_semantics()
+            .value_text
+            .as_deref(),
+        Some("1920 BPM")
+    );
+    assert_eq!(frame.paint_plan.text_inputs().count(), 1);
 }
 
 #[test]

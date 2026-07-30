@@ -43,8 +43,6 @@ pub(in crate::native_app) const WAVEFORM_SIGNAL_WIDGET_ID: u64 = WAVEFORM.id(11)
 pub(in crate::native_app) const WAVEFORM_WIDGET_ID: u64 = WAVEFORM.id(12);
 pub(in crate::native_app) const WAVEFORM_LOADED_SAMPLE_DRAG_HANDLE_ID: u64 = WAVEFORM.id(13);
 pub(in crate::native_app) const WAVEFORM_PLAYMARK_LABEL_ID: u64 = WAVEFORM.id(14);
-pub(in crate::native_app) const WAVEFORM_PLAYMARK_BEAT_TOGGLE_ID: u64 = WAVEFORM.id(15);
-pub(in crate::native_app) const WAVEFORM_PLAYMARK_BEAT_COUNT_ID: u64 = WAVEFORM.id(16);
 
 pub(in crate::native_app) const FOLDER_TREE_LIST_ID: u64 = FOLDER_TREE.id(0);
 pub(in crate::native_app) const FOLDER_TREE_INCLUDE_SUBFOLDERS_TOGGLE_ID: u64 = FOLDER_TREE.id(1);

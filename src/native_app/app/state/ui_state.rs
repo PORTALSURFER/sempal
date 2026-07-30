@@ -474,6 +474,8 @@ pub(in crate::native_app) struct BrowserInteractionState {
     pub(in crate::native_app) context_menu_pointer_anchor: Option<BrowserContextPointerAnchor>,
     pub(in crate::native_app) clipboard_handoff_target: ClipboardHandoffTarget,
     pub(in crate::native_app) pending_folder_delete: Option<PendingFolderDelete>,
+    pub(in crate::native_app) pending_trash_folder_setup: Option<PendingTrashFolderSetup>,
+    pub(in crate::native_app) unsupported_files_dialog: Option<UnsupportedFilesDialogState>,
     pub(in crate::native_app) pending_waveform_destructive_edit:
         Option<PendingWaveformDestructiveEdit>,
     pub(in crate::native_app) pending_protected_extraction_target_source:
@@ -512,6 +514,22 @@ impl CutFileClipboard {
 pub(in crate::native_app) struct PendingFolderDelete {
     pub(in crate::native_app) path: PathBuf,
     pub(in crate::native_app) name: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::native_app) struct PendingTrashFolderSetup {
+    pub(in crate::native_app) paths: Vec<PathBuf>,
+    pub(in crate::native_app) action: &'static str,
+    pub(in crate::native_app) started_at: Instant,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::native_app) struct UnsupportedFilesDialogState {
+    pub(in crate::native_app) source_id: String,
+    pub(in crate::native_app) source_label: String,
+    pub(in crate::native_app) loading: bool,
+    pub(in crate::native_app) paths: Vec<PathBuf>,
+    pub(in crate::native_app) error: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -10,7 +10,7 @@ use radiant::{
 };
 use std::sync::{Arc, Mutex};
 
-use super::{PlaymarkLabelMessage, WaveformState, WaveformWidget, playmark_label};
+use super::{playmark_label, PlaymarkLabelMessage, WaveformState, WaveformWidget};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::native_app) struct PlaymarkLabelEditorState {
@@ -336,15 +336,14 @@ pub(super) fn parsed_playmark_frame_range(
             "Playmark length must be at least one sample frame",
         ));
     }
-    if requested_frames > total_frames as f64 {
-        return Err(String::from("Playmark length exceeds the loaded sample"));
-    }
     let requested_frames = requested_frames as usize;
     let current = current.frame_bounds(total_frames);
-    let midpoint_twice = current.start_frame.saturating_add(current.end_frame);
-    let centered_start = midpoint_twice.saturating_sub(requested_frames) / 2;
-    let start = centered_start.min(total_frames - requested_frames);
-    Ok((start, start + requested_frames))
+    // Duration edits are anchored to the existing start edge.  The end edge
+    // grows or shrinks in place, and the waveform bound remains the final
+    // clamp when the requested duration extends past the sample.
+    let start = current.start_frame;
+    let end = start.saturating_add(requested_frames).min(total_frames);
+    Ok((start, end))
 }
 
 fn parse_length_seconds(text: &str, beat_count: u8) -> Result<f64, String> {
@@ -433,11 +432,29 @@ mod tests {
     }
 
     #[test]
-    fn preserves_frame_length_and_moves_centered_range_inside_edges() {
+    fn duration_edits_keep_start_edge_and_resize_end_edge() {
+        let current = wavecrate::selection::SelectionRange::from_frame_bounds(1_000, 250, 950);
+        assert_eq!(
+            parsed_playmark_frame_range("0.4s", 1_000, 1_000, 4, current),
+            Ok((250, 650))
+        );
+    }
+
+    #[test]
+    fn duration_edits_clamp_end_without_moving_start() {
         let current = wavecrate::selection::SelectionRange::from_frame_bounds(1_000, 850, 950);
         assert_eq!(
             parsed_playmark_frame_range("0.4s", 1_000, 1_000, 4, current),
-            Ok((600, 1_000))
+            Ok((850, 1_000))
+        );
+    }
+
+    #[test]
+    fn duration_edits_longer_than_sample_clamp_end_without_moving_start() {
+        let current = wavecrate::selection::SelectionRange::from_frame_bounds(1_000, 250, 400);
+        assert_eq!(
+            parsed_playmark_frame_range("2s", 1_000, 1_000, 4, current),
+            Ok((250, 1_000))
         );
     }
 
@@ -446,7 +463,10 @@ mod tests {
         let current = wavecrate::selection::SelectionRange::from_frame_bounds(100, 20, 40);
         assert!(parse_length_seconds("NaNs", 4).is_err());
         assert!(parsed_playmark_frame_range("0.0001s", 1_000, 100, 4, current).is_err());
-        assert!(parsed_playmark_frame_range("1s", 1_000, 100, 4, current).is_err());
+        assert_eq!(
+            parsed_playmark_frame_range("1s", 1_000, 100, 4, current),
+            Ok((20, 100))
+        );
     }
 
     #[test]

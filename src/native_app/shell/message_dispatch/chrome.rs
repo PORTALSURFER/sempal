@@ -149,6 +149,10 @@ impl NativeAppState {
             GuiMessage::OpenContextMenu => {
                 self.open_context_menu_from_shortcut(context);
             }
+            GuiMessage::OpenUnsupportedFiles(source_id) => {
+                self.open_unsupported_files(source_id, context);
+            }
+            GuiMessage::CloseUnsupportedFiles => self.close_unsupported_files(),
             GuiMessage::ConfirmPendingWaveformDestructiveEdit => {
                 self.confirm_pending_waveform_destructive_edit(context);
             }

@@ -25,7 +25,6 @@ use super::{
     WaveformState, WaveformViewport,
     audio_file::{gain_preview_for_range_with_gain, gain_preview_for_selection},
     edit_preview_for_selection,
-    playmark_beat_controls::playmark_beat_control_views,
     playmark_label_editor::PlaymarkLabelWidget,
     widget_geometry::WaveformSelectionHandleHover,
 };
@@ -98,15 +97,6 @@ pub(in crate::native_app) fn waveform_viewport_view_with_tooltip(
         .id(widget_ids::WAVEFORM_PLAYMARK_LABEL_ID)
         .size(WAVEFORM_WIDTH as f32, WAVEFORM_HEIGHT as f32)
     });
-    let beat_controls = playmark_beat_control_views(
-        widget_ids::WAVEFORM_PLAYMARK_BEAT_TOGGLE_ID,
-        widget_ids::WAVEFORM_PLAYMARK_BEAT_COUNT_ID,
-        WaveformWidget::new(props),
-        state,
-        beat_guides_enabled,
-        beat_guide_count,
-    );
-
     let layers = [
         waveform_signal_surface_view(
             state,
@@ -118,8 +108,7 @@ pub(in crate::native_app) fn waveform_viewport_view_with_tooltip(
         interaction,
     ]
     .into_iter()
-    .chain(label)
-    .chain(beat_controls.into_iter().flatten());
+    .chain(label);
 
     ui::stack(layers)
         .id(widget_ids::WAVEFORM_VIEWPORT_STACK_ID)

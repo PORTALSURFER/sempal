@@ -151,14 +151,14 @@ fn main_toolbar_does_not_paint_empty_spacer_border() {
 }
 
 #[test]
-fn play_and_stop_form_a_tight_cluster_separated_from_utilities() {
+fn transport_controls_form_a_tight_cluster_separated_from_utilities() {
     let state = NativeAppState::load_default().expect("default state loads");
     let frame = crate::native_app::test_support::toolbar::main_toolbar(&state)
         .view_frame_at_size_with_default_theme(Vector2::new(664.0, 34.0));
-    let random = frame
+    let metronome = frame
         .paint_plan
-        .first_widget_rect(crate::native_app::test_support::toolbar::TOOLBAR_RANDOM_ID)
-        .expect("random utility button");
+        .first_widget_rect(crate::native_app::test_support::toolbar::TOOLBAR_METRONOME_ID)
+        .expect("metronome utility button");
     let play = frame
         .paint_plan
         .first_widget_rect(crate::native_app::ui::ids::TOOLBAR_PLAY_ID)
@@ -167,11 +167,19 @@ fn play_and_stop_form_a_tight_cluster_separated_from_utilities() {
         .paint_plan
         .first_widget_rect(crate::native_app::test_support::toolbar::TOOLBAR_STOP_ID)
         .expect("stop button");
+    let random = frame
+        .paint_plan
+        .first_widget_rect(crate::native_app::test_support::toolbar::TOOLBAR_RANDOM_ID)
+        .expect("random button");
+    let loop_button = frame
+        .paint_plan
+        .first_widget_rect(crate::native_app::ui::ids::TOOLBAR_LOOP_ID)
+        .expect("loop button");
 
-    let playback_center_gap = stop.center().x - play.center().x;
-    let utility_center_gap = play.center().x - random.center().x;
-    assert_eq!(playback_center_gap, 30.0);
-    assert!(utility_center_gap > playback_center_gap);
+    assert_eq!(play.center().x - stop.center().x, 30.0);
+    assert_eq!(random.center().x - play.center().x, 30.0);
+    assert_eq!(loop_button.center().x - random.center().x, 30.0);
+    assert!(stop.center().x - metronome.center().x > 30.0);
 }
 
 #[test]
@@ -254,32 +262,29 @@ fn main_toolbar_control_projection_makes_order_and_identity_explicit() {
         icon_control(0).id,
         crate::native_app::test_support::toolbar::TOOLBAR_FOCUS_LOADED_ID
     );
-    assert_eq!(icon_control(1).icon, ToolbarIcon::Loop);
+    assert_eq!(icon_control(1).icon, ToolbarIcon::SimilarSections);
+    assert!(icon_control(1).icon_enabled);
     assert!(icon_control(1).active);
-    assert_eq!(icon_control(1).tooltip, "Loop");
-    assert_eq!(icon_control(2).icon, ToolbarIcon::SimilarSections);
-    assert!(icon_control(2).icon_enabled);
+    assert_eq!(icon_control(2).icon, ToolbarIcon::ZeroCrossingSnap);
     assert!(icon_control(2).active);
-    assert_eq!(icon_control(3).icon, ToolbarIcon::ZeroCrossingSnap);
-    assert!(icon_control(3).active);
     assert_eq!(
-        icon_control(3).tooltip,
+        icon_control(2).tooltip,
         "Snap play and edit mark edges to nearby zero crossings."
     );
     assert_eq!(
-        icon_control(3).id,
+        icon_control(2).id,
         crate::native_app::test_support::toolbar::TOOLBAR_ZERO_CROSSING_SNAP_ID
     );
-    assert_eq!(icon_control(4).icon, ToolbarIcon::BpmSnap);
-    assert!(icon_control(4).active);
+    assert_eq!(icon_control(3).icon, ToolbarIcon::BpmSnap);
+    assert!(icon_control(3).active);
     assert_eq!(
-        icon_control(4).id,
+        icon_control(3).id,
         crate::native_app::test_support::toolbar::TOOLBAR_BPM_SNAP_ID
     );
-    assert_eq!(icon_control(5).icon, ToolbarIcon::BeatGuides);
-    assert!(icon_control(5).active);
+    assert_eq!(icon_control(4).icon, ToolbarIcon::BeatGuides);
+    assert!(icon_control(4).active);
     assert!(matches!(
-        projection.controls[6],
+        projection.controls[5],
         ToolbarControlProjection::BeatGuideCountField {
             count: 8,
             id: crate::native_app::test_support::toolbar::TOOLBAR_BEAT_GUIDE_COUNT_ID,
@@ -287,37 +292,39 @@ fn main_toolbar_control_projection_makes_order_and_identity_explicit() {
             tooltip: "Beat guide divisions.",
         }
     ));
-    assert_eq!(icon_control(7).icon, ToolbarIcon::Metronome);
+    assert_eq!(icon_control(6).icon, ToolbarIcon::Metronome);
     assert_eq!(
-        icon_control(7).id,
+        icon_control(6).id,
         crate::native_app::test_support::toolbar::TOOLBAR_METRONOME_ID
     );
-    assert!(icon_control(7).active);
+    assert!(icon_control(6).active);
     assert_eq!(
-        icon_control(7).tooltip,
+        icon_control(6).tooltip,
         "Play a metronome from the beat guide divisions."
     );
 
     assert!(matches!(
-        projection.controls[8],
+        projection.controls[7],
         ToolbarControlProjection::ApplyEditMarkEdits {
             id: crate::native_app::test_support::toolbar::TOOLBAR_APPLY_EDIT_MARK_EDITS_ID,
             tooltip: "Apply edit mark gain and fade edits.",
         }
     ));
 
-    assert_eq!(icon_control(9).icon, ToolbarIcon::Random);
-    assert!(icon_control(9).enabled);
-    assert!(icon_control(9).active);
-    assert!(icon_control(9).tooltip.starts_with("Play random section"));
-    assert_eq!(icon_control(10).icon, ToolbarIcon::Play);
-    assert!(!icon_control(10).active);
-    assert_eq!(icon_control(10).tooltip, "Play");
-    assert_eq!(icon_control(11).icon, ToolbarIcon::Stop);
+    assert_eq!(icon_control(8).icon, ToolbarIcon::Stop);
     assert_eq!(
-        icon_control(11).id,
+        icon_control(8).id,
         crate::native_app::test_support::toolbar::TOOLBAR_STOP_ID
     );
+    assert_eq!(icon_control(9).icon, ToolbarIcon::Play);
+    assert!(!icon_control(9).active);
+    assert_eq!(icon_control(9).tooltip, "Play");
+    assert_eq!(icon_control(10).icon, ToolbarIcon::Random);
+    assert!(icon_control(10).enabled);
+    assert!(icon_control(10).active);
+    assert!(icon_control(10).tooltip.starts_with("Play random section"));
+    assert_eq!(icon_control(11).icon, ToolbarIcon::Loop);
+    assert!(icon_control(11).active);
 }
 
 #[test]

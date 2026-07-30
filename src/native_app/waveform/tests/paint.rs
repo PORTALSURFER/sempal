@@ -173,7 +173,7 @@ fn playmark_label_formats_duration_and_paints_at_selection_bottom() {
     let subsecond_label = subsecond_plan
         .first_text_run("750 ms")
         .expect("subsecond playmark duration label");
-    assert!((subsecond_label.rect.center().x - 168.0).abs() < 0.01);
+    assert!((subsecond_label.rect.center().x - 200.0).abs() < 0.01);
     assert_eq!(subsecond_label.rect.max.y, 74.0);
 
     let mut seconds = waveform_state_with_duration_seconds(2);

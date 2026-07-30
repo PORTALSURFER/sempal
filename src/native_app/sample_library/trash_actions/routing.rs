@@ -5,8 +5,8 @@ use super::movement::{
     move_paths_to_configured_trash,
 };
 use crate::native_app::app::{
-    GuiMessage, NativeAppState, PendingFolderDelete, TrashMoveTarget, emit_gui_action,
-    sample_path_label,
+    GuiMessage, NativeAppState, PendingFolderDelete, PendingTrashFolderSetup, TrashMoveTarget,
+    emit_gui_action, sample_path_label,
 };
 use crate::native_app::sample_library::committed_file_mutations::{
     FileMutationChange, FileMutationOperation, FileMutationProjection,
@@ -438,7 +438,7 @@ impl NativeAppState {
         );
     }
 
-    fn move_file_paths_to_trash(
+    pub(super) fn move_file_paths_to_trash(
         &mut self,
         paths: Vec<PathBuf>,
         action: &'static str,
@@ -460,6 +460,25 @@ impl NativeAppState {
                 "blocked",
                 started_at,
                 Some(&error),
+            );
+            return;
+        }
+        if self.ui.settings.persisted.trash_folder.is_none() {
+            self.ui.browser_interaction.pending_trash_folder_setup =
+                Some(PendingTrashFolderSetup {
+                    paths,
+                    action,
+                    started_at,
+                });
+            self.ui.status.sample =
+                String::from("Choose a trash folder before moving selected files to trash");
+            emit_gui_action(
+                action,
+                Some("browser"),
+                None,
+                "needs_trash_folder",
+                started_at,
+                Some("trash folder is not configured"),
             );
             return;
         }

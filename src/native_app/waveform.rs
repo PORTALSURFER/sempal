@@ -30,7 +30,6 @@ mod interaction;
 use interaction::{WaveformDrag, edit_preview_for_selection};
 mod bpm_snap;
 use bpm_snap::snap_resize_ratio_to_whole_bpm;
-mod playmark_beat_controls;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(in crate::native_app) struct WaveformBpmSnapSettings {

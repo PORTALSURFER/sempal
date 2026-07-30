@@ -22,9 +22,8 @@ pub(in crate::native_app) use audio::{
 };
 pub(in crate::native_app) use background::{
     AudioOpenCompletion, AudioOpenTaskCompletion, BackgroundTaskState,
-    HarvestSelectionDerivationBatchResult,
-    HarvestTouchedPersistAdmission, HarvestTouchedPersistBatchResult, RatingPersistBatchResult,
-    WaveformDestructiveEditUiContext,
+    HarvestSelectionDerivationBatchResult, HarvestTouchedPersistAdmission,
+    HarvestTouchedPersistBatchResult, RatingPersistBatchResult, WaveformDestructiveEditUiContext,
 };
 pub(in crate::native_app) use library::LibraryAppState;
 pub(in crate::native_app) use metadata::MetadataAppState;
@@ -43,10 +42,10 @@ pub(in crate::native_app) use ui_state::{
     ChromeUiState, ClipboardHandoffTarget, CutFileClipboard, ExtractedFilePlaybackType,
     MAX_BEAT_GUIDE_COUNT, MIN_BEAT_GUIDE_COUNT, OverflowFadeAnimations, PendingFolderDelete,
     PendingProtectedExtractionAction, PendingProtectedExtractionTargetSource,
-    PendingWaveformDestructiveEdit, SampleBrowserDisplayMode, SettingsAppState,
-    StarmapAuditionDragState, StarmapViewport, StarmapViewportChange, StartupState, StatusState,
-    UiAppState, WaveformDestructiveEditKind, WaveformDestructiveEditPrompt,
-    WaveformDestructiveEditTarget,
+    PendingTrashFolderSetup, PendingWaveformDestructiveEdit, SampleBrowserDisplayMode,
+    SettingsAppState, StarmapAuditionDragState, StarmapViewport, StarmapViewportChange,
+    StartupState, StatusState, UiAppState, UnsupportedFilesDialogState,
+    WaveformDestructiveEditKind, WaveformDestructiveEditPrompt, WaveformDestructiveEditTarget,
 };
 pub(in crate::native_app) use waveform::{
     PendingPlaySelectionRetargetCycle, WaveformAppState, WaveformEditSelectionSnapshot,

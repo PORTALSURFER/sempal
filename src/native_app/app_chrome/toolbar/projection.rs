@@ -41,14 +41,6 @@ impl ToolbarProjection {
             )
             .into(),
             ToolbarIconButtonProjection::new(
-                TOOLBAR_LOOP_ID,
-                ToolbarIcon::Loop,
-                true,
-                model.loop_playback,
-                LOOP_TOOLTIP,
-            )
-            .into(),
-            ToolbarIconButtonProjection::new(
                 TOOLBAR_SIMILAR_SECTIONS_ID,
                 ToolbarIcon::SimilarSections,
                 true,
@@ -106,11 +98,11 @@ impl ToolbarProjection {
 
         controls.push(
             ToolbarIconButtonProjection::new(
-                TOOLBAR_RANDOM_ID,
-                ToolbarIcon::Random,
-                model.random_available,
-                model.sticky_random_sample_range_playback,
-                RANDOM_TOOLTIP,
+                TOOLBAR_STOP_ID,
+                ToolbarIcon::Stop,
+                true,
+                false,
+                STOP_TOOLTIP,
             )
             .into(),
         );
@@ -126,11 +118,21 @@ impl ToolbarProjection {
         );
         controls.push(
             ToolbarIconButtonProjection::new(
-                TOOLBAR_STOP_ID,
-                ToolbarIcon::Stop,
+                TOOLBAR_RANDOM_ID,
+                ToolbarIcon::Random,
+                model.random_available,
+                model.sticky_random_sample_range_playback,
+                RANDOM_TOOLTIP,
+            )
+            .into(),
+        );
+        controls.push(
+            ToolbarIconButtonProjection::new(
+                TOOLBAR_LOOP_ID,
+                ToolbarIcon::Loop,
                 true,
-                false,
-                STOP_TOOLTIP,
+                model.loop_playback,
+                LOOP_TOOLTIP,
             )
             .into(),
         );

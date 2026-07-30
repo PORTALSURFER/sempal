@@ -124,7 +124,10 @@ impl NativeAppState {
             GuiMessage::CancelFileMoveConflicts => self.cancel_file_move_conflicts(),
             GuiMessage::CopyContextPath => self.copy_context_path(context),
             GuiMessage::TrashFolderDialogFinished(result) => {
-                self.finish_trash_folder_dialog(result);
+                self.finish_trash_folder_dialog(result, context);
+            }
+            GuiMessage::UnsupportedFilesDialogFinished { source_id, result } => {
+                self.finish_unsupported_files_dialog(source_id, result);
             }
             GuiMessage::ContextPathCopyFinished { kind, path, result } => {
                 self.finish_context_path_copy(kind, path, result);
@@ -145,6 +148,14 @@ impl NativeAppState {
                 result,
             } => self.finish_context_folder_create(parent_id, started_at, result, context),
             GuiMessage::MoveContextTargetToTrash => self.move_context_target_to_trash(context),
+            GuiMessage::ChooseTrashFolderForPendingMove => {
+                self.choose_trash_folder_for_pending_move(context)
+            }
+            GuiMessage::CancelTrashFolderSetup => self.cancel_trash_folder_setup(),
+            GuiMessage::RevealUnsupportedFile(path) => self.reveal_unsupported_file(path, context),
+            GuiMessage::MoveUnsupportedFileToTrash(path) => {
+                self.move_unsupported_file_to_trash(path, context)
+            }
             GuiMessage::UnlockContextSample => self.unlock_context_sample(context),
             GuiMessage::ToggleContextFolderLock => self.toggle_context_folder_lock(),
             GuiMessage::RequestDeleteContextFolder => self.request_delete_context_folder(),
