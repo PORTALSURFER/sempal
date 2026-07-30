@@ -10,6 +10,7 @@ use wavecrate::sample_sources::{
 use crate::native_app::app::{GuiMessage, NativeAppState, emit_gui_action};
 use crate::native_app::sample_library::committed_file_mutations::{
     FileMutationChange, FileMutationOperation, FileMutationProjection,
+    PreparedCommittedFileMutationChange,
 };
 use crate::native_app::sample_library::context_menu_target as context_menu;
 use crate::native_app::sample_library::context_menu_target::{
@@ -201,7 +202,7 @@ impl NativeAppState {
                 self.queue_prepared_committed_file_mutation(
                     FileMutationOperation::Duplicate,
                     vec![
-                        FileMutationChange::created_prepared(
+                        PreparedCommittedFileMutationChange::created(
                             completion.destination.clone(),
                             completion.destination_evidence,
                         )

@@ -122,8 +122,13 @@ fn same_source_duplicate_finish_uses_prepared_mutation_handoff() {
         body.contains("queue_prepared_committed_file_mutation"),
         "same-source duplicate completion must hand off worker-captured evidence"
     );
+    assert!(
+        body.contains("PreparedCommittedFileMutationChange::created"),
+        "same-source duplicate completion must use the typed prepared mutation boundary"
+    );
     for forbidden in [
         "queue_committed_file_mutation",
+        "FileMutationChange::created_prepared",
         "capture_expected_filesystem_state",
         "capture_source_file_evidence",
         "SourceDatabase",
@@ -153,8 +158,13 @@ fn external_waveform_drop_finish_uses_prepared_mutation_handoff() {
         body.contains("queue_prepared_committed_file_mutation"),
         "external waveform drop completion must hand off worker-captured evidence"
     );
+    assert!(
+        body.contains("PreparedCommittedFileMutationChange::created"),
+        "external waveform drop completion must use the typed prepared mutation boundary"
+    );
     for forbidden in [
         "queue_committed_file_mutation",
+        "FileMutationChange::created_prepared",
         "capture_expected_filesystem_state",
         "capture_source_file_evidence",
         "std::fs::",
@@ -167,6 +177,29 @@ fn external_waveform_drop_finish_uses_prepared_mutation_handoff() {
             "external waveform drop UI completion must not perform {forbidden}"
         );
     }
+}
+
+#[test]
+fn committed_mutation_prepared_boundary_is_typed() {
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let source = fs::read_to_string(format!(
+        "{manifest_dir}/src/native_app/sample_library/committed_file_mutations/mod.rs"
+    ))
+    .expect("committed file-mutation module should be readable");
+
+    assert!(
+        source.contains("PreparedCommittedFileMutationChange")
+            && source.contains("changes: Vec<PreparedCommittedFileMutationChange>"),
+        "prepared committed mutations must cross the UI boundary through the typed wrapper"
+    );
+    assert!(
+        !source.contains("created_prepared"),
+        "the untyped prepared constructor must not return to FileMutationChange"
+    );
+    assert!(
+        !source.contains("prepared: bool"),
+        "prepared state must be represented by the typed boundary, not a boolean flag"
+    );
 }
 
 #[test]

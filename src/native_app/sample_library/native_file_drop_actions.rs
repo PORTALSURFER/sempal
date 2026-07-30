@@ -6,11 +6,11 @@ use std::{
 
 use radiant::prelude as ui;
 use radiant::runtime::{NativeFileDrop, NativeFileDropPhase};
-use wavecrate::sample_sources::{capture_source_file_evidence, SourceFileEvidence};
+use wavecrate::sample_sources::{SourceFileEvidence, capture_source_file_evidence};
 
 use crate::native_app::app::{GuiMessage, NativeAppState, NativeFileDropHover, emit_gui_action};
 use crate::native_app::sample_library::committed_file_mutations::{
-    FileMutationChange, FileMutationOperation, FileMutationProjection,
+    FileMutationOperation, FileMutationProjection, PreparedCommittedFileMutationChange,
 };
 use crate::native_app::sample_library::exclusive_file_transfer::copy_file_to_unique_destination_with;
 
@@ -221,10 +221,13 @@ impl NativeAppState {
         self.queue_prepared_committed_file_mutation(
             FileMutationOperation::ImportDrop,
             vec![
-                FileMutationChange::created_prepared(prepared.path.clone(), prepared.evidence)
-                    .with_projection(FileMutationProjection::SelectAndLoad {
-                        path: prepared.path.clone(),
-                    }),
+                PreparedCommittedFileMutationChange::created(
+                    prepared.path.clone(),
+                    prepared.evidence,
+                )
+                .with_projection(FileMutationProjection::SelectAndLoad {
+                    path: prepared.path.clone(),
+                }),
             ],
             context,
         );
