@@ -432,16 +432,21 @@ checkpoints, not seven journal phases. The normative mapping is:
 
 | Participant checkpoint | Journal phase after the checkpoint | Interruption or advancement guard |
 | --- | --- | --- |
-| `CopyStarted` | `FilesystemStaged` | Copy into destination-local same-folder staging and capture source/staged identities; interruption leaves `PartialNeedsRetry` at this checkpoint. |
-| `CopyProgress` | `FilesystemStaged` | Record bounded byte offsets; interruption leaves `PartialNeedsRetry` at the last durable offset and the next chunk requires a fresh pre-write capacity claim. The final name is not the copy target. |
-| `DestinationFlushAttempted` | `FilesystemStaged` | Record the actual destination-local staging flush result and media caveat; interruption leaves `PartialNeedsRetry`. |
-| `CopyValidated` | `FilesystemStaged` | Verify complete staged identity/length or hash; interruption leaves `PartialNeedsRetry`. |
-| `PublishStarted` | `FilesystemStaged` | Use the qualified descriptor/handle-bound atomic no-replace final claim. A successful claim records `AtomicNamespace` for the final namespace; a late collision does not modify the existing entry, and interruption leaves `PartialNeedsRetry` with complete staging preserved for live inspection. |
-| `PublishObserved` | `FilesystemStaged` | Observe the destination namespace through the target-root capability; interruption leaves `PartialNeedsRetry`, and live identity checks determine adoption, collision policy, or audit. The observation does not change the final-claim scope. |
+| `CopyStarted` | `FilesystemStaged` | Copy into destination-local same-folder staging and capture source/staged identities; the staged payload may be incomplete and is not publish-ready. Interruption leaves `PartialNeedsRetry` at this checkpoint. |
+| `CopyProgress` | `FilesystemStaged` | Record bounded byte offsets; the staged payload may remain incomplete and is not publish-ready. Interruption leaves `PartialNeedsRetry` at the last durable offset and the next chunk requires a fresh pre-write capacity claim. The final name is not the copy target. |
+| `DestinationFlushAttempted` | `FilesystemStaged` | Record the actual destination-local staging flush result and media caveat for the possibly incomplete payload; interruption leaves `PartialNeedsRetry`. |
+| `CopyValidated` | `FilesystemStaged` | Verify complete staged identity/length or hash. This durable checkpoint is the explicit completeness and publish-eligibility gate: only after it may recovery, adoption, publication, or cleanup treat staging as publish-ready. Interruption before it leaves `PartialNeedsRetry` and preserves the payload for retry or audit under the existing recovery rules. |
+| `PublishStarted` | `FilesystemStaged` | Only after `CopyValidated`, use the qualified descriptor/handle-bound atomic no-replace final claim. A successful claim records `AtomicNamespace` for the final namespace; a late collision does not modify the existing entry, and interruption leaves `PartialNeedsRetry` with complete staging preserved for live inspection. |
+| `PublishObserved` | `FilesystemStaged` | Only after `CopyValidated`, observe the destination namespace through the target-root capability; interruption leaves `PartialNeedsRetry`, and live identity checks determine adoption, collision policy, or audit. The observation does not change the final-claim scope. |
 | `ReopenedVerified` | `FilesystemPublished` | Reopen the claimed final through the same capability and verify content/identity. Only this checkpoint advances the non-atomic operation, with `VisibilityVerified`, `AtomicNamespace` for the final claim, `WholePublicationNonAtomic`, and downgraded synchronization evidence. |
 
-The first six checkpoints therefore remain `FilesystemStaged`; the fallback copies only into
-destination-local staging and does not claim `WholePublicationAtomic` or
+All checkpoints through `PublishObserved` therefore remain `FilesystemStaged`; `CopyValidated`
+is the explicit gate for completeness and publish eligibility. Before that gate, the fallback
+copies only into destination-local staging: a crash or verification failure preserves the
+possibly incomplete payload for retry or audit under the existing recovery rules, and no
+recovery, adoption, publication, or cleanup path may treat it as publish-ready. Cleanup of an
+unvalidated payload still requires the independently qualified capability-bound cleanup rules.
+After `CopyValidated`, the fallback does not claim `WholePublicationAtomic` or
 `PowerLossSynchronized`. Its final no-replace claim may still record `AtomicNamespace`. A
 crash or verification failure leaves the record at the last checkpoint with
 `PartialNeedsRetry`. Recovery reacquires the target-root capability and compares source,
@@ -508,12 +513,15 @@ phase order is:
 2. `Prepared`: capabilities, collision plan, source participants, and safe staging paths
    are resolved without touching the UI. The target-root capability and qualified no-replace
    primitive are live and validated here, but planning-time final absence remains advisory.
-3. `FilesystemStaged`: bytes or edit output are in an app-owned staging location on the
-   destination filesystem, complete and verified enough to publish. For the non-atomic
-   fallback, this phase is also the participant-checkpoint container described above: the full
-   copy is complete in destination-local same-folder staging, but the final claim has not yet
-   occurred. It does not imply completed publication or `WholePublicationAtomic`; the later
-   final claim may still establish `AtomicNamespace`.
+3. `FilesystemStaged`: bytes or edit output are in an app-owned destination-local staging
+   container on the destination filesystem. The container may be incomplete while copying is
+   in progress; this phase does not itself establish completeness, verification, or publish
+   eligibility. The durable participant checkpoint `CopyValidated` is the explicit
+   completeness and publish-eligibility gate. For the non-atomic fallback, this phase is also
+   the participant-checkpoint container described above: after `CopyValidated`, the complete
+   copy is in destination-local same-folder staging, but the final claim has not yet occurred.
+   It does not imply completed publication or `WholePublicationAtomic`; the later final claim
+   may still establish `AtomicNamespace`.
 4. `FilesystemPublished`: the final namespace is visible after a qualified descriptor/handle-
    bound atomic no-replace claim and the reopened final object is verified. The record
    separately reports final namespace-claim scope, whole-publication atomicity, and power-loss
@@ -549,7 +557,7 @@ must name the guard and the participant checkpoint that proved it.
 | Phase | Legal resumable overlay | Guard to advance or terminate |
 | --- | --- | --- |
 | `IntentDurable`, `Prepared` | None, `RetryPending`, `CancelRequestedBeforePublish` | Admission/retry may continue. `CancelledBeforePublish` or `BlockedByUser` may enter `Terminal` only after no publish evidence exists and any staging cleanup has verified absence and released its claim. Preserved or uncertain staging stays nonterminal and capacity-accounted. |
-| `FilesystemStaged` | None, `RetryPending`, `PartialNeedsRetry`, `CancelRequestedBeforePublish` | Resume, adopt, or discard only after live capability-bound staging/final inspection proves whether a no-replace claim occurred and classifies filesystem ownership. Pre-publish cancellation must record staging removal/absence and capacity-release evidence, or preserve staging with an actionable nonterminal disposition. No terminal success is legal here. |
+| `FilesystemStaged` | None, `RetryPending`, `PartialNeedsRetry`, `CancelRequestedBeforePublish` | Resume incomplete copy until `CopyValidated`; only then may recovery or adoption treat staging as publish-ready. Any recovery, adoption, publication, or cleanup path must not treat an unvalidated payload as publish-ready; cleanup must use independently qualified capability-bound removal, preservation, and capacity-release rules. Live staging/final inspection must still prove whether a no-replace claim occurred and classify filesystem ownership. Pre-publish cancellation must record staging removal/absence and capacity-release evidence, or preserve staging with an actionable nonterminal disposition. No terminal success is legal here. |
 | `FilesystemPublished` | None, `RetryPending`, `PartialNeedsRetry`, `AuditRequired`, `CancelRequestedAfterPublish` | Source reconciliation must consume the verified output without repeating filesystem work. Cross-source moves must complete the ordered origin-removal checkpoints. Cancellation remains resumable until required reconciliation or verified compensation completes. |
 | `SourceReconciled` | None, `RetryPending`, `PartialNeedsRetry`, `AuditRequired`, `CancelRequestedAfterPublish` | Required global/Harvest work deferred or failed stays `SourceReconciled + PartialNeedsRetry`; it must not be called globally reconciled or successful. A source/projection evidence gap stays auditable. |
 | `GlobalReconciled` | None, `RetryPending`, `AuditRequired`, `CancelRequestedAfterPublish` | Every required global and Harvest participant is `Applied` or `NotApplicable`; otherwise the phase cannot advance. |
@@ -600,8 +608,9 @@ only after the durable operation has a complete required recovery record.
 Only journal phases are state nodes in the diagram. The named publication checkpoints are
 non-journal participant checkpoints: `CopyStarted`, `CopyProgress`, `DestinationFlushAttempted`,
 `CopyValidated`, `PublishStarted`, and `PublishObserved` execute while the journal phase remains
-`FilesystemStaged`; `ReopenedVerified` is the participant checkpoint that advances to
-`FilesystemPublished`. Cross-source move checkpoints (`DestinationSourceReconciled`,
+`FilesystemStaged`; `CopyValidated` is the explicit completeness and publish-eligibility gate,
+and `ReopenedVerified` is the participant checkpoint that advances to `FilesystemPublished`.
+Cross-source move checkpoints (`DestinationSourceReconciled`,
 `OriginRemovalStarted`, and `OriginAbsenceVerified`) execute while the journal phase remains
 `FilesystemPublished` until origin retirement. Pre-publish cancellation uses non-journal
 `StagingRemovalStarted`, `StagingAbsenceVerified`, `CapacityReleaseVerified`, and
@@ -613,7 +622,7 @@ stateDiagram-v2
     IntentDurable --> Prepared
     Prepared --> FilesystemStaged : qualified atomic sequence / non-atomic entry after CopyStarted
     FilesystemStaged --> Prepared : verified no publish
-    FilesystemStaged --> FilesystemPublished : ReopenedVerified participant checkpoint / qualified no-replace claim and verified publication
+    FilesystemStaged --> FilesystemPublished : CopyValidated + ReopenedVerified / qualified no-replace claim and verified publication
     note right of FilesystemStaged
         Non-journal participant checkpoints: publication checkpoints;
         cross-source move checkpoints; cancellation cleanup or
@@ -641,8 +650,11 @@ stateDiagram-v2
   recorded paths are only locators.
 - A staged file is never presented as the final user file until the atomic publish boundary,
   or the verified completion of the explicitly non-atomic publication protocol, succeeds.
-  A copy that is interrupted or cannot be verified remains partial/recoverable and is not
-  presented as an atomically published result.
+  Before `CopyValidated`, a copy that is interrupted or cannot be verified remains
+  partial/recoverable under the existing retry/audit rules; no recovery, adoption, publication,
+  or cleanup path treats its staging payload as publish-ready. After `CopyValidated`, the
+  explicitly non-atomic protocol still requires the qualified no-replace claim and
+  `ReopenedVerified` before `FilesystemPublished`.
 - After `FilesystemPublished`, recovery never simply deletes the output because a later DB
   step failed. It reconciles the output into the source or retains it as an explicitly
   visible orphan/recovery item.
@@ -691,9 +703,9 @@ stateDiagram-v2
 4. Only source=staging=final and a qualified all-atomic source/input-to-staging sequence may
    be considered for `WholePublicationAtomic`. If source != staging, or the
    transfer is bytewise or unqualified (including a same-volume bytewise copy), run
-   `NonAtomicCopyValidatePublish`: copy completely into destination-local same-folder staging,
-   flush and validate it, then use the qualified no-replace final claim before destination
-   reopen/source reconciliation. Record `AtomicNamespace` only if the final claim succeeds,
+   `NonAtomicCopyValidatePublish`: copy into destination-local same-folder staging, flush and
+   validate it through durable `CopyValidated`, then use the qualified no-replace final claim
+   before destination reopen/source reconciliation. Record `AtomicNamespace` only if the final claim succeeds,
    and record `WholePublicationNonAtomic` for this path. For the all-atomic candidate, run the
    platform sequence in [Publication durability contract](#publication-durability-contract),
    then record `AtomicNamespace` and `WholePublicationAtomic` only after the qualified final
@@ -1284,8 +1296,8 @@ event captures where available.
 
 | Area | Required coverage |
 | --- | --- |
-| Journal | Profile lock before writable journal open, recovery mutation, and durable admission; pre-intent validation/ownership/queue/initial-capacity rejection with no operation ID, record, checkpoint, retry lease, or restart status; acceptance exactly at `IntentDurable` with capacity plan/claims committed; no `Accepted` phase; per-volume capacity plans and claims for every allocation class and order; durable reserve charge/spend/reconstitution with exact budget, control-plane margin, same-volume serialization, crash reconciliation, and admission reopening only after `Reconstituted`; power loss at every phase, torn/truncated records, duplicate recovery, unknown phase, retry lease, cross-source checkpoints, and pre-publish cancellation cleanup/preservation. |
-| File owner | No-follow target/source-root capabilities, live source/staging/final device or volume identity selection, actual bytewise versus qualified source-to-staging primitive, source=staging=final atomic consideration, staging/final mismatch re-stage-or-fail-closed behavior, qualified descriptor/handle-bound no-replace claims and independently qualified cleanup/dispositions, protected sources, plan-time and late collisions, transaction ownership/adoption, macOS `F_FULLFSYNC`/`fsync` downgrade evidence, Windows `FlushFileBuffers`/handle-bound claim, directory-sync support, destination-local same-folder staging, cross-device/remote/removable fallback, final namespace-claim versus whole-publication evidence, `NonAtomicNamespace` nonterminal rejection, reopen verification, crash recovery, partial status, trash/restore, delete uncertainty, hash/identity verification, cross-source origin mutation/absence, copy-then-remove moves including one source across devices, both-copy preservation, and staged-payload absence/capacity release. |
+| Journal | Profile lock before writable journal open, recovery mutation, and durable admission; pre-intent validation/ownership/queue/initial-capacity rejection with no operation ID, record, checkpoint, retry lease, or restart status; acceptance exactly at `IntentDurable` with capacity plan/claims committed; no `Accepted` phase; per-volume capacity plans and claims for every allocation class and order; durable reserve charge/spend/reconstitution with exact budget, control-plane margin, same-volume serialization, crash reconciliation, and admission reopening only after `Reconstituted`; `CopyValidated` as the explicit completeness/publish-eligibility gate; crashes before that checkpoint preserving, retrying, or auditing staging under the existing recovery rules; power loss at every phase, torn/truncated records, duplicate recovery, unknown phase, retry lease, cross-source checkpoints, and pre-publish cancellation cleanup/preservation. |
+| File owner | No-follow target/source-root capabilities, live source/staging/final device or volume identity selection, actual bytewise versus qualified source-to-staging primitive, source=staging=final atomic consideration, staging/final mismatch re-stage-or-fail-closed behavior, qualified descriptor/handle-bound no-replace claims and independently qualified cleanup/dispositions, protected sources, plan-time and late collisions, transaction ownership/adoption only after `CopyValidated`, macOS `F_FULLFSYNC`/`fsync` downgrade evidence, Windows `FlushFileBuffers`/handle-bound claim, directory-sync support, destination-local same-folder staging, incomplete/unvalidated staging preservation/retry/audit, no publish-ready recovery/adoption/publication/cleanup before `CopyValidated`, cross-device/remote/removable fallback, final namespace-claim versus whole-publication evidence, `NonAtomicNamespace` nonterminal rejection, reopen verification, crash recovery, partial status, trash/restore, delete uncertainty, hash/identity verification, cross-source origin mutation/absence, copy-then-remove moves including one source across devices, both-copy preservation, and staged-payload absence/capacity release. |
 | Source writer | One-writer serialization across processes, profile-lock rejection, distinct profile/source ownership statuses, source lease/epoch fencing and verified stale recovery, bounded transactions, busy/locked backoff, stale revision, lifecycle replacement, idempotent manifest delta, directory-only entries, metadata-only revision neutrality. |
 | WAL/readers | Current evidence versus target soft 32 MiB/hard 64 MiB watermarks, `journal_size_limit` non-cap semantics, 15 s throttle, 250 ms busy timeout, passive/incomplete checkpoints, all three reader classes, retained-frame metrics, bounded owner/losing-process snapshots, uncooperative external readers, non-sparse 256 MiB reserve on each affected volume, WAL/SHM capacity claims and per-chunk claims, admission/pause/reject/recovery-only behavior, and no interactive checkpoint wait. |
 | Finder contract | Real copy/rename/reparent/delete event shapes, empty folders, unsupported-only folders, duplicate/reordered events, missing ancestors, overflow, watcher restart, scan overlap, raw evidence retention, source/root identity, backend stream identity, watcher generation, durable replayable cursor/token, contiguous replay, memory-only loss, and conservative audit fallback. |
