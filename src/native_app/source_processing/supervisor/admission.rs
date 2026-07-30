@@ -97,7 +97,16 @@ impl ProjectionHandoffTicket {
             self.request_full_reconciliation("projection_handoff_stale_or_invalid");
             return false;
         }
-        control.pending_projection_fences.remove(&self.source_id);
+        let fence_matches = control
+            .pending_projection_fences
+            .get(&self.source_id)
+            .is_some_and(|fence| {
+                fence.lifecycle_generation == self.lifecycle_generation
+                    && fence.revision == self.delta.revision
+            });
+        if fence_matches {
+            control.pending_projection_fences.remove(&self.source_id);
+        }
         let accepted = self.delta.is_empty()
             || matches!(
                 control.queue_source_delta(
@@ -106,7 +115,7 @@ impl ProjectionHandoffTicket {
                     &self.delta,
                     "projection_handoff_accepted",
                 ),
-                SourceDeltaQueueResult::Queued | SourceDeltaQueueResult::Ignored
+                SourceDeltaQueueResult::Queued
             );
         if !accepted {
             control.pending_readiness_deltas.remove(&self.source_id);
@@ -142,8 +151,17 @@ impl ProjectionHandoffTicket {
 
     fn request_full_reconciliation(&self, reason: &'static str) {
         let mut control = self.shared.control();
-        control.pending_projection_fences.remove(&self.source_id);
-        control.pending_readiness_deltas.remove(&self.source_id);
+        let fence_matches = control
+            .pending_projection_fences
+            .get(&self.source_id)
+            .is_some_and(|fence| {
+                fence.lifecycle_generation == self.lifecycle_generation
+                    && fence.revision == self.delta.revision
+            });
+        if fence_matches {
+            control.pending_projection_fences.remove(&self.source_id);
+            control.pending_readiness_deltas.remove(&self.source_id);
+        }
         if control.source_is_active(&self.source_id)
             && control.source_lifecycle_generations.get(&self.source_id)
                 == Some(&self.lifecycle_generation)
