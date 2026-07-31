@@ -1,7 +1,12 @@
 use super::gui_state_for_span_tests;
 use crate::native_app::app::{OperationJournalRestoreCompletion, OperationJournalRestoreError};
 use crate::native_app::sample_library::committed_file_mutations::PreparedCommittedFileMutationChange;
-use crate::native_app::transaction_history::operation_journal::FilesystemStageOutcome;
+use crate::native_app::transaction_history::operation_journal::{
+    FilesystemStageOutcome, ObservedFilesystemClassification, ReplacementCandidateAssessment,
+    ReplacementCandidatePrimitive, ReplacementMissingInvariant, ReplacementPlatformFamily,
+    ReplacementQualificationAssessment, ReplacementQualificationDecision,
+    ReplacementQualificationRetryCondition, VolumeIdentity,
+};
 use crate::native_app::transaction_history::{
     HistoryFileAction, HistoryFileIoDirection, HistoryFileIoOutput, HistoryFileIoResult,
 };
@@ -74,11 +79,29 @@ fn begin_owner_restore_for_tests(
         .expect("owner restore command")
 }
 
+fn platform_qualification_assessment_for_tests() -> ReplacementQualificationAssessment {
+    ReplacementQualificationAssessment {
+        platform_family: ReplacementPlatformFamily::Other,
+        observed_filesystem: ObservedFilesystemClassification::Unavailable,
+        volume: VolumeIdentity { device: 1 },
+        candidate: ReplacementCandidatePrimitive::NoPublicCandidate,
+        candidate_assessment: ReplacementCandidateAssessment::NoQualifiedCandidate,
+        missing_invariant: ReplacementMissingInvariant::AtomicExpectedTargetIdentityComparison,
+        decision: ReplacementQualificationDecision::PlatformQualificationRequired,
+        retry_condition:
+            ReplacementQualificationRetryCondition::PlatformBuildOrQualificationPolicyChange,
+    }
+}
+
 #[test]
 fn owner_staging_outcomes_retain_history_and_operation_identity() {
     let outcomes = [
         FilesystemStageOutcome::FilesystemStaged(Uuid::new_v4()),
         FilesystemStageOutcome::FilesystemPublished(Uuid::new_v4()),
+        FilesystemStageOutcome::PlatformQualificationRequired {
+            operation_id: Uuid::new_v4(),
+            assessment: platform_qualification_assessment_for_tests(),
+        },
         FilesystemStageOutcome::RetryPending {
             operation_id: Uuid::new_v4(),
             reason: String::from("staging collision"),
@@ -95,9 +118,14 @@ fn owner_staging_outcomes_retain_history_and_operation_identity() {
     for outcome in outcomes {
         let mut state = gui_state_for_span_tests();
         let command = begin_owner_restore_for_tests(&mut state);
+        let is_platform_qualification = matches!(
+            &outcome,
+            FilesystemStageOutcome::PlatformQualificationRequired { .. }
+        );
         let operation_id = match &outcome {
             FilesystemStageOutcome::FilesystemStaged(operation_id)
             | FilesystemStageOutcome::FilesystemPublished(operation_id)
+            | FilesystemStageOutcome::PlatformQualificationRequired { operation_id, .. }
             | FilesystemStageOutcome::RetryPending { operation_id, .. }
             | FilesystemStageOutcome::AuditRequired { operation_id, .. }
             | FilesystemStageOutcome::JournalWriteFailed { operation_id, .. } => *operation_id,
@@ -124,6 +152,18 @@ fn owner_staging_outcomes_retain_history_and_operation_identity() {
         assert!(!state.transactions.history.can_redo());
         assert_eq!(state.transactions.history_through_count, 0);
         assert!(state.ui.status.sample.contains(&operation_id.to_string()));
+        if is_platform_qualification {
+            assert!(state
+                .ui
+                .status
+                .sample
+                .contains("safe replacement unavailable on the current platform/build"));
+            assert!(state
+                .ui
+                .status
+                .sample
+                .contains("staged recovery data preserved"));
+        }
     }
 }
 
