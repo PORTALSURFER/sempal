@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::native_app::transaction_history::operation_journal::{
     BoundedAdmissionError, JournalError, OperationDisposition, OperationIntent,
-    OperationJournalCoordinator, OperationPhase,
+    OperationJournalCoordinator, OperationPhase, PreparedOperationOutcome, RecoveryRootCapability,
 };
 use crate::native_app::transaction_history::{
     HistoryFileAction, HistoryFileIoDirection, RejectedBeforeIntent,
@@ -57,6 +57,7 @@ pub(in crate::native_app) enum OperationJournalStatus {
     Initializing,
     Available {
         summary: crate::native_app::transaction_history::operation_journal::RecoverySummary,
+        recovery_root: RecoveryRootCapability,
     },
     Unavailable {
         reason: OperationJournalUnavailable,
@@ -111,6 +112,13 @@ enum JournalCommand {
         actions: Vec<HistoryFileAction>,
         result: SyncSender<Result<Uuid, JournalOperationError>>,
     },
+    PrepareBoundedWaveformRestore {
+        intent: OperationIntent,
+        payload: Value,
+        direction: HistoryFileIoDirection,
+        actions: Vec<HistoryFileAction>,
+        result: SyncSender<Result<PreparedOperationOutcome, JournalOperationError>>,
+    },
     #[cfg(test)]
     Admit {
         intent: OperationIntent,
@@ -145,6 +153,10 @@ impl OperationJournalOwner {
 
     #[cfg(test)]
     pub(in crate::native_app) fn start_with_directory(directory: PathBuf) -> Self {
+        // macOS tempfile paths commonly live below `/var`, which is a symlink to
+        // `/private/var`. Resolve that test-only harness path before the owner
+        // applies strict no-follow traversal to its capability root.
+        let directory = std::fs::canonicalize(&directory).unwrap_or(directory);
         Self::start_with_optional_directory(Some(directory))
     }
 
@@ -297,6 +309,37 @@ impl OperationJournalOwner {
         Ok(result_rx)
     }
 
+    /// Queue owner-thread admission plus typed preparation for one waveform restore.
+    #[allow(dead_code)]
+    pub(in crate::native_app) fn prepare_bounded_waveform_restore(
+        &self,
+        intent: OperationIntent,
+        payload: Value,
+        direction: HistoryFileIoDirection,
+        actions: Vec<HistoryFileAction>,
+    ) -> Result<
+        Receiver<Result<PreparedOperationOutcome, JournalOperationError>>,
+        JournalOwnerQueueError,
+    > {
+        self.ensure_available()?;
+        let (result_tx, result_rx) = mpsc::sync_channel(1);
+        self.commands
+            .as_ref()
+            .ok_or(JournalOwnerQueueError::Closed)?
+            .try_send(JournalCommand::PrepareBoundedWaveformRestore {
+                intent,
+                payload,
+                direction,
+                actions,
+                result: result_tx,
+            })
+            .map_err(|error| match error {
+                TrySendError::Full(_) => JournalOwnerQueueError::Full,
+                TrySendError::Disconnected(_) => JournalOwnerQueueError::Closed,
+            })?;
+        Ok(result_rx)
+    }
+
     /// Queue a phase update without performing journal I/O on the caller thread.
     #[allow(dead_code)]
     pub(in crate::native_app) fn update(
@@ -397,11 +440,29 @@ fn run_owner(
         match opened {
             Ok(coordinator) => {
                 let summary = coordinator.recovery_summary();
+                // The explicit journal directory is also the recovery root for
+                // test/runtime overrides. Production callers pass `None`, so
+                // the capability helper resolves the profile app root here on
+                // the owner thread.
+                let recovery_path = directory.clone();
+                let recovery_root = match crate::native_app::transaction_history::operation_journal::open_recovery_root_capability(recovery_path) {
+                    Ok(capability) => capability,
+                    Err(error) => {
+                        let reason = OperationJournalUnavailable::from_error(error);
+                        *unavailable.lock().expect("journal unavailable state") = Some(reason.clone());
+                        lifecycle.store(OwnerLifecycle::Unavailable as u8, std::sync::atomic::Ordering::Release);
+                        let _ = status_tx.send(OperationJournalStatus::Unavailable { reason });
+                        break None;
+                    }
+                };
                 lifecycle.store(
                     OwnerLifecycle::Available as u8,
                     std::sync::atomic::Ordering::Release,
                 );
-                let _ = status_tx.send(OperationJournalStatus::Available { summary });
+                let _ = status_tx.send(OperationJournalStatus::Available {
+                    summary,
+                    recovery_root,
+                });
                 break Some(coordinator);
             }
             Err(JournalError::OwnedByAnotherProcess { path }) => {
@@ -461,6 +522,44 @@ fn run_owner(
                     .and_then(|coordinator| {
                         coordinator
                             .admit_bounded_waveform_restore(intent, payload, direction, &actions)
+                            .map_err(|error| match error {
+                                BoundedAdmissionError::Rejected(rejection) => {
+                                    JournalOperationError::RejectedBeforeIntent(rejection)
+                                }
+                                BoundedAdmissionError::Journal(error) => {
+                                    JournalOperationError::Journal(error)
+                                }
+                            })
+                    });
+                let _ = result.send(outcome);
+            }
+            Ok(JournalCommand::PrepareBoundedWaveformRestore {
+                intent,
+                payload,
+                direction,
+                actions,
+                result,
+            }) => {
+                if stop.load(std::sync::atomic::Ordering::Acquire) {
+                    let _ = result.send(Err(JournalOperationError::Closed));
+                    continue;
+                }
+                let outcome = coordinator
+                    .as_mut()
+                    .ok_or_else(|| {
+                        JournalOperationError::Unavailable(
+                            unavailable
+                                .lock()
+                                .expect("journal unavailable state")
+                                .clone()
+                                .unwrap_or(OperationJournalUnavailable::OpenFailed(String::from(
+                                    "operation journal coordinator is unavailable",
+                                ))),
+                        )
+                    })
+                    .and_then(|coordinator| {
+                        coordinator
+                            .prepare_bounded_waveform_restore(intent, payload, direction, &actions)
                             .map_err(|error| match error {
                                 BoundedAdmissionError::Rejected(rejection) => {
                                     JournalOperationError::RejectedBeforeIntent(rejection)
@@ -552,6 +651,15 @@ mod tests {
     };
     use crate::native_app::waveform_edits::waveform_restore_action_for_capacity_tests;
 
+    fn fixture_directory() -> tempfile::TempDir {
+        #[cfg(target_os = "macos")]
+        {
+            return tempfile::tempdir_in("/private/tmp").expect("fixture directory");
+        }
+        #[cfg(not(target_os = "macos"))]
+        tempfile::tempdir().expect("fixture directory")
+    }
+
     fn intent() -> OperationIntent {
         OperationIntent {
             actor: OperationActor::User,
@@ -563,7 +671,7 @@ mod tests {
     #[test]
     fn owner_admits_bounded_restore_only_after_owner_thread_gate() {
         let directory = tempfile::tempdir().expect("journal directory");
-        let files = tempfile::tempdir().expect("restore files");
+        let files = fixture_directory();
         let backup = files.path().join("before.wav");
         let target = files.path().join("target.wav");
         std::fs::write(&backup, vec![7_u8; 4097]).expect("backup");
@@ -700,7 +808,7 @@ mod tests {
             .recv_timeout(Duration::from_secs(2))
             .expect("available status");
         match status {
-            OperationJournalStatus::Available { summary } => {
+            OperationJournalStatus::Available { summary, .. } => {
                 assert_eq!(summary.record_count, 1);
                 assert_eq!(summary.unresolved_count, 1);
                 assert!(summary.attention_required);

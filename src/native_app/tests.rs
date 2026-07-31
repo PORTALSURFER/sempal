@@ -246,8 +246,31 @@ fn toggle_sample_name_view_mode() -> super::test_support::state::GuiMessage {
 }
 
 fn native_app_state_with_temp_sample(name: &str) -> (NativeAppState, tempfile::TempDir, String) {
+    native_app_state_with_temp_sample_in(name, tempfile::tempdir().expect("source root"))
+}
+
+fn native_app_state_with_temp_sample_in(
+    name: &str,
+    source_root: tempfile::TempDir,
+) -> (NativeAppState, tempfile::TempDir, String) {
     let mut state = gui_state_for_span_tests();
-    let source_root = tempfile::tempdir().expect("source root");
+    let app_root = source_root
+        .path()
+        .parent()
+        .expect("source parent")
+        .join(format!(".wavecrate-test-{}", uuid::Uuid::new_v4()));
+    fs::create_dir(&app_root).expect("source app root");
+    let file = fs::File::open(&app_root).expect("source app root open");
+    let identity =
+        wavecrate_library::filesystem_identity::stable_filesystem_identity_from_open_file(&file)
+            .expect("source app root identity");
+    state.background.waveform_recovery_root = Some(
+        crate::native_app::transaction_history::operation_journal::RecoveryRootCapability {
+            path: app_root,
+            file: std::sync::Arc::new(file),
+            identity,
+        },
+    );
     let sample_path = source_root.path().join(name);
     fs::write(&sample_path, []).expect("sample file");
     state.library.folder_browser =

@@ -228,7 +228,7 @@ impl NativeAppState {
         if let Some(status) = self.background.take_operation_journal_status() {
             match status {
                 crate::native_app::app::OperationJournalStatus::Initializing => {}
-                crate::native_app::app::OperationJournalStatus::Available { summary } => {
+                crate::native_app::app::OperationJournalStatus::Available { summary, .. } => {
                     if summary.attention_required {
                         self.ui.status.sample = format!(
                             "Operation journal needs attention: {} unresolved, {} malformed, {} unknown-version, {} oversized record(s)",

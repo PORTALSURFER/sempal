@@ -32,6 +32,8 @@ use crate::native_app::source_processing::SourceProcessingSupervisor;
 use crate::native_app::waveform::WaveformPreservedMarks;
 
 pub(in crate::native_app) struct BackgroundTaskState {
+    pub(in crate::native_app) waveform_recovery_root:
+        Option<crate::native_app::transaction_history::operation_journal::RecoveryRootCapability>,
     pub(in crate::native_app) worker_sender: Sender<GuiMessage>,
     pub(in crate::native_app) worker_receiver: Option<Receiver<GuiMessage>>,
     pub(in crate::native_app) next_task_id: u64,
@@ -401,6 +403,10 @@ impl BackgroundTaskState {
         worker_receiver: Option<Receiver<GuiMessage>>,
         sources: Vec<wavecrate::sample_sources::SampleSource>,
     ) -> Self {
+        #[cfg(test)]
+        let recovery_root = sources.first().map(|source| source.root.join(".wavecrate"));
+        #[cfg(not(test))]
+        let recovery_root = None;
         #[cfg(not(test))]
         let source_processing = Self::start_source_processing(&worker_sender, sources);
         #[cfg(test)]
@@ -408,7 +414,12 @@ impl BackgroundTaskState {
             drop(sources);
             SourceProcessingSupervisor::dormant()
         };
-        Self::with_source_processing(worker_sender, worker_receiver, source_processing)
+        Self::with_source_processing(
+            worker_sender,
+            worker_receiver,
+            source_processing,
+            recovery_root,
+        )
     }
 
     #[cfg(any(test, feature = "legacy-controller"))]
@@ -418,7 +429,7 @@ impl BackgroundTaskState {
         sources: Vec<wavecrate::sample_sources::SampleSource>,
     ) -> Self {
         let source_processing = Self::start_source_processing(&worker_sender, sources);
-        Self::with_source_processing(worker_sender, worker_receiver, source_processing)
+        Self::with_source_processing(worker_sender, worker_receiver, source_processing, None)
     }
 
     fn start_source_processing(
@@ -435,13 +446,28 @@ impl BackgroundTaskState {
         worker_sender: Sender<GuiMessage>,
         worker_receiver: Option<Receiver<GuiMessage>>,
         source_processing: SourceProcessingSupervisor,
+        recovery_root: Option<PathBuf>,
     ) -> Self {
         let source_lifecycle_generations = source_processing.lifecycle_generations();
+        let waveform_recovery_root = recovery_root.map(|path| {
+            let file = std::fs::File::open(&path).expect("test recovery root");
+            let identity =
+                wavecrate_library::filesystem_identity::stable_filesystem_identity_from_open_file(
+                    &file,
+                )
+                .expect("test recovery root identity");
+            crate::native_app::transaction_history::operation_journal::RecoveryRootCapability {
+                path,
+                file: Arc::new(file),
+                identity,
+            }
+        });
         #[cfg(not(test))]
         let operation_journal = super::OperationJournalOwner::start();
         #[cfg(test)]
         let operation_journal = super::OperationJournalOwner::disabled();
         Self {
+            waveform_recovery_root,
             worker_sender,
             worker_receiver,
             next_task_id: 1,
@@ -499,9 +525,19 @@ impl BackgroundTaskState {
     }
 
     pub(in crate::native_app) fn take_operation_journal_status(
-        &self,
+        &mut self,
     ) -> Option<super::journal::OperationJournalStatus> {
-        self.operation_journal.take_status()
+        let status = self.operation_journal.take_status()?;
+        if let super::journal::OperationJournalStatus::Available { recovery_root, .. } = &status {
+            self.waveform_recovery_root = Some(recovery_root.clone());
+        } else if matches!(
+            status,
+            super::journal::OperationJournalStatus::Initializing
+                | super::journal::OperationJournalStatus::Unavailable { .. }
+        ) {
+            self.waveform_recovery_root = None;
+        }
+        Some(status)
     }
 }
 

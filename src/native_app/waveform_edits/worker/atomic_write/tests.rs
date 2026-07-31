@@ -180,3 +180,32 @@ fn successful_commit_publishes_a_complete_synced_wav() {
     assert_eq!(reader.spec().sample_rate, 48_000);
     assert_eq!(reader.samples::<f32>().count(), 4);
 }
+
+#[cfg(unix)]
+#[test]
+fn explicit_read_write_modes_survive_commit_and_rollback() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (directory, target, recovery) = fixture();
+    fs::set_permissions(&target, fs::Permissions::from_mode(0o640)).unwrap();
+    fs::set_permissions(&recovery, fs::Permissions::from_mode(0o440)).unwrap();
+    let after = directory.path().join("after.wav");
+    write_wav_atomically_with(
+        &target,
+        &recovery,
+        &after,
+        1,
+        48_000,
+        &[0.0, 0.25, -0.25, 0.5],
+        &TestAtomicEditIo::new(InjectedFailure::None),
+    )
+    .unwrap();
+    assert_eq!(
+        fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+        0o640
+    );
+    assert_eq!(
+        fs::metadata(&recovery).unwrap().permissions().mode() & 0o777,
+        0o440
+    );
+}

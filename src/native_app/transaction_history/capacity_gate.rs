@@ -8,8 +8,10 @@
 #![allow(dead_code)]
 
 use std::collections::BTreeMap;
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io;
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -251,7 +253,7 @@ fn open_regular_file(
     path: &Path,
     missing: fn(PathBuf) -> CapacityGateError,
 ) -> Result<File, CapacityGateError> {
-    let file = File::open(path).map_err(|error| {
+    let file = open_no_follow_path(path).map_err(|error| {
         if error.kind() == io::ErrorKind::NotFound {
             missing(path.to_path_buf())
         } else {
@@ -265,6 +267,47 @@ fn open_regular_file(
         return Err(CapacityGateError::NotRegularFile(path.to_path_buf()));
     }
     Ok(file)
+}
+
+pub(crate) fn open_no_follow_path(path: &Path) -> io::Result<File> {
+    #[cfg(unix)]
+    {
+        use std::ffi::CString;
+        use std::os::fd::{AsRawFd, FromRawFd};
+        let mut directory = OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_DIRECTORY)
+            .open(Path::new("/"))?;
+        let components = path.components().collect::<Vec<_>>();
+        for (index, component) in components.iter().enumerate() {
+            let std::path::Component::Normal(component) = component else {
+                if matches!(component, std::path::Component::RootDir) && index == 0 {
+                    continue;
+                }
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "non-normal path component",
+                ));
+            };
+            let name = CString::new(component.as_encoded_bytes())
+                .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "NUL in path"))?;
+            let is_leaf = index + 1 == components.len();
+            let flags = libc::O_RDONLY
+                | libc::O_CLOEXEC
+                | libc::O_NOFOLLOW
+                | if is_leaf { 0 } else { libc::O_DIRECTORY };
+            let fd = unsafe { libc::openat(directory.as_raw_fd(), name.as_ptr(), flags) };
+            if fd < 0 {
+                return Err(io::Error::last_os_error());
+            }
+            directory = unsafe { File::from_raw_fd(fd) };
+        }
+        Ok(directory)
+    }
+    #[cfg(not(unix))]
+    {
+        File::open(path)
+    }
 }
 
 #[cfg(unix)]
@@ -296,6 +339,11 @@ fn descriptor_volume_facts(file: &File) -> Result<VolumeFacts, io::Error> {
         free_bytes: free,
         allocation_unit: unit,
     })
+}
+
+/// Derive live capacity facts from an already-open, capability-backed descriptor.
+pub(crate) fn descriptor_capacity_facts(file: &File) -> Result<VolumeFacts, CapacityGateError> {
+    descriptor_volume_facts(file).map_err(|error| CapacityGateError::Discovery(error.to_string()))
 }
 
 #[cfg(unix)]

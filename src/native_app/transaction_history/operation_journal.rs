@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -127,6 +128,143 @@ impl OperationDisposition {
     }
 }
 
+/// The direction captured by a prepared waveform restore.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) enum PreparedRestoreDirection {
+    Undo,
+    Redo,
+}
+
+/// Stable identity of a filesystem object observed through an open descriptor.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct PreparedObjectIdentity {
+    pub(crate) stable_id: String,
+    pub(crate) change_marker: Option<String>,
+    pub(crate) len: u64,
+}
+
+/// A root capability retained as a bounded, typed locator and identity.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct PreparedRootCapability {
+    pub(crate) path: PathBuf,
+    pub(crate) identity: PreparedObjectIdentity,
+}
+
+/// A regular leaf locator relative to one of the prepared roots.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct PreparedLeafLocator {
+    pub(crate) relative_path: PathBuf,
+    pub(crate) identity: PreparedObjectIdentity,
+}
+
+/// Advisory destination-local staging name. Preparation never creates this path.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct PreparedStagingLocator {
+    pub(crate) relative_path: PathBuf,
+    pub(crate) absent: bool,
+}
+
+/// Identity expected by the future replacement executor.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) enum ReplaceExpectedIdentity {
+    Existing(PreparedObjectIdentity),
+}
+
+/// Compact, serializable evidence captured while preparing a restore.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct PreparedRestoreEvidence {
+    pub(crate) target: PreparedFileEvidence,
+    pub(crate) backup: PreparedFileEvidence,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) enum PreparedFileEvidence {
+    Missing,
+    ContentHash([u8; 32]),
+    Metadata {
+        len: u64,
+        modified_ns: Option<i64>,
+        is_dir: bool,
+    },
+    Unverifiable,
+}
+
+/// Typed descriptor proving that one non-extracted waveform restore passed preparation.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct PreparedWaveformRestore {
+    pub(crate) direction: PreparedRestoreDirection,
+    pub(crate) source_id: String,
+    pub(crate) source_root: PreparedRootCapability,
+    pub(crate) target_root: PreparedRootCapability,
+    pub(crate) target: PreparedLeafLocator,
+    pub(crate) backup_root: PreparedRootCapability,
+    pub(crate) backup: PreparedLeafLocator,
+    pub(crate) replacement: ReplaceExpectedIdentity,
+    pub(crate) staging: PreparedStagingLocator,
+    pub(crate) evidence: PreparedRestoreEvidence,
+}
+
+/// Profile recovery root opened and identity-checked by the journal owner thread.
+#[derive(Clone, Debug)]
+pub(crate) struct RecoveryRootCapability {
+    pub(crate) path: PathBuf,
+    pub(crate) file: Arc<File>,
+    pub(crate) identity: String,
+}
+
+impl PartialEq for RecoveryRootCapability {
+    fn eq(&self, other: &Self) -> bool {
+        self.path == other.path && self.identity == other.identity
+    }
+}
+
+impl Eq for RecoveryRootCapability {}
+
+pub(crate) fn open_recovery_root_capability(
+    path_override: Option<PathBuf>,
+) -> Result<RecoveryRootCapability, JournalError> {
+    let path = match path_override {
+        Some(path) => path,
+        None => wavecrate::app_dirs::app_root_dir()
+            .map_err(|error| JournalError::AppDirectory(error.to_string()))?,
+    };
+    let file =
+        super::capacity_gate::open_no_follow_path(&path).map_err(|source| JournalError::Write {
+            path: path.clone(),
+            source,
+        })?;
+    if !file
+        .metadata()
+        .map_err(|source| JournalError::Write {
+            path: path.clone(),
+            source,
+        })?
+        .is_dir()
+    {
+        return Err(JournalError::Write {
+            path,
+            source: io::Error::new(
+                io::ErrorKind::InvalidData,
+                "recovery root is not a directory",
+            ),
+        });
+    }
+    let identity =
+        wavecrate_library::filesystem_identity::stable_filesystem_identity_from_open_file(&file)
+            .ok_or_else(|| JournalError::Write {
+                path: path.clone(),
+                source: io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "recovery root identity unavailable",
+                ),
+            })?;
+    Ok(RecoveryRootCapability {
+        path,
+        file: Arc::new(file),
+        identity,
+    })
+}
+
 /// One complete, bounded durable operation record.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub(crate) struct OperationRecord {
@@ -146,6 +284,9 @@ pub(crate) struct OperationRecord {
     /// bounded capacity admission while the operation remains unresolved.
     #[serde(default)]
     pub(crate) capacity_plan: Option<DurableCapacityPlan>,
+    /// Typed preparation evidence. Legacy schema-v1 records deserialize with no evidence.
+    #[serde(default)]
+    pub(crate) prepared: Option<PreparedWaveformRestore>,
     /// Creation timestamp in Unix milliseconds.
     pub(crate) created_unix_ms: i64,
     /// Last update timestamp in Unix milliseconds.
@@ -172,6 +313,7 @@ impl OperationRecord {
             disposition: OperationDisposition::None,
             payload,
             capacity_plan,
+            prepared: None,
             created_unix_ms: now,
             updated_unix_ms: now,
         }
@@ -181,6 +323,15 @@ impl OperationRecord {
         let mut updated = self.clone();
         updated.phase = phase;
         updated.disposition = disposition;
+        updated.updated_unix_ms = unix_millis();
+        updated
+    }
+
+    fn with_prepared(&self, prepared: PreparedWaveformRestore) -> Self {
+        let mut updated = self.clone();
+        updated.phase = OperationPhase::Prepared;
+        updated.disposition = OperationDisposition::None;
+        updated.prepared = Some(prepared);
         updated.updated_unix_ms = unix_millis();
         updated
     }
@@ -221,6 +372,16 @@ pub(crate) enum JournalError {
     /// A requested update did not refer to an admitted operation.
     #[error("operation journal record not found: {0}")]
     NotFound(Uuid),
+    /// A phase transition did not follow the bounded journal state machine.
+    #[error("illegal operation journal transition for {operation_id}: {from:?} -> {to:?}")]
+    IllegalTransition {
+        operation_id: Uuid,
+        from: OperationPhase,
+        to: OperationPhase,
+    },
+    /// Preparation was requested without a typed descriptor.
+    #[error("prepared operation {0} is missing typed evidence")]
+    MissingPreparedEvidence(Uuid),
 }
 
 /// Result boundary for the bounded pre-intent capacity gate.
@@ -233,6 +394,14 @@ pub(crate) enum BoundedAdmissionError {
     Rejected(#[from] RejectedBeforeIntent),
     #[error(transparent)]
     Journal(#[from] JournalError),
+}
+
+/// Outcome after an admitted restore was freshly prepared on the journal owner thread.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum PreparedOperationOutcome {
+    Prepared(Uuid),
+    RetryPending { operation_id: Uuid, reason: String },
+    JournalWriteFailed { operation_id: Uuid, reason: String },
 }
 
 #[derive(Debug)]
@@ -369,6 +538,40 @@ impl OperationJournalStore {
         Ok(())
     }
 
+    fn guarded_prepare(
+        &mut self,
+        operation_id: Uuid,
+        prepared: PreparedWaveformRestore,
+    ) -> Result<(), JournalError> {
+        let current = self
+            .records
+            .get(&operation_id)
+            .ok_or(JournalError::NotFound(operation_id))?;
+        match current.phase {
+            OperationPhase::IntentDurable => {
+                let updated = current.with_prepared(prepared);
+                let path = self.record_path(operation_id);
+                atomic_durable_write(&path, &updated)?;
+                self.records.insert(operation_id, updated);
+                self.rebuild_capacity_claims();
+                Ok(())
+            }
+            OperationPhase::Prepared => {
+                if current.prepared.is_none() {
+                    return Err(JournalError::MissingPreparedEvidence(operation_id));
+                }
+                // The descriptor was freshly validated by the caller. Replacing it is
+                // unnecessary and would make a retry non-idempotent at the byte level.
+                Ok(())
+            }
+            phase => Err(JournalError::IllegalTransition {
+                operation_id,
+                from: phase,
+                to: OperationPhase::Prepared,
+            }),
+        }
+    }
+
     fn rebuild_capacity_claims(&mut self) {
         self.capacity_claims.clear();
         self.capacity_blocked = self.recovery.malformed_count > 0
@@ -495,6 +698,13 @@ impl OperationJournalStore {
                             .push(RetainedRecord::Malformed { path, bytes });
                         continue;
                     }
+                    if record.phase == OperationPhase::Prepared && record.prepared.is_none() {
+                        self.recovery.malformed_count += 1;
+                        self.recovery.attention_required = true;
+                        self.retained
+                            .push(RetainedRecord::Malformed { path, bytes });
+                        continue;
+                    }
                     if record.phase != OperationPhase::Terminal || !record.disposition.is_terminal()
                     {
                         self.recovery.unresolved_count += 1;
@@ -548,6 +758,247 @@ fn validate_capacity_plan(plan: &DurableCapacityPlan) -> Result<(), RejectedBefo
 /// Coordinator boundary for future durable history operations.
 pub(crate) struct OperationJournalCoordinator {
     store: OperationJournalStore,
+}
+
+fn clean_relative_path(path: &Path) -> Result<(), String> {
+    if path.as_os_str().is_empty() || path.is_absolute() {
+        return Err(String::from("path must be a non-empty relative locator"));
+    }
+    for component in path.components() {
+        if !matches!(component, std::path::Component::Normal(_)) {
+            return Err(String::from("path contains non-normal components"));
+        }
+    }
+    Ok(())
+}
+
+fn descriptor_identity(file: &File) -> Result<PreparedObjectIdentity, String> {
+    let metadata = file.metadata().map_err(|error| error.to_string())?;
+    let stable_id =
+        wavecrate_library::filesystem_identity::stable_filesystem_identity_from_open_file(file)
+            .ok_or_else(|| String::from("stable filesystem identity unavailable"))?;
+    let change_marker =
+        wavecrate_library::filesystem_identity::filesystem_change_marker(Path::new(""), &metadata);
+    Ok(PreparedObjectIdentity {
+        stable_id,
+        change_marker,
+        len: metadata.len(),
+    })
+}
+
+fn open_root(path: &Path) -> Result<(File, PreparedRootCapability), String> {
+    let file =
+        super::capacity_gate::open_no_follow_path(path).map_err(|error| error.to_string())?;
+    if !file.metadata().map_err(|error| error.to_string())?.is_dir() {
+        return Err(format!("root is not a directory: {}", path.display()));
+    }
+    let identity = descriptor_identity(&file)?;
+    Ok((
+        file,
+        PreparedRootCapability {
+            path: path.to_path_buf(),
+            identity,
+        },
+    ))
+}
+
+fn open_leaf_relative(
+    root: &File,
+    relative: &Path,
+    display: &Path,
+) -> Result<(File, PreparedObjectIdentity), String> {
+    clean_relative_path(relative)?;
+    #[cfg(unix)]
+    let file = {
+        use std::ffi::CString;
+        use std::os::fd::{AsRawFd, FromRawFd};
+        let components = relative.components().collect::<Vec<_>>();
+        let mut directory = root.try_clone().map_err(|error| error.to_string())?;
+        for (index, component) in components.iter().enumerate() {
+            let std::path::Component::Normal(component) = component else {
+                return Err(String::from("locator contains non-normal component"));
+            };
+            let name = CString::new(component.as_encoded_bytes())
+                .map_err(|_| String::from("locator contains NUL"))?;
+            let is_leaf = index + 1 == components.len();
+            let flags = libc::O_RDONLY
+                | libc::O_CLOEXEC
+                | libc::O_NOFOLLOW
+                | if is_leaf { 0 } else { libc::O_DIRECTORY };
+            let fd = unsafe { libc::openat(directory.as_raw_fd(), name.as_ptr(), flags) };
+            if fd < 0 {
+                return Err(std::io::Error::last_os_error().to_string());
+            }
+            let next = unsafe { File::from_raw_fd(fd) };
+            if is_leaf {
+                directory = next;
+            } else {
+                directory = next;
+            }
+        }
+        directory
+    };
+    #[cfg(not(unix))]
+    let file = File::open(display).map_err(|error| error.to_string())?;
+    let metadata = file.metadata().map_err(|error| error.to_string())?;
+    if !metadata.is_file() {
+        return Err(format!("leaf is not a regular file: {}", display.display()));
+    }
+    let identity = descriptor_identity(&file)?;
+    Ok((file, identity))
+}
+
+fn infer_root(path: &Path, relative: &Path) -> Result<PathBuf, String> {
+    clean_relative_path(relative)?;
+    let mut root = path.to_path_buf();
+    for _ in relative.components() {
+        root = root
+            .parent()
+            .ok_or_else(|| String::from("relative locator exceeds target path"))?
+            .to_path_buf();
+    }
+    if !root.is_absolute() || root.join(relative) != path {
+        return Err(String::from(
+            "target path is not source-relative to its root",
+        ));
+    }
+    Ok(root)
+}
+
+fn prepared_file_evidence(file: &File) -> PreparedFileEvidence {
+    let Ok(metadata) = file.metadata() else {
+        return PreparedFileEvidence::Unverifiable;
+    };
+    if metadata.is_file()
+        && metadata.len() <= wavecrate::sample_sources::MAX_SOURCE_FILE_EVIDENCE_HASH_BYTES
+    {
+        let mut clone = match file.try_clone() {
+            Ok(clone) => clone,
+            Err(_) => return PreparedFileEvidence::Unverifiable,
+        };
+        let mut bytes = Vec::with_capacity(metadata.len() as usize);
+        if clone.read_to_end(&mut bytes).is_ok() {
+            return PreparedFileEvidence::ContentHash(*blake3::hash(&bytes).as_bytes());
+        }
+    }
+    PreparedFileEvidence::Metadata {
+        len: metadata.len(),
+        modified_ns: metadata
+            .modified()
+            .ok()
+            .map(wavecrate_library::timestamps::system_time_to_unix_nanos),
+        is_dir: metadata.is_dir(),
+    }
+}
+
+fn prepare_descriptor(
+    operation_id: Uuid,
+    direction: super::file_io::HistoryFileIoDirection,
+    actions: &[super::file_io::HistoryFileAction],
+    capacity_plan: &DurableCapacityPlan,
+    existing_claims: &BTreeMap<VolumeIdentity, u64>,
+) -> Result<PreparedWaveformRestore, String> {
+    let admission = super::capacity_gate::map_waveform_restore_shape(direction, actions)
+        .map_err(|error| error.to_string())?;
+    let super::file_io::HistoryFileAction::WaveformRestore { applied, .. } = &actions[0] else {
+        return Err(String::from("invalid waveform restore shape"));
+    };
+    let Some(volume) = capacity_plan.volumes.as_slice().first() else {
+        return Err(String::from("capacity claim is empty"));
+    };
+    if capacity_plan.volumes.len() != 1 {
+        return Err(String::from("capacity claim has unexpected volumes"));
+    }
+    let target_root_path = infer_root(&applied.absolute_path, &applied.relative_path)?;
+    let backup_name = admission
+        .backup_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|_| admission.backup_path.parent().is_some())
+        .ok_or_else(|| String::from("backup locator is not a clean leaf"))?
+        .to_owned();
+    let backup_root_path = admission
+        .backup_path
+        .parent()
+        .ok_or_else(|| String::from("backup has no root"))?
+        .to_path_buf();
+    let (_source_root_file, source_root) =
+        open_root(&target_root_path).map_err(|error| format!("source root: {error}"))?;
+    let (target_root_file, target_root) =
+        open_root(&target_root_path).map_err(|error| format!("target root: {error}"))?;
+    let (backup_root_file, backup_root) =
+        open_root(&backup_root_path).map_err(|error| format!("backup root: {error}"))?;
+    let (target_file, target_identity) = open_leaf_relative(
+        &target_root_file,
+        &applied.relative_path,
+        &applied.absolute_path,
+    )?;
+    let backup_relative = PathBuf::from(&backup_name);
+    let (backup_file, backup_identity) =
+        open_leaf_relative(&backup_root_file, &backup_relative, &admission.backup_path)?;
+    // This is the single post-intent capacity revalidation. It observes live facts from the
+    // already-open, capability-relative descriptors and removes this operation's own claim.
+    let requirement = super::capacity_gate::CapacityRequirement {
+        facts: super::capacity_gate::descriptor_capacity_facts(&target_file)
+            .map_err(|error| error.to_string())?,
+        logical_bytes: backup_file
+            .metadata()
+            .map_err(|error| error.to_string())?
+            .len(),
+    };
+    if requirement.facts.identity != volume.identity
+        || requirement.facts.allocation_unit != volume.allocation_unit
+        || requirement.logical_bytes != volume.logical_bytes
+        || super::capacity_gate::round_up_allocation(
+            requirement.logical_bytes,
+            requirement.facts.allocation_unit,
+        )
+        .map_err(|error| error.to_string())?
+            != volume.allocated_bytes
+    {
+        return Err(String::from("capacity claim no longer matches live facts"));
+    }
+    let mut claims_without_own = existing_claims.clone();
+    match claims_without_own.get_mut(&volume.identity) {
+        Some(claim) if *claim >= volume.allocated_bytes => {
+            *claim -= volume.allocated_bytes;
+            if *claim == 0 {
+                claims_without_own.remove(&volume.identity);
+            }
+        }
+        _ => return Err(String::from("capacity claim ownership changed")),
+    }
+    super::capacity_gate::aggregate_capacity_plan(&[requirement], &claims_without_own)
+        .map_err(|error| error.to_string())?;
+    let staging = PathBuf::from(format!(".wavecrate-restore-{operation_id}.stage"));
+    let direction = match direction {
+        super::file_io::HistoryFileIoDirection::Undo => PreparedRestoreDirection::Undo,
+        super::file_io::HistoryFileIoDirection::Redo => PreparedRestoreDirection::Redo,
+    };
+    Ok(PreparedWaveformRestore {
+        direction,
+        source_id: applied.source_id.clone(),
+        source_root,
+        target_root,
+        target: PreparedLeafLocator {
+            relative_path: applied.relative_path.clone(),
+            identity: target_identity.clone(),
+        },
+        backup_root,
+        backup: PreparedLeafLocator {
+            relative_path: PathBuf::from(backup_name),
+            identity: backup_identity,
+        },
+        replacement: ReplaceExpectedIdentity::Existing(target_identity),
+        staging: PreparedStagingLocator {
+            relative_path: staging,
+            absent: true,
+        },
+        evidence: PreparedRestoreEvidence {
+            target: prepared_file_evidence(&target_file),
+            backup: prepared_file_evidence(&backup_file),
+        },
+    })
 }
 
 impl OperationJournalCoordinator {
@@ -607,6 +1058,58 @@ impl OperationJournalCoordinator {
         Ok(operation_id)
     }
 
+    /// Admit and then prepare one non-extracted waveform restore on the journal owner thread.
+    /// Post-intent validation failures retain the operation and its capacity claim.
+    pub(crate) fn prepare_bounded_waveform_restore(
+        &mut self,
+        intent: OperationIntent,
+        payload: Value,
+        direction: super::file_io::HistoryFileIoDirection,
+        actions: &[super::file_io::HistoryFileAction],
+    ) -> Result<PreparedOperationOutcome, BoundedAdmissionError> {
+        let operation_id =
+            self.admit_bounded_waveform_restore(intent, payload, direction, actions)?;
+        let capacity_plan = self
+            .store
+            .record(operation_id)
+            .and_then(|record| record.capacity_plan.clone())
+            .ok_or_else(|| {
+                BoundedAdmissionError::Journal(JournalError::MissingPreparedEvidence(operation_id))
+            })?;
+        let prepared = match prepare_descriptor(
+            operation_id,
+            direction,
+            actions,
+            &capacity_plan,
+            self.store.capacity_claims(),
+        ) {
+            Ok(prepared) => prepared,
+            Err(reason) => {
+                return match self.store.update(
+                    operation_id,
+                    OperationPhase::IntentDurable,
+                    OperationDisposition::RetryPending,
+                ) {
+                    Ok(()) => Ok(PreparedOperationOutcome::RetryPending {
+                        operation_id,
+                        reason,
+                    }),
+                    Err(error) => Ok(PreparedOperationOutcome::JournalWriteFailed {
+                        operation_id,
+                        reason: error.to_string(),
+                    }),
+                };
+            }
+        };
+        match self.store.guarded_prepare(operation_id, prepared) {
+            Ok(()) => Ok(PreparedOperationOutcome::Prepared(operation_id)),
+            Err(error) => Ok(PreparedOperationOutcome::JournalWriteFailed {
+                operation_id,
+                reason: error.to_string(),
+            }),
+        }
+    }
+
     /// Advance phase/disposition through one atomic durable record replacement.
     pub(crate) fn update(
         &mut self,
@@ -614,7 +1117,27 @@ impl OperationJournalCoordinator {
         phase: OperationPhase,
         disposition: OperationDisposition,
     ) -> Result<(), JournalError> {
+        if phase == OperationPhase::Prepared {
+            return Err(JournalError::IllegalTransition {
+                operation_id,
+                from: self
+                    .store
+                    .record(operation_id)
+                    .ok_or(JournalError::NotFound(operation_id))?
+                    .phase,
+                to: OperationPhase::Prepared,
+            });
+        }
         self.store.update(operation_id, phase, disposition)
+    }
+
+    /// Guarded, idempotent IntentDurable -> Prepared transition for validated evidence.
+    pub(crate) fn guarded_prepare(
+        &mut self,
+        operation_id: Uuid,
+        prepared: PreparedWaveformRestore,
+    ) -> Result<(), JournalError> {
+        self.store.guarded_prepare(operation_id, prepared)
     }
 
     /// Return a typed operation record, if present.
@@ -742,7 +1265,7 @@ impl OwnershipLock {
 
         #[cfg(all(not(unix), not(windows)))]
         Err(JournalError::Write {
-            path,
+            path: path.to_path_buf(),
             source: io::Error::new(
                 io::ErrorKind::Unsupported,
                 "no verified profile ownership primitive on this platform",
@@ -881,6 +1404,15 @@ mod tests {
 
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
+    fn fixture_directory() -> tempfile::TempDir {
+        #[cfg(target_os = "macos")]
+        {
+            return tempfile::tempdir_in("/private/tmp").expect("fixture directory");
+        }
+        #[cfg(not(target_os = "macos"))]
+        tempfile::tempdir().expect("fixture directory")
+    }
+
     fn intent() -> OperationIntent {
         OperationIntent {
             actor: OperationActor::User,
@@ -914,14 +1446,14 @@ mod tests {
             journal
                 .update(
                     id,
-                    OperationPhase::Prepared,
+                    OperationPhase::IntentDurable,
                     OperationDisposition::RetryPending,
                 )
                 .unwrap();
         }
         let journal = OperationJournalCoordinator::open(dir.path().to_path_buf()).unwrap();
         let record = journal.record(id).unwrap();
-        assert_eq!(record.phase, OperationPhase::Prepared);
+        assert_eq!(record.phase, OperationPhase::IntentDurable);
         assert_eq!(record.disposition, OperationDisposition::RetryPending);
         assert!(journal.store.capacity_blocked());
     }
@@ -1006,7 +1538,7 @@ mod tests {
     fn coordinator_returns_typed_insufficient_capacity_without_a_record() {
         let _lock = TEST_LOCK.lock().unwrap();
         let dir = tempfile::tempdir().unwrap();
-        let files = tempfile::tempdir().unwrap();
+        let files = fixture_directory();
         let backup = files.path().join("before.wav");
         let target = files.path().join("target.wav");
         fs::write(&backup, vec![7_u8; 4097]).unwrap();
@@ -1054,6 +1586,68 @@ mod tests {
     }
 
     #[test]
+    fn waveform_restore_prepares_typed_descriptor_without_filesystem_mutation() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let files = fixture_directory();
+        let backup = files.path().join("before.wav");
+        let target = files.path().join("target.wav");
+        fs::write(&backup, vec![7_u8; 4097]).unwrap();
+        fs::write(&target, vec![0_u8; 4097]).unwrap();
+        let before_backup = fs::read(&backup).unwrap();
+        let before_target = fs::read(&target).unwrap();
+        let before_names = fs::read_dir(files.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<Vec<_>>();
+        let action = crate::native_app::waveform_edits::waveform_restore_action_for_capacity_tests(
+            backup.clone(),
+            target.clone(),
+            false,
+        );
+        let mut coordinator = OperationJournalCoordinator::open(dir.path().to_path_buf()).unwrap();
+        let outcome = coordinator
+            .prepare_bounded_waveform_restore(
+                intent(),
+                Value::Null,
+                super::super::file_io::HistoryFileIoDirection::Undo,
+                std::slice::from_ref(&action),
+            )
+            .unwrap();
+        let id = match outcome {
+            PreparedOperationOutcome::Prepared(id) => id,
+            other => panic!("expected prepared, got {other:?}"),
+        };
+        let record = coordinator.record(id).unwrap();
+        assert_eq!(record.phase, OperationPhase::Prepared);
+        assert_eq!(record.disposition, OperationDisposition::None);
+        assert!(record.prepared.is_some());
+        assert_eq!(fs::read(&backup).unwrap(), before_backup);
+        assert_eq!(fs::read(&target).unwrap(), before_target);
+        assert_eq!(
+            fs::read_dir(files.path())
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .collect::<Vec<_>>(),
+            before_names
+        );
+        drop(coordinator);
+        let reopened = OperationJournalCoordinator::open(dir.path().to_path_buf()).unwrap();
+        let reopened_record = reopened.record(id).unwrap();
+        assert_eq!(reopened_record.phase, OperationPhase::Prepared);
+        assert_eq!(reopened_record.disposition, OperationDisposition::None);
+        let prepared = reopened_record.prepared.as_ref().unwrap();
+        assert_eq!(prepared.source_id, "test");
+        assert_eq!(prepared.target.relative_path, PathBuf::from("target.wav"));
+        assert_eq!(prepared.backup.relative_path, PathBuf::from("before.wav"));
+        assert_eq!(
+            prepared.staging.relative_path.as_os_str().to_string_lossy(),
+            format!(".wavecrate-restore-{id}.stage")
+        );
+        assert_eq!(reopened.store.capacity_claims().len(), 1);
+    }
+
+    #[test]
     fn malformed_and_unknown_records_are_retained_and_reported() {
         let _lock = TEST_LOCK.lock().unwrap();
         let dir = tempfile::tempdir().unwrap();
@@ -1072,6 +1666,22 @@ mod tests {
             fs::read(dir.path().join("malformed.json")).unwrap(),
             b"not json"
         );
+    }
+
+    #[test]
+    fn prepared_record_without_evidence_is_retained_verbatim() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let mut record = OperationRecord::new(intent(), Value::Null);
+        record.phase = OperationPhase::Prepared;
+        let path = dir.path().join(format!("{}.json", record.operation_id));
+        let bytes = serde_json::to_vec(&record).unwrap();
+        fs::write(&path, &bytes).unwrap();
+        let journal = OperationJournalCoordinator::open(dir.path().to_path_buf()).unwrap();
+        assert_eq!(journal.recovery_summary().malformed_count, 1);
+        assert!(journal.recovery_summary().attention_required);
+        assert!(journal.record(record.operation_id).is_none());
+        assert_eq!(fs::read(path).unwrap(), bytes);
     }
 
     #[test]
