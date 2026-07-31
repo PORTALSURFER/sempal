@@ -9,6 +9,8 @@ use wavecrate::selection::SelectionRange;
 use wavecrate_library::timestamps::system_time_to_unix_nanos;
 
 use crate::native_app::app::{PendingWaveformDestructiveEdit, WaveformDestructiveEditKind};
+#[cfg(test)]
+use crate::native_app::transaction_history::HistoryFileAction;
 use crate::native_app::waveform::{WaveformExtractionRequest, execute_waveform_extraction};
 use crate::native_app::waveform_edit_effects::apply_edit_selection_effects;
 
@@ -195,6 +197,35 @@ pub(in crate::native_app) fn destructive_edit_before_backup_path_for_tests(
     applied: &AppliedWaveformEdit,
 ) -> PathBuf {
     applied.backup.before.clone()
+}
+
+#[cfg(test)]
+pub(in crate::native_app) fn waveform_restore_action_for_capacity_tests(
+    backup_path: PathBuf,
+    target_path: PathBuf,
+    extracted: bool,
+) -> HistoryFileAction {
+    HistoryFileAction::WaveformRestore {
+        backup_path: backup_path.clone(),
+        applied: AppliedWaveformEdit {
+            source_id: String::from("test"),
+            relative_path: PathBuf::from("sample.wav"),
+            absolute_path: target_path,
+            before_content_identity: None,
+            backup: OverwriteBackup {
+                before: backup_path.clone(),
+                after: backup_path.clone(),
+                dir: None,
+            },
+            extracted: extracted.then(|| AppliedExtractedFile {
+                path: PathBuf::from("/tmp/extracted.wav"),
+                relative_path: PathBuf::from("extracted.wav"),
+                backup_path,
+                evidence: SourceFileEvidence::Unverifiable,
+            }),
+            absolute_evidence: SourceFileEvidence::Unverifiable,
+        },
+    }
 }
 
 fn prepare_destructive_edit_copy(

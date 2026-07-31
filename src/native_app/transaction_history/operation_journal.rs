@@ -17,6 +17,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
+use super::capacity_gate::{DurableCapacityPlan, RejectedBeforeIntent, VolumeIdentity};
+
 const CURRENT_SCHEMA_VERSION: u32 = 1;
 const MAX_RECORD_BYTES: usize = 1024 * 1024;
 const RECORD_SUFFIX: &str = ".json";
@@ -140,6 +142,10 @@ pub(crate) struct OperationRecord {
     pub(crate) disposition: OperationDisposition,
     /// Bounded coordinator metadata. Filesystem payloads are intentionally not interpreted here.
     pub(crate) payload: Value,
+    /// Optional physical-capacity claims.  `None` is retained for legacy records and blocks
+    /// bounded capacity admission while the operation remains unresolved.
+    #[serde(default)]
+    pub(crate) capacity_plan: Option<DurableCapacityPlan>,
     /// Creation timestamp in Unix milliseconds.
     pub(crate) created_unix_ms: i64,
     /// Last update timestamp in Unix milliseconds.
@@ -149,6 +155,14 @@ pub(crate) struct OperationRecord {
 impl OperationRecord {
     /// Construct a new intent record in the durable `IntentDurable` phase.
     pub(crate) fn new(intent: OperationIntent, payload: Value) -> Self {
+        Self::new_with_capacity_plan(intent, payload, None)
+    }
+
+    fn new_with_capacity_plan(
+        intent: OperationIntent,
+        payload: Value,
+        capacity_plan: Option<DurableCapacityPlan>,
+    ) -> Self {
         let now = unix_millis();
         Self {
             schema_version: CURRENT_SCHEMA_VERSION,
@@ -157,6 +171,7 @@ impl OperationRecord {
             phase: OperationPhase::IntentDurable,
             disposition: OperationDisposition::None,
             payload,
+            capacity_plan,
             created_unix_ms: now,
             updated_unix_ms: now,
         }
@@ -208,6 +223,18 @@ pub(crate) enum JournalError {
     NotFound(Uuid),
 }
 
+/// Result boundary for the bounded pre-intent capacity gate.
+///
+/// A rejected request has no durable operation record and must remain distinct from a journal
+/// failure encountered while persisting an already-admitted intent.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum BoundedAdmissionError {
+    #[error(transparent)]
+    Rejected(#[from] RejectedBeforeIntent),
+    #[error(transparent)]
+    Journal(#[from] JournalError),
+}
+
 #[derive(Debug)]
 enum RetainedRecord {
     Malformed {
@@ -232,6 +259,8 @@ pub(crate) struct OperationJournalStore {
     records: BTreeMap<Uuid, OperationRecord>,
     retained: Vec<RetainedRecord>,
     recovery: RecoverySummary,
+    capacity_claims: BTreeMap<VolumeIdentity, u64>,
+    capacity_blocked: bool,
 }
 
 impl OperationJournalStore {
@@ -248,6 +277,8 @@ impl OperationJournalStore {
             records: BTreeMap::new(),
             retained: Vec::new(),
             recovery: RecoverySummary::default(),
+            capacity_claims: BTreeMap::new(),
+            capacity_blocked: false,
         };
         store.scan()?;
         Ok(store)
@@ -268,7 +299,16 @@ impl OperationJournalStore {
         self.records.values()
     }
 
+    pub(crate) fn capacity_claims(&self) -> &BTreeMap<VolumeIdentity, u64> {
+        &self.capacity_claims
+    }
+
+    pub(crate) fn capacity_blocked(&self) -> bool {
+        self.capacity_blocked
+    }
+
     /// Durably admit one record, before any future filesystem mutation.
+    #[cfg(test)]
     pub(crate) fn admit(&mut self, record: OperationRecord) -> Result<(), JournalError> {
         if record.schema_version != CURRENT_SCHEMA_VERSION {
             return Err(JournalError::Write {
@@ -279,6 +319,34 @@ impl OperationJournalStore {
         let path = self.record_path(record.operation_id);
         atomic_durable_write(&path, &record)?;
         self.records.insert(record.operation_id, record);
+        self.rebuild_capacity_claims();
+        Ok(())
+    }
+
+    pub(crate) fn admit_capacity(&mut self, record: OperationRecord) -> Result<(), JournalError> {
+        if self.capacity_blocked {
+            return Err(JournalError::Write {
+                path: self.record_path(record.operation_id),
+                source: io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    RejectedBeforeIntent::RecoveryBlocked.to_string(),
+                ),
+            });
+        }
+        let Some(plan) = record.capacity_plan.as_ref() else {
+            return Err(JournalError::Write {
+                path: self.record_path(record.operation_id),
+                source: io::Error::new(io::ErrorKind::InvalidInput, "capacity plan is required"),
+            });
+        };
+        validate_capacity_plan(plan).map_err(|error| JournalError::Write {
+            path: self.record_path(record.operation_id),
+            source: io::Error::new(io::ErrorKind::InvalidInput, error.to_string()),
+        })?;
+        let path = self.record_path(record.operation_id);
+        atomic_durable_write(&path, &record)?;
+        self.records.insert(record.operation_id, record);
+        self.rebuild_capacity_claims();
         Ok(())
     }
 
@@ -297,7 +365,41 @@ impl OperationJournalStore {
         let path = self.record_path(operation_id);
         atomic_durable_write(&path, &updated)?;
         self.records.insert(operation_id, updated);
+        self.rebuild_capacity_claims();
         Ok(())
+    }
+
+    fn rebuild_capacity_claims(&mut self) {
+        self.capacity_claims.clear();
+        self.capacity_blocked = self.recovery.malformed_count > 0
+            || self.recovery.unknown_version_count > 0
+            || self.recovery.oversize_count > 0;
+        for record in self.records.values() {
+            if record.phase == OperationPhase::Terminal && record.disposition.is_terminal() {
+                continue;
+            }
+            let Some(plan) = record.capacity_plan.as_ref() else {
+                self.capacity_blocked = true;
+                continue;
+            };
+            if validate_capacity_plan(plan).is_err() {
+                self.capacity_blocked = true;
+                continue;
+            }
+            for volume in &plan.volumes {
+                let current = self
+                    .capacity_claims
+                    .get(&volume.identity)
+                    .copied()
+                    .unwrap_or(0);
+                match current.checked_add(volume.allocated_bytes) {
+                    Some(total) => {
+                        self.capacity_claims.insert(volume.identity.clone(), total);
+                    }
+                    None => self.capacity_blocked = true,
+                }
+            }
+        }
     }
 
     fn record_path(&self, operation_id: Uuid) -> PathBuf {
@@ -386,6 +488,13 @@ impl OperationJournalStore {
                             .push(RetainedRecord::Malformed { path, bytes });
                         continue;
                     }
+                    if validate_capacity_plan_option(record.capacity_plan.as_ref()).is_err() {
+                        self.recovery.malformed_count += 1;
+                        self.recovery.attention_required = true;
+                        self.retained
+                            .push(RetainedRecord::Malformed { path, bytes });
+                        continue;
+                    }
                     if record.phase != OperationPhase::Terminal || !record.disposition.is_terminal()
                     {
                         self.recovery.unresolved_count += 1;
@@ -401,8 +510,39 @@ impl OperationJournalStore {
                 }
             }
         }
+        self.rebuild_capacity_claims();
         Ok(())
     }
+}
+
+fn validate_capacity_plan_option(
+    plan: Option<&DurableCapacityPlan>,
+) -> Result<(), RejectedBeforeIntent> {
+    if let Some(plan) = plan {
+        validate_capacity_plan(plan)
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_capacity_plan(plan: &DurableCapacityPlan) -> Result<(), RejectedBeforeIntent> {
+    if plan.volumes.is_empty() {
+        return Err(RejectedBeforeIntent::InvalidPlan);
+    }
+    let mut identities = std::collections::BTreeSet::new();
+    for volume in &plan.volumes {
+        let expected_allocated = super::capacity_gate::round_up_allocation(
+            volume.logical_bytes,
+            volume.allocation_unit,
+        )?;
+        if !identities.insert(volume.identity.clone())
+            || volume.allocated_bytes != expected_allocated
+            || volume.protected_free_bytes != super::capacity_gate::PROTECTED_FREE_SPACE_FLOOR
+        {
+            return Err(RejectedBeforeIntent::InvalidPlan);
+        }
+    }
+    Ok(())
 }
 
 /// Coordinator boundary for future durable history operations.
@@ -431,6 +571,7 @@ impl OperationJournalCoordinator {
     }
 
     /// Admit an intent durably and return its stable operation ID.
+    #[cfg(test)]
     pub(crate) fn admit(
         &mut self,
         intent: OperationIntent,
@@ -439,6 +580,30 @@ impl OperationJournalCoordinator {
         let record = OperationRecord::new(intent, payload);
         let operation_id = record.operation_id;
         self.store.admit(record)?;
+        Ok(operation_id)
+    }
+
+    /// Admit exactly one bounded waveform restore after owner-thread capacity discovery.
+    pub(crate) fn admit_bounded_waveform_restore(
+        &mut self,
+        intent: OperationIntent,
+        payload: Value,
+        direction: super::file_io::HistoryFileIoDirection,
+        actions: &[super::file_io::HistoryFileAction],
+    ) -> Result<Uuid, BoundedAdmissionError> {
+        if self.store.capacity_blocked() {
+            return Err(RejectedBeforeIntent::RecoveryBlocked.into());
+        }
+        let (_admission, capacity_plan) = super::capacity_gate::plan_waveform_restore(
+            direction,
+            actions,
+            self.store.capacity_claims(),
+        )?;
+        let record = OperationRecord::new_with_capacity_plan(intent, payload, Some(capacity_plan));
+        let operation_id = record.operation_id;
+        self.store
+            .admit_capacity(record)
+            .map_err(BoundedAdmissionError::Journal)?;
         Ok(operation_id)
     }
 
@@ -758,6 +923,134 @@ mod tests {
         let record = journal.record(id).unwrap();
         assert_eq!(record.phase, OperationPhase::Prepared);
         assert_eq!(record.disposition, OperationDisposition::RetryPending);
+        assert!(journal.store.capacity_blocked());
+    }
+
+    #[test]
+    fn capacity_plan_claim_is_durable_and_reconstructed_after_restart() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let identity = VolumeIdentity { device: 77 };
+        let plan = DurableCapacityPlan {
+            volumes: vec![super::super::capacity_gate::DurableVolumeCapacity {
+                identity: identity.clone(),
+                allocation_unit: 4096,
+                allocation_class:
+                    super::super::capacity_gate::CapacityAllocationClass::DestinationStaging,
+                logical_bytes: 4096,
+                allocated_bytes: 4096,
+                protected_free_bytes: super::super::capacity_gate::PROTECTED_FREE_SPACE_FLOOR,
+            }],
+        };
+        {
+            let mut store = OperationJournalStore::open(dir.path().to_path_buf()).unwrap();
+            let record =
+                OperationRecord::new_with_capacity_plan(intent(), Value::Null, Some(plan.clone()));
+            store.admit_capacity(record).unwrap();
+            assert_eq!(store.capacity_claims().get(&identity), Some(&4096));
+            assert!(!store.capacity_blocked());
+        }
+        let store = OperationJournalStore::open(dir.path().to_path_buf()).unwrap();
+        assert_eq!(store.capacity_claims().get(&identity), Some(&4096));
+        assert!(!store.capacity_blocked());
+    }
+
+    #[test]
+    fn invalid_capacity_plans_are_retained_and_block_admission_after_restart() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let identity = VolumeIdentity { device: 77 };
+        for (_, plan) in [
+            (
+                "empty",
+                DurableCapacityPlan {
+                    volumes: Vec::new(),
+                },
+            ),
+            (
+                "undercharged",
+                DurableCapacityPlan {
+                    volumes: vec![super::super::capacity_gate::DurableVolumeCapacity {
+                        identity: identity.clone(),
+                        allocation_unit: 4096,
+                        allocation_class:
+                            super::super::capacity_gate::CapacityAllocationClass::DestinationStaging,
+                        logical_bytes: 4097,
+                        allocated_bytes: 4096,
+                        protected_free_bytes:
+                            super::super::capacity_gate::PROTECTED_FREE_SPACE_FLOOR,
+                    }],
+                },
+            ),
+        ] {
+            let record = OperationRecord::new_with_capacity_plan(intent(), Value::Null, Some(plan));
+            let path = dir.path().join(format!("{}.json", record.operation_id));
+            fs::write(path, serde_json::to_vec(&record).unwrap()).unwrap();
+        }
+        let store = OperationJournalStore::open(dir.path().to_path_buf()).unwrap();
+        assert_eq!(store.recovery_summary().malformed_count, 2);
+        assert!(store.capacity_blocked());
+        assert_eq!(
+            fs::read_dir(dir.path())
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(
+                    |entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("json")
+                )
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn coordinator_returns_typed_insufficient_capacity_without_a_record() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let files = tempfile::tempdir().unwrap();
+        let backup = files.path().join("before.wav");
+        let target = files.path().join("target.wav");
+        fs::write(&backup, vec![7_u8; 4097]).unwrap();
+        fs::write(&target, vec![0_u8; 4097]).unwrap();
+        let action = crate::native_app::waveform_edits::waveform_restore_action_for_capacity_tests(
+            backup, target, false,
+        );
+        let mut coordinator = OperationJournalCoordinator::open(dir.path().to_path_buf()).unwrap();
+        let (_, mut plan) =
+            crate::native_app::transaction_history::capacity_gate::plan_waveform_restore(
+                crate::native_app::transaction_history::file_io::HistoryFileIoDirection::Undo,
+                std::slice::from_ref(&action),
+                &BTreeMap::new(),
+            )
+            .unwrap();
+        let volume = &mut plan.volumes[0];
+        let logical = (1_u64 << 62) - ((1_u64 << 62) % volume.allocation_unit);
+        volume.logical_bytes = logical;
+        volume.allocated_bytes = logical;
+        let record = OperationRecord::new_with_capacity_plan(intent(), Value::Null, Some(plan));
+        coordinator.store.admit_capacity(record).unwrap();
+        let json_before = fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("json"))
+            .count();
+        let rejected = coordinator
+            .admit_bounded_waveform_restore(
+                intent(),
+                Value::Null,
+                crate::native_app::transaction_history::file_io::HistoryFileIoDirection::Undo,
+                std::slice::from_ref(&action),
+            )
+            .unwrap_err();
+        assert!(matches!(
+            rejected,
+            BoundedAdmissionError::Rejected(RejectedBeforeIntent::InsufficientSpace(..))
+        ));
+        let json_after = fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("json"))
+            .count();
+        assert_eq!(json_after, json_before);
     }
 
     #[test]

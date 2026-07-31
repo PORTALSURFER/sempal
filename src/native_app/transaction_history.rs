@@ -1,4 +1,5 @@
 mod app_state;
+mod capacity_gate;
 mod context;
 mod file_io;
 #[cfg(test)]
@@ -7,6 +8,7 @@ mod native;
 pub(in crate::native_app) mod operation_journal;
 mod summary;
 
+pub(in crate::native_app) use capacity_gate::RejectedBeforeIntent;
 pub(in crate::native_app) use context::TransactionContext;
 #[cfg(test)]
 pub(in crate::native_app) use file_io::HistoryFileIoOutput;

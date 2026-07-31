@@ -13,4 +13,5 @@ pub(in crate::native_app) use worker::{
 #[cfg(test)]
 pub(in crate::native_app) use worker::{
     destructive_edit_before_backup_path_for_tests, execute_destructive_edit_for_tests,
+    waveform_restore_action_for_capacity_tests,
 };
