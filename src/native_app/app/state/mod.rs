@@ -1,5 +1,6 @@
 mod audio;
 mod background;
+mod journal;
 mod library;
 mod metadata;
 mod source_refresh;
@@ -25,6 +26,7 @@ pub(in crate::native_app) use background::{
     HarvestSelectionDerivationBatchResult, HarvestTouchedPersistAdmission,
     HarvestTouchedPersistBatchResult, RatingPersistBatchResult, WaveformDestructiveEditUiContext,
 };
+pub(in crate::native_app) use journal::{OperationJournalOwner, OperationJournalStatus};
 pub(in crate::native_app) use library::LibraryAppState;
 pub(in crate::native_app) use metadata::MetadataAppState;
 pub(in crate::native_app) use source_refresh::{

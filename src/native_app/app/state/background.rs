@@ -41,6 +41,7 @@ pub(in crate::native_app) struct BackgroundTaskState {
     pub(in crate::native_app) harvest_touched_persist: HarvestTouchedPersistOwner,
     pub(in crate::native_app) harvest_selection_derivation: HarvestSelectionDerivationOwner,
     pub(in crate::native_app) rating_persist: RatingPersistOwner,
+    pub(in crate::native_app) operation_journal: super::OperationJournalOwner,
     pub(in crate::native_app) active_sample_load_key: Option<ui::ResourceKey>,
     pub(in crate::native_app) sample_load_cancel: Option<ui::CancellationToken>,
     pub(in crate::native_app) settled_sample_promotion_task: ui::LatestTask,
@@ -436,6 +437,10 @@ impl BackgroundTaskState {
         source_processing: SourceProcessingSupervisor,
     ) -> Self {
         let source_lifecycle_generations = source_processing.lifecycle_generations();
+        #[cfg(not(test))]
+        let operation_journal = super::OperationJournalOwner::start();
+        #[cfg(test)]
+        let operation_journal = super::OperationJournalOwner::disabled();
         Self {
             worker_sender,
             worker_receiver,
@@ -448,6 +453,7 @@ impl BackgroundTaskState {
             rating_persist: RatingPersistOwner::new_with_lifecycle_generations(
                 source_lifecycle_generations.clone(),
             ),
+            operation_journal,
             active_sample_load_key: None,
             sample_load_cancel: None,
             settled_sample_promotion_task: ui::LatestTask::new(),
@@ -490,6 +496,12 @@ impl BackgroundTaskState {
     #[cfg(test)]
     pub(in crate::native_app) fn for_tests() -> Self {
         Self::new(std::sync::mpsc::channel().0, None, Vec::new())
+    }
+
+    pub(in crate::native_app) fn take_operation_journal_status(
+        &self,
+    ) -> Option<super::journal::OperationJournalStatus> {
+        self.operation_journal.take_status()
     }
 }
 
