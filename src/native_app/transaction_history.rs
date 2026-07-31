@@ -4,6 +4,7 @@ mod file_io;
 #[cfg(test)]
 mod generic;
 mod native;
+pub(in crate::native_app) mod operation_journal;
 mod summary;
 
 pub(in crate::native_app) use context::TransactionContext;
