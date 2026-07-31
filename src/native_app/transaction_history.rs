@@ -9,6 +9,7 @@ pub(in crate::native_app) mod operation_journal;
 mod summary;
 
 pub(in crate::native_app) use capacity_gate::RejectedBeforeIntent;
+pub(in crate::native_app) use capacity_gate::open_no_follow_path;
 pub(in crate::native_app) use context::TransactionContext;
 #[cfg(test)]
 pub(in crate::native_app) use file_io::HistoryFileIoOutput;

@@ -1,6 +1,19 @@
 use super::*;
 use crate::native_app::test_support::state::GuiMessage;
 
+fn physical_destructive_fixture_root() -> tempfile::TempDir {
+    #[cfg(target_os = "macos")]
+    {
+        return tempfile::tempdir_in("/private/tmp").expect("physical destructive fixture root");
+    }
+    #[cfg(not(target_os = "macos"))]
+    tempfile::tempdir().expect("destructive fixture root")
+}
+
+fn native_app_state_with_temp_sample(name: &str) -> (NativeAppState, tempfile::TempDir, String) {
+    super::native_app_state_with_temp_sample_in(name, physical_destructive_fixture_root())
+}
+
 #[test]
 fn crop_shortcut_routes_to_waveform_crop_request() {
     let state = crate::native_app::test_support::state::NativeAppStateFixture::default().build();
@@ -211,11 +224,11 @@ fn destructive_edit_request_blocks_locked_folder() {
 
 #[test]
 fn protected_extract_and_trim_extracts_to_primary_without_mutating_origin() {
-    let config_base = tempfile::tempdir().expect("config base");
+    let config_base = physical_destructive_fixture_root();
     let _base_guard = wavecrate::app_dirs::ConfigBaseGuard::set(config_base.path().to_path_buf());
     let (mut state, source_root, selected_file) =
         native_app_state_with_temp_sample("protected-extract-trim.wav");
-    let primary_root = tempfile::tempdir().expect("primary source root");
+    let primary_root = physical_destructive_fixture_root();
     let protected_source =
         wavecrate::sample_sources::SampleSource::new(source_root.path().to_path_buf()).protected();
     let primary_source =
@@ -453,11 +466,11 @@ fn blocked_protected_source_destructive_edit_flashes_source_file_and_waveform() 
 
 #[test]
 fn protected_extract_target_source_dialog_marks_primary_and_resumes_extraction() {
-    let config_base = tempfile::tempdir().expect("config base");
+    let config_base = physical_destructive_fixture_root();
     let _base_guard = wavecrate::app_dirs::ConfigBaseGuard::set(config_base.path().to_path_buf());
     let (mut state, source_root, selected_file) =
         native_app_state_with_temp_sample("protected-extract-add-target.wav");
-    let target_root = tempfile::tempdir().expect("target source root");
+    let target_root = physical_destructive_fixture_root();
     let protected_source =
         wavecrate::sample_sources::SampleSource::new(source_root.path().to_path_buf()).protected();
     state.library.folder_browser =
@@ -526,11 +539,11 @@ fn protected_extract_target_source_dialog_marks_primary_and_resumes_extraction()
 
 #[test]
 fn protected_crop_selection_renders_crop_copy_to_primary_without_mutating_origin() {
-    let config_base = tempfile::tempdir().expect("config base");
+    let config_base = physical_destructive_fixture_root();
     let _base_guard = wavecrate::app_dirs::ConfigBaseGuard::set(config_base.path().to_path_buf());
     let (mut state, source_root, selected_file) =
         native_app_state_with_temp_sample("protected-crop.wav");
-    let primary_root = tempfile::tempdir().expect("primary source root");
+    let primary_root = physical_destructive_fixture_root();
     let protected_source =
         wavecrate::sample_sources::SampleSource::new(source_root.path().to_path_buf()).protected();
     let primary_source =
@@ -600,11 +613,11 @@ fn protected_crop_selection_renders_crop_copy_to_primary_without_mutating_origin
 
 #[test]
 fn normal_harvest_mode_crop_selection_renders_crop_copy_to_primary_without_mutating_origin() {
-    let config_base = tempfile::tempdir().expect("config base");
+    let config_base = physical_destructive_fixture_root();
     let _base_guard = wavecrate::app_dirs::ConfigBaseGuard::set(config_base.path().to_path_buf());
     let (mut state, source_root, selected_file) =
         native_app_state_with_temp_sample("normal-harvest-crop.wav");
-    let primary_root = tempfile::tempdir().expect("primary source root");
+    let primary_root = physical_destructive_fixture_root();
     let origin_source =
         wavecrate::sample_sources::SampleSource::new(source_root.path().to_path_buf());
     let primary_source =
@@ -678,11 +691,11 @@ fn normal_harvest_mode_crop_selection_renders_crop_copy_to_primary_without_mutat
 
 #[test]
 fn protected_reverse_selection_renders_reverse_copy_to_primary_without_mutating_origin() {
-    let config_base = tempfile::tempdir().expect("config base");
+    let config_base = physical_destructive_fixture_root();
     let _base_guard = wavecrate::app_dirs::ConfigBaseGuard::set(config_base.path().to_path_buf());
     let (mut state, source_root, selected_file) =
         native_app_state_with_temp_sample("protected-reverse.wav");
-    let primary_root = tempfile::tempdir().expect("primary source root");
+    let primary_root = physical_destructive_fixture_root();
     let protected_source =
         wavecrate::sample_sources::SampleSource::new(source_root.path().to_path_buf()).protected();
     let primary_source =
@@ -762,11 +775,11 @@ fn protected_reverse_selection_renders_reverse_copy_to_primary_without_mutating_
 
 #[test]
 fn protected_mute_selection_renders_edit_copy_to_primary_without_mutating_origin() {
-    let config_base = tempfile::tempdir().expect("config base");
+    let config_base = physical_destructive_fixture_root();
     let _base_guard = wavecrate::app_dirs::ConfigBaseGuard::set(config_base.path().to_path_buf());
     let (mut state, source_root, selected_file) =
         native_app_state_with_temp_sample("protected-mute.wav");
-    let primary_root = tempfile::tempdir().expect("primary source root");
+    let primary_root = physical_destructive_fixture_root();
     let protected_source =
         wavecrate::sample_sources::SampleSource::new(source_root.path().to_path_buf()).protected();
     let primary_source =
@@ -844,11 +857,11 @@ fn protected_mute_selection_renders_edit_copy_to_primary_without_mutating_origin
 
 #[test]
 fn protected_sample_slide_renders_slide_copy_to_primary_without_mutating_origin() {
-    let config_base = tempfile::tempdir().expect("config base");
+    let config_base = physical_destructive_fixture_root();
     let _base_guard = wavecrate::app_dirs::ConfigBaseGuard::set(config_base.path().to_path_buf());
     let (mut state, source_root, selected_file) =
         native_app_state_with_temp_sample("protected-slide.wav");
-    let primary_root = tempfile::tempdir().expect("primary source root");
+    let primary_root = physical_destructive_fixture_root();
     let protected_source =
         wavecrate::sample_sources::SampleSource::new(source_root.path().to_path_buf()).protected();
     let primary_source =
@@ -920,11 +933,11 @@ fn protected_sample_slide_renders_slide_copy_to_primary_without_mutating_origin(
 
 #[test]
 fn normal_harvest_mode_reverse_selection_renders_reverse_copy_to_primary_without_mutating_origin() {
-    let config_base = tempfile::tempdir().expect("config base");
+    let config_base = physical_destructive_fixture_root();
     let _base_guard = wavecrate::app_dirs::ConfigBaseGuard::set(config_base.path().to_path_buf());
     let (mut state, source_root, selected_file) =
         native_app_state_with_temp_sample("normal-harvest-reverse.wav");
-    let primary_root = tempfile::tempdir().expect("primary source root");
+    let primary_root = physical_destructive_fixture_root();
     let origin_source =
         wavecrate::sample_sources::SampleSource::new(source_root.path().to_path_buf());
     let primary_source =
@@ -1010,7 +1023,7 @@ fn normal_harvest_mode_reverse_selection_renders_reverse_copy_to_primary_without
 fn protected_trim_selection_is_denied_with_red_feedback_even_with_primary_source() {
     let (mut state, source_root, selected_file) =
         native_app_state_with_temp_sample("protected-trim.wav");
-    let primary_root = tempfile::tempdir().expect("primary source root");
+    let primary_root = physical_destructive_fixture_root();
     let protected_source =
         wavecrate::sample_sources::SampleSource::new(source_root.path().to_path_buf()).protected();
     let primary_source =
@@ -1088,11 +1101,11 @@ fn protected_trim_selection_is_denied_with_red_feedback_even_with_primary_source
 
 #[test]
 fn protected_apply_edit_effects_renders_edit_copy_to_primary_without_mutating_origin() {
-    let config_base = tempfile::tempdir().expect("config base");
+    let config_base = physical_destructive_fixture_root();
     let _base_guard = wavecrate::app_dirs::ConfigBaseGuard::set(config_base.path().to_path_buf());
     let (mut state, source_root, selected_file) =
         native_app_state_with_temp_sample("protected-edit.wav");
-    let primary_root = tempfile::tempdir().expect("primary source root");
+    let primary_root = physical_destructive_fixture_root();
     let protected_source =
         wavecrate::sample_sources::SampleSource::new(source_root.path().to_path_buf()).protected();
     let primary_source =
@@ -1739,7 +1752,7 @@ fn mute_request_rewrites_edit_selection_without_moving_bounds() {
 
 #[test]
 fn crop_request_marks_harvest_origin_touched_without_derivative() {
-    let config_base = tempfile::tempdir().expect("config base");
+    let config_base = physical_destructive_fixture_root();
     let _base_guard = wavecrate::app_dirs::ConfigBaseGuard::set(config_base.path().to_path_buf());
     let (mut state, _source_root, selected_file) =
         native_app_state_with_temp_sample("crop-harvest.wav");

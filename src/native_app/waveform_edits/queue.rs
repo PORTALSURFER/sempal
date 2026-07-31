@@ -40,6 +40,11 @@ impl NativeAppState {
         options: WaveformDestructiveEditQueueOptions,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) -> Result<(), String> {
+        let recovery_root = self
+            .background
+            .waveform_recovery_root
+            .clone()
+            .ok_or_else(|| String::from("waveform recovery root is not ready"))?;
         if let Some(error) = self
             .library
             .folder_browser
@@ -74,8 +79,11 @@ impl NativeAppState {
         self.audio.clear_sample_playback_session();
 
         let preserved_marks = self.preserved_marks_after_destructive_edit(&request);
-        let mut worker_request =
-            WaveformDestructiveEditWorkerRequest::new(request.clone(), extraction_request);
+        let mut worker_request = WaveformDestructiveEditWorkerRequest::new(
+            request.clone(),
+            extraction_request,
+            recovery_root,
+        );
         if let Some(copy_source_path) = options.copy_source_path.clone() {
             worker_request = worker_request.with_copy_source(copy_source_path);
         }
