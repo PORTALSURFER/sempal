@@ -19,6 +19,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use super::capacity_gate::{DurableCapacityPlan, RejectedBeforeIntent, VolumeIdentity};
+use super::publication::{FilesystemPublishedWaveformRestore, validate_publication_evidence};
 
 const CURRENT_SCHEMA_VERSION: u32 = 1;
 const MAX_RECORD_BYTES: usize = 1024 * 1024;
@@ -77,6 +78,26 @@ pub(crate) enum OperationPhase {
     ReadinessScheduled,
     /// The operation has reached a terminal state.
     Terminal,
+}
+
+impl OperationPhase {
+    fn is_pre_publication(self) -> bool {
+        matches!(
+            self,
+            Self::IntentDurable | Self::Prepared | Self::FilesystemStaged
+        )
+    }
+
+    fn is_post_publication(self) -> bool {
+        matches!(
+            self,
+            Self::FilesystemPublished
+                | Self::SourceReconciled
+                | Self::GlobalReconciled
+                | Self::ProjectionPublished
+                | Self::ReadinessScheduled
+        )
+    }
 }
 
 /// Durable disposition overlay for a journal record.
@@ -305,6 +326,9 @@ pub(crate) struct OperationRecord {
     /// Typed filesystem staging evidence. Legacy records do not contain this checkpoint.
     #[serde(default)]
     pub(crate) staged: Option<FilesystemStagedWaveformRestore>,
+    /// Typed filesystem publication evidence. Legacy records do not contain this checkpoint.
+    #[serde(default)]
+    pub(crate) published: Option<FilesystemPublishedWaveformRestore>,
     /// Creation timestamp in Unix milliseconds.
     pub(crate) created_unix_ms: i64,
     /// Last update timestamp in Unix milliseconds.
@@ -333,6 +357,7 @@ impl OperationRecord {
             capacity_plan,
             prepared: None,
             staged: None,
+            published: None,
             created_unix_ms: now,
             updated_unix_ms: now,
         }
@@ -363,6 +388,32 @@ impl OperationRecord {
         updated.updated_unix_ms = unix_millis();
         updated
     }
+
+    fn with_published(&self, published: FilesystemPublishedWaveformRestore) -> Self {
+        let mut updated = self.clone();
+        updated.phase = OperationPhase::FilesystemPublished;
+        updated.disposition = OperationDisposition::None;
+        updated.published = Some(published);
+        updated.updated_unix_ms = unix_millis();
+        updated
+    }
+}
+
+fn validate_record_publication(record: &OperationRecord) -> Result<(), String> {
+    let prepared = record
+        .prepared
+        .as_ref()
+        .ok_or_else(|| String::from("publication evidence is missing prepared evidence"))?;
+    let staged = record
+        .staged
+        .as_ref()
+        .ok_or_else(|| String::from("publication evidence is missing staged evidence"))?;
+    validate_staged_checkpoint(prepared, staged)?;
+    let published = record
+        .published
+        .as_ref()
+        .ok_or_else(|| String::from("publication evidence is missing"))?;
+    validate_publication_evidence(prepared, staged, published)
 }
 
 /// Summary of a startup scan. Scanning never mutates or deletes records.
@@ -410,6 +461,9 @@ pub(crate) enum JournalError {
     /// Preparation was requested without a typed descriptor.
     #[error("prepared operation {0} is missing typed evidence")]
     MissingPreparedEvidence(Uuid),
+    /// Publication evidence did not prove the complete guarded boundary.
+    #[error("invalid publication evidence for operation {operation_id}: {reason}")]
+    InvalidPublicationEvidence { operation_id: Uuid, reason: String },
 }
 
 /// Result boundary for the bounded pre-intent capacity gate.
@@ -567,6 +621,64 @@ impl OperationJournalStore {
             .records
             .get(&operation_id)
             .ok_or(JournalError::NotFound(operation_id))?;
+        if phase == OperationPhase::Terminal
+            && disposition == OperationDisposition::CancelledBeforePublish
+            && (current.phase.is_post_publication() || current.published.is_some())
+        {
+            return Err(JournalError::InvalidPublicationEvidence {
+                operation_id,
+                reason: String::from("pre-publication cancellation is invalid after publication"),
+            });
+        }
+        if phase == OperationPhase::FilesystemPublished {
+            return Err(JournalError::IllegalTransition {
+                operation_id,
+                from: current.phase,
+                to: phase,
+            });
+        }
+        if current.phase.is_pre_publication() && current.published.is_some() {
+            return Err(JournalError::InvalidPublicationEvidence {
+                operation_id,
+                reason: String::from("pre-publication phase carries publication evidence"),
+            });
+        }
+        if phase.is_pre_publication() && current.published.is_some() {
+            return Err(JournalError::InvalidPublicationEvidence {
+                operation_id,
+                reason: String::from(
+                    "publication evidence cannot survive in a pre-publication phase",
+                ),
+            });
+        }
+        if phase == OperationPhase::Terminal
+            && disposition == OperationDisposition::CancelledBeforePublish
+            && current.published.is_some()
+        {
+            return Err(JournalError::InvalidPublicationEvidence {
+                operation_id,
+                reason: String::from(
+                    "pre-publication cancellation cannot carry publication evidence",
+                ),
+            });
+        }
+        if phase.is_post_publication() {
+            validate_record_publication(current).map_err(|reason| {
+                JournalError::InvalidPublicationEvidence {
+                    operation_id,
+                    reason,
+                }
+            })?;
+        } else if phase == OperationPhase::Terminal
+            && disposition != OperationDisposition::CancelledBeforePublish
+        {
+            validate_record_publication(current).map_err(|reason| {
+                JournalError::InvalidPublicationEvidence {
+                    operation_id,
+                    reason,
+                }
+            })?;
+        }
         let updated = current.with_update(phase, disposition);
         let path = self.record_path(operation_id);
         atomic_durable_write(&path, &updated)?;
@@ -655,6 +767,66 @@ impl OperationJournalStore {
                 operation_id,
                 from: phase,
                 to: OperationPhase::FilesystemStaged,
+            }),
+        }
+    }
+
+    pub(crate) fn guarded_publish(
+        &mut self,
+        operation_id: Uuid,
+        published: FilesystemPublishedWaveformRestore,
+    ) -> Result<(), JournalError> {
+        let current = self
+            .records
+            .get(&operation_id)
+            .ok_or(JournalError::NotFound(operation_id))?;
+        match current.phase {
+            OperationPhase::FilesystemStaged => {
+                let prepared = current
+                    .prepared
+                    .as_ref()
+                    .ok_or(JournalError::MissingPreparedEvidence(operation_id))?;
+                let staged = current
+                    .staged
+                    .as_ref()
+                    .ok_or(JournalError::MissingPreparedEvidence(operation_id))?;
+                validate_staged_checkpoint(prepared, staged).map_err(|reason| {
+                    JournalError::InvalidPublicationEvidence {
+                        operation_id,
+                        reason,
+                    }
+                })?;
+                validate_publication_evidence(prepared, staged, &published).map_err(|reason| {
+                    JournalError::InvalidPublicationEvidence {
+                        operation_id,
+                        reason,
+                    }
+                })?;
+                let updated = current.with_published(published);
+                let path = self.record_path(operation_id);
+                atomic_durable_write(&path, &updated)?;
+                self.records.insert(operation_id, updated);
+                self.rebuild_capacity_claims();
+                Ok(())
+            }
+            OperationPhase::FilesystemPublished => {
+                let existing = current
+                    .published
+                    .as_ref()
+                    .ok_or(JournalError::MissingPreparedEvidence(operation_id))?;
+                if existing == &published {
+                    Ok(())
+                } else {
+                    Err(JournalError::InvalidPublicationEvidence {
+                        operation_id,
+                        reason: String::from("conflicting publication evidence replay"),
+                    })
+                }
+            }
+            phase => Err(JournalError::IllegalTransition {
+                operation_id,
+                from: phase,
+                to: OperationPhase::FilesystemPublished,
             }),
         }
     }
@@ -808,6 +980,43 @@ impl OperationJournalStore {
                         (_, None) => true,
                     };
                     if !staged_valid {
+                        self.recovery.malformed_count += 1;
+                        self.recovery.attention_required = true;
+                        self.retained
+                            .push(RetainedRecord::Malformed { path, bytes });
+                        continue;
+                    }
+                    let legacy_post_publication_without_evidence = record.published.is_none()
+                        && (matches!(
+                            record.phase,
+                            OperationPhase::FilesystemPublished
+                                | OperationPhase::SourceReconciled
+                                | OperationPhase::GlobalReconciled
+                                | OperationPhase::ProjectionPublished
+                                | OperationPhase::ReadinessScheduled
+                        ) || (record.phase == OperationPhase::Terminal
+                            && record.disposition.is_terminal()));
+                    if legacy_post_publication_without_evidence {
+                        self.recovery.malformed_count += 1;
+                        self.recovery.attention_required = true;
+                        if record.phase != OperationPhase::Terminal {
+                            self.recovery.unresolved_count += 1;
+                        }
+                        self.records.insert(record.operation_id, record);
+                        continue;
+                    }
+                    let published_valid = if record.phase.is_pre_publication() {
+                        record.published.is_none()
+                    } else if record.phase.is_post_publication() {
+                        validate_record_publication(&record).is_ok()
+                    } else {
+                        record
+                            .published
+                            .as_ref()
+                            .map(|_| validate_record_publication(&record).is_ok())
+                            .unwrap_or(true)
+                    };
+                    if !published_valid {
                         self.recovery.malformed_count += 1;
                         self.recovery.attention_required = true;
                         self.retained
@@ -1792,6 +2001,16 @@ impl OperationJournalCoordinator {
         }
     }
 
+    /// Advance a staged waveform restore only with typed, validated publication evidence.
+    /// This records evidence; it deliberately does not perform the publication primitive.
+    pub(crate) fn guarded_publish(
+        &mut self,
+        operation_id: Uuid,
+        published: FilesystemPublishedWaveformRestore,
+    ) -> Result<(), JournalError> {
+        self.store.guarded_publish(operation_id, published)
+    }
+
     /// Advance phase/disposition through one atomic durable record replacement.
     pub(crate) fn update(
         &mut self,
@@ -2400,6 +2619,254 @@ mod tests {
     }
 
     #[test]
+    fn guarded_publication_requires_copy_validated_staging() {
+        let (_journal_dir, _files, mut journal, id, _backup, _target, _staging) =
+            prepared_restore_fixture();
+        let prepared = journal.record(id).unwrap().prepared.clone().unwrap();
+        let error = journal
+            .guarded_publish(
+                id,
+                super::super::publication::test_publication_evidence(
+                    &prepared,
+                    &FilesystemStagedWaveformRestore {
+                        participant: FilesystemStagedParticipant::CopyValidated {
+                            staging: prepared.target.clone(),
+                            evidence: prepared.evidence.backup.clone(),
+                        },
+                    },
+                    None,
+                ),
+            )
+            .unwrap_err();
+        assert!(matches!(error, JournalError::IllegalTransition { .. }));
+        assert_eq!(journal.record(id).unwrap().phase, OperationPhase::Prepared);
+    }
+
+    #[test]
+    fn guarded_publication_rejects_drifted_evidence_without_mutating_the_record() {
+        let (_journal_dir, _files, mut journal, id, _backup, _target, _staging) =
+            prepared_restore_fixture();
+        journal.stage_admitted_bounded_waveform_restore(id).unwrap();
+        let record = journal.record(id).unwrap().clone();
+        let prepared = record.prepared.as_ref().unwrap();
+        let staged = record.staged.as_ref().unwrap();
+        for drift in [
+            super::super::publication::TestPublicationDrift::UnqualifiedReplacement,
+            super::super::publication::TestPublicationDrift::ExpectedIdentity,
+            super::super::publication::TestPublicationDrift::DisplacedIdentity,
+            super::super::publication::TestPublicationDrift::ReopenedIdentity,
+            super::super::publication::TestPublicationDrift::ReopenedContent,
+            super::super::publication::TestPublicationDrift::Visibility,
+            super::super::publication::TestPublicationDrift::Atomicity,
+            super::super::publication::TestPublicationDrift::Synchronization,
+        ] {
+            let error = journal
+                .guarded_publish(
+                    id,
+                    super::super::publication::test_publication_evidence(
+                        prepared,
+                        staged,
+                        Some(drift),
+                    ),
+                )
+                .unwrap_err();
+            assert!(matches!(
+                error,
+                JournalError::InvalidPublicationEvidence { .. }
+            ));
+            assert_eq!(
+                journal.record(id).unwrap().phase,
+                OperationPhase::FilesystemStaged
+            );
+        }
+    }
+
+    #[test]
+    fn guarded_publication_rejects_metadata_only_and_unverifiable_content() {
+        for drift in [
+            super::super::publication::TestPublicationDrift::MetadataOnly,
+            super::super::publication::TestPublicationDrift::Unverifiable,
+        ] {
+            let (_journal_dir, _files, mut journal, id, _backup, _target, _staging) =
+                prepared_restore_fixture();
+            journal.stage_admitted_bounded_waveform_restore(id).unwrap();
+            let record = journal.store.records.get_mut(&id).unwrap();
+            let staged_len = match &record.staged.as_ref().unwrap().participant {
+                FilesystemStagedParticipant::CopyValidated { staging, .. } => staging.identity.len,
+            };
+            let evidence = match drift {
+                super::super::publication::TestPublicationDrift::MetadataOnly => {
+                    PreparedFileEvidence::Metadata {
+                        len: staged_len,
+                        modified_ns: None,
+                        is_dir: false,
+                    }
+                }
+                super::super::publication::TestPublicationDrift::Unverifiable => {
+                    PreparedFileEvidence::Unverifiable
+                }
+                _ => unreachable!(),
+            };
+            record.prepared.as_mut().unwrap().evidence.backup = evidence.clone();
+            let FilesystemStagedParticipant::CopyValidated {
+                evidence: staged_evidence,
+                ..
+            } = &mut record.staged.as_mut().unwrap().participant;
+            *staged_evidence = evidence;
+            let record = journal.record(id).unwrap().clone();
+            let publication = super::super::publication::test_publication_evidence(
+                record.prepared.as_ref().unwrap(),
+                record.staged.as_ref().unwrap(),
+                Some(drift),
+            );
+
+            let error = journal.guarded_publish(id, publication).unwrap_err();
+            assert!(matches!(
+                error,
+                JournalError::InvalidPublicationEvidence { .. }
+            ));
+            assert_eq!(
+                journal.record(id).unwrap().phase,
+                OperationPhase::FilesystemStaged
+            );
+        }
+    }
+
+    #[test]
+    fn guarded_publication_is_durable_idempotent_and_rejects_conflicting_replay() {
+        let (journal_dir, _files, mut journal, id, _backup, _target, _staging) =
+            prepared_restore_fixture();
+        journal.stage_admitted_bounded_waveform_restore(id).unwrap();
+        let record = journal.record(id).unwrap().clone();
+        let publication = super::super::publication::test_publication_evidence(
+            record.prepared.as_ref().unwrap(),
+            record.staged.as_ref().unwrap(),
+            None,
+        );
+        journal.guarded_publish(id, publication.clone()).unwrap();
+        journal.guarded_publish(id, publication.clone()).unwrap();
+        assert_eq!(
+            journal.record(id).unwrap().phase,
+            OperationPhase::FilesystemPublished
+        );
+        assert_eq!(
+            journal.record(id).unwrap().published.as_ref(),
+            Some(&publication)
+        );
+        drop(journal);
+
+        let mut reopened =
+            OperationJournalCoordinator::open(journal_dir.path().to_path_buf()).unwrap();
+        assert_eq!(
+            reopened.record(id).unwrap().published.as_ref(),
+            Some(&publication)
+        );
+        let record = reopened.record(id).unwrap().clone();
+        let conflicting = super::super::publication::test_publication_evidence(
+            record.prepared.as_ref().unwrap(),
+            record.staged.as_ref().unwrap(),
+            Some(super::super::publication::TestPublicationDrift::ReopenedIdentity),
+        );
+        assert!(matches!(
+            reopened.guarded_publish(id, conflicting),
+            Err(JournalError::InvalidPublicationEvidence { .. })
+        ));
+        assert_eq!(
+            reopened.record(id).unwrap().phase,
+            OperationPhase::FilesystemPublished
+        );
+    }
+
+    #[test]
+    fn generic_update_cannot_bypass_the_publication_guard() {
+        let (_journal_dir, _files, mut journal, id, _backup, _target, _staging) =
+            prepared_restore_fixture();
+        journal.stage_admitted_bounded_waveform_restore(id).unwrap();
+        assert!(matches!(
+            journal.update(
+                id,
+                OperationPhase::SourceReconciled,
+                OperationDisposition::None
+            ),
+            Err(JournalError::InvalidPublicationEvidence { .. })
+        ));
+        assert_eq!(
+            journal.record(id).unwrap().phase,
+            OperationPhase::FilesystemStaged
+        );
+        let record = journal.record(id).unwrap().clone();
+        let publication = super::super::publication::test_publication_evidence(
+            record.prepared.as_ref().unwrap(),
+            record.staged.as_ref().unwrap(),
+            None,
+        );
+        journal.guarded_publish(id, publication).unwrap();
+        assert!(matches!(
+            journal.update(
+                id,
+                OperationPhase::FilesystemPublished,
+                OperationDisposition::None
+            ),
+            Err(JournalError::IllegalTransition { .. })
+        ));
+    }
+
+    #[test]
+    fn publication_evidence_survives_source_reconciliation_and_restart() {
+        let (journal_dir, _files, mut journal, id, _backup, _target, _staging) =
+            prepared_restore_fixture();
+        journal.stage_admitted_bounded_waveform_restore(id).unwrap();
+        let record = journal.record(id).unwrap().clone();
+        let publication = super::super::publication::test_publication_evidence(
+            record.prepared.as_ref().unwrap(),
+            record.staged.as_ref().unwrap(),
+            None,
+        );
+        journal.guarded_publish(id, publication.clone()).unwrap();
+        journal
+            .update(
+                id,
+                OperationPhase::SourceReconciled,
+                OperationDisposition::None,
+            )
+            .unwrap();
+        drop(journal);
+
+        let reopened = OperationJournalCoordinator::open(journal_dir.path().to_path_buf())
+            .expect("reopen source-reconciled journal");
+        let record = reopened.record(id).expect("published record after restart");
+        assert_eq!(record.phase, OperationPhase::SourceReconciled);
+        assert_eq!(record.published.as_ref(), Some(&publication));
+        assert_eq!(reopened.recovery_summary().malformed_count, 0);
+    }
+
+    #[test]
+    fn prepublication_record_with_publication_evidence_is_retained_verbatim() {
+        let (journal_dir, _files, mut journal, id, _backup, _target, _staging) =
+            prepared_restore_fixture();
+        journal.stage_admitted_bounded_waveform_restore(id).unwrap();
+        let record = journal.record(id).unwrap().clone();
+        let publication = super::super::publication::test_publication_evidence(
+            record.prepared.as_ref().unwrap(),
+            record.staged.as_ref().unwrap(),
+            None,
+        );
+        journal.guarded_publish(id, publication).unwrap();
+        let mut invalid = journal.record(id).unwrap().clone();
+        invalid.phase = OperationPhase::FilesystemStaged;
+        let path = journal_dir.path().join(format!("{id}.json"));
+        let bytes = serde_json::to_vec(&invalid).unwrap();
+        fs::write(&path, &bytes).unwrap();
+        drop(journal);
+
+        let reopened = OperationJournalCoordinator::open(journal_dir.path().to_path_buf())
+            .expect("reopen invalid pre-publication journal");
+        assert_eq!(reopened.recovery_summary().malformed_count, 1);
+        assert!(reopened.record(id).is_none());
+        assert_eq!(fs::read(path).unwrap(), bytes);
+    }
+
+    #[test]
     fn durable_staging_missing_after_restart_requires_audit() {
         let (journal_dir, _files, mut journal, id, _backup, _target, staging) =
             prepared_restore_fixture();
@@ -2752,6 +3219,99 @@ mod tests {
         assert_eq!(journal.recovery_summary().malformed_count, 1);
         assert!(journal.recovery_summary().attention_required);
         assert!(journal.record(record.operation_id).is_none());
+        assert_eq!(fs::read(path).unwrap(), bytes);
+    }
+
+    #[test]
+    fn published_record_without_evidence_is_retained_and_attention_required() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let mut record = OperationRecord::new(intent(), Value::Null);
+        record.phase = OperationPhase::FilesystemPublished;
+        let path = dir.path().join(format!("{}.json", record.operation_id));
+        let bytes = serde_json::to_vec(&record).unwrap();
+        fs::write(&path, &bytes).unwrap();
+        let journal = OperationJournalCoordinator::open(dir.path().to_path_buf()).unwrap();
+        let summary = journal.recovery_summary();
+        assert_eq!(summary.malformed_count, 1);
+        assert_eq!(summary.unresolved_count, 1);
+        assert!(summary.attention_required);
+        let retained = journal.record(record.operation_id).unwrap();
+        assert_eq!(retained.phase, OperationPhase::FilesystemPublished);
+        assert!(retained.published.is_none());
+        assert!(journal.store.capacity_blocked());
+        assert_eq!(fs::read(path).unwrap(), bytes);
+    }
+
+    #[test]
+    fn legacy_source_reconciled_record_without_publication_evidence_is_accessible() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let mut record = OperationRecord::new(intent(), Value::Null);
+        record.phase = OperationPhase::SourceReconciled;
+        let path = dir.path().join(format!("{}.json", record.operation_id));
+        let mut value = serde_json::to_value(&record).unwrap();
+        value
+            .as_object_mut()
+            .unwrap()
+            .remove("published")
+            .expect("published field in current serialization");
+        let bytes = serde_json::to_vec(&value).unwrap();
+        fs::write(&path, &bytes).unwrap();
+
+        let mut journal = OperationJournalCoordinator::open(dir.path().to_path_buf()).unwrap();
+        let summary = journal.recovery_summary();
+        let retained = journal.record(record.operation_id).unwrap();
+        assert_eq!(retained.phase, OperationPhase::SourceReconciled);
+        assert!(retained.published.is_none());
+        assert_eq!(summary.malformed_count, 1);
+        assert_eq!(summary.unresolved_count, 1);
+        assert!(summary.attention_required);
+        assert!(journal.store.capacity_blocked());
+        assert!(matches!(
+            journal.update(
+                record.operation_id,
+                OperationPhase::Terminal,
+                OperationDisposition::CancelledBeforePublish,
+            ),
+            Err(JournalError::InvalidPublicationEvidence { .. })
+        ));
+        assert_eq!(fs::read(path).unwrap(), bytes);
+    }
+
+    #[test]
+    fn legacy_filesystem_published_record_without_publication_evidence_is_accessible() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let mut record = OperationRecord::new(intent(), Value::Null);
+        record.phase = OperationPhase::FilesystemPublished;
+        let path = dir.path().join(format!("{}.json", record.operation_id));
+        let mut value = serde_json::to_value(&record).unwrap();
+        value
+            .as_object_mut()
+            .unwrap()
+            .remove("published")
+            .expect("published field in current serialization");
+        let bytes = serde_json::to_vec(&value).unwrap();
+        fs::write(&path, &bytes).unwrap();
+
+        let mut journal = OperationJournalCoordinator::open(dir.path().to_path_buf()).unwrap();
+        let summary = journal.recovery_summary();
+        let retained = journal.record(record.operation_id).unwrap();
+        assert_eq!(retained.phase, OperationPhase::FilesystemPublished);
+        assert!(retained.published.is_none());
+        assert_eq!(summary.malformed_count, 1);
+        assert_eq!(summary.unresolved_count, 1);
+        assert!(summary.attention_required);
+        assert!(journal.store.capacity_blocked());
+        assert!(matches!(
+            journal.update(
+                record.operation_id,
+                OperationPhase::Terminal,
+                OperationDisposition::CancelledBeforePublish,
+            ),
+            Err(JournalError::InvalidPublicationEvidence { .. })
+        ));
         assert_eq!(fs::read(path).unwrap(), bytes);
     }
 
