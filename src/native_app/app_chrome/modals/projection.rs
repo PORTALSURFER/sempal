@@ -40,7 +40,9 @@ impl TransactionListRowProjection {
         let action_summary = transaction_action_summary(&item);
         let order_label = match item.state {
             TransactionListState::Active => String::from("Draft"),
-            TransactionListState::Undoable | TransactionListState::Redoable => {
+            TransactionListState::Unavailable
+            | TransactionListState::Undoable
+            | TransactionListState::Redoable => {
                 format!("#{}", item.id)
             }
         };

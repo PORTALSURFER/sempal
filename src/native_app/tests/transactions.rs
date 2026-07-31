@@ -1,8 +1,11 @@
 use super::gui_state_for_span_tests;
+use crate::native_app::app::{OperationJournalRestoreCompletion, OperationJournalRestoreError};
 use crate::native_app::sample_library::committed_file_mutations::PreparedCommittedFileMutationChange;
+use crate::native_app::transaction_history::operation_journal::FilesystemStageOutcome;
 use crate::native_app::transaction_history::{
     HistoryFileAction, HistoryFileIoDirection, HistoryFileIoOutput, HistoryFileIoResult,
 };
+use crate::native_app::waveform_edits::waveform_restore_action_for_capacity_tests;
 use crate::native_app::{
     test_support::state::{GuiMessage, WaveformInteraction},
     waveform::{
@@ -11,6 +14,7 @@ use crate::native_app::{
     },
 };
 use radiant::prelude::{self as ui, IntoView};
+use uuid::Uuid;
 use wavecrate::selection::SelectionRange;
 
 #[test]
@@ -51,6 +55,253 @@ fn undo_file_history_without_source_restores_stack_and_clears_in_flight() {
     assert!(state.transactions.history.can_undo());
     assert!(!state.transactions.history.file_io_in_flight());
     assert!(state.transactions.pending_history_commit.is_none());
+}
+
+fn begin_owner_restore_for_tests(
+    state: &mut crate::native_app::app::NativeAppState,
+) -> crate::native_app::transaction_history::HistoryFileIoCommand {
+    let action = waveform_restore_action_for_capacity_tests(
+        "/tmp/before.wav".into(),
+        "/tmp/target.wav".into(),
+        false,
+    );
+    state.register_file_transaction_action("Owner restore", action.clone(), action);
+    state
+        .transactions
+        .history
+        .begin_file_io(HistoryFileIoDirection::Undo, Some(7), 41)
+        .expect("begin owner restore")
+        .expect("owner restore command")
+}
+
+#[test]
+fn owner_staging_outcomes_retain_history_and_operation_identity() {
+    let outcomes = [
+        FilesystemStageOutcome::FilesystemStaged(Uuid::new_v4()),
+        FilesystemStageOutcome::RetryPending {
+            operation_id: Uuid::new_v4(),
+            reason: String::from("staging collision"),
+        },
+        FilesystemStageOutcome::AuditRequired {
+            operation_id: Uuid::new_v4(),
+            reason: String::from("checkpoint mismatch"),
+        },
+        FilesystemStageOutcome::JournalWriteFailed {
+            operation_id: Uuid::new_v4(),
+            reason: String::from("journal sync failed"),
+        },
+    ];
+    for outcome in outcomes {
+        let mut state = gui_state_for_span_tests();
+        let command = begin_owner_restore_for_tests(&mut state);
+        let operation_id = match &outcome {
+            FilesystemStageOutcome::FilesystemStaged(operation_id)
+            | FilesystemStageOutcome::RetryPending { operation_id, .. }
+            | FilesystemStageOutcome::AuditRequired { operation_id, .. }
+            | FilesystemStageOutcome::JournalWriteFailed { operation_id, .. } => *operation_id,
+        };
+        state.finish_operation_journal_restore(OperationJournalRestoreCompletion {
+            execution_id: command.execution_id,
+            transaction_id: command.transaction_id,
+            direction: command.direction,
+            through_target: command.through_target,
+            label: command.label,
+            result: Ok(outcome),
+        });
+        let pending = state
+            .transactions
+            .pending_history_owner_staging
+            .as_ref()
+            .expect("owner staging remains pending");
+        assert_eq!(pending.operation_id, operation_id);
+        assert_eq!(pending.execution_id, 41);
+        assert_eq!(pending.through_target, Some(7));
+        assert!(state.transactions.history.file_io_in_flight());
+        assert!(state.transactions.pending_history_commit.is_none());
+        assert!(!state.transactions.history.can_undo());
+        assert!(!state.transactions.history.can_redo());
+        assert_eq!(state.transactions.history_through_count, 0);
+        assert!(state.ui.status.sample.contains(&operation_id.to_string()));
+    }
+}
+
+#[test]
+fn owner_staging_pre_intent_failure_restores_original_stack() {
+    let mut state = gui_state_for_span_tests();
+    let command = begin_owner_restore_for_tests(&mut state);
+    state.finish_operation_journal_restore(OperationJournalRestoreCompletion {
+        execution_id: command.execution_id,
+        transaction_id: command.transaction_id,
+        direction: command.direction,
+        through_target: command.through_target,
+        label: command.label.clone(),
+        result: Err(OperationJournalRestoreError::RejectedBeforeIntent(
+            crate::native_app::transaction_history::RejectedBeforeIntent::InvalidShape,
+        )),
+    });
+    assert!(!state.transactions.history.file_io_in_flight());
+    assert!(state.transactions.history.can_undo());
+    assert!(state.transactions.pending_history_owner_staging.is_none());
+    let status = state.ui.status.sample.clone();
+    assert!(status.contains("not started"));
+
+    state.finish_operation_journal_restore(OperationJournalRestoreCompletion {
+        execution_id: command.execution_id,
+        transaction_id: command.transaction_id,
+        direction: command.direction,
+        through_target: command.through_target,
+        label: String::from("duplicate pre-intent completion"),
+        result: Err(OperationJournalRestoreError::Closed),
+    });
+    assert_eq!(state.ui.status.sample, status);
+    assert!(state.transactions.history.can_undo());
+}
+
+#[test]
+fn owner_staging_ambiguous_journal_error_retains_history_for_recovery() {
+    let mut state = gui_state_for_span_tests();
+    let command = begin_owner_restore_for_tests(&mut state);
+    state.finish_operation_journal_restore(OperationJournalRestoreCompletion {
+        execution_id: command.execution_id,
+        transaction_id: command.transaction_id,
+        direction: command.direction,
+        through_target: command.through_target,
+        label: command.label,
+        result: Err(OperationJournalRestoreError::Journal(String::from(
+            "journal sync failed after intent",
+        ))),
+    });
+
+    assert!(state.transactions.history.file_io_in_flight());
+    assert!(!state.transactions.history.can_undo());
+    assert!(state.transactions.pending_history_owner_staging.is_none());
+    assert!(state.ui.status.sample.contains("ambiguous"));
+    assert!(state.ui.status.sample.contains("recovery"));
+    assert!(state.ui.status.sample.contains("in flight"));
+}
+
+#[test]
+fn duplicate_owner_staging_completion_does_not_replace_pending_outcome() {
+    let mut state = gui_state_for_span_tests();
+    let command = begin_owner_restore_for_tests(&mut state);
+    let first_operation_id = Uuid::new_v4();
+    state.finish_operation_journal_restore(OperationJournalRestoreCompletion {
+        execution_id: command.execution_id,
+        transaction_id: command.transaction_id,
+        direction: command.direction,
+        through_target: command.through_target,
+        label: command.label.clone(),
+        result: Ok(FilesystemStageOutcome::FilesystemStaged(first_operation_id)),
+    });
+    let first_status = state.ui.status.sample.clone();
+    let replacement_operation_id = Uuid::new_v4();
+    state.finish_operation_journal_restore(OperationJournalRestoreCompletion {
+        execution_id: command.execution_id,
+        transaction_id: command.transaction_id,
+        direction: command.direction,
+        through_target: command.through_target,
+        label: String::from("duplicate completion"),
+        result: Ok(FilesystemStageOutcome::RetryPending {
+            operation_id: replacement_operation_id,
+            reason: String::from("replacement must be ignored"),
+        }),
+    });
+
+    let pending = state
+        .transactions
+        .pending_history_owner_staging
+        .as_ref()
+        .expect("first owner staging remains pending");
+    assert_eq!(pending.operation_id, first_operation_id);
+    assert!(matches!(
+        &pending.outcome,
+        FilesystemStageOutcome::FilesystemStaged(operation_id)
+            if *operation_id == first_operation_id
+    ));
+    assert_eq!(state.ui.status.sample, first_status);
+    assert_ne!(pending.operation_id, replacement_operation_id);
+}
+
+#[test]
+fn closed_owner_completion_fence_ignores_duplicate_unavailable_result() {
+    let mut state = gui_state_for_span_tests();
+    let command = begin_owner_restore_for_tests(&mut state);
+    state.finish_operation_journal_restore(OperationJournalRestoreCompletion {
+        execution_id: command.execution_id,
+        transaction_id: command.transaction_id,
+        direction: command.direction,
+        through_target: command.through_target,
+        label: command.label.clone(),
+        result: Err(OperationJournalRestoreError::Closed),
+    });
+    let status = state.ui.status.sample.clone();
+
+    state.finish_operation_journal_restore(OperationJournalRestoreCompletion {
+        execution_id: command.execution_id,
+        transaction_id: command.transaction_id,
+        direction: command.direction,
+        through_target: command.through_target,
+        label: String::from("duplicate unavailable completion"),
+        result: Err(OperationJournalRestoreError::Unavailable(String::from(
+            "late unavailable result",
+        ))),
+    });
+
+    assert_eq!(state.ui.status.sample, status);
+    assert!(!state.transactions.history.file_io_in_flight());
+    assert!(state.transactions.history.can_undo());
+}
+
+#[test]
+fn owner_route_enqueues_background_waiter_without_ui_block() {
+    let mut state = gui_state_for_span_tests();
+    let command = begin_owner_restore_for_tests(&mut state);
+    let mut context = ui::UiUpdateContext::default();
+    state.start_history_file_io(command, &mut context);
+    assert!(!context.into_command().is_empty());
+    assert!(state.transactions.history.file_io_in_flight());
+}
+
+#[test]
+fn stale_owner_staging_completion_preserves_in_flight_transaction() {
+    let mut state = gui_state_for_span_tests();
+    let command = begin_owner_restore_for_tests(&mut state);
+    state.finish_operation_journal_restore(OperationJournalRestoreCompletion {
+        execution_id: command.execution_id + 1,
+        transaction_id: command.transaction_id,
+        direction: command.direction,
+        through_target: command.through_target,
+        label: command.label,
+        result: Ok(FilesystemStageOutcome::FilesystemStaged(Uuid::new_v4())),
+    });
+    assert!(state.transactions.history.file_io_in_flight());
+    assert!(state.transactions.pending_history_owner_staging.is_none());
+    assert!(state.ui.status.sample.contains("Stale"));
+}
+
+#[test]
+fn owner_staging_queue_failure_restores_original_stack_without_ui_wait() {
+    let mut state = gui_state_for_span_tests();
+    for _ in 0..32 {
+        state
+            .background
+            .operation_journal
+            .admit(
+                crate::native_app::transaction_history::operation_journal::OperationIntent {
+                    actor: crate::native_app::transaction_history::operation_journal::OperationActor::User,
+                    kind: crate::native_app::transaction_history::operation_journal::OperationKind::FileHistory,
+                    label: String::from("queue fill"),
+                },
+                serde_json::Value::Null,
+            )
+            .expect("fill disabled owner queue");
+    }
+    let command = begin_owner_restore_for_tests(&mut state);
+    let mut context = ui::UiUpdateContext::default();
+    state.start_history_file_io(command, &mut context);
+    assert!(!state.transactions.history.file_io_in_flight());
+    assert!(state.transactions.history.can_undo());
+    assert!(state.ui.status.sample.contains("queue failed"));
 }
 
 #[test]

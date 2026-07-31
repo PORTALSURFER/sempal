@@ -433,9 +433,11 @@ fn transaction_list_row(row: TransactionListRowProjection) -> ui::View<GuiMessag
 
 fn transaction_list_row_action(row: &TransactionListRowProjection) -> ui::View<GuiMessage> {
     match row.state {
-        TransactionListState::Active => ui::passive_badge(row.state.label().to_string())
-            .style(transaction_list_state_style(row.state))
-            .size(TRANSACTION_LIST_ACTION_WIDTH, 20.0),
+        TransactionListState::Active | TransactionListState::Unavailable => {
+            ui::passive_badge(row.state.label().to_string())
+                .style(transaction_list_state_style(row.state))
+                .size(TRANSACTION_LIST_ACTION_WIDTH, 20.0)
+        }
         TransactionListState::Undoable => ui::button(row.state.label().to_string())
             .message(GuiMessage::UndoTransactionsThrough(row.id))
             .primary()
@@ -451,6 +453,7 @@ fn transaction_list_row_action(row: &TransactionListRowProjection) -> ui::View<G
 fn transaction_list_state_style(state: TransactionListState) -> ui::WidgetStyle {
     match state {
         TransactionListState::Active => ui::WidgetStyle::strong(ui::WidgetTone::Warning),
+        TransactionListState::Unavailable => ui::WidgetStyle::subtle(ui::WidgetTone::Warning),
         TransactionListState::Undoable => ui::WidgetStyle::strong(ui::WidgetTone::Accent),
         TransactionListState::Redoable => ui::WidgetStyle::subtle(ui::WidgetTone::Neutral),
     }

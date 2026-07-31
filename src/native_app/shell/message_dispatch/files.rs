@@ -199,6 +199,9 @@ impl NativeAppState {
             GuiMessage::HistoryFileIoFinished(result) => {
                 self.finish_history_file_io(result, context)
             }
+            GuiMessage::OperationJournalRestoreFinished(result) => {
+                self.finish_operation_journal_restore(result)
+            }
             GuiMessage::NativeAudioDocumentOpenValidated {
                 started_at,
                 validation,
