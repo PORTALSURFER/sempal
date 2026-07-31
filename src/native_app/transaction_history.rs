@@ -6,6 +6,7 @@ mod file_io;
 mod generic;
 mod native;
 pub(in crate::native_app) mod operation_journal;
+pub(in crate::native_app) mod publication;
 mod summary;
 
 pub(in crate::native_app) use capacity_gate::RejectedBeforeIntent;
