@@ -14,7 +14,7 @@ resolver = "3"
 
 [workspace.metadata.radiant]
 repository = "https://github.com/PORTALSURFER/radiant.git"
-revision = "82043f13510fb60c4bf0114159d38e43e7df8987"
+revision = "13ae1f524313a5257fee6691679799a1aca99d32"
 path = "../radiant"
 
 [package]

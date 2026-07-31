@@ -184,6 +184,7 @@ pub(in crate::native_app::waveform) fn waveform_signal_surface_view(
         GpuSurfaceCapabilities {
             fast_pointer_move: true,
             coalesce_vertical_wheel: true,
+            coalesce_horizontal_wheel: true,
             runtime_overlays: Default::default(),
         },
     )
