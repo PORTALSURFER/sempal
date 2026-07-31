@@ -9,7 +9,7 @@
 
 use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -204,6 +204,21 @@ pub(crate) struct PreparedWaveformRestore {
     pub(crate) evidence: PreparedRestoreEvidence,
 }
 
+/// The filesystem participant checkpoint recorded after a complete staged copy.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) enum FilesystemStagedParticipant {
+    CopyValidated {
+        staging: PreparedLeafLocator,
+        evidence: PreparedFileEvidence,
+    },
+}
+
+/// Typed evidence proving that the prepared restore has one validated staging participant.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct FilesystemStagedWaveformRestore {
+    pub(crate) participant: FilesystemStagedParticipant,
+}
+
 /// Profile recovery root opened and identity-checked by the journal owner thread.
 #[derive(Clone, Debug)]
 pub(crate) struct RecoveryRootCapability {
@@ -287,6 +302,9 @@ pub(crate) struct OperationRecord {
     /// Typed preparation evidence. Legacy schema-v1 records deserialize with no evidence.
     #[serde(default)]
     pub(crate) prepared: Option<PreparedWaveformRestore>,
+    /// Typed filesystem staging evidence. Legacy records do not contain this checkpoint.
+    #[serde(default)]
+    pub(crate) staged: Option<FilesystemStagedWaveformRestore>,
     /// Creation timestamp in Unix milliseconds.
     pub(crate) created_unix_ms: i64,
     /// Last update timestamp in Unix milliseconds.
@@ -314,6 +332,7 @@ impl OperationRecord {
             payload,
             capacity_plan,
             prepared: None,
+            staged: None,
             created_unix_ms: now,
             updated_unix_ms: now,
         }
@@ -332,6 +351,15 @@ impl OperationRecord {
         updated.phase = OperationPhase::Prepared;
         updated.disposition = OperationDisposition::None;
         updated.prepared = Some(prepared);
+        updated.updated_unix_ms = unix_millis();
+        updated
+    }
+
+    fn with_staged(&self, staged: FilesystemStagedWaveformRestore) -> Self {
+        let mut updated = self.clone();
+        updated.phase = OperationPhase::FilesystemStaged;
+        updated.disposition = OperationDisposition::None;
+        updated.staged = Some(staged);
         updated.updated_unix_ms = unix_millis();
         updated
     }
@@ -401,6 +429,15 @@ pub(crate) enum BoundedAdmissionError {
 pub(crate) enum PreparedOperationOutcome {
     Prepared(Uuid),
     RetryPending { operation_id: Uuid, reason: String },
+    JournalWriteFailed { operation_id: Uuid, reason: String },
+}
+
+/// Result after the prepared restore has attempted destination-local staging.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum FilesystemStageOutcome {
+    FilesystemStaged(Uuid),
+    RetryPending { operation_id: Uuid, reason: String },
+    AuditRequired { operation_id: Uuid, reason: String },
     JournalWriteFailed { operation_id: Uuid, reason: String },
 }
 
@@ -572,6 +609,56 @@ impl OperationJournalStore {
         }
     }
 
+    fn guarded_stage(
+        &mut self,
+        operation_id: Uuid,
+        staged: FilesystemStagedWaveformRestore,
+    ) -> Result<(), JournalError> {
+        let current = self
+            .records
+            .get(&operation_id)
+            .ok_or(JournalError::NotFound(operation_id))?;
+        match current.phase {
+            OperationPhase::Prepared => {
+                let prepared = current
+                    .prepared
+                    .as_ref()
+                    .ok_or(JournalError::MissingPreparedEvidence(operation_id))?;
+                validate_staged_checkpoint(prepared, &staged).map_err(|reason| {
+                    JournalError::Write {
+                        path: self.record_path(operation_id),
+                        source: io::Error::new(io::ErrorKind::InvalidData, reason),
+                    }
+                })?;
+                let updated = current.with_staged(staged);
+                let path = self.record_path(operation_id);
+                atomic_durable_write(&path, &updated)?;
+                self.records.insert(operation_id, updated);
+                self.rebuild_capacity_claims();
+                Ok(())
+            }
+            OperationPhase::FilesystemStaged => {
+                let Some(existing) = current.staged.as_ref() else {
+                    return Err(JournalError::MissingPreparedEvidence(operation_id));
+                };
+                if existing == &staged {
+                    Ok(())
+                } else {
+                    Err(JournalError::IllegalTransition {
+                        operation_id,
+                        from: current.phase,
+                        to: OperationPhase::FilesystemStaged,
+                    })
+                }
+            }
+            phase => Err(JournalError::IllegalTransition {
+                operation_id,
+                from: phase,
+                to: OperationPhase::FilesystemStaged,
+            }),
+        }
+    }
+
     fn rebuild_capacity_claims(&mut self) {
         self.capacity_claims.clear();
         self.capacity_blocked = self.recovery.malformed_count > 0
@@ -705,6 +792,28 @@ impl OperationJournalStore {
                             .push(RetainedRecord::Malformed { path, bytes });
                         continue;
                     }
+                    let staged_valid = match (record.phase, record.staged.as_ref()) {
+                        (OperationPhase::FilesystemStaged, Some(staged)) => {
+                            record.prepared.as_ref().is_some_and(|prepared| {
+                                validate_staged_checkpoint(prepared, staged).is_ok()
+                            })
+                        }
+                        (OperationPhase::FilesystemStaged, None)
+                        | (OperationPhase::IntentDurable | OperationPhase::Prepared, Some(_)) => {
+                            false
+                        }
+                        (_, Some(staged)) => record.prepared.as_ref().is_some_and(|prepared| {
+                            validate_staged_checkpoint(prepared, staged).is_ok()
+                        }),
+                        (_, None) => true,
+                    };
+                    if !staged_valid {
+                        self.recovery.malformed_count += 1;
+                        self.recovery.attention_required = true;
+                        self.retained
+                            .push(RetainedRecord::Malformed { path, bytes });
+                        continue;
+                    }
                     if record.phase != OperationPhase::Terminal || !record.disposition.is_terminal()
                     {
                         self.recovery.unresolved_count += 1;
@@ -824,6 +933,7 @@ fn open_leaf_relative(
             let flags = libc::O_RDONLY
                 | libc::O_CLOEXEC
                 | libc::O_NOFOLLOW
+                | if is_leaf { libc::O_NONBLOCK } else { 0 }
                 | if is_leaf { 0 } else { libc::O_DIRECTORY };
             let fd = unsafe { libc::openat(directory.as_raw_fd(), name.as_ptr(), flags) };
             if fd < 0 {
@@ -846,6 +956,27 @@ fn open_leaf_relative(
     }
     let identity = descriptor_identity(&file)?;
     Ok((file, identity))
+}
+
+#[cfg(unix)]
+fn open_staging_relative(
+    root: &File,
+    relative: &Path,
+    display: &Path,
+) -> Result<(File, PreparedObjectIdentity), String> {
+    open_leaf_relative(root, relative, display)
+}
+
+#[cfg(not(unix))]
+fn open_staging_relative(
+    root: &File,
+    relative: &Path,
+    display: &Path,
+) -> Result<(File, PreparedObjectIdentity), String> {
+    let _ = (root, relative, display);
+    Err(String::from(
+        "existing staging adoption is not verified on this platform",
+    ))
 }
 
 fn verify_relative_absent(root: &File, relative: &Path, display: &Path) -> Result<(), String> {
@@ -899,6 +1030,262 @@ fn verify_relative_absent(root: &File, relative: &Path, display: &Path) -> Resul
     }
 }
 
+fn create_relative_exclusive(root: &File, relative: &Path, display: &Path) -> Result<File, String> {
+    clean_relative_path(relative)?;
+    let mut components = relative.components();
+    let Some(std::path::Component::Normal(component)) = components.next() else {
+        return Err(String::from("locator must contain one normal component"));
+    };
+    if components.next().is_some() {
+        return Err(String::from("locator must be a destination-local leaf"));
+    }
+
+    #[cfg(unix)]
+    {
+        use std::ffi::CString;
+        use std::os::fd::{AsRawFd, FromRawFd};
+
+        let name = CString::new(component.as_encoded_bytes())
+            .map_err(|_| String::from("locator contains NUL"))?;
+        let fd = unsafe {
+            libc::openat(
+                root.as_raw_fd(),
+                name.as_ptr(),
+                libc::O_RDWR | libc::O_CREAT | libc::O_EXCL | libc::O_CLOEXEC | libc::O_NOFOLLOW,
+                0o600,
+            )
+        };
+        if fd < 0 {
+            return Err(format!(
+                "could not create exclusive staging locator at {}: {}",
+                display.display(),
+                io::Error::last_os_error()
+            ));
+        }
+        return Ok(unsafe { File::from_raw_fd(fd) });
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = (root, display);
+        Err(String::from(
+            "exclusive no-follow staging is not verified on this platform",
+        ))
+    }
+}
+
+fn validate_identity(
+    label: &str,
+    expected: &PreparedObjectIdentity,
+    actual: &PreparedObjectIdentity,
+) -> Result<(), String> {
+    if expected == actual {
+        Ok(())
+    } else {
+        Err(format!("{label} identity changed since preparation"))
+    }
+}
+
+fn validate_evidence(
+    label: &str,
+    expected: &PreparedFileEvidence,
+    actual: &PreparedFileEvidence,
+) -> Result<(), String> {
+    let valid = match (expected, actual) {
+        (PreparedFileEvidence::Missing, PreparedFileEvidence::Missing) => true,
+        (
+            PreparedFileEvidence::ContentHash(expected),
+            PreparedFileEvidence::ContentHash(actual),
+        ) => expected == actual,
+        (
+            PreparedFileEvidence::Metadata {
+                len: expected_len,
+                is_dir: expected_is_dir,
+                ..
+            },
+            PreparedFileEvidence::Metadata {
+                len: actual_len,
+                is_dir: actual_is_dir,
+                ..
+            },
+        ) => expected_len == actual_len && expected_is_dir == actual_is_dir,
+        (PreparedFileEvidence::Unverifiable, PreparedFileEvidence::Unverifiable) => true,
+        _ => false,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(format!(
+            "{label} content evidence changed since preparation"
+        ))
+    }
+}
+
+fn validate_staged_checkpoint(
+    prepared: &PreparedWaveformRestore,
+    staged: &FilesystemStagedWaveformRestore,
+) -> Result<(), String> {
+    let FilesystemStagedParticipant::CopyValidated { staging, evidence } = &staged.participant;
+    if staging.relative_path != prepared.staging.relative_path {
+        return Err(String::from(
+            "staged locator does not match prepared staging locator",
+        ));
+    }
+    clean_relative_path(&staging.relative_path)?;
+    if staging.relative_path.components().count() != 1 {
+        return Err(String::from(
+            "staged locator is not a destination-local leaf",
+        ));
+    }
+    if staging.identity.stable_id.is_empty() || staging.identity.len != prepared.backup.identity.len
+    {
+        return Err(String::from(
+            "staged identity does not match prepared backup",
+        ));
+    }
+    validate_staged_evidence(&prepared.evidence.backup, evidence)
+}
+
+fn validate_staged_evidence(
+    backup: &PreparedFileEvidence,
+    staging: &PreparedFileEvidence,
+) -> Result<(), String> {
+    match (backup, staging) {
+        (PreparedFileEvidence::ContentHash(backup), PreparedFileEvidence::ContentHash(staging))
+            if backup == staging =>
+        {
+            Ok(())
+        }
+        (
+            PreparedFileEvidence::Metadata {
+                len: backup_len,
+                is_dir: backup_is_dir,
+                ..
+            },
+            PreparedFileEvidence::Metadata {
+                len: staging_len,
+                is_dir: staging_is_dir,
+                ..
+            },
+        ) if backup_len == staging_len && backup_is_dir == staging_is_dir && !staging_is_dir => {
+            Ok(())
+        }
+        (PreparedFileEvidence::Unverifiable, PreparedFileEvidence::Unverifiable) => Ok(()),
+        _ => Err(String::from(
+            "staged content evidence does not match backup",
+        )),
+    }
+}
+
+struct ReacquiredPreparedRestore {
+    source_root: File,
+    target_root: File,
+    backup_root: File,
+    target: File,
+    backup: File,
+}
+
+fn reacquire_prepared_restore(
+    prepared: &PreparedWaveformRestore,
+) -> Result<ReacquiredPreparedRestore, String> {
+    let (source_root, source_capability) = open_root(&prepared.source_root.path)?;
+    validate_identity(
+        "source root",
+        &prepared.source_root.identity,
+        &source_capability.identity,
+    )?;
+    let (target_root, target_capability) = open_root(&prepared.target_root.path)?;
+    validate_identity(
+        "target root",
+        &prepared.target_root.identity,
+        &target_capability.identity,
+    )?;
+    let (backup_root, backup_capability) = open_root(&prepared.backup_root.path)?;
+    validate_identity(
+        "backup root",
+        &prepared.backup_root.identity,
+        &backup_capability.identity,
+    )?;
+    let target_display = prepared
+        .target_root
+        .path
+        .join(&prepared.target.relative_path);
+    let (target, target_identity) = open_leaf_relative(
+        &target_root,
+        &prepared.target.relative_path,
+        &target_display,
+    )?;
+    validate_identity("target leaf", &prepared.target.identity, &target_identity)?;
+    validate_evidence(
+        "target leaf",
+        &prepared.evidence.target,
+        &prepared_file_evidence(&target),
+    )?;
+    let backup_display = prepared
+        .backup_root
+        .path
+        .join(&prepared.backup.relative_path);
+    let (backup, backup_identity) = open_leaf_relative(
+        &backup_root,
+        &prepared.backup.relative_path,
+        &backup_display,
+    )?;
+    validate_identity("backup leaf", &prepared.backup.identity, &backup_identity)?;
+    validate_evidence(
+        "backup leaf",
+        &prepared.evidence.backup,
+        &prepared_file_evidence(&backup),
+    )?;
+    Ok(ReacquiredPreparedRestore {
+        source_root,
+        target_root,
+        backup_root,
+        target,
+        backup,
+    })
+}
+
+fn copy_and_validate(
+    backup: &File,
+    staging: &mut File,
+    prepared_backup_identity: &PreparedObjectIdentity,
+    prepared_evidence: &PreparedFileEvidence,
+) -> Result<(PreparedObjectIdentity, PreparedFileEvidence), String> {
+    staging
+        .seek(SeekFrom::Start(0))
+        .map_err(|error| format!("could not seek staging entry: {error}"))?;
+    let mut source = backup
+        .try_clone()
+        .map_err(|error| format!("could not clone backup descriptor: {error}"))?;
+    source
+        .seek(SeekFrom::Start(0))
+        .map_err(|error| format!("could not seek backup descriptor: {error}"))?;
+    io::copy(&mut source, staging)
+        .map_err(|error| format!("could not copy backup into staging: {error}"))?;
+    staging
+        .sync_all()
+        .map_err(|error| format!("could not flush staging entry: {error}"))?;
+
+    let live_backup_identity = descriptor_identity(backup)?;
+    validate_identity(
+        "backup leaf",
+        prepared_backup_identity,
+        &live_backup_identity,
+    )?;
+    let live_backup_evidence = prepared_file_evidence(backup);
+    validate_evidence("backup leaf", prepared_evidence, &live_backup_evidence)?;
+    staging
+        .seek(SeekFrom::Start(0))
+        .map_err(|error| format!("could not rewind staging entry: {error}"))?;
+    let staged_evidence = prepared_file_evidence(staging);
+    validate_staged_evidence(&live_backup_evidence, &staged_evidence)?;
+    let staged_identity = descriptor_identity(staging)?;
+    if staged_identity.len != backup.metadata().map_err(|error| error.to_string())?.len() {
+        return Err(String::from("staging length does not match backup"));
+    }
+    Ok((staged_identity, staged_evidence))
+}
+
 fn infer_root(path: &Path, relative: &Path) -> Result<PathBuf, String> {
     clean_relative_path(relative)?;
     let mut root = path.to_path_buf();
@@ -927,6 +1314,9 @@ fn prepared_file_evidence(file: &File) -> PreparedFileEvidence {
             Ok(clone) => clone,
             Err(_) => return PreparedFileEvidence::Unverifiable,
         };
+        if clone.seek(SeekFrom::Start(0)).is_err() {
+            return PreparedFileEvidence::Unverifiable;
+        }
         let mut bytes = Vec::with_capacity(metadata.len() as usize);
         if clone.read_to_end(&mut bytes).is_ok() {
             return PreparedFileEvidence::ContentHash(*blake3::hash(&bytes).as_bytes());
@@ -1169,6 +1559,233 @@ impl OperationJournalCoordinator {
         match self.store.guarded_prepare(operation_id, prepared) {
             Ok(()) => Ok(PreparedOperationOutcome::Prepared(operation_id)),
             Err(error) => Ok(PreparedOperationOutcome::JournalWriteFailed {
+                operation_id,
+                reason: error.to_string(),
+            }),
+        }
+    }
+
+    /// Copy one prepared restore into its destination-local staging leaf and durably record the
+    /// `CopyValidated` participant checkpoint. This deliberately stops before final replacement.
+    pub(crate) fn stage_admitted_bounded_waveform_restore(
+        &mut self,
+        operation_id: Uuid,
+    ) -> Result<FilesystemStageOutcome, JournalError> {
+        let record = self
+            .store
+            .record(operation_id)
+            .ok_or(JournalError::NotFound(operation_id))?;
+        if !matches!(
+            record.phase,
+            OperationPhase::Prepared | OperationPhase::FilesystemStaged
+        ) {
+            return Err(JournalError::IllegalTransition {
+                operation_id,
+                from: record.phase,
+                to: OperationPhase::FilesystemStaged,
+            });
+        }
+        let phase = record.phase;
+        let durable_staged = if phase == OperationPhase::FilesystemStaged {
+            Some(
+                record
+                    .staged
+                    .clone()
+                    .ok_or(JournalError::MissingPreparedEvidence(operation_id))?,
+            )
+        } else {
+            None
+        };
+        let prepared = record
+            .prepared
+            .clone()
+            .ok_or(JournalError::MissingPreparedEvidence(operation_id))?;
+
+        #[cfg(not(unix))]
+        {
+            return self.stage_retry_or_audit(
+                operation_id,
+                phase,
+                String::from(
+                    "descriptor-relative no-follow staging is unavailable on this platform",
+                ),
+            );
+        }
+
+        let reacquired = match reacquire_prepared_restore(&prepared) {
+            Ok(reacquired) => reacquired,
+            Err(reason) => {
+                return self.stage_retry_or_audit(operation_id, phase, reason);
+            }
+        };
+        let staging_display = prepared
+            .target_root
+            .path
+            .join(&prepared.staging.relative_path);
+
+        // A staged entry may have survived a crash or a failed copy. It is never replaced. A
+        // complete, content-verified entry may be adopted by recording CopyValidated; anything
+        // else remains untouched and retryable/auditable.
+        let existing = match open_staging_relative(
+            &reacquired.target_root,
+            &prepared.staging.relative_path,
+            &staging_display,
+        ) {
+            Ok((staging, identity)) => {
+                let evidence = prepared_file_evidence(&staging);
+                if let Some(durable_staged) = durable_staged.as_ref() {
+                    let FilesystemStagedParticipant::CopyValidated {
+                        staging: expected_staging,
+                        evidence: expected_evidence,
+                    } = &durable_staged.participant;
+                    if expected_staging.relative_path != prepared.staging.relative_path
+                        || expected_staging.identity != identity
+                        || validate_evidence("staging", expected_evidence, &evidence).is_err()
+                    {
+                        return self.stage_retry_or_audit(
+                            operation_id,
+                            phase,
+                            format!(
+                                "durable staging checkpoint does not match live entry at {staging_display:?}"
+                            ),
+                        );
+                    }
+                    return Ok(FilesystemStageOutcome::FilesystemStaged(operation_id));
+                }
+                if !matches!(
+                    &prepared.evidence.backup,
+                    PreparedFileEvidence::ContentHash(_)
+                ) {
+                    return self.stage_retry_or_audit(
+                        operation_id,
+                        phase,
+                        format!(
+                            "occupied staging cannot be adopted without exact backup content evidence at {staging_display:?}"
+                        ),
+                    );
+                }
+                if let Err(error) = staging.sync_all() {
+                    return self.stage_retry_or_audit(
+                        operation_id,
+                        phase,
+                        format!("could not synchronize adopted staging entry: {error}"),
+                    );
+                }
+                let backup_len = match reacquired.backup.metadata() {
+                    Ok(metadata) => metadata.len(),
+                    Err(error) => {
+                        return self.stage_retry_or_audit(
+                            operation_id,
+                            phase,
+                            format!("could not inspect backup length: {error}"),
+                        );
+                    }
+                };
+                if identity.len != backup_len
+                    || validate_staged_evidence(&prepared.evidence.backup, &evidence).is_err()
+                {
+                    return self.stage_retry_or_audit(
+                        operation_id,
+                        phase,
+                        format!("staging entry is occupied and does not match {staging_display:?}"),
+                    );
+                }
+                Some((staging, identity, evidence))
+            }
+            Err(_) => {
+                if durable_staged.is_some() {
+                    return self.stage_retry_or_audit(
+                        operation_id,
+                        phase,
+                        format!("durable staging entry is missing or cannot be opened at {staging_display:?}"),
+                    );
+                }
+                if let Err(reason) = verify_relative_absent(
+                    &reacquired.target_root,
+                    &prepared.staging.relative_path,
+                    &staging_display,
+                ) {
+                    return self.stage_retry_or_audit(operation_id, phase, reason);
+                }
+                None
+            }
+        };
+
+        let (staging_identity, staging_evidence) =
+            if let Some((_staging, identity, evidence)) = existing {
+                (identity, evidence)
+            } else {
+                let mut staging = match create_relative_exclusive(
+                    &reacquired.target_root,
+                    &prepared.staging.relative_path,
+                    &staging_display,
+                ) {
+                    Ok(staging) => staging,
+                    Err(reason) => return self.stage_retry_or_audit(operation_id, phase, reason),
+                };
+                match copy_and_validate(
+                    &reacquired.backup,
+                    &mut staging,
+                    &prepared.backup.identity,
+                    &prepared.evidence.backup,
+                ) {
+                    Ok(result) => result,
+                    Err(reason) => return self.stage_retry_or_audit(operation_id, phase, reason),
+                }
+            };
+
+        if let Err(error) = reacquired.target_root.sync_all() {
+            return self.stage_retry_or_audit(
+                operation_id,
+                phase,
+                format!("could not synchronize staging directory: {error}"),
+            );
+        }
+
+        let staged = FilesystemStagedWaveformRestore {
+            participant: FilesystemStagedParticipant::CopyValidated {
+                staging: PreparedLeafLocator {
+                    relative_path: prepared.staging.relative_path.clone(),
+                    identity: staging_identity,
+                },
+                evidence: staging_evidence,
+            },
+        };
+        match self.store.guarded_stage(operation_id, staged) {
+            Ok(()) => Ok(FilesystemStageOutcome::FilesystemStaged(operation_id)),
+            Err(error) => Ok(FilesystemStageOutcome::JournalWriteFailed {
+                operation_id,
+                reason: error.to_string(),
+            }),
+        }
+    }
+
+    fn stage_retry_or_audit(
+        &mut self,
+        operation_id: Uuid,
+        phase: OperationPhase,
+        reason: String,
+    ) -> Result<FilesystemStageOutcome, JournalError> {
+        let disposition = if phase == OperationPhase::FilesystemStaged {
+            OperationDisposition::AuditRequired
+        } else {
+            OperationDisposition::RetryPending
+        };
+        match self.store.update(operation_id, phase, disposition) {
+            Ok(()) => {
+                if disposition == OperationDisposition::AuditRequired {
+                    Ok(FilesystemStageOutcome::AuditRequired {
+                        operation_id,
+                        reason,
+                    })
+                } else {
+                    Ok(FilesystemStageOutcome::RetryPending {
+                        operation_id,
+                        reason,
+                    })
+                }
+            }
+            Err(error) => Ok(FilesystemStageOutcome::JournalWriteFailed {
                 operation_id,
                 reason: error.to_string(),
             }),
@@ -1710,6 +2327,336 @@ mod tests {
             format!(".wavecrate-restore-{id}.stage")
         );
         assert_eq!(reopened.store.capacity_claims().len(), 1);
+    }
+
+    fn prepared_restore_fixture() -> (
+        tempfile::TempDir,
+        tempfile::TempDir,
+        OperationJournalCoordinator,
+        Uuid,
+        PathBuf,
+        PathBuf,
+        PathBuf,
+    ) {
+        let journal_dir = tempfile::tempdir().unwrap();
+        let files = fixture_directory();
+        let backup = files.path().join("before.wav");
+        let target = files.path().join("target.wav");
+        fs::write(&backup, vec![7_u8; 4097]).unwrap();
+        fs::write(&target, vec![0_u8; 4097]).unwrap();
+        let action = crate::native_app::waveform_edits::waveform_restore_action_for_capacity_tests(
+            backup.clone(),
+            target.clone(),
+            false,
+        );
+        let mut journal = OperationJournalCoordinator::open(journal_dir.path().to_path_buf())
+            .expect("open fixture journal");
+        let id = match journal
+            .prepare_bounded_waveform_restore(
+                intent(),
+                Value::Null,
+                super::super::file_io::HistoryFileIoDirection::Undo,
+                std::slice::from_ref(&action),
+            )
+            .expect("prepare restore")
+        {
+            PreparedOperationOutcome::Prepared(id) => id,
+            other => panic!("expected prepared restore, got {other:?}"),
+        };
+        let staging = files.path().join(format!(".wavecrate-restore-{id}.stage"));
+        (journal_dir, files, journal, id, backup, target, staging)
+    }
+
+    #[test]
+    fn prepared_waveform_restore_stages_copy_and_reopens_validated_checkpoint() {
+        let (journal_dir, _files, mut journal, id, backup, _target, staging) =
+            prepared_restore_fixture();
+        let outcome = journal
+            .stage_admitted_bounded_waveform_restore(id)
+            .expect("stage restore");
+        assert_eq!(outcome, FilesystemStageOutcome::FilesystemStaged(id));
+        assert_eq!(fs::read(&staging).unwrap(), fs::read(&backup).unwrap());
+        let record = journal.record(id).unwrap();
+        assert_eq!(record.phase, OperationPhase::FilesystemStaged);
+        assert_eq!(record.disposition, OperationDisposition::None);
+        assert!(matches!(
+            record.staged.as_ref().map(|staged| &staged.participant),
+            Some(FilesystemStagedParticipant::CopyValidated { .. })
+        ));
+        drop(journal);
+        let reopened = OperationJournalCoordinator::open(journal_dir.path().to_path_buf())
+            .expect("reopen staged journal");
+        let reopened_record = reopened.record(id).expect("staged record after restart");
+        assert_eq!(reopened_record.phase, OperationPhase::FilesystemStaged);
+        assert_eq!(reopened_record.disposition, OperationDisposition::None);
+        assert!(matches!(
+            reopened_record
+                .staged
+                .as_ref()
+                .map(|staged| &staged.participant),
+            Some(FilesystemStagedParticipant::CopyValidated { .. })
+        ));
+        assert_eq!(fs::read(&staging).unwrap(), fs::read(&backup).unwrap());
+    }
+
+    #[test]
+    fn durable_staging_missing_after_restart_requires_audit() {
+        let (journal_dir, _files, mut journal, id, _backup, _target, staging) =
+            prepared_restore_fixture();
+        assert_eq!(
+            journal.stage_admitted_bounded_waveform_restore(id).unwrap(),
+            FilesystemStageOutcome::FilesystemStaged(id)
+        );
+        drop(journal);
+        fs::remove_file(&staging).unwrap();
+
+        let mut reopened = OperationJournalCoordinator::open(journal_dir.path().to_path_buf())
+            .expect("reopen staged journal");
+        let outcome = reopened
+            .stage_admitted_bounded_waveform_restore(id)
+            .expect("audit missing staging");
+        assert!(matches!(
+            outcome,
+            FilesystemStageOutcome::AuditRequired { operation_id, .. } if operation_id == id
+        ));
+        let record = reopened.record(id).unwrap();
+        assert_eq!(record.phase, OperationPhase::FilesystemStaged);
+        assert_eq!(record.disposition, OperationDisposition::AuditRequired);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn durable_staging_same_content_replacement_after_restart_requires_audit() {
+        let (journal_dir, files, mut journal, id, _backup, _target, staging) =
+            prepared_restore_fixture();
+        assert_eq!(
+            journal.stage_admitted_bounded_waveform_restore(id).unwrap(),
+            FilesystemStageOutcome::FilesystemStaged(id)
+        );
+        let original = File::open(&staging).unwrap();
+        let original_identity = descriptor_identity(&original).unwrap();
+        let original_bytes = fs::read(&staging).unwrap();
+        drop(journal);
+        fs::remove_file(&staging).unwrap();
+        fs::write(&staging, original_bytes).unwrap();
+        let replacement = File::open(&staging).unwrap();
+        assert_ne!(
+            original_identity,
+            descriptor_identity(&replacement).unwrap()
+        );
+        drop(replacement);
+        drop(original);
+
+        let mut reopened = OperationJournalCoordinator::open(journal_dir.path().to_path_buf())
+            .expect("reopen staged journal");
+        let outcome = reopened
+            .stage_admitted_bounded_waveform_restore(id)
+            .expect("audit replaced staging");
+        assert!(matches!(
+            outcome,
+            FilesystemStageOutcome::AuditRequired { operation_id, .. } if operation_id == id
+        ));
+        assert_eq!(
+            reopened.record(id).unwrap().disposition,
+            OperationDisposition::AuditRequired
+        );
+        assert_eq!(
+            fs::read(&staging).unwrap(),
+            fs::read(files.path().join("before.wav")).unwrap()
+        );
+    }
+
+    #[cfg(not(unix))]
+    #[test]
+    fn staging_adoption_is_fail_closed_without_pathname_fallback() {
+        let directory = tempfile::tempdir().unwrap();
+        let existing = directory.path().join("existing.stage");
+        fs::write(&existing, b"staging").unwrap();
+        let root = File::open(&existing).unwrap();
+        let error =
+            open_staging_relative(&root, Path::new("existing.stage"), &existing).unwrap_err();
+        assert!(error.contains("not verified"));
+    }
+
+    #[test]
+    fn prepared_waveform_restore_rejects_identity_drift_before_staging() {
+        let (_journal_dir, _files, mut journal, id, backup, _target, staging) =
+            prepared_restore_fixture();
+        fs::remove_file(&backup).unwrap();
+        fs::write(&backup, vec![8_u8; 4097]).unwrap();
+
+        let outcome = journal
+            .stage_admitted_bounded_waveform_restore(id)
+            .expect("stage identity drift");
+        assert!(matches!(
+            outcome,
+            FilesystemStageOutcome::RetryPending { operation_id, .. } if operation_id == id
+        ));
+        assert!(!staging.exists());
+        let record = journal.record(id).unwrap();
+        assert_eq!(record.phase, OperationPhase::Prepared);
+        assert_eq!(record.disposition, OperationDisposition::RetryPending);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn copy_and_validate_rejects_large_metadata_only_backup_identity_drift() {
+        let directory = fixture_directory();
+        let backup_path = directory.path().join("large-before.wav");
+        let staging_path = directory.path().join("large-stage");
+        let mut backup = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(&backup_path)
+            .unwrap();
+        backup
+            .set_len(wavecrate::sample_sources::MAX_SOURCE_FILE_EVIDENCE_HASH_BYTES + 1)
+            .unwrap();
+        backup.sync_all().unwrap();
+        let prepared_identity = descriptor_identity(&backup).unwrap();
+        let prepared_evidence = prepared_file_evidence(&backup);
+        assert!(matches!(
+            prepared_evidence,
+            PreparedFileEvidence::Metadata { .. }
+        ));
+
+        backup.seek(SeekFrom::Start(0)).unwrap();
+        backup.write_all(&[8]).unwrap();
+        backup.sync_all().unwrap();
+        let mut staging = File::create(staging_path).unwrap();
+        let error = copy_and_validate(
+            &backup,
+            &mut staging,
+            &prepared_identity,
+            &prepared_evidence,
+        )
+        .unwrap_err();
+
+        assert!(error.contains("backup leaf identity changed since preparation"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_leaf_relative_rejects_fifo_without_blocking() {
+        use std::os::unix::ffi::OsStrExt;
+
+        let directory = fixture_directory();
+        let fifo = directory.path().join("collision");
+        let fifo_name = std::ffi::CString::new(fifo.as_os_str().as_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(fifo_name.as_ptr(), 0o600) }, 0);
+        let root = File::open(directory.path()).unwrap();
+        let relative = PathBuf::from("collision");
+        let display = fifo.clone();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let handle = std::thread::spawn(move || {
+            sender
+                .send(open_leaf_relative(&root, &relative, &display))
+                .unwrap();
+        });
+
+        let first_result = receiver.recv_timeout(std::time::Duration::from_millis(250));
+        let completed_without_writer = first_result.is_ok();
+        let result = match first_result {
+            Ok(result) => result,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                let writer = OpenOptions::new().write(true).open(&fifo).unwrap();
+                drop(writer);
+                receiver
+                    .recv_timeout(std::time::Duration::from_secs(1))
+                    .expect("FIFO leaf open did not complete after FIFO writer unblock")
+            }
+            Err(error) => panic!("FIFO leaf open result channel failed: {error}"),
+        };
+        handle.join().unwrap();
+
+        assert!(
+            completed_without_writer,
+            "FIFO leaf open blocked before regular-file rejection"
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn occupied_staging_entry_is_preserved_during_stage_retry() {
+        let (_journal_dir, _files, mut journal, id, _backup, _target, staging) =
+            prepared_restore_fixture();
+        let occupied = b"unrelated staging payload";
+        fs::write(&staging, occupied).unwrap();
+
+        let outcome = journal
+            .stage_admitted_bounded_waveform_restore(id)
+            .expect("stage collision");
+        assert!(matches!(
+            outcome,
+            FilesystemStageOutcome::RetryPending { operation_id, .. } if operation_id == id
+        ));
+        assert_eq!(fs::read(&staging).unwrap(), occupied);
+        let record = journal.record(id).unwrap();
+        assert_eq!(record.phase, OperationPhase::Prepared);
+        assert_eq!(record.disposition, OperationDisposition::RetryPending);
+        assert!(record.staged.is_none());
+    }
+
+    #[test]
+    fn large_metadata_only_backup_does_not_adopt_same_length_corrupted_staging() {
+        let (_journal_dir, _files, mut journal, id, backup, _target, staging) =
+            prepared_restore_fixture();
+        let metadata_only_len = wavecrate::sample_sources::MAX_SOURCE_FILE_EVIDENCE_HASH_BYTES + 1;
+        let backup_file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&backup)
+            .unwrap();
+        backup_file.set_len(metadata_only_len).unwrap();
+        backup_file.sync_all().unwrap();
+        let prepared_backup_identity = descriptor_identity(&backup_file).unwrap();
+        let prepared_backup_evidence = prepared_file_evidence(&backup_file);
+        assert!(matches!(
+            &prepared_backup_evidence,
+            PreparedFileEvidence::Metadata { .. }
+        ));
+        let prepared = journal
+            .store
+            .records
+            .get_mut(&id)
+            .unwrap()
+            .prepared
+            .as_mut()
+            .unwrap();
+        prepared.backup.identity = prepared_backup_identity;
+        prepared.evidence.backup = prepared_backup_evidence;
+        drop(backup_file);
+
+        let mut staging_file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(&staging)
+            .unwrap();
+        staging_file.set_len(metadata_only_len).unwrap();
+        staging_file.seek(SeekFrom::Start(0)).unwrap();
+        staging_file.write_all(&[8]).unwrap();
+        staging_file.sync_all().unwrap();
+        let staging_len_before = staging_file.metadata().unwrap().len();
+        drop(staging_file);
+
+        let outcome = journal
+            .stage_admitted_bounded_waveform_restore(id)
+            .expect("stage metadata-only collision");
+        assert!(matches!(
+            outcome,
+            FilesystemStageOutcome::RetryPending { operation_id, .. } if operation_id == id
+        ));
+        let mut staging_file = File::open(&staging).unwrap();
+        let mut staging_first_byte = [0_u8; 1];
+        staging_file.read_exact(&mut staging_first_byte).unwrap();
+        assert_eq!(staging_file.metadata().unwrap().len(), staging_len_before);
+        assert_eq!(staging_first_byte, [8]);
+        let record = journal.record(id).unwrap();
+        assert_eq!(record.phase, OperationPhase::Prepared);
+        assert_eq!(record.disposition, OperationDisposition::RetryPending);
+        assert!(record.staged.is_none());
     }
 
     #[test]
