@@ -7,7 +7,7 @@
 
 #![allow(dead_code)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -15,23 +15,23 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use uuid::Uuid;
 
-use super::capacity_gate::{DurableCapacityPlan, RejectedBeforeIntent};
 pub(crate) use super::capacity_gate::VolumeIdentity;
+use super::capacity_gate::{DurableCapacityPlan, RejectedBeforeIntent};
+pub(crate) use super::expected_identity_replacement::ReplacementQualificationAssessment;
 use super::expected_identity_replacement::{
     ExpectedIdentityReplacementAdapter, ExpectedIdentityReplacementOutcome,
     ExpectedIdentityReplacementRequest, ProductionExpectedIdentityReplacementAdapter,
 };
-pub(crate) use super::expected_identity_replacement::ReplacementQualificationAssessment;
 #[cfg(test)]
 pub(crate) use super::expected_identity_replacement::{
     ObservedFilesystemClassification, ReplacementCandidateAssessment,
     ReplacementCandidatePrimitive, ReplacementMissingInvariant, ReplacementPlatformFamily,
     ReplacementQualificationDecision, ReplacementQualificationRetryCondition,
 };
-use super::publication::{FilesystemPublishedWaveformRestore, validate_publication_evidence};
+use super::publication::{validate_publication_evidence, FilesystemPublishedWaveformRestore};
 
 const CURRENT_SCHEMA_VERSION: u32 = 1;
 const MAX_RECORD_BYTES: usize = 1024 * 1024;
@@ -314,7 +314,7 @@ pub(crate) fn open_recovery_root_capability(
 }
 
 /// One complete, bounded durable operation record.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct OperationRecord {
     /// Record schema version.
     pub(crate) schema_version: u32,
@@ -330,25 +330,420 @@ pub(crate) struct OperationRecord {
     pub(crate) payload: Value,
     /// Optional physical-capacity claims.  `None` is retained for legacy records and blocks
     /// bounded capacity admission while the operation remains unresolved.
-    #[serde(default)]
     pub(crate) capacity_plan: Option<DurableCapacityPlan>,
     /// Typed preparation evidence. Legacy schema-v1 records deserialize with no evidence.
-    #[serde(default)]
     pub(crate) prepared: Option<PreparedWaveformRestore>,
     /// Typed filesystem staging evidence. Legacy records do not contain this checkpoint.
-    #[serde(default)]
     pub(crate) staged: Option<FilesystemStagedWaveformRestore>,
     /// Typed filesystem publication evidence. Legacy records do not contain this checkpoint.
-    #[serde(default)]
     pub(crate) published: Option<FilesystemPublishedWaveformRestore>,
     /// Latest bounded assessment explaining why expected-identity replacement is not qualified.
     /// Legacy schema-v1 records do not contain this field.
-    #[serde(default)]
     pub(crate) replacement_qualification: Option<ReplacementQualificationAssessment>,
     /// Creation timestamp in Unix milliseconds.
     pub(crate) created_unix_ms: i64,
     /// Last update timestamp in Unix milliseconds.
     pub(crate) updated_unix_ms: i64,
+}
+
+/// The exact schema-v1 representation owned by this journal's decoder and writer.
+///
+/// `OperationRecord` is runtime state.  Keeping this persisted form private and strict means
+/// that a future field cannot be accepted into runtime state and then erased by a later v1 write.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+struct PersistedOperationRecordV1 {
+    schema_version: u32,
+    operation_id: Uuid,
+    intent: OperationIntent,
+    phase: OperationPhase,
+    disposition: OperationDisposition,
+    payload: Value,
+    #[serde(default)]
+    capacity_plan: Option<DurableCapacityPlan>,
+    #[serde(default)]
+    prepared: Option<PreparedWaveformRestore>,
+    #[serde(default)]
+    staged: Option<FilesystemStagedWaveformRestore>,
+    #[serde(default)]
+    published: Option<FilesystemPublishedWaveformRestore>,
+    #[serde(default)]
+    replacement_qualification: Option<ReplacementQualificationAssessment>,
+    created_unix_ms: i64,
+    updated_unix_ms: i64,
+}
+
+impl From<PersistedOperationRecordV1> for OperationRecord {
+    fn from(record: PersistedOperationRecordV1) -> Self {
+        Self {
+            schema_version: record.schema_version,
+            operation_id: record.operation_id,
+            intent: record.intent,
+            phase: record.phase,
+            disposition: record.disposition,
+            payload: record.payload,
+            capacity_plan: record.capacity_plan,
+            prepared: record.prepared,
+            staged: record.staged,
+            published: record.published,
+            replacement_qualification: record.replacement_qualification,
+            created_unix_ms: record.created_unix_ms,
+            updated_unix_ms: record.updated_unix_ms,
+        }
+    }
+}
+
+impl From<&OperationRecord> for PersistedOperationRecordV1 {
+    fn from(record: &OperationRecord) -> Self {
+        Self {
+            schema_version: record.schema_version,
+            operation_id: record.operation_id,
+            intent: record.intent.clone(),
+            phase: record.phase,
+            disposition: record.disposition,
+            payload: record.payload.clone(),
+            capacity_plan: record.capacity_plan.clone(),
+            prepared: record.prepared.clone(),
+            staged: record.staged.clone(),
+            published: record.published.clone(),
+            replacement_qualification: record.replacement_qualification.clone(),
+            created_unix_ms: record.created_unix_ms,
+            updated_unix_ms: record.updated_unix_ms,
+        }
+    }
+}
+
+enum DecodedPersistedRecord {
+    V1(PersistedOperationRecordV1),
+    UnknownVersion(u32),
+}
+
+fn strict_object<'a>(
+    value: &'a Value,
+    allowed_fields: &[&str],
+) -> Result<&'a Map<String, Value>, &'static str> {
+    let object = value
+        .as_object()
+        .ok_or("persisted value must be a JSON object")?;
+    if object
+        .keys()
+        .any(|field| !allowed_fields.contains(&field.as_str()))
+    {
+        return Err("persisted object contains an unknown field");
+    }
+    Ok(object)
+}
+
+fn tagged_object<'a>(value: &'a Value) -> Result<(&'a str, &'a Value), &'static str> {
+    let object = value
+        .as_object()
+        .ok_or("persisted tagged value must be a JSON object")?;
+    if object.len() != 1 {
+        return Err("persisted tagged object must contain exactly one variant");
+    }
+    let (variant, value) = object
+        .iter()
+        .next()
+        .ok_or("persisted tagged object must contain exactly one variant")?;
+    Ok((variant.as_str(), value))
+}
+
+fn required_field<'a>(
+    object: &'a Map<String, Value>,
+    field: &str,
+) -> Result<&'a Value, &'static str> {
+    object
+        .get(field)
+        .ok_or("persisted object is missing a required field")
+}
+
+fn validate_optional_field(
+    object: &Map<String, Value>,
+    field: &str,
+    validate: fn(&Value) -> Result<(), &'static str>,
+) -> Result<(), &'static str> {
+    if let Some(value) = object.get(field) {
+        if !value.is_null() {
+            validate(value)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_persisted_intent_value(value: &Value) -> Result<(), &'static str> {
+    strict_object(value, &["actor", "kind", "label"])?;
+    Ok(())
+}
+
+fn validate_persisted_volume_identity_value(value: &Value) -> Result<(), &'static str> {
+    strict_object(value, &["device"])?;
+    Ok(())
+}
+
+fn validate_persisted_capacity_plan_value(value: &Value) -> Result<(), &'static str> {
+    let object = strict_object(value, &["volumes"])?;
+    let volumes = required_field(object, "volumes")?
+        .as_array()
+        .ok_or("persisted capacity volumes must be an array")?;
+    for volume in volumes {
+        let volume = strict_object(
+            volume,
+            &[
+                "identity",
+                "allocation_unit",
+                "allocation_class",
+                "logical_bytes",
+                "allocated_bytes",
+                "protected_free_bytes",
+            ],
+        )?;
+        validate_persisted_volume_identity_value(required_field(volume, "identity")?)?;
+    }
+    Ok(())
+}
+
+fn validate_persisted_object_identity_value(value: &Value) -> Result<(), &'static str> {
+    strict_object(value, &["stable_id", "change_marker", "len"])?;
+    Ok(())
+}
+
+fn validate_persisted_root_capability_value(value: &Value) -> Result<(), &'static str> {
+    let object = strict_object(value, &["path", "identity"])?;
+    validate_persisted_object_identity_value(required_field(object, "identity")?)?;
+    Ok(())
+}
+
+fn validate_persisted_leaf_locator_value(value: &Value) -> Result<(), &'static str> {
+    let object = strict_object(value, &["relative_path", "identity"])?;
+    validate_persisted_object_identity_value(required_field(object, "identity")?)?;
+    Ok(())
+}
+
+fn validate_persisted_replace_expected_identity_value(value: &Value) -> Result<(), &'static str> {
+    let (variant, value) = tagged_object(value)?;
+    if variant != "Existing" {
+        return Err("persisted replacement identity contains an unknown variant");
+    }
+    validate_persisted_object_identity_value(value)
+}
+
+fn validate_persisted_file_evidence_value(value: &Value) -> Result<(), &'static str> {
+    match value {
+        Value::String(_) => Ok(()),
+        Value::Object(_) => {
+            let (variant, value) = tagged_object(value)?;
+            match variant {
+                "ContentHash" => value
+                    .as_array()
+                    .map(|_| ())
+                    .ok_or("persisted content hash must be an array"),
+                "Metadata" => {
+                    strict_object(value, &["len", "modified_ns", "is_dir"])?;
+                    Ok(())
+                }
+                _ => Err("persisted file evidence contains an unknown variant"),
+            }
+        }
+        _ => Err("persisted file evidence must be a string or tagged object"),
+    }
+}
+
+fn validate_persisted_prepared_evidence_value(value: &Value) -> Result<(), &'static str> {
+    let object = strict_object(value, &["target", "backup"])?;
+    validate_persisted_file_evidence_value(required_field(object, "target")?)?;
+    validate_persisted_file_evidence_value(required_field(object, "backup")?)?;
+    Ok(())
+}
+
+fn validate_persisted_staging_locator_value(value: &Value) -> Result<(), &'static str> {
+    strict_object(value, &["relative_path", "absent"])?;
+    Ok(())
+}
+
+fn validate_persisted_prepared_value(value: &Value) -> Result<(), &'static str> {
+    let object = strict_object(
+        value,
+        &[
+            "direction",
+            "source_id",
+            "source_root",
+            "target_root",
+            "target",
+            "backup_root",
+            "backup",
+            "replacement",
+            "staging",
+            "evidence",
+        ],
+    )?;
+    validate_persisted_root_capability_value(required_field(object, "source_root")?)?;
+    validate_persisted_root_capability_value(required_field(object, "target_root")?)?;
+    validate_persisted_leaf_locator_value(required_field(object, "target")?)?;
+    validate_persisted_root_capability_value(required_field(object, "backup_root")?)?;
+    validate_persisted_leaf_locator_value(required_field(object, "backup")?)?;
+    validate_persisted_replace_expected_identity_value(required_field(object, "replacement")?)?;
+    validate_persisted_staging_locator_value(required_field(object, "staging")?)?;
+    validate_persisted_prepared_evidence_value(required_field(object, "evidence")?)?;
+    Ok(())
+}
+
+fn validate_persisted_staged_value(value: &Value) -> Result<(), &'static str> {
+    let object = strict_object(value, &["participant"])?;
+    let (variant, value) = tagged_object(required_field(object, "participant")?)?;
+    if variant != "CopyValidated" {
+        return Err("persisted staged participant contains an unknown variant");
+    }
+    let participant = strict_object(value, &["staging", "evidence"])?;
+    validate_persisted_leaf_locator_value(required_field(participant, "staging")?)?;
+    validate_persisted_file_evidence_value(required_field(participant, "evidence")?)?;
+    Ok(())
+}
+
+fn validate_persisted_final_claim_primitive_value(value: &Value) -> Result<(), &'static str> {
+    if value.is_string() {
+        return Ok(());
+    }
+    let (variant, value) = tagged_object(value)?;
+    if variant != "Unqualified" {
+        return Err("persisted final claim primitive contains an unknown variant");
+    }
+    strict_object(value, &["reason"])?;
+    Ok(())
+}
+
+fn validate_persisted_capability_scope_value(value: &Value) -> Result<(), &'static str> {
+    let (variant, value) = tagged_object(value)?;
+    if variant != "TargetParentDescriptor" {
+        return Err("persisted capability scope contains an unknown variant");
+    }
+    let scope = strict_object(value, &["target_parent_identity", "root_path_continuity"])?;
+    validate_persisted_object_identity_value(required_field(scope, "target_parent_identity")?)?;
+    Ok(())
+}
+
+fn validate_persisted_final_claim_value(value: &Value) -> Result<(), &'static str> {
+    let (variant, value) = tagged_object(value)?;
+    match variant {
+        "ExpectedIdentityReplacement" => {
+            let claim = strict_object(
+                value,
+                &["primitive", "result", "expected_target", "displaced_target"],
+            )?;
+            validate_persisted_final_claim_primitive_value(required_field(claim, "primitive")?)?;
+            validate_persisted_object_identity_value(required_field(claim, "expected_target")?)?;
+            validate_persisted_object_identity_value(required_field(claim, "displaced_target")?)?;
+        }
+        "AbsentFinalNoReplace" => {
+            let claim = strict_object(value, &["primitive", "result", "capability_scope"])?;
+            validate_persisted_final_claim_primitive_value(required_field(claim, "primitive")?)?;
+            validate_persisted_capability_scope_value(required_field(claim, "capability_scope")?)?;
+        }
+        _ => return Err("persisted final claim contains an unknown variant"),
+    }
+    Ok(())
+}
+
+fn validate_persisted_published_value(value: &Value) -> Result<(), &'static str> {
+    let object = strict_object(
+        value,
+        &[
+            "mode",
+            "final_claim",
+            "reopened_final",
+            "visibility",
+            "whole_publication",
+            "synchronization",
+        ],
+    )?;
+    validate_persisted_final_claim_value(required_field(object, "final_claim")?)?;
+    let reopened = strict_object(
+        required_field(object, "reopened_final")?,
+        &["identity", "content"],
+    )?;
+    validate_persisted_object_identity_value(required_field(reopened, "identity")?)?;
+    validate_persisted_file_evidence_value(required_field(reopened, "content")?)?;
+    Ok(())
+}
+
+fn validate_persisted_replacement_qualification_value(value: &Value) -> Result<(), &'static str> {
+    let object = strict_object(
+        value,
+        &[
+            "platform_family",
+            "observed_filesystem",
+            "volume",
+            "candidate",
+            "candidate_assessment",
+            "missing_invariant",
+            "decision",
+            "retry_condition",
+        ],
+    )?;
+    validate_persisted_volume_identity_value(required_field(object, "volume")?)?;
+    Ok(())
+}
+
+fn validate_persisted_v1_object_boundaries(value: &Value) -> Result<(), &'static str> {
+    let object = strict_object(
+        value,
+        &[
+            "schema_version",
+            "operation_id",
+            "intent",
+            "phase",
+            "disposition",
+            "payload",
+            "capacity_plan",
+            "prepared",
+            "staged",
+            "published",
+            "replacement_qualification",
+            "created_unix_ms",
+            "updated_unix_ms",
+        ],
+    )?;
+    validate_persisted_intent_value(required_field(object, "intent")?)?;
+    validate_optional_field(
+        object,
+        "capacity_plan",
+        validate_persisted_capacity_plan_value,
+    )?;
+    validate_optional_field(object, "prepared", validate_persisted_prepared_value)?;
+    validate_optional_field(object, "staged", validate_persisted_staged_value)?;
+    validate_optional_field(object, "published", validate_persisted_published_value)?;
+    validate_optional_field(
+        object,
+        "replacement_qualification",
+        validate_persisted_replacement_qualification_value,
+    )?;
+    // `payload` is intentionally opaque JSON metadata, not a persisted DTO boundary.
+    Ok(())
+}
+
+/// Dispatch a parsed JSON object to the exact persisted schema decoder.
+fn dispatch_persisted_record(value: Value) -> Result<DecodedPersistedRecord, ()> {
+    let version = value
+        .get("schema_version")
+        .and_then(Value::as_u64)
+        .and_then(|value| u32::try_from(value).ok())
+        .ok_or(())?;
+    if version != CURRENT_SCHEMA_VERSION {
+        return Ok(DecodedPersistedRecord::UnknownVersion(version));
+    }
+    validate_persisted_v1_object_boundaries(&value).map_err(|_| ())?;
+    serde_json::from_value::<PersistedOperationRecordV1>(value)
+        .map(DecodedPersistedRecord::V1)
+        .map_err(|_| ())
+}
+
+fn encode_schema_v1(record: &OperationRecord) -> io::Result<Vec<u8>> {
+    if record.schema_version != CURRENT_SCHEMA_VERSION {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "unsupported schema version",
+        ));
+    }
+    serde_json::to_vec_pretty(&PersistedOperationRecordV1::from(record)).map_err(io::Error::other)
 }
 
 impl OperationRecord {
@@ -471,6 +866,10 @@ pub(crate) enum JournalError {
     /// A requested update did not refer to an admitted operation.
     #[error("operation journal record not found: {0}")]
     NotFound(Uuid),
+    /// A legacy record remains visible for recovery but cannot be rewritten without losing its
+    /// attention-required evidence.
+    #[error("operation journal record is retained as non-writable recovery evidence: {0}")]
+    NotWritable(Uuid),
     /// A phase transition did not follow the bounded journal state machine.
     #[error("illegal operation journal transition for {operation_id}: {from:?} -> {to:?}")]
     IllegalTransition {
@@ -542,6 +941,7 @@ pub(crate) struct OperationJournalStore {
     directory: PathBuf,
     _ownership: OwnershipLock,
     records: BTreeMap<Uuid, OperationRecord>,
+    non_writable: BTreeSet<Uuid>,
     retained: Vec<RetainedRecord>,
     recovery: RecoverySummary,
     capacity_claims: BTreeMap<VolumeIdentity, u64>,
@@ -560,6 +960,7 @@ impl OperationJournalStore {
             directory,
             _ownership: ownership,
             records: BTreeMap::new(),
+            non_writable: BTreeSet::new(),
             retained: Vec::new(),
             recovery: RecoverySummary::default(),
             capacity_claims: BTreeMap::new(),
@@ -579,6 +980,14 @@ impl OperationJournalStore {
         self.records.get(&operation_id)
     }
 
+    fn ensure_writable(&self, operation_id: Uuid) -> Result<(), JournalError> {
+        if self.non_writable.contains(&operation_id) {
+            Err(JournalError::NotWritable(operation_id))
+        } else {
+            Ok(())
+        }
+    }
+
     /// Return all typed records in deterministic operation-id order.
     pub(crate) fn records(&self) -> impl Iterator<Item = &OperationRecord> {
         self.records.values()
@@ -595,6 +1004,15 @@ impl OperationJournalStore {
     /// Durably admit one record, before any future filesystem mutation.
     #[cfg(test)]
     pub(crate) fn admit(&mut self, record: OperationRecord) -> Result<(), JournalError> {
+        if self.capacity_blocked {
+            return Err(JournalError::Write {
+                path: self.record_path(record.operation_id),
+                source: io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    RejectedBeforeIntent::RecoveryBlocked.to_string(),
+                ),
+            });
+        }
         if record.schema_version != CURRENT_SCHEMA_VERSION {
             return Err(JournalError::Write {
                 path: self.record_path(record.operation_id),
@@ -741,6 +1159,7 @@ impl OperationJournalStore {
                 }
             })?;
         }
+        self.ensure_writable(operation_id)?;
         let mut updated = current.with_update(phase, disposition);
         if let Some(assessment) = replacement_qualification {
             if current.phase == phase
@@ -769,6 +1188,7 @@ impl OperationJournalStore {
             .ok_or(JournalError::NotFound(operation_id))?;
         match current.phase {
             OperationPhase::IntentDurable => {
+                self.ensure_writable(operation_id)?;
                 let updated = current.with_prepared(prepared);
                 let path = self.record_path(operation_id);
                 atomic_durable_write(&path, &updated)?;
@@ -813,6 +1233,7 @@ impl OperationJournalStore {
                         source: io::Error::new(io::ErrorKind::InvalidData, reason),
                     }
                 })?;
+                self.ensure_writable(operation_id)?;
                 let updated = current.with_staged(staged);
                 let path = self.record_path(operation_id);
                 atomic_durable_write(&path, &updated)?;
@@ -873,6 +1294,7 @@ impl OperationJournalStore {
                         reason,
                     }
                 })?;
+                self.ensure_writable(operation_id)?;
                 let updated = current.with_published(published);
                 let path = self.record_path(operation_id);
                 atomic_durable_write(&path, &updated)?;
@@ -985,178 +1407,128 @@ impl OperationJournalStore {
                     continue;
                 }
             };
-            let version = value
-                .get("schema_version")
-                .and_then(Value::as_u64)
-                .and_then(|value| u32::try_from(value).ok());
-            let Some(version) = version else {
-                self.recovery.malformed_count += 1;
-                self.recovery.attention_required = true;
-                self.retained
-                    .push(RetainedRecord::Malformed { path, bytes });
-                continue;
-            };
-            if version != CURRENT_SCHEMA_VERSION {
-                self.recovery.unknown_version_count += 1;
-                self.recovery.attention_required = true;
-                self.retained.push(RetainedRecord::UnknownVersion {
-                    path,
-                    bytes,
-                    version,
-                });
-                continue;
-            }
-            if validate_replacement_qualification_value(&value).is_err() {
-                self.recovery.malformed_count += 1;
-                self.recovery.attention_required = true;
-                self.retained
-                    .push(RetainedRecord::Malformed { path, bytes });
-                continue;
-            }
-            match serde_json::from_value::<OperationRecord>(value) {
-                Ok(record) => {
-                    let filename_id = path
-                        .file_stem()
-                        .and_then(|stem| stem.to_str())
-                        .and_then(|stem| Uuid::parse_str(stem).ok());
-                    if filename_id != Some(record.operation_id)
-                        || self.records.contains_key(&record.operation_id)
-                    {
-                        self.recovery.malformed_count += 1;
-                        self.recovery.attention_required = true;
-                        self.retained
-                            .push(RetainedRecord::Malformed { path, bytes });
-                        continue;
-                    }
-                    if validate_capacity_plan_option(record.capacity_plan.as_ref()).is_err() {
-                        self.recovery.malformed_count += 1;
-                        self.recovery.attention_required = true;
-                        self.retained
-                            .push(RetainedRecord::Malformed { path, bytes });
-                        continue;
-                    }
-                    if record.phase == OperationPhase::Prepared && record.prepared.is_none() {
-                        self.recovery.malformed_count += 1;
-                        self.recovery.attention_required = true;
-                        self.retained
-                            .push(RetainedRecord::Malformed { path, bytes });
-                        continue;
-                    }
-                    let staged_valid = match (record.phase, record.staged.as_ref()) {
-                        (OperationPhase::FilesystemStaged, Some(staged)) => {
-                            record.prepared.as_ref().is_some_and(|prepared| {
-                                validate_staged_checkpoint(prepared, staged).is_ok()
-                            })
-                        }
-                        (OperationPhase::FilesystemStaged, None)
-                        | (OperationPhase::IntentDurable | OperationPhase::Prepared, Some(_)) => {
-                            false
-                        }
-                        (_, Some(staged)) => record.prepared.as_ref().is_some_and(|prepared| {
-                            validate_staged_checkpoint(prepared, staged).is_ok()
-                        }),
-                        (_, None) => true,
-                    };
-                    if !staged_valid {
-                        self.recovery.malformed_count += 1;
-                        self.recovery.attention_required = true;
-                        self.retained
-                            .push(RetainedRecord::Malformed { path, bytes });
-                        continue;
-                    }
-                    let legacy_post_publication_without_evidence = record.published.is_none()
-                        && (matches!(
-                            record.phase,
-                            OperationPhase::FilesystemPublished
-                                | OperationPhase::SourceReconciled
-                                | OperationPhase::GlobalReconciled
-                                | OperationPhase::ProjectionPublished
-                                | OperationPhase::ReadinessScheduled
-                        ) || (record.phase == OperationPhase::Terminal
-                            && record.disposition.is_terminal()));
-                    if legacy_post_publication_without_evidence {
-                        self.recovery.malformed_count += 1;
-                        self.recovery.attention_required = true;
-                        if record.phase != OperationPhase::Terminal {
-                            self.recovery.unresolved_count += 1;
-                        }
-                        self.records.insert(record.operation_id, record);
-                        continue;
-                    }
-                    let published_valid = if record.phase.is_pre_publication() {
-                        record.published.is_none()
-                    } else if record.phase.is_post_publication() {
-                        validate_record_publication(&record).is_ok()
-                    } else {
-                        record
-                            .published
-                            .as_ref()
-                            .map(|_| validate_record_publication(&record).is_ok())
-                            .unwrap_or(true)
-                    };
-                    if !published_valid {
-                        self.recovery.malformed_count += 1;
-                        self.recovery.attention_required = true;
-                        self.retained
-                            .push(RetainedRecord::Malformed { path, bytes });
-                        continue;
-                    }
-                    if record.phase != OperationPhase::Terminal || !record.disposition.is_terminal()
-                    {
-                        self.recovery.unresolved_count += 1;
-                        self.recovery.attention_required = true;
-                    }
-                    self.records.insert(record.operation_id, record);
-                }
-                Err(_) => {
+            let decoded = match dispatch_persisted_record(value) {
+                Ok(decoded) => decoded,
+                Err(()) => {
                     self.recovery.malformed_count += 1;
                     self.recovery.attention_required = true;
                     self.retained
                         .push(RetainedRecord::Malformed { path, bytes });
+                    continue;
                 }
+            };
+            let persisted = match decoded {
+                DecodedPersistedRecord::UnknownVersion(version) => {
+                    self.recovery.unknown_version_count += 1;
+                    self.recovery.attention_required = true;
+                    self.retained.push(RetainedRecord::UnknownVersion {
+                        path,
+                        bytes,
+                        version,
+                    });
+                    continue;
+                }
+                DecodedPersistedRecord::V1(persisted) => persisted,
+            };
+            let record: OperationRecord = persisted.into();
+            let filename_id = path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .and_then(|stem| Uuid::parse_str(stem).ok());
+            if filename_id != Some(record.operation_id)
+                || self.records.contains_key(&record.operation_id)
+            {
+                self.recovery.malformed_count += 1;
+                self.recovery.attention_required = true;
+                self.retained
+                    .push(RetainedRecord::Malformed { path, bytes });
+                continue;
             }
+            if validate_capacity_plan_option(record.capacity_plan.as_ref()).is_err() {
+                self.recovery.malformed_count += 1;
+                self.recovery.attention_required = true;
+                self.retained
+                    .push(RetainedRecord::Malformed { path, bytes });
+                continue;
+            }
+            if record.phase == OperationPhase::Prepared && record.prepared.is_none() {
+                self.recovery.malformed_count += 1;
+                self.recovery.attention_required = true;
+                self.retained
+                    .push(RetainedRecord::Malformed { path, bytes });
+                continue;
+            }
+            let staged_valid = match (record.phase, record.staged.as_ref()) {
+                (OperationPhase::FilesystemStaged, Some(staged)) => record
+                    .prepared
+                    .as_ref()
+                    .is_some_and(|prepared| validate_staged_checkpoint(prepared, staged).is_ok()),
+                (OperationPhase::FilesystemStaged, None)
+                | (OperationPhase::IntentDurable | OperationPhase::Prepared, Some(_)) => false,
+                (_, Some(staged)) => record
+                    .prepared
+                    .as_ref()
+                    .is_some_and(|prepared| validate_staged_checkpoint(prepared, staged).is_ok()),
+                (_, None) => true,
+            };
+            if !staged_valid {
+                self.recovery.malformed_count += 1;
+                self.recovery.attention_required = true;
+                self.retained
+                    .push(RetainedRecord::Malformed { path, bytes });
+                continue;
+            }
+            let legacy_post_publication_without_evidence = record.published.is_none()
+                && (matches!(
+                    record.phase,
+                    OperationPhase::FilesystemPublished
+                        | OperationPhase::SourceReconciled
+                        | OperationPhase::GlobalReconciled
+                        | OperationPhase::ProjectionPublished
+                        | OperationPhase::ReadinessScheduled
+                ) || (record.phase == OperationPhase::Terminal
+                    && record.disposition.is_terminal()));
+            if legacy_post_publication_without_evidence {
+                self.recovery.malformed_count += 1;
+                self.recovery.attention_required = true;
+                if record.phase != OperationPhase::Terminal {
+                    self.recovery.unresolved_count += 1;
+                }
+                self.non_writable.insert(record.operation_id);
+                self.retained.push(RetainedRecord::Malformed {
+                    path: path.clone(),
+                    bytes: bytes.clone(),
+                });
+                self.records.insert(record.operation_id, record);
+                continue;
+            }
+            let published_valid = if record.phase.is_pre_publication() {
+                record.published.is_none()
+            } else if record.phase.is_post_publication() {
+                validate_record_publication(&record).is_ok()
+            } else {
+                record
+                    .published
+                    .as_ref()
+                    .map(|_| validate_record_publication(&record).is_ok())
+                    .unwrap_or(true)
+            };
+            if !published_valid {
+                self.recovery.malformed_count += 1;
+                self.recovery.attention_required = true;
+                self.retained
+                    .push(RetainedRecord::Malformed { path, bytes });
+                continue;
+            }
+            if record.phase != OperationPhase::Terminal || !record.disposition.is_terminal() {
+                self.recovery.unresolved_count += 1;
+                self.recovery.attention_required = true;
+            }
+            self.records.insert(record.operation_id, record);
         }
         self.rebuild_capacity_claims();
         Ok(())
     }
-}
-
-fn validate_replacement_qualification_value(value: &Value) -> Result<(), &'static str> {
-    let Some(qualification) = value.get("replacement_qualification") else {
-        return Ok(());
-    };
-    let Some(qualification) = qualification.as_object() else {
-        return if qualification.is_null() {
-            Ok(())
-        } else {
-            Err("replacement qualification must be an object or null")
-        };
-    };
-    if qualification.keys().any(|key| {
-        !matches!(
-            key.as_str(),
-            "platform_family"
-                | "observed_filesystem"
-                | "volume"
-                | "candidate"
-                | "candidate_assessment"
-                | "missing_invariant"
-                | "decision"
-                | "retry_condition"
-        )
-    }) {
-        return Err("replacement qualification contains an unknown field");
-    }
-    let Some(volume) = qualification.get("volume") else {
-        return Ok(());
-    };
-    let Some(volume) = volume.as_object() else {
-        return Err("replacement qualification volume must be an object");
-    };
-    if volume.keys().any(|key| key != "device") {
-        return Err("replacement qualification volume contains an unknown field");
-    }
-    Ok(())
 }
 
 fn validate_capacity_plan_option(
@@ -2583,9 +2955,9 @@ fn atomic_durable_write(path: &Path, record: &OperationRecord) -> Result<(), Jou
         ".{}.tmp",
         path.file_name().unwrap_or_default().to_string_lossy()
     ));
-    let bytes = serde_json::to_vec_pretty(record).map_err(|source| JournalError::Write {
+    let bytes = encode_schema_v1(record).map_err(|source| JournalError::Write {
         path: path.to_path_buf(),
-        source: io::Error::other(source),
+        source,
     })?;
     if bytes.len() > MAX_RECORD_BYTES {
         return Err(JournalError::Write {
@@ -2714,6 +3086,86 @@ mod tests {
         }
     }
 
+    fn schema_v1_bytes(record: &OperationRecord) -> Vec<u8> {
+        encode_schema_v1(record).expect("encode schema-v1 fixture")
+    }
+
+    fn schema_v1_value(record: &OperationRecord) -> Value {
+        serde_json::to_value(PersistedOperationRecordV1::from(record))
+            .expect("encode schema-v1 value")
+    }
+
+    fn qualification_assessment() -> ReplacementQualificationAssessment {
+        ReplacementQualificationAssessment {
+            platform_family: ReplacementPlatformFamily::Macos,
+            observed_filesystem: ObservedFilesystemClassification::SameVolume,
+            volume: VolumeIdentity { device: 1 },
+            candidate: ReplacementCandidatePrimitive::NoPublicCandidate,
+            candidate_assessment: ReplacementCandidateAssessment::NoQualifiedCandidate,
+            missing_invariant: ReplacementMissingInvariant::AtomicExpectedTargetIdentityComparison,
+            decision: ReplacementQualificationDecision::PlatformQualificationRequired,
+            retry_condition:
+                ReplacementQualificationRetryCondition::PlatformBuildOrQualificationPolicyChange,
+        }
+    }
+
+    fn valid_capacity_plan() -> DurableCapacityPlan {
+        DurableCapacityPlan {
+            volumes: vec![super::super::capacity_gate::DurableVolumeCapacity {
+                identity: VolumeIdentity { device: 77 },
+                allocation_unit: 4096,
+                allocation_class:
+                    super::super::capacity_gate::CapacityAllocationClass::DestinationStaging,
+                logical_bytes: 4096,
+                allocated_bytes: 4096,
+                protected_free_bytes: super::super::capacity_gate::PROTECTED_FREE_SPACE_FLOOR,
+            }],
+        }
+    }
+
+    fn assert_unknown_nested_record_is_retained_unchanged(
+        directory: &Path,
+        path: &Path,
+        operation_id: Uuid,
+        bytes: &[u8],
+    ) {
+        for _ in 0..2 {
+            let mut journal = OperationJournalCoordinator::open(directory.to_path_buf()).unwrap();
+            let summary = journal.recovery_summary();
+            assert_eq!(summary.malformed_count, 1);
+            assert_eq!(summary.unknown_version_count, 0);
+            assert!(summary.attention_required);
+            assert!(journal.store.capacity_blocked());
+            assert!(journal.record(operation_id).is_none());
+            assert!(matches!(
+                journal.admit(intent(), Value::Null),
+                Err(JournalError::Write { .. })
+            ));
+            for (phase, disposition) in [
+                (
+                    OperationPhase::IntentDurable,
+                    OperationDisposition::RetryPending,
+                ),
+                (OperationPhase::Prepared, OperationDisposition::None),
+                (
+                    OperationPhase::FilesystemStaged,
+                    OperationDisposition::AuditRequired,
+                ),
+                (
+                    OperationPhase::Terminal,
+                    OperationDisposition::CancelledBeforePublish,
+                ),
+            ] {
+                assert!(matches!(
+                    journal.update(operation_id, phase, disposition),
+                    Err(JournalError::NotFound(id)) if id == operation_id
+                ));
+                assert_eq!(fs::read(path).unwrap(), bytes);
+            }
+            assert_eq!(fs::read(path).unwrap(), bytes);
+        }
+    }
+
     #[test]
     fn profile_local_directory_isolated_by_app_root() {
         let _lock = TEST_LOCK.lock().unwrap();
@@ -2810,7 +3262,7 @@ mod tests {
         ] {
             let record = OperationRecord::new_with_capacity_plan(intent(), Value::Null, Some(plan));
             let path = dir.path().join(format!("{}.json", record.operation_id));
-            fs::write(path, serde_json::to_vec(&record).unwrap()).unwrap();
+            fs::write(path, schema_v1_bytes(&record)).unwrap();
         }
         let store = OperationJournalStore::open(dir.path().to_path_buf()).unwrap();
         assert_eq!(store.recovery_summary().malformed_count, 2);
@@ -3486,7 +3938,7 @@ mod tests {
         let mut invalid = journal.record(id).unwrap().clone();
         invalid.phase = OperationPhase::FilesystemStaged;
         let path = journal_dir.path().join(format!("{id}.json"));
-        let bytes = serde_json::to_vec(&invalid).unwrap();
+        let bytes = schema_v1_bytes(&invalid);
         fs::write(&path, &bytes).unwrap();
         drop(journal);
 
@@ -3817,13 +4269,260 @@ mod tests {
     }
 
     #[test]
+    fn schema_v1_fixture_without_optional_evidence_reopens_byte_for_byte() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let record = OperationRecord::new(intent(), serde_json::json!({"legacy": true}));
+        let operation_id = record.operation_id;
+        let path = dir.path().join(format!("{operation_id}.json"));
+        let bytes = schema_v1_bytes(&record);
+        fs::write(&path, &bytes).unwrap();
+
+        let first = OperationJournalCoordinator::open(dir.path().to_path_buf()).unwrap();
+        assert_eq!(first.record(operation_id), Some(&record));
+        assert_eq!(first.recovery_summary().malformed_count, 0);
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        drop(first);
+
+        let second = OperationJournalCoordinator::open(dir.path().to_path_buf()).unwrap();
+        assert_eq!(second.record(operation_id), Some(&record));
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+    }
+
+    #[test]
+    fn schema_v1_fixture_with_all_optional_evidence_reopens_byte_for_byte() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let (journal_dir, _files, mut journal, operation_id, _backup, _target, _staging) =
+            prepared_restore_fixture();
+        journal
+            .stage_admitted_bounded_waveform_restore(operation_id)
+            .unwrap();
+        let before_publication = journal.record(operation_id).unwrap().clone();
+        let publication = super::super::publication::test_publication_evidence(
+            before_publication.prepared.as_ref().unwrap(),
+            before_publication.staged.as_ref().unwrap(),
+            None,
+        );
+        journal.guarded_publish(operation_id, publication).unwrap();
+
+        let expected = {
+            let record = journal.store.records.get_mut(&operation_id).unwrap();
+            record.replacement_qualification = Some(qualification_assessment());
+            record.clone()
+        };
+        assert!(expected.capacity_plan.is_some());
+        assert!(expected.prepared.is_some());
+        assert!(expected.staged.is_some());
+        assert!(expected.published.is_some());
+        assert!(expected.replacement_qualification.is_some());
+        let path = journal.store.record_path(operation_id);
+        atomic_durable_write(&path, &expected).unwrap();
+        let bytes = fs::read(&path).unwrap();
+        drop(journal);
+
+        let reopened = OperationJournalCoordinator::open(journal_dir.path().to_path_buf()).unwrap();
+        assert_eq!(reopened.record(operation_id), Some(&expected));
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        drop(reopened);
+
+        let reopened_again =
+            OperationJournalCoordinator::open(journal_dir.path().to_path_buf()).unwrap();
+        assert_eq!(reopened_again.record(operation_id), Some(&expected));
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+    }
+
+    #[test]
+    fn unknown_v1_top_level_field_is_retained_and_cannot_be_rewritten() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let record = OperationRecord::new(intent(), Value::Null);
+        let operation_id = record.operation_id;
+        let path = dir.path().join(format!("{operation_id}.json"));
+        let mut value = schema_v1_value(&record);
+        value.as_object_mut().unwrap().insert(
+            String::from("future_evidence"),
+            serde_json::json!({"schema": 2, "retained": true}),
+        );
+        let bytes = serde_json::to_vec(&value).unwrap();
+        fs::write(&path, &bytes).unwrap();
+
+        let mut journal = OperationJournalCoordinator::open(dir.path().to_path_buf()).unwrap();
+        let summary = journal.recovery_summary();
+        assert_eq!(summary.malformed_count, 1);
+        assert_eq!(summary.unknown_version_count, 0);
+        assert!(summary.attention_required);
+        assert!(journal.store.capacity_blocked());
+        assert!(journal.record(operation_id).is_none());
+        assert!(matches!(
+            journal.update(
+                operation_id,
+                OperationPhase::IntentDurable,
+                OperationDisposition::RetryPending,
+            ),
+            Err(JournalError::NotFound(id)) if id == operation_id
+        ));
+        drop(journal);
+
+        let reopened = OperationJournalCoordinator::open(dir.path().to_path_buf()).unwrap();
+        assert_eq!(reopened.recovery_summary().malformed_count, 1);
+        assert!(reopened.recovery_summary().attention_required);
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+    }
+
+    #[test]
+    fn unknown_v1_intent_field_is_retained_fail_closed() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let record = OperationRecord::new(intent(), Value::Null);
+        let operation_id = record.operation_id;
+        let path = dir.path().join(format!("{operation_id}.json"));
+        let mut value = schema_v1_value(&record);
+        value["intent"]
+            .as_object_mut()
+            .unwrap()
+            .insert(String::from("future_intent_evidence"), Value::Bool(true));
+        let bytes = serde_json::to_vec(&value).unwrap();
+        fs::write(&path, &bytes).unwrap();
+
+        assert_unknown_nested_record_is_retained_unchanged(dir.path(), &path, operation_id, &bytes);
+    }
+
+    #[test]
+    fn unknown_v1_optional_prepared_evidence_field_is_retained_fail_closed() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let (journal_dir, _files, journal, operation_id, _backup, _target, _staging) =
+            prepared_restore_fixture();
+        let path = journal.store.record_path(operation_id);
+        let mut value: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        value["prepared"]
+            .as_object_mut()
+            .unwrap()
+            .insert(String::from("future_prepared_evidence"), Value::Bool(true));
+        let bytes = serde_json::to_vec(&value).unwrap();
+        fs::write(&path, &bytes).unwrap();
+        drop(journal);
+
+        assert_unknown_nested_record_is_retained_unchanged(
+            journal_dir.path(),
+            &path,
+            operation_id,
+            &bytes,
+        );
+    }
+
+    #[test]
+    fn unknown_v1_prepared_file_evidence_field_is_retained_fail_closed() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let (journal_dir, _files, journal, operation_id, _backup, _target, _staging) =
+            prepared_restore_fixture();
+        let path = journal.store.record_path(operation_id);
+        let mut value: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        value["prepared"]["evidence"]
+            .as_object_mut()
+            .unwrap()
+            .insert(String::from("future_file_evidence"), Value::Bool(true));
+        let bytes = serde_json::to_vec(&value).unwrap();
+        fs::write(&path, &bytes).unwrap();
+        drop(journal);
+
+        assert_unknown_nested_record_is_retained_unchanged(
+            journal_dir.path(),
+            &path,
+            operation_id,
+            &bytes,
+        );
+    }
+
+    #[test]
+    fn unknown_v1_capacity_volume_field_is_retained_fail_closed() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let record = OperationRecord::new_with_capacity_plan(
+            intent(),
+            Value::Null,
+            Some(valid_capacity_plan()),
+        );
+        let operation_id = record.operation_id;
+        let path = dir.path().join(format!("{operation_id}.json"));
+        let mut value = schema_v1_value(&record);
+        value["capacity_plan"]["volumes"][0]
+            .as_object_mut()
+            .unwrap()
+            .insert(String::from("future_capacity_evidence"), Value::Bool(true));
+        let bytes = serde_json::to_vec(&value).unwrap();
+        fs::write(&path, &bytes).unwrap();
+
+        assert_unknown_nested_record_is_retained_unchanged(dir.path(), &path, operation_id, &bytes);
+    }
+
+    #[test]
+    fn future_schema_version_is_retained_blocking_and_idempotent() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let record = OperationRecord::new(intent(), Value::Null);
+        let operation_id = record.operation_id;
+        let path = dir.path().join(format!("{operation_id}.json"));
+        let mut value = schema_v1_value(&record);
+        value
+            .as_object_mut()
+            .unwrap()
+            .insert(String::from("schema_version"), Value::from(2_u32));
+        let bytes = serde_json::to_vec(&value).unwrap();
+        fs::write(&path, &bytes).unwrap();
+
+        let mut first = OperationJournalCoordinator::open(dir.path().to_path_buf()).unwrap();
+        let first_summary = first.recovery_summary();
+        assert_eq!(first_summary.malformed_count, 0);
+        assert_eq!(first_summary.unknown_version_count, 1);
+        assert!(first_summary.attention_required);
+        assert!(first.store.capacity_blocked());
+        assert!(first.record(operation_id).is_none());
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        assert!(matches!(
+            first.store.admit(OperationRecord::new(intent(), Value::Null)),
+            Err(JournalError::Write { .. })
+        ));
+        drop(first);
+
+        let second = OperationJournalCoordinator::open(dir.path().to_path_buf()).unwrap();
+        assert_eq!(second.recovery_summary(), first_summary);
+        assert!(second.record(operation_id).is_none());
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+    }
+
+    #[test]
+    fn malformed_v1_field_type_is_retained_and_not_admitted() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let record = OperationRecord::new(intent(), Value::Null);
+        let operation_id = record.operation_id;
+        let path = dir.path().join(format!("{operation_id}.json"));
+        let mut value = schema_v1_value(&record);
+        value.as_object_mut().unwrap().insert(
+            String::from("phase"),
+            serde_json::json!({"not": "an operation phase"}),
+        );
+        let bytes = serde_json::to_vec(&value).unwrap();
+        fs::write(&path, &bytes).unwrap();
+
+        let journal = OperationJournalCoordinator::open(dir.path().to_path_buf()).unwrap();
+        let summary = journal.recovery_summary();
+        assert_eq!(summary.malformed_count, 1);
+        assert_eq!(summary.unknown_version_count, 0);
+        assert!(summary.attention_required);
+        assert!(journal.store.capacity_blocked());
+        assert!(journal.record(operation_id).is_none());
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+    }
+
+    #[test]
     fn schema_v1_record_without_replacement_qualification_reopens_unchanged() {
         let _lock = TEST_LOCK.lock().unwrap();
         let dir = tempfile::tempdir().unwrap();
         let record = OperationRecord::new(intent(), serde_json::json!({"legacy": true}));
         let operation_id = record.operation_id;
         let path = dir.path().join(format!("{operation_id}.json"));
-        let mut value = serde_json::to_value(&record).unwrap();
+        let mut value = schema_v1_value(&record);
         value
             .as_object_mut()
             .unwrap()
@@ -3864,7 +4563,7 @@ mod tests {
         let record = OperationRecord::new(intent(), Value::Null);
         let operation_id = record.operation_id;
         let path = dir.path().join(format!("{operation_id}.json"));
-        let mut value = serde_json::to_value(&record).unwrap();
+        let mut value = schema_v1_value(&record);
         value.as_object_mut().unwrap().insert(
             String::from("replacement_qualification"),
             serde_json::json!({
@@ -3899,7 +4598,7 @@ mod tests {
         let record = OperationRecord::new(intent(), Value::Null);
         let operation_id = record.operation_id;
         let path = dir.path().join(format!("{operation_id}.json"));
-        let mut value = serde_json::to_value(&record).unwrap();
+        let mut value = schema_v1_value(&record);
         value.as_object_mut().unwrap().insert(
             String::from("replacement_qualification"),
             serde_json::json!({
@@ -3954,7 +4653,7 @@ mod tests {
         let mut record = OperationRecord::new(intent(), Value::Null);
         record.phase = OperationPhase::Prepared;
         let path = dir.path().join(format!("{}.json", record.operation_id));
-        let bytes = serde_json::to_vec(&record).unwrap();
+        let bytes = schema_v1_bytes(&record);
         fs::write(&path, &bytes).unwrap();
         let journal = OperationJournalCoordinator::open(dir.path().to_path_buf()).unwrap();
         assert_eq!(journal.recovery_summary().malformed_count, 1);
@@ -3970,7 +4669,7 @@ mod tests {
         let mut record = OperationRecord::new(intent(), Value::Null);
         record.phase = OperationPhase::FilesystemPublished;
         let path = dir.path().join(format!("{}.json", record.operation_id));
-        let bytes = serde_json::to_vec(&record).unwrap();
+        let bytes = schema_v1_bytes(&record);
         fs::write(&path, &bytes).unwrap();
         let journal = OperationJournalCoordinator::open(dir.path().to_path_buf()).unwrap();
         let summary = journal.recovery_summary();
@@ -3991,7 +4690,7 @@ mod tests {
         let mut record = OperationRecord::new(intent(), Value::Null);
         record.phase = OperationPhase::SourceReconciled;
         let path = dir.path().join(format!("{}.json", record.operation_id));
-        let mut value = serde_json::to_value(&record).unwrap();
+        let mut value = schema_v1_value(&record);
         value
             .as_object_mut()
             .unwrap()
@@ -4027,7 +4726,7 @@ mod tests {
         let mut record = OperationRecord::new(intent(), Value::Null);
         record.phase = OperationPhase::FilesystemPublished;
         let path = dir.path().join(format!("{}.json", record.operation_id));
-        let mut value = serde_json::to_value(&record).unwrap();
+        let mut value = schema_v1_value(&record);
         value
             .as_object_mut()
             .unwrap()
