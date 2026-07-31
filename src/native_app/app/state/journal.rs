@@ -13,8 +13,11 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::native_app::transaction_history::operation_journal::{
-    JournalError, OperationDisposition, OperationIntent, OperationJournalCoordinator,
-    OperationPhase,
+    BoundedAdmissionError, JournalError, OperationDisposition, OperationIntent,
+    OperationJournalCoordinator, OperationPhase,
+};
+use crate::native_app::transaction_history::{
+    HistoryFileAction, HistoryFileIoDirection, RejectedBeforeIntent,
 };
 
 const JOURNAL_COMMAND_CAPACITY: usize = 32;
@@ -90,6 +93,8 @@ impl OperationJournalUnavailable {
 
 #[derive(Debug, thiserror::Error)]
 pub(in crate::native_app) enum JournalOperationError {
+    #[error("operation rejected before durable intent: {0}")]
+    RejectedBeforeIntent(RejectedBeforeIntent),
     #[error(transparent)]
     Journal(#[from] JournalError),
     #[error("operation journal unavailable: {0}")]
@@ -99,6 +104,14 @@ pub(in crate::native_app) enum JournalOperationError {
 }
 
 enum JournalCommand {
+    BoundedWaveformRestore {
+        intent: OperationIntent,
+        payload: Value,
+        direction: HistoryFileIoDirection,
+        actions: Vec<HistoryFileAction>,
+        result: SyncSender<Result<Uuid, JournalOperationError>>,
+    },
+    #[cfg(test)]
     Admit {
         intent: OperationIntent,
         payload: Value,
@@ -231,6 +244,7 @@ impl OperationJournalOwner {
     }
 
     /// Queue an admission without performing journal I/O on the caller thread.
+    #[cfg(test)]
     #[allow(dead_code)]
     pub(in crate::native_app) fn admit(
         &self,
@@ -245,6 +259,35 @@ impl OperationJournalOwner {
             .try_send(JournalCommand::Admit {
                 intent,
                 payload,
+                result: result_tx,
+            })
+            .map_err(|error| match error {
+                TrySendError::Full(_) => JournalOwnerQueueError::Full,
+                TrySendError::Disconnected(_) => JournalOwnerQueueError::Closed,
+            })?;
+        Ok(result_rx)
+    }
+
+    /// Queue the bounded history capacity gate.  Shape and filesystem facts are resolved only
+    /// by the owner thread before the durable intent is written.
+    #[allow(dead_code)]
+    pub(in crate::native_app) fn admit_bounded_waveform_restore(
+        &self,
+        intent: OperationIntent,
+        payload: Value,
+        direction: HistoryFileIoDirection,
+        actions: Vec<HistoryFileAction>,
+    ) -> Result<Receiver<Result<Uuid, JournalOperationError>>, JournalOwnerQueueError> {
+        self.ensure_available()?;
+        let (result_tx, result_rx) = mpsc::sync_channel(1);
+        self.commands
+            .as_ref()
+            .ok_or(JournalOwnerQueueError::Closed)?
+            .try_send(JournalCommand::BoundedWaveformRestore {
+                intent,
+                payload,
+                direction,
+                actions,
                 result: result_tx,
             })
             .map_err(|error| match error {
@@ -391,6 +434,45 @@ fn run_owner(
 
     while !stop.load(std::sync::atomic::Ordering::Acquire) {
         match command_rx.recv_timeout(OWNER_POLL_INTERVAL) {
+            Ok(JournalCommand::BoundedWaveformRestore {
+                intent,
+                payload,
+                direction,
+                actions,
+                result,
+            }) => {
+                if stop.load(std::sync::atomic::Ordering::Acquire) {
+                    let _ = result.send(Err(JournalOperationError::Closed));
+                    continue;
+                }
+                let outcome = coordinator
+                    .as_mut()
+                    .ok_or_else(|| {
+                        JournalOperationError::Unavailable(
+                            unavailable
+                                .lock()
+                                .expect("journal unavailable state")
+                                .clone()
+                                .unwrap_or(OperationJournalUnavailable::OpenFailed(String::from(
+                                    "operation journal coordinator is unavailable",
+                                ))),
+                        )
+                    })
+                    .and_then(|coordinator| {
+                        coordinator
+                            .admit_bounded_waveform_restore(intent, payload, direction, &actions)
+                            .map_err(|error| match error {
+                                BoundedAdmissionError::Rejected(rejection) => {
+                                    JournalOperationError::RejectedBeforeIntent(rejection)
+                                }
+                                BoundedAdmissionError::Journal(error) => {
+                                    JournalOperationError::Journal(error)
+                                }
+                            })
+                    });
+                let _ = result.send(outcome);
+            }
+            #[cfg(test)]
             Ok(JournalCommand::Admit {
                 intent,
                 payload,
@@ -464,9 +546,11 @@ fn run_owner(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::native_app::transaction_history::HistoryFileIoDirection;
     use crate::native_app::transaction_history::operation_journal::{
         OperationActor, OperationKind,
     };
+    use crate::native_app::waveform_edits::waveform_restore_action_for_capacity_tests;
 
     fn intent() -> OperationIntent {
         OperationIntent {
@@ -474,6 +558,101 @@ mod tests {
             kind: OperationKind::FileHistory,
             label: String::from("owner test"),
         }
+    }
+
+    #[test]
+    fn owner_admits_bounded_restore_only_after_owner_thread_gate() {
+        let directory = tempfile::tempdir().expect("journal directory");
+        let files = tempfile::tempdir().expect("restore files");
+        let backup = files.path().join("before.wav");
+        let target = files.path().join("target.wav");
+        std::fs::write(&backup, vec![7_u8; 4097]).expect("backup");
+        std::fs::write(&target, vec![0_u8; 4097]).expect("target");
+        let action = waveform_restore_action_for_capacity_tests(backup, target, false);
+        let owner = OperationJournalOwner::start_with_directory(directory.path().to_path_buf());
+        assert_eq!(
+            owner
+                .statuses
+                .recv_timeout(Duration::from_secs(2))
+                .expect("initializing status"),
+            OperationJournalStatus::Initializing
+        );
+        assert!(matches!(
+            owner
+                .statuses
+                .recv_timeout(Duration::from_secs(2))
+                .expect("available status"),
+            OperationJournalStatus::Available { .. }
+        ));
+        let rejected = owner
+            .admit_bounded_waveform_restore(
+                intent(),
+                Value::Null,
+                HistoryFileIoDirection::Undo,
+                Vec::new(),
+            )
+            .expect("queue invalid shape")
+            .recv_timeout(Duration::from_secs(2))
+            .expect("invalid-shape result");
+        assert!(matches!(
+            rejected,
+            Err(JournalOperationError::RejectedBeforeIntent(
+                RejectedBeforeIntent::InvalidShape
+            ))
+        ));
+        let missing_target = files.path().join("missing-target.wav");
+        let missing_action = waveform_restore_action_for_capacity_tests(
+            files.path().join("before.wav"),
+            missing_target,
+            false,
+        );
+        let missing = owner
+            .admit_bounded_waveform_restore(
+                intent(),
+                Value::Null,
+                HistoryFileIoDirection::Undo,
+                vec![missing_action],
+            )
+            .expect("queue missing target")
+            .recv_timeout(Duration::from_secs(2))
+            .expect("missing-target result");
+        assert!(matches!(
+            missing,
+            Err(JournalOperationError::RejectedBeforeIntent(
+                RejectedBeforeIntent::MissingTarget(_)
+            ))
+        ));
+        assert_eq!(
+            std::fs::read_dir(directory.path())
+                .expect("journal entries")
+                .filter_map(Result::ok)
+                .filter(
+                    |entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("json")
+                )
+                .count(),
+            0
+        );
+        let result = owner
+            .admit_bounded_waveform_restore(
+                intent(),
+                Value::Null,
+                HistoryFileIoDirection::Undo,
+                vec![action],
+            )
+            .expect("queue bounded admission")
+            .recv_timeout(Duration::from_secs(2))
+            .expect("admission result")
+            .expect("bounded admission");
+        drop(owner);
+        let record = std::fs::read_dir(directory.path())
+            .expect("journal entries")
+            .filter_map(Result::ok)
+            .find(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("json"))
+            .map(|entry| std::fs::read(entry.path()).expect("record bytes"))
+            .expect("durable record");
+        let value: Value = serde_json::from_slice(&record).expect("record json");
+        assert_eq!(value["operation_id"], result.to_string());
+        assert!(value["capacity_plan"]["volumes"].is_array());
     }
 
     #[test]
