@@ -848,6 +848,57 @@ fn open_leaf_relative(
     Ok((file, identity))
 }
 
+fn verify_relative_absent(root: &File, relative: &Path, display: &Path) -> Result<(), String> {
+    clean_relative_path(relative)?;
+    let mut components = relative.components();
+    let Some(std::path::Component::Normal(component)) = components.next() else {
+        return Err(String::from("locator must contain one normal component"));
+    };
+    if components.next().is_some() {
+        return Err(String::from("locator must be a destination-local leaf"));
+    }
+
+    #[cfg(unix)]
+    {
+        use std::ffi::CString;
+        use std::os::fd::AsRawFd;
+
+        let name = CString::new(component.as_encoded_bytes())
+            .map_err(|_| String::from("locator contains NUL"))?;
+        let mut metadata = std::mem::MaybeUninit::<libc::stat>::zeroed();
+        let result = unsafe {
+            libc::fstatat(
+                root.as_raw_fd(),
+                name.as_ptr(),
+                metadata.as_mut_ptr(),
+                libc::AT_SYMLINK_NOFOLLOW,
+            )
+        };
+        if result == 0 {
+            return Err(format!(
+                "staging locator is occupied: {}",
+                display.display()
+            ));
+        }
+        let error = io::Error::last_os_error();
+        if error.kind() == io::ErrorKind::NotFound {
+            return Ok(());
+        }
+        return Err(format!(
+            "could not verify staging locator absence at {}: {error}",
+            display.display()
+        ));
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = (root, display);
+        Err(String::from(
+            "staging locator absence cannot be verified on this platform",
+        ))
+    }
+}
+
 fn infer_root(path: &Path, relative: &Path) -> Result<PathBuf, String> {
     clean_relative_path(relative)?;
     let mut root = path.to_path_buf();
@@ -926,6 +977,12 @@ fn prepare_descriptor(
         open_root(&target_root_path).map_err(|error| format!("source root: {error}"))?;
     let (target_root_file, target_root) =
         open_root(&target_root_path).map_err(|error| format!("target root: {error}"))?;
+    let staging = PathBuf::from(format!(".wavecrate-restore-{operation_id}.stage"));
+    verify_relative_absent(
+        &target_root_file,
+        &staging,
+        &target_root_path.join(&staging),
+    )?;
     let (backup_root_file, backup_root) =
         open_root(&backup_root_path).map_err(|error| format!("backup root: {error}"))?;
     let (target_file, target_identity) = open_leaf_relative(
@@ -970,7 +1027,6 @@ fn prepare_descriptor(
     }
     super::capacity_gate::aggregate_capacity_plan(&[requirement], &claims_without_own)
         .map_err(|error| error.to_string())?;
-    let staging = PathBuf::from(format!(".wavecrate-restore-{operation_id}.stage"));
     let direction = match direction {
         super::file_io::HistoryFileIoDirection::Undo => PreparedRestoreDirection::Undo,
         super::file_io::HistoryFileIoDirection::Redo => PreparedRestoreDirection::Redo,
@@ -1069,6 +1125,15 @@ impl OperationJournalCoordinator {
     ) -> Result<PreparedOperationOutcome, BoundedAdmissionError> {
         let operation_id =
             self.admit_bounded_waveform_restore(intent, payload, direction, actions)?;
+        self.prepare_admitted_bounded_waveform_restore(operation_id, direction, actions)
+    }
+
+    fn prepare_admitted_bounded_waveform_restore(
+        &mut self,
+        operation_id: Uuid,
+        direction: super::file_io::HistoryFileIoDirection,
+        actions: &[super::file_io::HistoryFileAction],
+    ) -> Result<PreparedOperationOutcome, BoundedAdmissionError> {
         let capacity_plan = self
             .store
             .record(operation_id)
@@ -1645,6 +1710,65 @@ mod tests {
             format!(".wavecrate-restore-{id}.stage")
         );
         assert_eq!(reopened.store.capacity_claims().len(), 1);
+    }
+
+    #[test]
+    fn occupied_staging_entry_retries_without_mutation_and_reopens_unresolved() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let files = fixture_directory();
+        let backup = files.path().join("before.wav");
+        let target = files.path().join("target.wav");
+        let staging_bytes = b"occupied staging entry";
+        fs::write(&backup, vec![7_u8; 4097]).unwrap();
+        fs::write(&target, vec![0_u8; 4097]).unwrap();
+        let action = crate::native_app::waveform_edits::waveform_restore_action_for_capacity_tests(
+            backup,
+            target.clone(),
+            false,
+        );
+        let mut coordinator = OperationJournalCoordinator::open(dir.path().to_path_buf()).unwrap();
+        let id = coordinator
+            .admit_bounded_waveform_restore(
+                intent(),
+                Value::Null,
+                super::super::file_io::HistoryFileIoDirection::Undo,
+                std::slice::from_ref(&action),
+            )
+            .unwrap();
+        let staging = files.path().join(format!(".wavecrate-restore-{id}.stage"));
+        fs::write(&staging, staging_bytes).unwrap();
+        let claims_before = coordinator.store.capacity_claims().clone();
+        let outcome = coordinator
+            .prepare_admitted_bounded_waveform_restore(
+                id,
+                super::super::file_io::HistoryFileIoDirection::Undo,
+                std::slice::from_ref(&action),
+            )
+            .unwrap();
+        assert!(matches!(
+            outcome,
+            PreparedOperationOutcome::RetryPending { operation_id, .. } if operation_id == id
+        ));
+        let record = coordinator.record(id).unwrap();
+        assert_eq!(record.phase, OperationPhase::IntentDurable);
+        assert_eq!(record.disposition, OperationDisposition::RetryPending);
+        assert!(record.prepared.is_none());
+        assert_eq!(coordinator.store.capacity_claims(), &claims_before);
+        assert_eq!(fs::read(&staging).unwrap(), staging_bytes);
+        assert_eq!(fs::read(&target).unwrap(), vec![0_u8; 4097]);
+        drop(coordinator);
+
+        let reopened = OperationJournalCoordinator::open(dir.path().to_path_buf()).unwrap();
+        let reopened_record = reopened.record(id).unwrap();
+        assert_eq!(reopened_record.phase, OperationPhase::IntentDurable);
+        assert_eq!(
+            reopened_record.disposition,
+            OperationDisposition::RetryPending
+        );
+        assert!(reopened_record.prepared.is_none());
+        assert_eq!(reopened.store.capacity_claims(), &claims_before);
+        assert_eq!(fs::read(&staging).unwrap(), staging_bytes);
     }
 
     #[test]
