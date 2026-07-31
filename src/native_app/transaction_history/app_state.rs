@@ -559,6 +559,7 @@ fn operation_id_for_stage_outcome(outcome: &FilesystemStageOutcome) -> Uuid {
     match outcome {
         FilesystemStageOutcome::FilesystemStaged(operation_id)
         | FilesystemStageOutcome::FilesystemPublished(operation_id)
+        | FilesystemStageOutcome::PlatformQualificationRequired { operation_id, .. }
         | FilesystemStageOutcome::RetryPending { operation_id, .. }
         | FilesystemStageOutcome::AuditRequired { operation_id, .. }
         | FilesystemStageOutcome::JournalWriteFailed { operation_id, .. } => *operation_id,
@@ -592,6 +593,9 @@ fn owner_staging_status(
         ),
         FilesystemStageOutcome::FilesystemPublished(operation_id) => format!(
             "{verb} {label} published (operation {operation_id}); history completion is pending"
+        ),
+        FilesystemStageOutcome::PlatformQualificationRequired { operation_id, .. } => format!(
+            "{verb} {label}: safe replacement unavailable on the current platform/build (operation {operation_id}); staged recovery data preserved; retry requires platform/build or qualification-policy requalification"
         ),
         FilesystemStageOutcome::RetryPending {
             operation_id,

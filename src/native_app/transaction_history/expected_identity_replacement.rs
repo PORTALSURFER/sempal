@@ -6,6 +6,8 @@
 use std::fs::File;
 use std::path::Path;
 
+use serde::{Deserialize, Serialize};
+
 use super::capacity_gate::VolumeIdentity;
 use super::operation_journal::{PreparedFileEvidence, PreparedObjectIdentity};
 use super::publication::{
@@ -14,6 +16,127 @@ use super::publication::{
 
 mod sealed {
     pub trait Sealed {}
+}
+
+/// Stable platform family recorded with a replacement qualification assessment.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ReplacementPlatformFamily {
+    Macos,
+    Windows,
+    Linux,
+    Other,
+}
+
+impl ReplacementPlatformFamily {
+    fn current() -> Self {
+        #[cfg(target_os = "macos")]
+        {
+            return Self::Macos;
+        }
+        #[cfg(target_os = "windows")]
+        {
+            return Self::Windows;
+        }
+        #[cfg(target_os = "linux")]
+        {
+            return Self::Linux;
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+        {
+            Self::Other
+        }
+    }
+}
+
+/// Bounded filesystem relationship observed before the read-only assessment.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ObservedFilesystemClassification {
+    SameVolume,
+    DifferentVolume,
+    Unavailable,
+}
+
+/// Public candidate primitive considered by the current platform/build.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ReplacementCandidatePrimitive {
+    MacosRenameAtxNpRenameExcl,
+    MacosRenameAtxNpRenameSwap,
+    NoPublicCandidate,
+}
+
+/// Semantic result of assessing a candidate without invoking it.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ReplacementCandidateAssessment {
+    AbsentFinalOnly,
+    SwapWithoutExpectedTargetIdentityOperand,
+    NoQualifiedCandidate,
+}
+
+/// Stable invariant code explaining why expected-identity replacement is not qualified.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ReplacementMissingInvariant {
+    AtomicExpectedTargetIdentityComparison,
+}
+
+/// Stable decision recorded for an unsupported expected-identity replacement assessment.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ReplacementQualificationDecision {
+    PlatformQualificationRequired,
+}
+
+/// Stable condition under which a later attempt may reassess the platform boundary.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ReplacementQualificationRetryCondition {
+    PlatformBuildOrQualificationPolicyChange,
+}
+
+/// Latest bounded evidence explaining an unsupported replacement assessment.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct ReplacementQualificationAssessment {
+    pub(crate) platform_family: ReplacementPlatformFamily,
+    pub(crate) observed_filesystem: ObservedFilesystemClassification,
+    pub(crate) volume: VolumeIdentity,
+    pub(crate) candidate: ReplacementCandidatePrimitive,
+    pub(crate) candidate_assessment: ReplacementCandidateAssessment,
+    pub(crate) missing_invariant: ReplacementMissingInvariant,
+    pub(crate) decision: ReplacementQualificationDecision,
+    pub(crate) retry_condition: ReplacementQualificationRetryCondition,
+}
+
+fn classify_candidate(
+    platform_family: ReplacementPlatformFamily,
+    observed_filesystem: ObservedFilesystemClassification,
+    volume: &VolumeIdentity,
+    candidate: ReplacementCandidatePrimitive,
+) -> ReplacementQualificationAssessment {
+    let candidate_assessment = match candidate {
+        ReplacementCandidatePrimitive::MacosRenameAtxNpRenameExcl => {
+            ReplacementCandidateAssessment::AbsentFinalOnly
+        }
+        ReplacementCandidatePrimitive::MacosRenameAtxNpRenameSwap => {
+            ReplacementCandidateAssessment::SwapWithoutExpectedTargetIdentityOperand
+        }
+        ReplacementCandidatePrimitive::NoPublicCandidate => {
+            ReplacementCandidateAssessment::NoQualifiedCandidate
+        }
+    };
+    ReplacementQualificationAssessment {
+        platform_family,
+        observed_filesystem,
+        volume: volume.clone(),
+        candidate,
+        candidate_assessment,
+        missing_invariant: ReplacementMissingInvariant::AtomicExpectedTargetIdentityComparison,
+        decision: ReplacementQualificationDecision::PlatformQualificationRequired,
+        retry_condition: ReplacementQualificationRetryCondition::PlatformBuildOrQualificationPolicyChange,
+    }
 }
 
 /// Handles and relative names supplied by the journal owner after all pre-attempt checks.
@@ -77,7 +200,9 @@ impl QualifiedExpectedIdentityReplacement {
 #[allow(dead_code)]
 pub(super) enum ExpectedIdentityReplacementOutcome {
     QualifiedSuccess(QualifiedExpectedIdentityReplacement),
-    Unsupported { reason: String },
+    PlatformQualificationRequired {
+        assessment: ReplacementQualificationAssessment,
+    },
     Drift { reason: String },
     Ambiguous { reason: String },
 }
@@ -90,7 +215,8 @@ pub(super) trait ExpectedIdentityReplacementAdapter: sealed::Sealed {
     ) -> ExpectedIdentityReplacementOutcome;
 }
 
-/// Production adapter.  No platform replacement primitive is qualified in this slice.
+/// Production adapter.  Assessment is read-only; no platform replacement primitive is qualified
+/// in this slice.
 pub(super) struct ProductionExpectedIdentityReplacementAdapter;
 
 impl sealed::Sealed for ProductionExpectedIdentityReplacementAdapter {}
@@ -100,6 +226,18 @@ impl ExpectedIdentityReplacementAdapter for ProductionExpectedIdentityReplacemen
         &self,
         request: ExpectedIdentityReplacementRequest<'_>,
     ) -> ExpectedIdentityReplacementOutcome {
+        let assessment = classify_candidate(
+            ReplacementPlatformFamily::current(),
+            // The journal has already validated the target, staging, and capacity facts against
+            // one descriptor-derived volume identity.  This is an observation, not a filesystem
+            // capability or qualification claim.
+            ObservedFilesystemClassification::SameVolume,
+            request.volume,
+            #[cfg(target_os = "macos")]
+            ReplacementCandidatePrimitive::MacosRenameAtxNpRenameSwap,
+            #[cfg(not(target_os = "macos"))]
+            ReplacementCandidatePrimitive::NoPublicCandidate,
+        );
         let _ = (
             request.target_parent,
             request.target,
@@ -110,12 +248,48 @@ impl ExpectedIdentityReplacementAdapter for ProductionExpectedIdentityReplacemen
             request.expected_target,
             request.staging_identity,
             request.staging_content,
-            request.volume,
         );
-        ExpectedIdentityReplacementOutcome::Unsupported {
-            reason: String::from("expected-identity replacement primitive is not qualified"),
-        }
+        ExpectedIdentityReplacementOutcome::PlatformQualificationRequired { assessment }
     }
+}
+
+#[cfg(test)]
+fn production_assessment_for_test(
+    filesystem: ObservedFilesystemClassification,
+    candidate: ReplacementCandidatePrimitive,
+) -> ReplacementQualificationAssessment {
+    classify_candidate(
+        ReplacementPlatformFamily::current(),
+        filesystem,
+        &VolumeIdentity { device: 1 },
+        candidate,
+    )
+}
+
+#[cfg(test)]
+fn assert_unsupported_assessment(
+    assessment: &ReplacementQualificationAssessment,
+) {
+    assert_eq!(
+        assessment.missing_invariant,
+        ReplacementMissingInvariant::AtomicExpectedTargetIdentityComparison
+    );
+    assert_eq!(
+        assessment.decision,
+        ReplacementQualificationDecision::PlatformQualificationRequired
+    );
+    assert_eq!(
+        assessment.retry_condition,
+        ReplacementQualificationRetryCondition::PlatformBuildOrQualificationPolicyChange
+    );
+}
+
+#[cfg(test)]
+fn candidate_assessment(
+    candidate: ReplacementCandidatePrimitive,
+) -> ReplacementCandidateAssessment {
+    production_assessment_for_test(ObservedFilesystemClassification::SameVolume, candidate)
+        .candidate_assessment
 }
 
 #[cfg(test)]
@@ -238,9 +412,65 @@ mod tests {
             staging_content: &PreparedFileEvidence::ContentHash([1; 32]),
             volume: &VolumeIdentity { device: 1 },
         };
+        let ExpectedIdentityReplacementOutcome::PlatformQualificationRequired { assessment } =
+            ProductionExpectedIdentityReplacementAdapter.attempt(request)
+        else {
+            panic!("production assessment must remain qualification-required");
+        };
+        assert_unsupported_assessment(&assessment);
+        assert_eq!(assessment.volume, VolumeIdentity { device: 1 });
+    }
+
+    #[test]
+    fn candidate_classification_keeps_exclusive_and_swap_semantics_distinct() {
+        assert_eq!(
+            candidate_assessment(ReplacementCandidatePrimitive::MacosRenameAtxNpRenameExcl),
+            ReplacementCandidateAssessment::AbsentFinalOnly
+        );
+        assert_eq!(
+            candidate_assessment(ReplacementCandidatePrimitive::MacosRenameAtxNpRenameSwap),
+            ReplacementCandidateAssessment::SwapWithoutExpectedTargetIdentityOperand
+        );
+    }
+
+    #[test]
+    fn filesystem_classification_does_not_qualify_a_candidate() {
+        let baseline = production_assessment_for_test(
+            ObservedFilesystemClassification::SameVolume,
+            ReplacementCandidatePrimitive::MacosRenameAtxNpRenameSwap,
+        );
+        for filesystem in [
+            ObservedFilesystemClassification::DifferentVolume,
+            ObservedFilesystemClassification::Unavailable,
+        ] {
+            let assessment = production_assessment_for_test(
+                filesystem,
+                ReplacementCandidatePrimitive::MacosRenameAtxNpRenameSwap,
+            );
+            assert_eq!(assessment.candidate, baseline.candidate);
+            assert_eq!(
+                assessment.candidate_assessment,
+                baseline.candidate_assessment
+            );
+            assert_eq!(assessment.missing_invariant, baseline.missing_invariant);
+            assert_eq!(assessment.decision, baseline.decision);
+            assert_eq!(assessment.retry_condition, baseline.retry_condition);
+        }
+    }
+
+    #[test]
+    fn qualification_required_assessment_cannot_construct_qualified_success() {
+        let assessment = production_assessment_for_test(
+            ObservedFilesystemClassification::SameVolume,
+            ReplacementCandidatePrimitive::MacosRenameAtxNpRenameSwap,
+        );
+        assert_unsupported_assessment(&assessment);
+        let outcome = ExpectedIdentityReplacementOutcome::PlatformQualificationRequired {
+            assessment,
+        };
         assert!(matches!(
-            ProductionExpectedIdentityReplacementAdapter.attempt(request),
-            ExpectedIdentityReplacementOutcome::Unsupported { .. }
+            outcome,
+            ExpectedIdentityReplacementOutcome::PlatformQualificationRequired { .. }
         ));
     }
 }

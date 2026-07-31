@@ -959,8 +959,10 @@ mod tests {
             .expect("prepare and stage result")
             .expect("prepare and stage")
         {
-            FilesystemStageOutcome::RetryPending { operation_id, .. } => operation_id,
-            other => panic!("expected retry-pending outcome, got {other:?}"),
+            FilesystemStageOutcome::PlatformQualificationRequired { operation_id, .. } => {
+                operation_id
+            }
+            other => panic!("expected platform-qualification outcome, got {other:?}"),
         };
         assert_eq!(
             std::fs::read(&target).expect("target after staging"),

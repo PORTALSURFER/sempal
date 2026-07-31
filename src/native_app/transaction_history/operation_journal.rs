@@ -18,10 +18,18 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
-use super::capacity_gate::{DurableCapacityPlan, RejectedBeforeIntent, VolumeIdentity};
+use super::capacity_gate::{DurableCapacityPlan, RejectedBeforeIntent};
+pub(crate) use super::capacity_gate::VolumeIdentity;
 use super::expected_identity_replacement::{
     ExpectedIdentityReplacementAdapter, ExpectedIdentityReplacementOutcome,
     ExpectedIdentityReplacementRequest, ProductionExpectedIdentityReplacementAdapter,
+};
+pub(crate) use super::expected_identity_replacement::ReplacementQualificationAssessment;
+#[cfg(test)]
+pub(crate) use super::expected_identity_replacement::{
+    ObservedFilesystemClassification, ReplacementCandidateAssessment,
+    ReplacementCandidatePrimitive, ReplacementMissingInvariant, ReplacementPlatformFamily,
+    ReplacementQualificationDecision, ReplacementQualificationRetryCondition,
 };
 use super::publication::{FilesystemPublishedWaveformRestore, validate_publication_evidence};
 
@@ -333,6 +341,10 @@ pub(crate) struct OperationRecord {
     /// Typed filesystem publication evidence. Legacy records do not contain this checkpoint.
     #[serde(default)]
     pub(crate) published: Option<FilesystemPublishedWaveformRestore>,
+    /// Latest bounded assessment explaining why expected-identity replacement is not qualified.
+    /// Legacy schema-v1 records do not contain this field.
+    #[serde(default)]
+    pub(crate) replacement_qualification: Option<ReplacementQualificationAssessment>,
     /// Creation timestamp in Unix milliseconds.
     pub(crate) created_unix_ms: i64,
     /// Last update timestamp in Unix milliseconds.
@@ -362,6 +374,7 @@ impl OperationRecord {
             prepared: None,
             staged: None,
             published: None,
+            replacement_qualification: None,
             created_unix_ms: now,
             updated_unix_ms: now,
         }
@@ -398,6 +411,9 @@ impl OperationRecord {
         updated.phase = OperationPhase::FilesystemPublished;
         updated.disposition = OperationDisposition::None;
         updated.published = Some(published);
+        // A qualified publication supersedes any prior unsupported assessment.  Keeping both
+        // would make the durable record contradict its terminal filesystem evidence.
+        updated.replacement_qualification = None;
         updated.updated_unix_ms = unix_millis();
         updated
     }
@@ -495,6 +511,10 @@ pub(crate) enum PreparedOperationOutcome {
 pub(crate) enum FilesystemStageOutcome {
     FilesystemStaged(Uuid),
     FilesystemPublished(Uuid),
+    PlatformQualificationRequired {
+        operation_id: Uuid,
+        assessment: ReplacementQualificationAssessment,
+    },
     RetryPending { operation_id: Uuid, reason: String },
     AuditRequired { operation_id: Uuid, reason: String },
     JournalWriteFailed { operation_id: Uuid, reason: String },
@@ -622,6 +642,43 @@ impl OperationJournalStore {
         phase: OperationPhase,
         disposition: OperationDisposition,
     ) -> Result<(), JournalError> {
+        self.update_with_optional_replacement_qualification(
+            operation_id,
+            phase,
+            disposition,
+            None,
+        )
+    }
+
+    /// Durably replace one staged record with its latest platform qualification assessment.
+    fn update_with_replacement_qualification(
+        &mut self,
+        operation_id: Uuid,
+        assessment: ReplacementQualificationAssessment,
+    ) -> Result<(), JournalError> {
+        self.update_with_optional_replacement_qualification(
+            operation_id,
+            OperationPhase::FilesystemStaged,
+            OperationDisposition::RetryPending,
+            Some(assessment),
+        )
+    }
+
+    fn update_with_optional_replacement_qualification(
+        &mut self,
+        operation_id: Uuid,
+        phase: OperationPhase,
+        disposition: OperationDisposition,
+        replacement_qualification: Option<ReplacementQualificationAssessment>,
+    ) -> Result<(), JournalError> {
+        if replacement_qualification.is_some() && phase != OperationPhase::FilesystemStaged {
+            return Err(JournalError::InvalidPublicationEvidence {
+                operation_id,
+                reason: String::from(
+                    "replacement qualification evidence requires the filesystem-staged phase",
+                ),
+            });
+        }
         let current = self
             .records
             .get(&operation_id)
@@ -684,7 +741,16 @@ impl OperationJournalStore {
                 }
             })?;
         }
-        let updated = current.with_update(phase, disposition);
+        let mut updated = current.with_update(phase, disposition);
+        if let Some(assessment) = replacement_qualification {
+            if current.phase == phase
+                && current.disposition == disposition
+                && current.replacement_qualification.as_ref() == Some(&assessment)
+            {
+                return Ok(());
+            }
+            updated.replacement_qualification = Some(assessment);
+        }
         let path = self.record_path(operation_id);
         atomic_durable_write(&path, &updated)?;
         self.records.insert(operation_id, updated);
@@ -940,6 +1006,13 @@ impl OperationJournalStore {
                 });
                 continue;
             }
+            if validate_replacement_qualification_value(&value).is_err() {
+                self.recovery.malformed_count += 1;
+                self.recovery.attention_required = true;
+                self.retained
+                    .push(RetainedRecord::Malformed { path, bytes });
+                continue;
+            }
             match serde_json::from_value::<OperationRecord>(value) {
                 Ok(record) => {
                     let filename_id = path
@@ -1046,6 +1119,44 @@ impl OperationJournalStore {
         self.rebuild_capacity_claims();
         Ok(())
     }
+}
+
+fn validate_replacement_qualification_value(value: &Value) -> Result<(), &'static str> {
+    let Some(qualification) = value.get("replacement_qualification") else {
+        return Ok(());
+    };
+    let Some(qualification) = qualification.as_object() else {
+        return if qualification.is_null() {
+            Ok(())
+        } else {
+            Err("replacement qualification must be an object or null")
+        };
+    };
+    if qualification.keys().any(|key| {
+        !matches!(
+            key.as_str(),
+            "platform_family"
+                | "observed_filesystem"
+                | "volume"
+                | "candidate"
+                | "candidate_assessment"
+                | "missing_invariant"
+                | "decision"
+                | "retry_condition"
+        )
+    }) {
+        return Err("replacement qualification contains an unknown field");
+    }
+    let Some(volume) = qualification.get("volume") else {
+        return Ok(());
+    };
+    let Some(volume) = volume.as_object() else {
+        return Err("replacement qualification volume must be an object");
+    };
+    if volume.keys().any(|key| key != "device") {
+        return Err("replacement qualification volume contains an unknown field");
+    }
+    Ok(())
 }
 
 fn validate_capacity_plan_option(
@@ -2194,12 +2305,9 @@ impl OperationJournalCoordinator {
             volume: &reacquired.volume,
         };
         match adapter.attempt(request) {
-            ExpectedIdentityReplacementOutcome::Unsupported { reason } => self
-                .update_attempt_disposition(
-                    operation_id,
-                    OperationDisposition::RetryPending,
-                    reason,
-                ),
+            ExpectedIdentityReplacementOutcome::PlatformQualificationRequired { assessment } => {
+                self.update_platform_qualification(operation_id, assessment)
+            }
             ExpectedIdentityReplacementOutcome::Drift { reason }
             | ExpectedIdentityReplacementOutcome::Ambiguous { reason } => self
                 .update_attempt_disposition(
@@ -2224,6 +2332,26 @@ impl OperationJournalCoordinator {
                     }),
                 }
             }
+        }
+    }
+
+    fn update_platform_qualification(
+        &mut self,
+        operation_id: Uuid,
+        assessment: ReplacementQualificationAssessment,
+    ) -> Result<FilesystemStageOutcome, JournalError> {
+        match self
+            .store
+            .update_with_replacement_qualification(operation_id, assessment.clone())
+        {
+            Ok(()) => Ok(FilesystemStageOutcome::PlatformQualificationRequired {
+                operation_id,
+                assessment,
+            }),
+            Err(error) => Ok(FilesystemStageOutcome::JournalWriteFailed {
+                operation_id,
+                reason: error.to_string(),
+            }),
         }
     }
 
@@ -2897,16 +3025,36 @@ mod tests {
             .collect::<Vec<_>>();
         let claims_before = journal.store.capacity_claims().clone();
 
-        assert!(matches!(
-            journal
-                .attempt_publish_staged_waveform_restore(id)
-                .expect("publication attempt"),
-            FilesystemStageOutcome::RetryPending { operation_id, .. } if operation_id == id
-        ));
+        let outcome = journal
+            .attempt_publish_staged_waveform_restore(id)
+            .expect("publication attempt");
+        let assessment = match &outcome {
+            FilesystemStageOutcome::PlatformQualificationRequired {
+                operation_id,
+                assessment,
+            } if *operation_id == id => assessment.clone(),
+            other => panic!("expected platform qualification, got {other:?}"),
+        };
+        assert_eq!(
+            assessment.missing_invariant,
+            super::super::expected_identity_replacement::ReplacementMissingInvariant::AtomicExpectedTargetIdentityComparison
+        );
+        assert_eq!(
+            assessment.retry_condition,
+            super::super::expected_identity_replacement::ReplacementQualificationRetryCondition::PlatformBuildOrQualificationPolicyChange
+        );
         let record = journal.record(id).unwrap();
         assert_eq!(record.phase, OperationPhase::FilesystemStaged);
         assert_eq!(record.disposition, OperationDisposition::RetryPending);
-        assert!(record.staged.is_some());
+        assert_eq!(record.replacement_qualification.as_ref(), Some(&assessment));
+        assert!(matches!(
+            record.staged.as_ref().map(|staged| &staged.participant),
+            Some(FilesystemStagedParticipant::CopyValidated { .. })
+        ));
+        assert_eq!(
+            record.prepared.as_ref().unwrap().target.relative_path,
+            PathBuf::from("target.wav")
+        );
         assert_eq!(journal.store.capacity_claims(), &claims_before);
         assert_eq!(fs::read(&backup).unwrap(), vec![7_u8; 4097]);
         assert_eq!(fs::read(&target).unwrap(), target_before);
@@ -2927,7 +3075,45 @@ mod tests {
             reopened_record.disposition,
             OperationDisposition::RetryPending
         );
+        assert_eq!(
+            reopened_record.replacement_qualification.as_ref(),
+            Some(&assessment)
+        );
+        assert!(matches!(
+            reopened_record
+                .staged
+                .as_ref()
+                .map(|staged| &staged.participant),
+            Some(FilesystemStagedParticipant::CopyValidated { .. })
+        ));
+        assert_eq!(
+            reopened_record
+                .prepared
+                .as_ref()
+                .unwrap()
+                .target
+                .relative_path,
+            PathBuf::from("target.wav")
+        );
         assert_eq!(reopened.store.capacity_claims(), &claims_before);
+    }
+
+    #[test]
+    fn repeated_platform_qualification_assessment_is_idempotent() {
+        let (_journal_dir, _files, mut journal, id, _backup, _target, _staging) =
+            prepared_restore_fixture();
+        journal
+            .stage_admitted_bounded_waveform_restore(id)
+            .expect("stage restore");
+        let first = journal
+            .attempt_publish_staged_waveform_restore(id)
+            .expect("first qualification assessment");
+        let first_record = journal.record(id).unwrap().clone();
+        let second = journal
+            .attempt_publish_staged_waveform_restore(id)
+            .expect("repeated qualification assessment");
+        assert_eq!(second, first);
+        assert_eq!(journal.record(id), Some(&first_record));
     }
 
     #[test]
@@ -2999,6 +3185,19 @@ mod tests {
             .stage_admitted_bounded_waveform_restore(id)
             .expect("stage restore");
         let claims_before = journal.store.capacity_claims().clone();
+        let qualification = journal
+            .attempt_publish_staged_waveform_restore(id)
+            .expect("unsupported production assessment");
+        assert!(matches!(
+            qualification,
+            FilesystemStageOutcome::PlatformQualificationRequired { operation_id, .. }
+                if operation_id == id
+        ));
+        assert!(journal
+            .record(id)
+            .unwrap()
+            .replacement_qualification
+            .is_some());
         let adapter = super::super::expected_identity_replacement::
             TestQualifiedExpectedIdentityReplacementAdapter { drift: None };
 
@@ -3011,6 +3210,7 @@ mod tests {
         let record = journal.record(id).unwrap();
         assert_eq!(record.phase, OperationPhase::FilesystemPublished);
         assert_eq!(record.disposition, OperationDisposition::None);
+        assert!(record.replacement_qualification.is_none());
         assert!(record.published.is_some());
         assert_eq!(journal.store.capacity_claims(), &claims_before);
         assert_eq!(fs::read(&target).unwrap(), vec![0_u8; 4097]);
@@ -3614,6 +3814,116 @@ mod tests {
         assert!(reopened_record.prepared.is_none());
         assert_eq!(reopened.store.capacity_claims(), &claims_before);
         assert_eq!(fs::read(&staging).unwrap(), staging_bytes);
+    }
+
+    #[test]
+    fn schema_v1_record_without_replacement_qualification_reopens_unchanged() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let record = OperationRecord::new(intent(), serde_json::json!({"legacy": true}));
+        let operation_id = record.operation_id;
+        let path = dir.path().join(format!("{operation_id}.json"));
+        let mut value = serde_json::to_value(&record).unwrap();
+        value
+            .as_object_mut()
+            .unwrap()
+            .remove("replacement_qualification")
+            .expect("current record has optional qualification field");
+        let bytes = serde_json::to_vec(&value).unwrap();
+        fs::write(&path, &bytes).unwrap();
+
+        let journal = OperationJournalCoordinator::open(dir.path().to_path_buf()).unwrap();
+        let reopened = journal.record(operation_id).expect("legacy record reopens");
+        assert_eq!(reopened.operation_id, operation_id);
+        assert_eq!(reopened.payload, serde_json::json!({"legacy": true}));
+        assert_eq!(reopened.phase, OperationPhase::IntentDurable);
+        assert_eq!(reopened.disposition, OperationDisposition::None);
+        assert!(reopened.replacement_qualification.is_none());
+        assert_eq!(journal.recovery_summary().malformed_count, 0);
+        assert_eq!(fs::read(path).unwrap(), bytes);
+    }
+
+    fn assert_malformed_qualification_recovery(
+        journal: &OperationJournalCoordinator,
+        operation_id: Uuid,
+        path: &Path,
+        bytes: &[u8],
+    ) {
+        let summary = journal.recovery_summary();
+        assert_eq!(summary.malformed_count, 1);
+        assert!(summary.attention_required);
+        assert!(journal.record(operation_id).is_none());
+        assert!(journal.store.capacity_blocked());
+        assert_eq!(fs::read(path).unwrap(), bytes);
+    }
+
+    #[test]
+    fn unknown_replacement_qualification_field_is_retained_fail_closed() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let record = OperationRecord::new(intent(), Value::Null);
+        let operation_id = record.operation_id;
+        let path = dir.path().join(format!("{operation_id}.json"));
+        let mut value = serde_json::to_value(&record).unwrap();
+        value.as_object_mut().unwrap().insert(
+            String::from("replacement_qualification"),
+            serde_json::json!({
+                "platform_family": "linux",
+                "observed_filesystem": "same_volume",
+                "volume": {"device": 1},
+                "candidate": "no_public_candidate",
+                "candidate_assessment": "no_qualified_candidate",
+                "missing_invariant": "atomic_expected_target_identity_comparison",
+                "decision": "platform_qualification_required",
+                "retry_condition": "platform_build_or_qualification_policy_change",
+                "future_evidence": true
+            }),
+        );
+        let bytes = serde_json::to_vec(&value).unwrap();
+        fs::write(&path, &bytes).unwrap();
+
+        {
+            let journal = OperationJournalCoordinator::open(dir.path().to_path_buf()).unwrap();
+            assert_malformed_qualification_recovery(&journal, operation_id, &path, &bytes);
+        }
+        let reopened = OperationJournalCoordinator::open(dir.path().to_path_buf()).unwrap();
+        assert_malformed_qualification_recovery(&reopened, operation_id, &path, &bytes);
+        drop(reopened);
+        assert_eq!(fs::read(path).unwrap(), bytes);
+    }
+
+    #[test]
+    fn unknown_replacement_qualification_volume_field_is_retained_fail_closed() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let record = OperationRecord::new(intent(), Value::Null);
+        let operation_id = record.operation_id;
+        let path = dir.path().join(format!("{operation_id}.json"));
+        let mut value = serde_json::to_value(&record).unwrap();
+        value.as_object_mut().unwrap().insert(
+            String::from("replacement_qualification"),
+            serde_json::json!({
+                "platform_family": "linux",
+                "observed_filesystem": "same_volume",
+                "volume": {"device": 1, "future_volume_evidence": true},
+                "candidate": "no_public_candidate",
+                "candidate_assessment": "no_qualified_candidate",
+                "missing_invariant": "atomic_expected_target_identity_comparison",
+                "decision": "platform_qualification_required",
+                "retry_condition": "platform_build_or_qualification_policy_change"
+            }),
+        );
+        let bytes = serde_json::to_vec(&value).unwrap();
+        fs::write(&path, &bytes).unwrap();
+
+        {
+            let journal = OperationJournalCoordinator::open(dir.path().to_path_buf()).unwrap();
+            assert_malformed_qualification_recovery(&journal, operation_id, &path, &bytes);
+        }
+        let reopened = OperationJournalCoordinator::open(dir.path().to_path_buf()).unwrap();
+        assert_malformed_qualification_recovery(&reopened, operation_id, &path, &bytes);
+        drop(reopened);
+        assert_eq!(fs::read(path).unwrap(), bytes);
     }
 
     #[test]
