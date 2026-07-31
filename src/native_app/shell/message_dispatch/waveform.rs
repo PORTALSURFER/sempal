@@ -114,8 +114,18 @@ impl NativeAppState {
                 beat_count: self.ui.chrome.beat_guide_count,
             },
         );
-        if waveform_clipping_signature(self) != clipping_signature_before {
+        let clipping_signature_after = waveform_clipping_signature(self);
+        if clipping_signature_after != clipping_signature_before {
             self.ui.chrome.overflow_fades.arm();
+        }
+        if let Some(scope) = waveform_viewport_repaint_scope(
+            &message,
+            active_drag,
+            clipping_signature_before,
+            clipping_signature_after,
+        ) {
+            context.repaint(scope);
+        } else if clipping_signature_after != clipping_signature_before {
             context.request_paint_only();
         }
         self.queue_waveform_detail_refinement(context);
@@ -387,6 +397,33 @@ struct WaveformClippingSignature {
     visible_fraction_bits: u32,
 }
 
+fn waveform_viewport_repaint_scope(
+    interaction: &WaveformInteraction,
+    active_drag: Option<WaveformActiveDragKind>,
+    before: WaveformClippingSignature,
+    after: WaveformClippingSignature,
+) -> Option<ui::RepaintScope> {
+    let is_viewport_projection = matches!(
+        interaction,
+        WaveformInteraction::Wheel { .. }
+            | WaveformInteraction::ZoomToPlaySelection
+            | WaveformInteraction::ZoomFull
+            | WaveformInteraction::ScrollTo { .. }
+            | WaveformInteraction::BeginPan { .. }
+    ) || (matches!(
+        interaction,
+        WaveformInteraction::UpdateSelection { .. } | WaveformInteraction::FinishSelection { .. }
+    ) && active_drag == Some(WaveformActiveDragKind::Pan));
+    if !is_viewport_projection {
+        return None;
+    }
+    Some(if before.fully_zoomed_out != after.fully_zoomed_out {
+        ui::RepaintScope::Layout
+    } else {
+        ui::RepaintScope::Projection
+    })
+}
+
 fn waveform_clipping_signature(state: &NativeAppState) -> WaveformClippingSignature {
     let waveform = &state.waveform.current;
     WaveformClippingSignature {
@@ -642,6 +679,143 @@ fn waveform_interaction_action(interaction: &WaveformInteraction) -> Option<&'st
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn viewport_interactions_use_projection_until_scrollbar_visibility_changes() {
+        let before = WaveformClippingSignature {
+            fully_zoomed_out: false,
+            offset_fraction_bits: 0,
+            visible_fraction_bits: 0,
+        };
+        let after = WaveformClippingSignature {
+            fully_zoomed_out: false,
+            offset_fraction_bits: 1,
+            visible_fraction_bits: 2,
+        };
+
+        assert_eq!(
+            waveform_viewport_repaint_scope(
+                &WaveformInteraction::ScrollTo {
+                    offset_fraction: 0.5,
+                },
+                None,
+                before,
+                after,
+            ),
+            Some(ui::RepaintScope::Projection)
+        );
+        assert_eq!(
+            waveform_viewport_repaint_scope(&WaveformInteraction::ZoomFull, None, before, after),
+            Some(ui::RepaintScope::Projection)
+        );
+    }
+
+    #[test]
+    fn viewport_interactions_use_layout_when_scrollbar_visibility_changes() {
+        let before = WaveformClippingSignature {
+            fully_zoomed_out: true,
+            offset_fraction_bits: 0,
+            visible_fraction_bits: 1,
+        };
+        let after = WaveformClippingSignature {
+            fully_zoomed_out: false,
+            offset_fraction_bits: 0,
+            visible_fraction_bits: 2,
+        };
+
+        assert_eq!(
+            waveform_viewport_repaint_scope(
+                &WaveformInteraction::Wheel {
+                    delta: radiant::gui::types::Vector2::new(0.0, 1.0),
+                    anchor_ratio: 0.5,
+                    expand_silence_margin: false,
+                },
+                None,
+                before,
+                after,
+            ),
+            Some(ui::RepaintScope::Layout)
+        );
+    }
+
+    #[test]
+    fn side_effecting_waveform_interactions_keep_default_repaint_policy() {
+        let signature = WaveformClippingSignature {
+            fully_zoomed_out: false,
+            offset_fraction_bits: 0,
+            visible_fraction_bits: 0,
+        };
+
+        assert_eq!(
+            waveform_viewport_repaint_scope(
+                &WaveformInteraction::FinishSampleSlide { visible_ratio: 0.5 },
+                None,
+                signature,
+                signature,
+            ),
+            None
+        );
+        assert_eq!(
+            waveform_viewport_repaint_scope(
+                &WaveformInteraction::DragLoadedSample(radiant::widgets::DragHandleMessage::ended(
+                    radiant::gui::types::Point::new(0.0, 0.0),
+                )),
+                None,
+                signature,
+                signature,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn waveform_pan_uses_projection_repaint_only_for_its_active_drag() {
+        let before = WaveformClippingSignature {
+            fully_zoomed_out: false,
+            offset_fraction_bits: 0,
+            visible_fraction_bits: 0,
+        };
+        let after = WaveformClippingSignature {
+            fully_zoomed_out: false,
+            offset_fraction_bits: 1,
+            visible_fraction_bits: 2,
+        };
+
+        assert_eq!(
+            waveform_viewport_repaint_scope(
+                &WaveformInteraction::BeginPan { visible_ratio: 0.5 },
+                None,
+                before,
+                after,
+            ),
+            Some(ui::RepaintScope::Projection)
+        );
+        for interaction in [
+            WaveformInteraction::UpdateSelection { visible_ratio: 0.4 },
+            WaveformInteraction::FinishSelection { visible_ratio: 0.4 },
+        ] {
+            assert_eq!(
+                waveform_viewport_repaint_scope(
+                    &interaction,
+                    Some(WaveformActiveDragKind::Pan),
+                    before,
+                    after,
+                ),
+                Some(ui::RepaintScope::Projection)
+            );
+            assert_eq!(
+                waveform_viewport_repaint_scope(
+                    &interaction,
+                    Some(WaveformActiveDragKind::Selection(
+                        WaveformSelectionKind::Play,
+                    )),
+                    before,
+                    after,
+                ),
+                None
+            );
+        }
+    }
     use crate::native_app::waveform::{WaveformEditFadeHandle, WaveformSelectionEdge};
 
     #[test]
