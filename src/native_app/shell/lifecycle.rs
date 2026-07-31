@@ -33,9 +33,7 @@ impl NativeAppState {
         let started_at = Instant::now();
         let config = wavecrate::sample_sources::config::load_or_default()
             .map_err(|err| format!("load app configuration: {err}"))?;
-        let transactions =
-            crate::native_app::app::TransactionState::with_profile_operation_journal();
-        let transaction_journal_diagnostic = transactions.startup_diagnostic();
+        let transactions = crate::native_app::app::TransactionState::default();
         let has_configured_sources = !config.sources.is_empty();
         let mut folder_browser = FolderBrowserState::from_sample_sources_deferred(&config.sources);
         folder_browser.set_locked_folder_paths(&config.core.folder_locks);
@@ -80,7 +78,7 @@ impl NativeAppState {
             startup.release_update_check_pending = false;
             startup
         };
-        let mut state = Self {
+        let state = Self {
             ui: UiAppState::new(
                 ChromeUiState::new(DEFAULT_FOLDER_WIDTH),
                 StatusState::new("Select a sample to load"),
@@ -98,9 +96,6 @@ impl NativeAppState {
             #[cfg(test)]
             scheduled_timer_messages: Vec::new(),
         };
-        if let Some(diagnostic) = transaction_journal_diagnostic {
-            state.ui.status.sample = diagnostic;
-        }
         emit_gui_action(
             "runtime.startup.load_default_state",
             Some("background"),
@@ -230,6 +225,27 @@ impl NativeAppState {
         &mut self,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
+        if let Some(status) = self.background.take_operation_journal_status() {
+            match status {
+                crate::native_app::app::OperationJournalStatus::Initializing => {}
+                crate::native_app::app::OperationJournalStatus::Available { summary } => {
+                    if summary.attention_required {
+                        self.ui.status.sample = format!(
+                            "Operation journal needs attention: {} unresolved, {} malformed, {} unknown-version, {} oversized record(s)",
+                            summary.unresolved_count,
+                            summary.malformed_count,
+                            summary.unknown_version_count,
+                            summary.oversize_count,
+                        );
+                    }
+                }
+                crate::native_app::app::OperationJournalStatus::Unavailable { reason } => {
+                    self.ui.status.sample = format!(
+                        "Operation journal unavailable; durable operations disabled: {reason}"
+                    );
+                }
+            }
+        }
         self.library
             .folder_browser
             .advance_keyboard_focus_fade(std::time::Instant::now());
@@ -468,7 +484,7 @@ impl NativeAppState {
 
     pub(in crate::native_app) fn shutdown(&mut self) -> Option<serde_json::Value> {
         let started_at = Instant::now();
-        let operation_journal_released = self.transactions.release_operation_journal();
+        let operation_journal_released = self.background.operation_journal.shutdown();
         let source_processing = self.background.source_processing.shutdown();
         let harvest_touched_unflushed = self.background.harvest_touched_persist.close();
         let harvest_selection_derivation_unflushed =
