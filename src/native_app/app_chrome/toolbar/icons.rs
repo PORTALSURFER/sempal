@@ -116,10 +116,8 @@ static BEAT_GUIDES_ICON: ui::SvgIconTintCache = ui::SvgIconTintCache::new(
 
 static METRONOME_ICON: ui::SvgIconTintCache = ui::SvgIconTintCache::new(
     r#"<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
-  <path d="M4 13 6.8 3h2.4L12 13H4z"/>
-  <rect x="3" y="13" width="10" height="1.5"/>
-  <rect x="7.25" y="1.5" width="1.5" height="2.8"/>
-  <rect x="8.25" y="5.25" width="1.25" height="1.25"/>
+  <path d="M3 3h.5c1.7 0 3 2.2 3 5s-1.3 5-3 5H3z"/>
+  <path d="M13 3h-.5c-1.7 0-3 2.2-3 5s1.3 5 3 5h.5z"/>
 </svg>"#,
 );
 
