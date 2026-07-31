@@ -6,6 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::expected_identity_replacement::QualifiedExpectedIdentityReplacement;
 use super::operation_journal::{
     FilesystemStagedParticipant, FilesystemStagedWaveformRestore, PreparedFileEvidence,
     PreparedObjectIdentity, PreparedWaveformRestore, ReplaceExpectedIdentity,
@@ -91,6 +92,37 @@ pub(crate) struct FilesystemPublishedWaveformRestore {
     visibility: PublicationVisibility,
     whole_publication: WholePublicationAtomicity,
     synchronization: PublicationSynchronization,
+}
+
+/// Construct publication evidence only from a sealed, qualified adapter result.
+pub(super) fn from_qualified_adapter_result(
+    qualified: QualifiedExpectedIdentityReplacement,
+) -> FilesystemPublishedWaveformRestore {
+    let (
+        expected_target,
+        displaced_target,
+        reopened_final,
+        reopened_content,
+        visibility,
+        whole_publication,
+        synchronization,
+    ) = qualified.into_publication_parts();
+    FilesystemPublishedWaveformRestore {
+        mode: FilesystemPublicationMode::NonAtomicCopyValidatePublish,
+        final_claim: FinalNamespaceClaim::ExpectedIdentityReplacement {
+            primitive: FinalClaimPrimitive::QualifiedExpectedIdentityReplacement,
+            result: FinalClaimResult::ExpectedIdentityReplaced,
+            expected_target,
+            displaced_target,
+        },
+        reopened_final: ReopenedFinalEvidence {
+            identity: reopened_final,
+            content: reopened_content,
+        },
+        visibility,
+        whole_publication,
+        synchronization,
+    }
 }
 
 /// Validate publication evidence without inferring anything from a pathname or touching the
@@ -230,26 +262,9 @@ pub(crate) fn test_publication_evidence(
     staged: &FilesystemStagedWaveformRestore,
     drift: Option<TestPublicationDrift>,
 ) -> FilesystemPublishedWaveformRestore {
-    let FilesystemStagedParticipant::CopyValidated { staging, evidence } = &staged.participant;
-    let expected_target = match &prepared.replacement {
-        ReplaceExpectedIdentity::Existing(identity) => identity.clone(),
-    };
-    let mut publication = FilesystemPublishedWaveformRestore {
-        mode: FilesystemPublicationMode::NonAtomicCopyValidatePublish,
-        final_claim: FinalNamespaceClaim::ExpectedIdentityReplacement {
-            primitive: FinalClaimPrimitive::QualifiedExpectedIdentityReplacement,
-            result: FinalClaimResult::ExpectedIdentityReplaced,
-            expected_target: expected_target.clone(),
-            displaced_target: expected_target,
-        },
-        reopened_final: ReopenedFinalEvidence {
-            identity: staging.identity.clone(),
-            content: evidence.clone(),
-        },
-        visibility: PublicationVisibility::VisibilityVerified,
-        whole_publication: WholePublicationAtomicity::WholePublicationNonAtomic,
-        synchronization: PublicationSynchronization::SyncUnsupportedOrUnverified,
-    };
+    let FilesystemStagedParticipant::CopyValidated { staging, .. } = &staged.participant;
+    let qualified = super::expected_identity_replacement::test_qualified_success(prepared, staged);
+    let mut publication = from_qualified_adapter_result(qualified);
 
     match drift {
         Some(TestPublicationDrift::UnqualifiedReplacement) => {

@@ -558,6 +558,7 @@ impl NativeAppState {
 fn operation_id_for_stage_outcome(outcome: &FilesystemStageOutcome) -> Uuid {
     match outcome {
         FilesystemStageOutcome::FilesystemStaged(operation_id)
+        | FilesystemStageOutcome::FilesystemPublished(operation_id)
         | FilesystemStageOutcome::RetryPending { operation_id, .. }
         | FilesystemStageOutcome::AuditRequired { operation_id, .. }
         | FilesystemStageOutcome::JournalWriteFailed { operation_id, .. } => *operation_id,
@@ -588,6 +589,9 @@ fn owner_staging_status(
     match outcome {
         FilesystemStageOutcome::FilesystemStaged(operation_id) => format!(
             "{verb} {label} staged (operation {operation_id}); final publication is pending"
+        ),
+        FilesystemStageOutcome::FilesystemPublished(operation_id) => format!(
+            "{verb} {label} published (operation {operation_id}); history completion is pending"
         ),
         FilesystemStageOutcome::RetryPending {
             operation_id,

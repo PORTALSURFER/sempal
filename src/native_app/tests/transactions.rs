@@ -78,6 +78,7 @@ fn begin_owner_restore_for_tests(
 fn owner_staging_outcomes_retain_history_and_operation_identity() {
     let outcomes = [
         FilesystemStageOutcome::FilesystemStaged(Uuid::new_v4()),
+        FilesystemStageOutcome::FilesystemPublished(Uuid::new_v4()),
         FilesystemStageOutcome::RetryPending {
             operation_id: Uuid::new_v4(),
             reason: String::from("staging collision"),
@@ -96,6 +97,7 @@ fn owner_staging_outcomes_retain_history_and_operation_identity() {
         let command = begin_owner_restore_for_tests(&mut state);
         let operation_id = match &outcome {
             FilesystemStageOutcome::FilesystemStaged(operation_id)
+            | FilesystemStageOutcome::FilesystemPublished(operation_id)
             | FilesystemStageOutcome::RetryPending { operation_id, .. }
             | FilesystemStageOutcome::AuditRequired { operation_id, .. }
             | FilesystemStageOutcome::JournalWriteFailed { operation_id, .. } => *operation_id,

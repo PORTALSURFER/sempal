@@ -19,6 +19,10 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use super::capacity_gate::{DurableCapacityPlan, RejectedBeforeIntent, VolumeIdentity};
+use super::expected_identity_replacement::{
+    ExpectedIdentityReplacementAdapter, ExpectedIdentityReplacementOutcome,
+    ExpectedIdentityReplacementRequest, ProductionExpectedIdentityReplacementAdapter,
+};
 use super::publication::{FilesystemPublishedWaveformRestore, validate_publication_evidence};
 
 const CURRENT_SCHEMA_VERSION: u32 = 1;
@@ -490,6 +494,7 @@ pub(crate) enum PreparedOperationOutcome {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum FilesystemStageOutcome {
     FilesystemStaged(Uuid),
+    FilesystemPublished(Uuid),
     RetryPending { operation_id: Uuid, reason: String },
     AuditRequired { operation_id: Uuid, reason: String },
     JournalWriteFailed { operation_id: Uuid, reason: String },
@@ -1090,6 +1095,18 @@ fn clean_relative_path(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn single_clean_normal_leaf<'a>(label: &str, path: &'a Path) -> Result<&'a Path, String> {
+    clean_relative_path(path)?;
+    let mut components = path.components();
+    let Some(std::path::Component::Normal(component)) = components.next() else {
+        return Err(format!("{label} locator is not a single clean normal leaf"));
+    };
+    if components.next().is_some() || Path::new(component) != path {
+        return Err(format!("{label} locator is not a single clean normal leaf"));
+    }
+    Ok(path)
+}
+
 fn descriptor_identity(file: &File) -> Result<PreparedObjectIdentity, String> {
     let metadata = file.metadata().map_err(|error| error.to_string())?;
     let stable_id =
@@ -1295,6 +1312,30 @@ fn validate_identity(
     }
 }
 
+fn validate_root_identity(
+    label: &str,
+    expected: &PreparedObjectIdentity,
+    actual: &PreparedObjectIdentity,
+) -> Result<(), String> {
+    if expected.stable_id == actual.stable_id {
+        Ok(())
+    } else {
+        Err(format!("{label} identity changed since preparation"))
+    }
+}
+
+fn validate_volume_identity(
+    label: &str,
+    expected: &VolumeIdentity,
+    actual: &VolumeIdentity,
+) -> Result<(), String> {
+    if expected == actual {
+        Ok(())
+    } else {
+        Err(format!("{label} volume identity changed since staging"))
+    }
+}
+
 fn validate_evidence(
     label: &str,
     expected: &PreparedFileEvidence,
@@ -1394,6 +1435,17 @@ struct ReacquiredPreparedRestore {
     backup: File,
 }
 
+struct ReacquiredStagedRestore {
+    target_parent: File,
+    target: File,
+    staging: File,
+    target_parent_identity: PreparedObjectIdentity,
+    target_identity: PreparedObjectIdentity,
+    staging_identity: PreparedObjectIdentity,
+    staging_content: PreparedFileEvidence,
+    volume: VolumeIdentity,
+}
+
 fn reacquire_prepared_restore(
     prepared: &PreparedWaveformRestore,
 ) -> Result<ReacquiredPreparedRestore, String> {
@@ -1451,6 +1503,83 @@ fn reacquire_prepared_restore(
         backup_root,
         target,
         backup,
+    })
+}
+
+fn reacquire_staged_restore(
+    prepared: &PreparedWaveformRestore,
+    staged: &FilesystemStagedWaveformRestore,
+    capacity_plan: &DurableCapacityPlan,
+) -> Result<ReacquiredStagedRestore, String> {
+    let FilesystemStagedParticipant::CopyValidated {
+        staging: expected_staging,
+        evidence: expected_staging_content,
+    } = &staged.participant;
+    validate_staged_checkpoint(prepared, staged)?;
+    let target_leaf =
+        single_clean_normal_leaf("target", &prepared.target.relative_path)?;
+    let staging_leaf =
+        single_clean_normal_leaf("staging", &prepared.staging.relative_path)?;
+    let [volume] = capacity_plan.volumes.as_slice() else {
+        return Err(String::from("capacity claim has unexpected volumes"));
+    };
+
+    let (target_root, target_root_capability) = open_root(&prepared.target_root.path)?;
+    validate_root_identity(
+        "target root",
+        &prepared.target_root.identity,
+        &target_root_capability.identity,
+    )?;
+    let target_parent = target_root
+        .try_clone()
+        .map_err(|error| format!("could not retain target parent capability: {error}"))?;
+    let target_display = prepared
+        .target_root
+        .path
+        .join(target_leaf);
+    let (target, target_identity) = open_leaf_relative(
+        &target_parent,
+        target_leaf,
+        &target_display,
+    )?;
+    validate_identity("target leaf", &prepared.target.identity, &target_identity)?;
+    validate_evidence(
+        "target leaf",
+        &prepared.evidence.target,
+        &prepared_file_evidence(&target),
+    )?;
+    let target_volume = super::capacity_gate::descriptor_capacity_facts(&target)
+        .map_err(|error| error.to_string())?
+        .identity;
+    validate_volume_identity("target", &volume.identity, &target_volume)?;
+
+    let staging_display = prepared
+        .target_root
+        .path
+        .join(staging_leaf);
+    let (staging, staging_identity) = open_staging_relative(
+        &target_parent,
+        staging_leaf,
+        &staging_display,
+    )?;
+    let staging_volume = super::capacity_gate::descriptor_capacity_facts(&staging)
+        .map_err(|error| error.to_string())?
+        .identity;
+    validate_volume_identity("staging", &volume.identity, &staging_volume)?;
+    validate_identity("staging", &expected_staging.identity, &staging_identity)?;
+    let staging_content = prepared_file_evidence(&staging);
+    validate_evidence("staging", expected_staging_content, &staging_content)?;
+    validate_staged_evidence(&prepared.evidence.backup, &staging_content)?;
+
+    Ok(ReacquiredStagedRestore {
+        target_parent,
+        target,
+        staging,
+        target_parent_identity: target_root_capability.identity,
+        target_identity,
+        staging_identity,
+        staging_content,
+        volume: volume.identity.clone(),
     })
 }
 
@@ -2001,6 +2130,141 @@ impl OperationJournalCoordinator {
         }
     }
 
+    /// Attempt publication of one already-staged restore through the sealed adapter seam.
+    ///
+    /// The production adapter is intentionally unsupported in this slice, so this method cannot
+    /// mutate the target namespace.  A test-only adapter exercises the same guarded evidence
+    /// path without standing in for a platform qualification.
+    pub(crate) fn attempt_publish_staged_waveform_restore(
+        &mut self,
+        operation_id: Uuid,
+    ) -> Result<FilesystemStageOutcome, JournalError> {
+        self.attempt_publish_staged_waveform_restore_with_adapter(
+            operation_id,
+            &ProductionExpectedIdentityReplacementAdapter,
+        )
+    }
+
+    fn attempt_publish_staged_waveform_restore_with_adapter<A>(
+        &mut self,
+        operation_id: Uuid,
+        adapter: &A,
+    ) -> Result<FilesystemStageOutcome, JournalError>
+    where
+        A: ExpectedIdentityReplacementAdapter,
+    {
+        let record = self
+            .store
+            .record(operation_id)
+            .ok_or(JournalError::NotFound(operation_id))?;
+        if record.phase != OperationPhase::FilesystemStaged {
+            return Err(JournalError::IllegalTransition {
+                operation_id,
+                from: record.phase,
+                to: OperationPhase::FilesystemPublished,
+            });
+        }
+        let prepared = record
+            .prepared
+            .clone()
+            .ok_or(JournalError::MissingPreparedEvidence(operation_id))?;
+        let staged = record
+            .staged
+            .clone()
+            .ok_or(JournalError::MissingPreparedEvidence(operation_id))?;
+        let capacity_plan = record
+            .capacity_plan
+            .clone()
+            .ok_or(JournalError::MissingPreparedEvidence(operation_id))?;
+
+        let reacquired = match reacquire_staged_restore(&prepared, &staged, &capacity_plan) {
+            Ok(reacquired) => reacquired,
+            Err(reason) => return self.attempt_retry_or_audit(operation_id, reason),
+        };
+        let request = ExpectedIdentityReplacementRequest {
+            target_parent: &reacquired.target_parent,
+            target: &reacquired.target,
+            staging: &reacquired.staging,
+            target_leaf: &prepared.target.relative_path,
+            staging_leaf: &prepared.staging.relative_path,
+            target_parent_identity: &reacquired.target_parent_identity,
+            expected_target: &reacquired.target_identity,
+            staging_identity: &reacquired.staging_identity,
+            staging_content: &reacquired.staging_content,
+            volume: &reacquired.volume,
+        };
+        match adapter.attempt(request) {
+            ExpectedIdentityReplacementOutcome::Unsupported { reason } => self
+                .update_attempt_disposition(
+                    operation_id,
+                    OperationDisposition::RetryPending,
+                    reason,
+                ),
+            ExpectedIdentityReplacementOutcome::Drift { reason }
+            | ExpectedIdentityReplacementOutcome::Ambiguous { reason } => self
+                .update_attempt_disposition(
+                    operation_id,
+                    OperationDisposition::AuditRequired,
+                    reason,
+                ),
+            ExpectedIdentityReplacementOutcome::QualifiedSuccess(qualified) => {
+                let published = super::publication::from_qualified_adapter_result(qualified);
+                if let Err(reason) = validate_publication_evidence(&prepared, &staged, &published) {
+                    return self.update_attempt_disposition(
+                        operation_id,
+                        OperationDisposition::AuditRequired,
+                        reason,
+                    );
+                }
+                match self.store.guarded_publish(operation_id, published) {
+                    Ok(()) => Ok(FilesystemStageOutcome::FilesystemPublished(operation_id)),
+                    Err(error) => Ok(FilesystemStageOutcome::JournalWriteFailed {
+                        operation_id,
+                        reason: error.to_string(),
+                    }),
+                }
+            }
+        }
+    }
+
+    fn update_attempt_disposition(
+        &mut self,
+        operation_id: Uuid,
+        disposition: OperationDisposition,
+        reason: String,
+    ) -> Result<FilesystemStageOutcome, JournalError> {
+        match self
+            .store
+            .update(operation_id, OperationPhase::FilesystemStaged, disposition)
+        {
+            Ok(()) => {
+                if disposition == OperationDisposition::RetryPending {
+                    Ok(FilesystemStageOutcome::RetryPending {
+                        operation_id,
+                        reason,
+                    })
+                } else {
+                    Ok(FilesystemStageOutcome::AuditRequired {
+                        operation_id,
+                        reason,
+                    })
+                }
+            }
+            Err(error) => Ok(FilesystemStageOutcome::JournalWriteFailed {
+                operation_id,
+                reason: error.to_string(),
+            }),
+        }
+    }
+
+    fn attempt_retry_or_audit(
+        &mut self,
+        operation_id: Uuid,
+        reason: String,
+    ) -> Result<FilesystemStageOutcome, JournalError> {
+        self.update_attempt_disposition(operation_id, OperationDisposition::AuditRequired, reason)
+    }
+
     /// Advance a staged waveform restore only with typed, validated publication evidence.
     /// This records evidence; it deliberately does not perform the publication primitive.
     pub(crate) fn guarded_publish(
@@ -2108,8 +2372,8 @@ impl OwnershipLock {
             use std::os::windows::fs::OpenOptionsExt;
             use std::os::windows::io::AsRawHandle;
             use windows::Win32::Storage::FileSystem::{
-                FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_OPEN_REPARSE_POINT,
-                LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY, LockFileEx,
+                LockFileEx, FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_OPEN_REPARSE_POINT,
+                LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY,
             };
             use windows::Win32::System::IO::OVERLAPPED;
 
@@ -2239,10 +2503,10 @@ fn atomic_durable_write(path: &Path, record: &OperationRecord) -> Result<(), Jou
 fn replace_file(temp_path: &Path, path: &Path) -> io::Result<()> {
     #[cfg(target_os = "windows")]
     {
-        use windows::Win32::Storage::FileSystem::{
-            MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
-        };
         use windows::core::PCWSTR;
+        use windows::Win32::Storage::FileSystem::{
+            MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+        };
         fn wide(path: &Path) -> Vec<u16> {
             use std::os::windows::ffi::OsStrExt;
             path.as_os_str()
@@ -2616,6 +2880,173 @@ mod tests {
             Some(FilesystemStagedParticipant::CopyValidated { .. })
         ));
         assert_eq!(fs::read(&staging).unwrap(), fs::read(&backup).unwrap());
+    }
+
+    #[test]
+    fn production_publication_adapter_is_unsupported_without_namespace_mutation() {
+        let (journal_dir, _files, mut journal, id, backup, target, staging) =
+            prepared_restore_fixture();
+        journal
+            .stage_admitted_bounded_waveform_restore(id)
+            .expect("stage restore");
+        let target_before = fs::read(&target).unwrap();
+        let staging_before = fs::read(&staging).unwrap();
+        let names_before = fs::read_dir(target.parent().unwrap())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<Vec<_>>();
+        let claims_before = journal.store.capacity_claims().clone();
+
+        assert!(matches!(
+            journal
+                .attempt_publish_staged_waveform_restore(id)
+                .expect("publication attempt"),
+            FilesystemStageOutcome::RetryPending { operation_id, .. } if operation_id == id
+        ));
+        let record = journal.record(id).unwrap();
+        assert_eq!(record.phase, OperationPhase::FilesystemStaged);
+        assert_eq!(record.disposition, OperationDisposition::RetryPending);
+        assert!(record.staged.is_some());
+        assert_eq!(journal.store.capacity_claims(), &claims_before);
+        assert_eq!(fs::read(&backup).unwrap(), vec![7_u8; 4097]);
+        assert_eq!(fs::read(&target).unwrap(), target_before);
+        assert_eq!(fs::read(&staging).unwrap(), staging_before);
+        assert_eq!(
+            fs::read_dir(target.parent().unwrap())
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .collect::<Vec<_>>(),
+            names_before
+        );
+
+        drop(journal);
+        let reopened = OperationJournalCoordinator::open(journal_dir.path().to_path_buf()).unwrap();
+        let reopened_record = reopened.record(id).unwrap();
+        assert_eq!(reopened_record.phase, OperationPhase::FilesystemStaged);
+        assert_eq!(
+            reopened_record.disposition,
+            OperationDisposition::RetryPending
+        );
+        assert_eq!(reopened.store.capacity_claims(), &claims_before);
+    }
+
+    #[test]
+    fn nested_target_locator_is_rejected_before_qualified_adapter_and_preserves_recoverable_stage() {
+        let (journal_dir, _files, mut journal, id, _backup, target, staging) =
+            prepared_restore_fixture();
+        journal
+            .stage_admitted_bounded_waveform_restore(id)
+            .expect("stage restore");
+        let target_before = fs::read(&target).unwrap();
+        let staging_before = fs::read(&staging).unwrap();
+        let record = {
+            let record = journal.store.records.get_mut(&id).unwrap();
+            record.prepared.as_mut().unwrap().target.relative_path =
+                PathBuf::from("nested/target.wav");
+            record.clone()
+        };
+        let record_path = journal.store.record_path(id);
+        atomic_durable_write(&record_path, &record).unwrap();
+
+        let adapter = super::super::expected_identity_replacement::
+            TestQualifiedExpectedIdentityReplacementAdapter { drift: None };
+        assert!(matches!(
+            journal
+                .attempt_publish_staged_waveform_restore_with_adapter(id, &adapter)
+                .expect("nested target attempt"),
+            FilesystemStageOutcome::AuditRequired { operation_id, .. } if operation_id == id
+        ));
+
+        let record = journal.record(id).unwrap();
+        assert_eq!(record.phase, OperationPhase::FilesystemStaged);
+        assert_eq!(record.disposition, OperationDisposition::AuditRequired);
+        assert!(record.staged.is_some());
+        assert_eq!(fs::read(&target).unwrap(), target_before);
+        assert_eq!(fs::read(&staging).unwrap(), staging_before);
+
+        drop(journal);
+        let reopened = OperationJournalCoordinator::open(journal_dir.path().to_path_buf()).unwrap();
+        let reopened_record = reopened.record(id).unwrap();
+        assert_eq!(reopened_record.phase, OperationPhase::FilesystemStaged);
+        assert_eq!(reopened_record.disposition, OperationDisposition::AuditRequired);
+        assert!(reopened_record.staged.is_some());
+        assert_eq!(
+            reopened_record
+                .prepared
+                .as_ref()
+                .unwrap()
+                .target
+                .relative_path,
+            PathBuf::from("nested/target.wav")
+        );
+        assert_eq!(fs::read(&target).unwrap(), target_before);
+        assert_eq!(fs::read(&staging).unwrap(), staging_before);
+    }
+
+    #[test]
+    fn live_volume_identity_guard_rejects_mismatch() {
+        let expected = VolumeIdentity { device: 1 };
+        let actual = VolumeIdentity { device: 2 };
+        assert!(validate_volume_identity("target", &expected, &actual).is_err());
+        assert!(validate_volume_identity("target", &expected, &expected).is_ok());
+    }
+
+    #[test]
+    fn qualified_test_adapter_is_the_only_path_to_guarded_publication() {
+        let (journal_dir, _files, mut journal, id, _backup, target, staging) =
+            prepared_restore_fixture();
+        journal
+            .stage_admitted_bounded_waveform_restore(id)
+            .expect("stage restore");
+        let claims_before = journal.store.capacity_claims().clone();
+        let adapter = super::super::expected_identity_replacement::
+            TestQualifiedExpectedIdentityReplacementAdapter { drift: None };
+
+        assert_eq!(
+            journal
+                .attempt_publish_staged_waveform_restore_with_adapter(id, &adapter)
+                .expect("qualified publication attempt"),
+            FilesystemStageOutcome::FilesystemPublished(id)
+        );
+        let record = journal.record(id).unwrap();
+        assert_eq!(record.phase, OperationPhase::FilesystemPublished);
+        assert_eq!(record.disposition, OperationDisposition::None);
+        assert!(record.published.is_some());
+        assert_eq!(journal.store.capacity_claims(), &claims_before);
+        assert_eq!(fs::read(&target).unwrap(), vec![0_u8; 4097]);
+        assert_eq!(fs::read(&staging).unwrap(), vec![7_u8; 4097]);
+
+        drop(journal);
+        let reopened = OperationJournalCoordinator::open(journal_dir.path().to_path_buf()).unwrap();
+        let reopened_record = reopened.record(id).unwrap();
+        assert_eq!(reopened_record.phase, OperationPhase::FilesystemPublished);
+        assert!(reopened_record.published.is_some());
+        assert_eq!(reopened.store.capacity_claims(), &claims_before);
+    }
+
+    #[test]
+    fn target_drift_blocks_adapter_and_preserves_staged_restore() {
+        let (_journal_dir, _files, mut journal, id, _backup, target, staging) =
+            prepared_restore_fixture();
+        journal
+            .stage_admitted_bounded_waveform_restore(id)
+            .expect("stage restore");
+        let staging_before = fs::read(&staging).unwrap();
+        fs::write(&target, vec![9_u8; 4097]).unwrap();
+        let adapter = super::super::expected_identity_replacement::
+            TestQualifiedExpectedIdentityReplacementAdapter { drift: None };
+
+        assert!(matches!(
+            journal
+                .attempt_publish_staged_waveform_restore_with_adapter(id, &adapter)
+                .expect("drift attempt"),
+            FilesystemStageOutcome::AuditRequired { operation_id, .. } if operation_id == id
+        ));
+        let record = journal.record(id).unwrap();
+        assert_eq!(record.phase, OperationPhase::FilesystemStaged);
+        assert_eq!(record.disposition, OperationDisposition::AuditRequired);
+        assert_eq!(fs::read(&target).unwrap(), vec![9_u8; 4097]);
+        assert_eq!(fs::read(&staging).unwrap(), staging_before);
     }
 
     #[test]
@@ -3423,10 +3854,8 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(before, after);
-        assert!(
-            before
-                .iter()
-                .any(|(name, _)| name.to_string_lossy() == format!("{id}.json"))
-        );
+        assert!(before
+            .iter()
+            .any(|(name, _)| name.to_string_lossy() == format!("{id}.json")));
     }
 }

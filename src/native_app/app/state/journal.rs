@@ -668,9 +668,19 @@ fn run_owner(
                         match coordinator
                             .prepare_bounded_waveform_restore(intent, payload, direction, &actions)
                         {
-                            Ok(PreparedOperationOutcome::Prepared(operation_id)) => coordinator
-                                .stage_admitted_bounded_waveform_restore(operation_id)
-                                .map_err(JournalOperationError::Journal),
+                            Ok(PreparedOperationOutcome::Prepared(operation_id)) => {
+                                match coordinator
+                                    .stage_admitted_bounded_waveform_restore(operation_id)
+                                    .map_err(JournalOperationError::Journal)?
+                                {
+                                    FilesystemStageOutcome::FilesystemStaged(operation_id) => {
+                                        coordinator
+                                            .attempt_publish_staged_waveform_restore(operation_id)
+                                            .map_err(JournalOperationError::Journal)
+                                    }
+                                    outcome => Ok(outcome),
+                                }
+                            }
                             Ok(PreparedOperationOutcome::RetryPending {
                                 operation_id,
                                 reason,
@@ -888,7 +898,7 @@ mod tests {
     }
 
     #[test]
-    fn owner_prepares_and_stages_bounded_restore_without_target_publication() {
+    fn owner_prepares_stages_and_fail_closed_publication_without_target_mutation() {
         let directory = tempfile::tempdir().expect("journal directory");
         let files = fixture_directory();
         let backup = files.path().join("before.wav");
@@ -949,8 +959,8 @@ mod tests {
             .expect("prepare and stage result")
             .expect("prepare and stage")
         {
-            FilesystemStageOutcome::FilesystemStaged(operation_id) => operation_id,
-            other => panic!("expected filesystem-staged outcome, got {other:?}"),
+            FilesystemStageOutcome::RetryPending { operation_id, .. } => operation_id,
+            other => panic!("expected retry-pending outcome, got {other:?}"),
         };
         assert_eq!(
             std::fs::read(&target).expect("target after staging"),
@@ -975,7 +985,7 @@ mod tests {
         let record = reopened.record(operation_id).expect("staged record");
         assert_eq!(record.payload, payload);
         assert_eq!(record.phase, OperationPhase::FilesystemStaged);
-        assert_eq!(record.disposition, OperationDisposition::None);
+        assert_eq!(record.disposition, OperationDisposition::RetryPending);
         assert!(matches!(
             record.staged.as_ref().map(|staged| &staged.participant),
             Some(FilesystemStagedParticipant::CopyValidated { .. })
