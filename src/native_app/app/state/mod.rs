@@ -26,7 +26,10 @@ pub(in crate::native_app) use background::{
     HarvestSelectionDerivationBatchResult, HarvestTouchedPersistAdmission,
     HarvestTouchedPersistBatchResult, RatingPersistBatchResult, WaveformDestructiveEditUiContext,
 };
-pub(in crate::native_app) use journal::{OperationJournalOwner, OperationJournalStatus};
+pub(in crate::native_app) use journal::{
+    OperationJournalOwner, OperationJournalRestoreCompletion, OperationJournalRestoreError,
+    OperationJournalStatus,
+};
 pub(in crate::native_app) use library::LibraryAppState;
 pub(in crate::native_app) use metadata::MetadataAppState;
 pub(in crate::native_app) use source_refresh::{
@@ -37,7 +40,9 @@ pub(in crate::native_app) use source_scan_workflow::{
     SourceFilesystemChangePlan, SourceRefreshRequest, SourceScanFinish, SourceScanWorkflow,
     SourceSelectionRequest,
 };
-pub(in crate::native_app) use transactions::{PendingHistoryCommit, TransactionState};
+pub(in crate::native_app) use transactions::{
+    PendingHistoryCommit, PendingHistoryOwnerStaging, TransactionState,
+};
 #[cfg(test)]
 pub(in crate::native_app) use ui_state::DEFAULT_WAVEFORM_PANEL_HEIGHT;
 #[cfg(test)]

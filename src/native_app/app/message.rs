@@ -11,6 +11,7 @@ use wavecrate::selection::SelectionRange;
 use wavecrate_analysis::aspects::SimilarityAspect;
 
 use crate::native_app::app::ExtractedFilePlaybackType;
+use crate::native_app::app::OperationJournalRestoreCompletion;
 use crate::native_app::app::{
     ActiveFolderCacheWarmPlanProgress, ActiveFolderCacheWarmPlanResult,
     ActiveFolderCacheWarmProgress, ActiveFolderCacheWarmResult, AppSettingsTab,
@@ -108,6 +109,7 @@ pub(in crate::native_app) enum GuiMessage {
     CommittedFileMutationFinished(FileMutationOutcome),
     HistoryFileIoRequested(HistoryFileIoCommand),
     HistoryFileIoFinished(HistoryFileIoResult),
+    OperationJournalRestoreFinished(OperationJournalRestoreCompletion),
     SourceManifestAuditCommitted {
         source_id: String,
         lifecycle_generation: u64,

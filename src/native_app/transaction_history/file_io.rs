@@ -32,12 +32,20 @@ pub(in crate::native_app) enum HistoryFileIoDirection {
     Redo,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::native_app) enum HistoryFileIoRoute {
+    GenericWorker,
+    OwnerWaveformRestore,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::native_app) struct HistoryFileIoCommand {
     pub(in crate::native_app) execution_id: u64,
     pub(in crate::native_app) transaction_id: u64,
+    pub(in crate::native_app) label: String,
     pub(in crate::native_app) direction: HistoryFileIoDirection,
     pub(in crate::native_app) through_target: Option<u64>,
+    pub(in crate::native_app) route: HistoryFileIoRoute,
     pub(in crate::native_app) actions: Vec<HistoryFileAction>,
 }
 
@@ -55,6 +63,32 @@ pub(in crate::native_app) struct HistoryFileIoResult {
     pub(in crate::native_app) direction: HistoryFileIoDirection,
     pub(in crate::native_app) through_target: Option<u64>,
     pub(in crate::native_app) result: Result<HistoryFileIoOutput, String>,
+}
+
+pub(in crate::native_app) fn classify_history_file_actions(
+    actions: &[HistoryFileAction],
+) -> Result<HistoryFileIoRoute, String> {
+    if actions.len() == 1
+        && matches!(
+            actions.first(),
+            Some(HistoryFileAction::WaveformRestore { applied, .. })
+                if applied.extracted.is_none()
+        )
+    {
+        return Ok(HistoryFileIoRoute::OwnerWaveformRestore);
+    }
+    if actions.iter().any(|action| {
+        matches!(
+            action,
+            HistoryFileAction::WaveformRestore { applied, .. }
+                if applied.extracted.is_none()
+        )
+    }) {
+        return Err(String::from(
+            "unsupported mixed history file operation containing a non-extracted waveform restore",
+        ));
+    }
+    Ok(HistoryFileIoRoute::GenericWorker)
 }
 
 /// Execute one command on the history I/O owner. Callers hold the owner's serialization gate.

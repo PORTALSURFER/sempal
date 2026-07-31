@@ -142,6 +142,8 @@ impl NativeTransactionDraft {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::native_app::transaction_history::HistoryFileIoRoute;
+    use crate::native_app::waveform_edits::waveform_restore_action_for_capacity_tests;
 
     #[test]
     fn stale_history_file_completion_cannot_finish_new_execution() {
@@ -180,6 +182,68 @@ mod tests {
             .expect("current completion should finish");
         assert!(!history.file_io_in_flight());
         assert!(history.can_undo());
+    }
+
+    #[test]
+    fn non_extracted_waveform_restore_uses_owner_route_with_bounded_identity() {
+        let mut history = NativeTransactionHistory::new();
+        let action = waveform_restore_action_for_capacity_tests(
+            "/tmp/before.wav".into(),
+            "/tmp/target.wav".into(),
+            false,
+        );
+        history.register_file_action("Owner restore", action.clone(), action);
+        let command = history
+            .begin_file_io(HistoryFileIoDirection::Undo, Some(7), 11)
+            .expect("begin owner history")
+            .expect("owner history command");
+        assert_eq!(command.route, HistoryFileIoRoute::OwnerWaveformRestore);
+        assert_eq!(command.execution_id, 11);
+        assert_eq!(command.transaction_id, 1);
+        assert_eq!(command.direction, HistoryFileIoDirection::Undo);
+        assert_eq!(command.through_target, Some(7));
+        assert_eq!(command.label, "Owner restore");
+    }
+
+    #[test]
+    fn mixed_non_extracted_waveform_restore_is_rejected_before_stack_removal() {
+        let mut history = NativeTransactionHistory::new();
+        let restore = waveform_restore_action_for_capacity_tests(
+            "/tmp/before.wav".into(),
+            "/tmp/target.wav".into(),
+            false,
+        );
+        let move_action = HistoryFileAction::FolderMove {
+            source_root: "/tmp/source".into(),
+            source_database_root: "/tmp/source/.db".into(),
+            moves: vec![("/tmp/source/old".into(), "/tmp/source/new".into())],
+        };
+        history.begin_transaction("Mixed restore");
+        history.register_file_action("Restore", restore.clone(), restore);
+        history.register_file_action("Move", move_action.clone(), move_action);
+        assert!(history.commit_transaction());
+        let error = history
+            .begin_file_io(HistoryFileIoDirection::Undo, None, 12)
+            .expect_err("mixed owner route should fail before dispatch");
+        assert!(error.contains("unsupported mixed history file operation"));
+        assert!(!history.file_io_in_flight());
+        assert!(history.can_undo());
+    }
+
+    #[test]
+    fn extracted_waveform_restore_stays_on_generic_worker_route() {
+        let mut history = NativeTransactionHistory::new();
+        let action = waveform_restore_action_for_capacity_tests(
+            "/tmp/before.wav".into(),
+            "/tmp/target.wav".into(),
+            true,
+        );
+        history.register_file_action("Extracted restore", action.clone(), action);
+        let command = history
+            .begin_file_io(HistoryFileIoDirection::Undo, None, 13)
+            .expect("begin extracted history")
+            .expect("generic history command");
+        assert_eq!(command.route, HistoryFileIoRoute::GenericWorker);
     }
 }
 
@@ -292,17 +356,18 @@ impl NativeTransactionHistory {
         if transaction.actions.iter().any(|action| !action.is_file()) {
             return Ok(None);
         }
-        let transaction = stack.pop_back().expect("history stack entry exists");
         let actions = transaction
             .actions
             .iter()
             .filter_map(|action| action.file_action(direction))
             .collect::<Vec<_>>();
         if actions.is_empty() {
-            stack.push_back(transaction);
             return Ok(None);
         }
+        let route = super::file_io::classify_history_file_actions(&actions)?;
+        let transaction = stack.pop_back().expect("history stack entry exists");
         let transaction_id = transaction.id;
+        let label = transaction.label.clone();
         self.in_flight_file = Some(PendingHistoryFileTransaction {
             transaction,
             direction,
@@ -312,8 +377,10 @@ impl NativeTransactionHistory {
         Ok(Some(HistoryFileIoCommand {
             execution_id,
             transaction_id,
+            label,
             direction,
             through_target,
+            route,
             actions,
         }))
     }
@@ -358,11 +425,29 @@ impl NativeTransactionHistory {
         self.in_flight_file.is_some()
     }
 
+    pub(in crate::native_app) fn file_io_matches(
+        &self,
+        execution_id: u64,
+        transaction_id: u64,
+        direction: HistoryFileIoDirection,
+        through_target: Option<u64>,
+    ) -> bool {
+        self.in_flight_file.as_ref().is_some_and(|pending| {
+            pending.execution_id == execution_id
+                && pending.transaction.id == transaction_id
+                && pending.direction == direction
+                && pending.through_target == through_target
+        })
+    }
+
     pub(in crate::native_app) fn has_transaction_on_stack(
         &self,
         direction: HistoryFileIoDirection,
         transaction_id: u64,
     ) -> bool {
+        if self.in_flight_file.is_some() {
+            return false;
+        }
         let stack = match direction {
             HistoryFileIoDirection::Undo => &self.undo,
             HistoryFileIoDirection::Redo => &self.redo,
@@ -428,7 +513,7 @@ impl NativeTransactionHistory {
     }
 
     pub(in crate::native_app) fn can_undo(&self) -> bool {
-        !self.undo.is_empty()
+        self.in_flight_file.is_none() && !self.undo.is_empty()
     }
 
     pub(in crate::native_app) fn remove_transactions_with_action_label(&mut self, label: &str) {
@@ -446,7 +531,7 @@ impl NativeTransactionHistory {
     }
 
     pub(in crate::native_app) fn can_redo(&self) -> bool {
-        !self.redo.is_empty()
+        self.in_flight_file.is_none() && !self.redo.is_empty()
     }
 
     pub(in crate::native_app) fn is_transaction_open(&self) -> bool {
@@ -465,16 +550,20 @@ impl NativeTransactionHistory {
                 .collect(),
             state: TransactionListState::Active,
         });
-        let undo = self
-            .undo
-            .iter()
-            .rev()
-            .map(|transaction| transaction.snapshot(TransactionListState::Undoable));
-        let redo = self
-            .redo
-            .iter()
-            .rev()
-            .map(|transaction| transaction.snapshot(TransactionListState::Redoable));
+        let undo = self.undo.iter().rev().map(|transaction| {
+            transaction.snapshot(if self.in_flight_file.is_some() {
+                TransactionListState::Unavailable
+            } else {
+                TransactionListState::Undoable
+            })
+        });
+        let redo = self.redo.iter().rev().map(|transaction| {
+            transaction.snapshot(if self.in_flight_file.is_some() {
+                TransactionListState::Unavailable
+            } else {
+                TransactionListState::Redoable
+            })
+        });
         active.chain(undo).chain(redo).collect()
     }
 }

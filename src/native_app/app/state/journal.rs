@@ -13,8 +13,9 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::native_app::transaction_history::operation_journal::{
-    BoundedAdmissionError, JournalError, OperationDisposition, OperationIntent,
-    OperationJournalCoordinator, OperationPhase, PreparedOperationOutcome, RecoveryRootCapability,
+    BoundedAdmissionError, FilesystemStageOutcome, JournalError, OperationDisposition,
+    OperationIntent, OperationJournalCoordinator, OperationPhase, PreparedOperationOutcome,
+    RecoveryRootCapability,
 };
 use crate::native_app::transaction_history::{
     HistoryFileAction, HistoryFileIoDirection, RejectedBeforeIntent,
@@ -104,6 +105,35 @@ pub(in crate::native_app) enum JournalOperationError {
     Closed,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::native_app) enum OperationJournalRestoreError {
+    RejectedBeforeIntent(RejectedBeforeIntent),
+    Journal(String),
+    Unavailable(String),
+    Closed,
+}
+
+impl From<JournalOperationError> for OperationJournalRestoreError {
+    fn from(error: JournalOperationError) -> Self {
+        match error {
+            JournalOperationError::RejectedBeforeIntent(error) => Self::RejectedBeforeIntent(error),
+            JournalOperationError::Journal(error) => Self::Journal(error.to_string()),
+            JournalOperationError::Unavailable(error) => Self::Unavailable(error.to_string()),
+            JournalOperationError::Closed => Self::Closed,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::native_app) struct OperationJournalRestoreCompletion {
+    pub(in crate::native_app) execution_id: u64,
+    pub(in crate::native_app) transaction_id: u64,
+    pub(in crate::native_app) direction: HistoryFileIoDirection,
+    pub(in crate::native_app) through_target: Option<u64>,
+    pub(in crate::native_app) label: String,
+    pub(in crate::native_app) result: Result<FilesystemStageOutcome, OperationJournalRestoreError>,
+}
+
 enum JournalCommand {
     BoundedWaveformRestore {
         intent: OperationIntent,
@@ -118,6 +148,13 @@ enum JournalCommand {
         direction: HistoryFileIoDirection,
         actions: Vec<HistoryFileAction>,
         result: SyncSender<Result<PreparedOperationOutcome, JournalOperationError>>,
+    },
+    PrepareAndStageBoundedWaveformRestore {
+        intent: OperationIntent,
+        payload: Value,
+        direction: HistoryFileIoDirection,
+        actions: Vec<HistoryFileAction>,
+        result: SyncSender<Result<FilesystemStageOutcome, JournalOperationError>>,
     },
     #[cfg(test)]
     Admit {
@@ -327,6 +364,38 @@ impl OperationJournalOwner {
             .as_ref()
             .ok_or(JournalOwnerQueueError::Closed)?
             .try_send(JournalCommand::PrepareBoundedWaveformRestore {
+                intent,
+                payload,
+                direction,
+                actions,
+                result: result_tx,
+            })
+            .map_err(|error| match error {
+                TrySendError::Full(_) => JournalOwnerQueueError::Full,
+                TrySendError::Disconnected(_) => JournalOwnerQueueError::Closed,
+            })?;
+        Ok(result_rx)
+    }
+
+    /// Queue owner-thread admission, preparation, and destination-local staging for one
+    /// waveform restore. Final target publication remains outside this bounded command.
+    #[allow(dead_code)]
+    pub(in crate::native_app) fn prepare_and_stage_bounded_waveform_restore(
+        &self,
+        intent: OperationIntent,
+        payload: Value,
+        direction: HistoryFileIoDirection,
+        actions: Vec<HistoryFileAction>,
+    ) -> Result<
+        Receiver<Result<FilesystemStageOutcome, JournalOperationError>>,
+        JournalOwnerQueueError,
+    > {
+        self.ensure_available()?;
+        let (result_tx, result_rx) = mpsc::sync_channel(1);
+        self.commands
+            .as_ref()
+            .ok_or(JournalOwnerQueueError::Closed)?
+            .try_send(JournalCommand::PrepareAndStageBoundedWaveformRestore {
                 intent,
                 payload,
                 direction,
@@ -571,6 +640,61 @@ fn run_owner(
                     });
                 let _ = result.send(outcome);
             }
+            Ok(JournalCommand::PrepareAndStageBoundedWaveformRestore {
+                intent,
+                payload,
+                direction,
+                actions,
+                result,
+            }) => {
+                if stop.load(std::sync::atomic::Ordering::Acquire) {
+                    let _ = result.send(Err(JournalOperationError::Closed));
+                    continue;
+                }
+                let outcome = coordinator
+                    .as_mut()
+                    .ok_or_else(|| {
+                        JournalOperationError::Unavailable(
+                            unavailable
+                                .lock()
+                                .expect("journal unavailable state")
+                                .clone()
+                                .unwrap_or(OperationJournalUnavailable::OpenFailed(String::from(
+                                    "operation journal coordinator is unavailable",
+                                ))),
+                        )
+                    })
+                    .and_then(|coordinator| {
+                        match coordinator
+                            .prepare_bounded_waveform_restore(intent, payload, direction, &actions)
+                        {
+                            Ok(PreparedOperationOutcome::Prepared(operation_id)) => coordinator
+                                .stage_admitted_bounded_waveform_restore(operation_id)
+                                .map_err(JournalOperationError::Journal),
+                            Ok(PreparedOperationOutcome::RetryPending {
+                                operation_id,
+                                reason,
+                            }) => Ok(FilesystemStageOutcome::RetryPending {
+                                operation_id,
+                                reason,
+                            }),
+                            Ok(PreparedOperationOutcome::JournalWriteFailed {
+                                operation_id,
+                                reason,
+                            }) => Ok(FilesystemStageOutcome::JournalWriteFailed {
+                                operation_id,
+                                reason,
+                            }),
+                            Err(BoundedAdmissionError::Rejected(rejection)) => {
+                                Err(JournalOperationError::RejectedBeforeIntent(rejection))
+                            }
+                            Err(BoundedAdmissionError::Journal(error)) => {
+                                Err(JournalOperationError::Journal(error))
+                            }
+                        }
+                    });
+                let _ = result.send(outcome);
+            }
             #[cfg(test)]
             Ok(JournalCommand::Admit {
                 intent,
@@ -647,7 +771,7 @@ mod tests {
     use super::*;
     use crate::native_app::transaction_history::HistoryFileIoDirection;
     use crate::native_app::transaction_history::operation_journal::{
-        OperationActor, OperationKind,
+        FilesystemStagedParticipant, OperationActor, OperationKind,
     };
     use crate::native_app::waveform_edits::waveform_restore_action_for_capacity_tests;
 
@@ -761,6 +885,109 @@ mod tests {
         let value: Value = serde_json::from_slice(&record).expect("record json");
         assert_eq!(value["operation_id"], result.to_string());
         assert!(value["capacity_plan"]["volumes"].is_array());
+    }
+
+    #[test]
+    fn owner_prepares_and_stages_bounded_restore_without_target_publication() {
+        let directory = tempfile::tempdir().expect("journal directory");
+        let files = fixture_directory();
+        let backup = files.path().join("before.wav");
+        let target = files.path().join("target.wav");
+        std::fs::write(&backup, vec![7_u8; 4097]).expect("backup");
+        std::fs::write(&target, vec![0_u8; 4097]).expect("target");
+        let target_before = std::fs::read(&target).expect("target before staging");
+        let action =
+            waveform_restore_action_for_capacity_tests(backup.clone(), target.clone(), false);
+        let owner = OperationJournalOwner::start_with_directory(directory.path().to_path_buf());
+        assert_eq!(
+            owner
+                .statuses
+                .recv_timeout(Duration::from_secs(2))
+                .expect("initializing status"),
+            OperationJournalStatus::Initializing
+        );
+        assert!(matches!(
+            owner
+                .statuses
+                .recv_timeout(Duration::from_secs(2))
+                .expect("available status"),
+            OperationJournalStatus::Available { .. }
+        ));
+
+        let rejected = owner
+            .prepare_and_stage_bounded_waveform_restore(
+                intent(),
+                Value::Null,
+                HistoryFileIoDirection::Undo,
+                Vec::new(),
+            )
+            .expect("queue invalid shape")
+            .recv_timeout(Duration::from_secs(2))
+            .expect("invalid-shape result");
+        assert!(matches!(
+            rejected,
+            Err(JournalOperationError::RejectedBeforeIntent(
+                RejectedBeforeIntent::InvalidShape
+            ))
+        ));
+
+        let payload = serde_json::json!({
+            "execution_id": 41,
+            "transaction_id": 1,
+            "direction": "undo",
+            "through_target": 7,
+        });
+        let operation_id = match owner
+            .prepare_and_stage_bounded_waveform_restore(
+                intent(),
+                payload.clone(),
+                HistoryFileIoDirection::Undo,
+                vec![action],
+            )
+            .expect("queue prepare and stage")
+            .recv_timeout(Duration::from_secs(2))
+            .expect("prepare and stage result")
+            .expect("prepare and stage")
+        {
+            FilesystemStageOutcome::FilesystemStaged(operation_id) => operation_id,
+            other => panic!("expected filesystem-staged outcome, got {other:?}"),
+        };
+        assert_eq!(
+            std::fs::read(&target).expect("target after staging"),
+            target_before
+        );
+
+        let staging = files
+            .path()
+            .join(format!(".wavecrate-restore-{operation_id}.stage"));
+        drop(owner);
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let reopened = loop {
+            match OperationJournalCoordinator::open(directory.path().to_path_buf()) {
+                Ok(coordinator) => break coordinator,
+                Err(error) if Instant::now() < deadline => {
+                    let _ = error;
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => panic!("owner did not release journal lock: {error}"),
+            }
+        };
+        let record = reopened.record(operation_id).expect("staged record");
+        assert_eq!(record.payload, payload);
+        assert_eq!(record.phase, OperationPhase::FilesystemStaged);
+        assert_eq!(record.disposition, OperationDisposition::None);
+        assert!(matches!(
+            record.staged.as_ref().map(|staged| &staged.participant),
+            Some(FilesystemStagedParticipant::CopyValidated { .. })
+        ));
+        assert_eq!(
+            std::fs::read(&staging).expect("staging bytes"),
+            std::fs::read(backup).unwrap()
+        );
+        assert_eq!(
+            std::fs::read(target).expect("target after reopen"),
+            target_before
+        );
     }
 
     #[test]

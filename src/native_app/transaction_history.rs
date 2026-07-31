@@ -15,6 +15,7 @@ pub(in crate::native_app) use context::TransactionContext;
 pub(in crate::native_app) use file_io::HistoryFileIoOutput;
 pub(in crate::native_app) use file_io::{
     HistoryFileAction, HistoryFileIoCommand, HistoryFileIoDirection, HistoryFileIoResult,
+    HistoryFileIoRoute,
 };
 pub(in crate::native_app) use native::NativeTransactionHistory;
 pub(in crate::native_app) use summary::{

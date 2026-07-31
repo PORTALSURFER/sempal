@@ -1,11 +1,16 @@
-use crate::native_app::app::GuiMessage;
-use crate::native_app::app::NativeAppState;
-use crate::native_app::app::PendingHistoryCommit;
+use crate::native_app::app::{
+    GuiMessage, NativeAppState, OperationJournalRestoreCompletion, OperationJournalRestoreError,
+    PendingHistoryCommit, PendingHistoryOwnerStaging,
+};
+use crate::native_app::transaction_history::operation_journal::{
+    FilesystemStageOutcome, OperationActor, OperationIntent, OperationKind,
+};
 use crate::native_app::transaction_history::{
-    HistoryFileIoCommand, HistoryFileIoDirection, HistoryFileIoResult, TransactionContext,
-    TransactionResult,
+    HistoryFileIoCommand, HistoryFileIoDirection, HistoryFileIoResult, HistoryFileIoRoute,
+    TransactionContext, TransactionResult,
 };
 use radiant::prelude as ui;
+use uuid::Uuid;
 
 impl NativeAppState {
     pub(in crate::native_app) fn begin_transaction(&mut self, label: impl Into<String>) {
@@ -51,11 +56,10 @@ impl NativeAppState {
         &mut self,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
-        if self
-            .start_history_file_request(HistoryFileIoDirection::Undo, None, context)
-            .is_err()
+        if let Err(error) =
+            self.start_history_file_request(HistoryFileIoDirection::Undo, None, context)
         {
-            self.ui.status.sample = String::from("Undo already in progress");
+            self.ui.status.sample = error;
             return;
         }
         if self.history_file_request_started(HistoryFileIoDirection::Undo, None) {
@@ -79,11 +83,10 @@ impl NativeAppState {
         &mut self,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
-        if self
-            .start_history_file_request(HistoryFileIoDirection::Redo, None, context)
-            .is_err()
+        if let Err(error) =
+            self.start_history_file_request(HistoryFileIoDirection::Redo, None, context)
         {
-            self.ui.status.sample = String::from("Redo already in progress");
+            self.ui.status.sample = error;
             return;
         }
         if self.history_file_request_started(HistoryFileIoDirection::Redo, None) {
@@ -206,10 +209,13 @@ impl NativeAppState {
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) -> Result<bool, String> {
         let execution_id = self.background.next_task_id();
-        let command =
-            self.transactions
-                .history
-                .begin_file_io(direction, through_target, execution_id)?;
+        let command = self
+            .transactions
+            .history
+            .begin_file_io(direction, through_target, execution_id)
+            .map_err(|error| {
+                format!("{} not started: {error}", history_direction_verb(direction))
+            })?;
         let Some(command) = command else {
             return Ok(false);
         };
@@ -235,6 +241,10 @@ impl NativeAppState {
         command: HistoryFileIoCommand,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
+        if command.route == HistoryFileIoRoute::OwnerWaveformRestore {
+            self.start_owner_waveform_restore(command, context);
+            return;
+        }
         let gate = self.background.history_file_io_gate.clone();
         context.business().background("gui-history-file-io").run(
             move |_| {
@@ -243,6 +253,73 @@ impl NativeAppState {
             },
             GuiMessage::HistoryFileIoFinished,
         );
+    }
+
+    fn start_owner_waveform_restore(
+        &mut self,
+        command: HistoryFileIoCommand,
+        context: &mut ui::UiUpdateContext<GuiMessage>,
+    ) {
+        let intent = OperationIntent {
+            actor: OperationActor::User,
+            kind: OperationKind::FileHistory,
+            label: command.label.clone(),
+        };
+        let action = command
+            .actions
+            .first()
+            .cloned()
+            .expect("owner-staging route has one waveform action");
+        let owner_result = self
+            .background
+            .operation_journal
+            .prepare_and_stage_bounded_waveform_restore(
+                intent,
+                owner_waveform_restore_payload(&command),
+                command.direction,
+                vec![action],
+            );
+        let execution_id = command.execution_id;
+        let transaction_id = command.transaction_id;
+        let direction = command.direction;
+        let through_target = command.through_target;
+        let label = command.label;
+        match owner_result {
+            Ok(receiver) => {
+                context
+                    .business()
+                    .background("gui-history-owner-stage")
+                    .run(
+                        move |_| {
+                            let result = receiver
+                                .recv()
+                                .map_err(|_| OperationJournalRestoreError::Closed)
+                                .and_then(|result| result.map_err(Into::into));
+                            OperationJournalRestoreCompletion {
+                                execution_id,
+                                transaction_id,
+                                direction,
+                                through_target,
+                                label,
+                                result,
+                            }
+                        },
+                        GuiMessage::OperationJournalRestoreFinished,
+                    );
+            }
+            Err(error) => {
+                self.restore_history_file_io_not_started(
+                    execution_id,
+                    transaction_id,
+                    direction,
+                    through_target,
+                    format!(
+                        "{} not started: operation journal queue failed: {error:?}",
+                        history_direction_verb(direction)
+                    ),
+                );
+            }
+        }
     }
 
     pub(in crate::native_app) fn finish_history_file_io(
@@ -305,6 +382,111 @@ impl NativeAppState {
             return;
         }
         let _ = through_target;
+    }
+
+    pub(in crate::native_app) fn finish_operation_journal_restore(
+        &mut self,
+        completion: OperationJournalRestoreCompletion,
+    ) {
+        if self.transactions.completed_history_owner_matches(
+            completion.execution_id,
+            completion.transaction_id,
+            completion.direction,
+            completion.through_target,
+        ) {
+            return;
+        }
+        if self
+            .transactions
+            .pending_history_owner_staging
+            .as_ref()
+            .is_some_and(|pending| {
+                pending.execution_id == completion.execution_id
+                    && pending.transaction_id == completion.transaction_id
+                    && pending.direction == completion.direction
+                    && pending.through_target == completion.through_target
+            })
+        {
+            return;
+        }
+        if !self.transactions.history.file_io_matches(
+            completion.execution_id,
+            completion.transaction_id,
+            completion.direction,
+            completion.through_target,
+        ) {
+            self.ui.status.sample = String::from(
+                "Stale operation journal restore completion; history remains in flight",
+            );
+            return;
+        }
+        match completion.result {
+            Ok(outcome) => {
+                let operation_id = operation_id_for_stage_outcome(&outcome);
+                self.transactions.pending_history_owner_staging =
+                    Some(PendingHistoryOwnerStaging {
+                        execution_id: completion.execution_id,
+                        transaction_id: completion.transaction_id,
+                        direction: completion.direction,
+                        through_target: completion.through_target,
+                        label: completion.label.clone(),
+                        operation_id,
+                        outcome: outcome.clone(),
+                    });
+                self.ui.status.sample =
+                    owner_staging_status(completion.direction, &completion.label, &outcome);
+            }
+            Err(OperationJournalRestoreError::Journal(error)) => {
+                self.ui.status.sample =
+                    owner_ambiguous_journal_status(completion.direction, &completion.label, &error);
+            }
+            Err(error) => {
+                self.restore_history_file_io_not_started(
+                    completion.execution_id,
+                    completion.transaction_id,
+                    completion.direction,
+                    completion.through_target,
+                    owner_restore_error_status(completion.direction, error),
+                );
+            }
+        }
+    }
+
+    fn restore_history_file_io_not_started(
+        &mut self,
+        execution_id: u64,
+        transaction_id: u64,
+        direction: HistoryFileIoDirection,
+        through_target: Option<u64>,
+        reason: String,
+    ) {
+        if !self.transactions.history.file_io_matches(
+            execution_id,
+            transaction_id,
+            direction,
+            through_target,
+        ) {
+            self.ui.status.sample =
+                String::from("Stale operation journal failure; history remains in flight");
+            return;
+        }
+        match self.transactions.history.finish_file_io(
+            execution_id,
+            transaction_id,
+            direction,
+            false,
+        ) {
+            Ok(_) => {
+                self.transactions.retain_completed_history_owner(
+                    execution_id,
+                    transaction_id,
+                    direction,
+                    through_target,
+                );
+                self.ui.status.sample = reason;
+            }
+            Err(error) => self.ui.status.sample = format!("{reason}: {error}"),
+        }
     }
 
     pub(in crate::native_app) fn finalize_history_file_io(
@@ -370,5 +552,122 @@ impl NativeAppState {
 
     pub(in crate::native_app) fn toggle_transaction_list(&mut self) {
         self.ui.chrome.transaction_list_open = !self.ui.chrome.transaction_list_open;
+    }
+}
+
+fn operation_id_for_stage_outcome(outcome: &FilesystemStageOutcome) -> Uuid {
+    match outcome {
+        FilesystemStageOutcome::FilesystemStaged(operation_id)
+        | FilesystemStageOutcome::RetryPending { operation_id, .. }
+        | FilesystemStageOutcome::AuditRequired { operation_id, .. }
+        | FilesystemStageOutcome::JournalWriteFailed { operation_id, .. } => *operation_id,
+    }
+}
+
+fn owner_waveform_restore_payload(command: &HistoryFileIoCommand) -> serde_json::Value {
+    serde_json::json!({
+        "execution_id": command.execution_id,
+        "transaction_id": command.transaction_id,
+        "direction": match command.direction {
+            HistoryFileIoDirection::Undo => "undo",
+            HistoryFileIoDirection::Redo => "redo",
+        },
+        "through_target": command.through_target,
+    })
+}
+
+fn owner_staging_status(
+    direction: HistoryFileIoDirection,
+    label: &str,
+    outcome: &FilesystemStageOutcome,
+) -> String {
+    let verb = match direction {
+        HistoryFileIoDirection::Undo => "Undo",
+        HistoryFileIoDirection::Redo => "Redo",
+    };
+    match outcome {
+        FilesystemStageOutcome::FilesystemStaged(operation_id) => format!(
+            "{verb} {label} staged (operation {operation_id}); final publication is pending"
+        ),
+        FilesystemStageOutcome::RetryPending {
+            operation_id,
+            reason,
+        } => format!("{verb} {label} retry pending (operation {operation_id}): {reason}"),
+        FilesystemStageOutcome::AuditRequired {
+            operation_id,
+            reason,
+        } => format!("{verb} {label} requires audit (operation {operation_id}): {reason}"),
+        FilesystemStageOutcome::JournalWriteFailed {
+            operation_id,
+            reason,
+        } => format!("{verb} {label} journal write failed (operation {operation_id}): {reason}"),
+    }
+}
+
+fn owner_restore_error_status(
+    direction: HistoryFileIoDirection,
+    error: OperationJournalRestoreError,
+) -> String {
+    let detail = match error {
+        OperationJournalRestoreError::RejectedBeforeIntent(error) => {
+            format!("rejected before durable intent: {error}")
+        }
+        OperationJournalRestoreError::Journal(error) => {
+            unreachable!("ambiguous journal errors must retain history in flight: {error}")
+        }
+        OperationJournalRestoreError::Unavailable(error) => {
+            format!("operation journal unavailable: {error}")
+        }
+        OperationJournalRestoreError::Closed => String::from("operation journal owner closed"),
+    };
+    format!(
+        "{} not started: {detail}",
+        history_direction_verb(direction)
+    )
+}
+
+fn owner_ambiguous_journal_status(
+    direction: HistoryFileIoDirection,
+    label: &str,
+    error: &str,
+) -> String {
+    format!(
+        "{} {label} journal/recovery status is ambiguous; inspect recovery before retrying (history remains in flight): {error}",
+        history_direction_verb(direction)
+    )
+}
+
+fn history_direction_verb(direction: HistoryFileIoDirection) -> &'static str {
+    match direction {
+        HistoryFileIoDirection::Undo => "Undo",
+        HistoryFileIoDirection::Redo => "Redo",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn owner_waveform_restore_payload_is_bounded_identity() {
+        let command = HistoryFileIoCommand {
+            execution_id: 19,
+            transaction_id: 23,
+            label: String::from("ignored from payload"),
+            direction: HistoryFileIoDirection::Redo,
+            through_target: Some(29),
+            route: HistoryFileIoRoute::OwnerWaveformRestore,
+            actions: Vec::new(),
+        };
+
+        assert_eq!(
+            owner_waveform_restore_payload(&command),
+            serde_json::json!({
+                "execution_id": 19,
+                "transaction_id": 23,
+                "direction": "redo",
+                "through_target": 29,
+            })
+        );
     }
 }

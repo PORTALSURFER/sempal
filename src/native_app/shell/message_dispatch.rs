@@ -207,6 +207,7 @@ impl NativeAppState {
             | GuiMessage::CommittedFileMutationFinished(_)
             | GuiMessage::HistoryFileIoRequested(_)
             | GuiMessage::HistoryFileIoFinished(_)
+            | GuiMessage::OperationJournalRestoreFinished(_)
             | GuiMessage::NativeAudioDocumentOpenValidated { .. }
             | GuiMessage::WaveformFileDrop(_) => self.apply_file_dispatch(message, context),
             GuiMessage::ResizeWaveformPanel(_)
