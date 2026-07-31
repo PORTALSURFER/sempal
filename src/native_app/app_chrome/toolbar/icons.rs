@@ -57,15 +57,7 @@ pub(in crate::native_app) fn toolbar_icon_glyph(
 
 static FOCUS_LOADED_ICON: ui::SvgIconTintCache = ui::SvgIconTintCache::new(
     r#"<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
-  <rect x="2" y="3" width="1.5" height="1.5"/>
-  <rect x="4.5" y="3.25" width="5" height="1"/>
-  <rect x="2" y="6.75" width="1.5" height="1.5"/>
-  <rect x="4.5" y="7" width="5" height="1"/>
-  <rect x="9" y="5" width="3" height="1"/>
-  <rect x="9" y="10" width="3" height="1"/>
-  <rect x="9" y="6" width="1" height="4"/>
-  <rect x="11" y="6" width="1" height="4"/>
-  <circle cx="10" cy="8" r="0.8"/>
+  <path fill-rule="evenodd" d="M8 1.5C4.41 1.5 1.5 4.41 1.5 8c0 2.2 1.5 4.6 6.5 7.5 5-2.9 6.5-5.3 6.5-7.5 0-3.59-2.91-6.5-6.5-6.5ZM8 10A2.5 2.5 0 1 0 8 5a2.5 2.5 0 0 0 0 5Z"/>
 </svg>"#,
 );
 
