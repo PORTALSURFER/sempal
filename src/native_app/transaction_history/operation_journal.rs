@@ -1218,7 +1218,7 @@ fn single_clean_normal_leaf<'a>(label: &str, path: &'a Path) -> Result<&'a Path,
     Ok(path)
 }
 
-fn descriptor_identity(file: &File) -> Result<PreparedObjectIdentity, String> {
+pub(super) fn descriptor_identity(file: &File) -> Result<PreparedObjectIdentity, String> {
     let metadata = file.metadata().map_err(|error| error.to_string())?;
     let stable_id =
         wavecrate_library::filesystem_identity::stable_filesystem_identity_from_open_file(file)
@@ -1248,7 +1248,7 @@ fn open_root(path: &Path) -> Result<(File, PreparedRootCapability), String> {
     ))
 }
 
-fn open_leaf_relative(
+pub(super) fn open_leaf_relative(
     root: &File,
     relative: &Path,
     display: &Path,
@@ -1752,7 +1752,7 @@ fn infer_root(path: &Path, relative: &Path) -> Result<PathBuf, String> {
     Ok(root)
 }
 
-fn prepared_file_evidence(file: &File) -> PreparedFileEvidence {
+pub(super) fn prepared_file_evidence(file: &File) -> PreparedFileEvidence {
     let Ok(metadata) = file.metadata() else {
         return PreparedFileEvidence::Unverifiable;
     };
