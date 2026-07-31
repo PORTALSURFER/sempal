@@ -35,6 +35,8 @@ pub(in crate::native_app) use source_processing_events::GuiSourceProcessingEvent
 #[cfg(test)]
 pub(in crate::native_app) use state::DEFAULT_VOLUME;
 #[cfg(test)]
+pub(in crate::native_app) use state::DEFAULT_WAVEFORM_PANEL_HEIGHT;
+#[cfg(test)]
 pub(in crate::native_app) use state::ReleaseUpdateStatus;
 pub(in crate::native_app) use state::{
     AudioAppState, AudioOpenCompletion, AudioOpenTaskCompletion, AudioOptionsRefreshResult,
@@ -42,17 +44,18 @@ pub(in crate::native_app) use state::{
     CutFileClipboard, ExtractedFilePlaybackType, FolderScanWorkerEvent,
     HarvestSelectionDerivationBatchResult, HarvestTouchedPersistAdmission,
     HarvestTouchedPersistBatchResult, LibraryAppState, MAX_BEAT_GUIDE_COUNT, MIN_BEAT_GUIDE_COUNT,
-    MetadataAppState, NativeAppState, OperationJournalStatus, OverflowFadeAnimations,
-    PendingFolderDelete, PendingHistoryCommit, PendingPlaySelectionRetargetCycle,
-    PendingPlaybackStart, PendingProtectedExtractionAction, PendingProtectedExtractionTargetSource,
-    PendingTrashFolderSetup, PendingWaveformDestructiveEdit, PlaybackSpanRetargetRejection,
-    RatingPersistBatchResult, SampleBrowserDisplayMode, SamplePlaybackHistory,
-    SamplePlaybackIntent, SamplePlaybackNormalization, SamplePlaybackRequest,
-    SamplePlaybackSession, SamplePlaybackSessionState, SamplePlaybackSourceProbe,
-    SamplePlaybackVisibility, SettingsAppState, SourceFilesystemChangePlan, SourceRefreshCause,
-    SourceRefreshRequest, SourceScanFinish, SourceSelectionRequest, StarmapAuditionDragState,
-    StarmapViewport, StarmapViewportChange, StartupState, StatusState, TransactionState,
-    UiAppState, UnsupportedFilesDialogState, WaveformAppState, WaveformDestructiveEditKind,
+    MIN_WAVEFORM_PANEL_HEIGHT, MetadataAppState, NativeAppState, OperationJournalStatus,
+    OverflowFadeAnimations, PendingFolderDelete, PendingHistoryCommit,
+    PendingPlaySelectionRetargetCycle, PendingPlaybackStart, PendingProtectedExtractionAction,
+    PendingProtectedExtractionTargetSource, PendingTrashFolderSetup,
+    PendingWaveformDestructiveEdit, PlaybackSpanRetargetRejection, RatingPersistBatchResult,
+    SampleBrowserDisplayMode, SamplePlaybackHistory, SamplePlaybackIntent,
+    SamplePlaybackNormalization, SamplePlaybackRequest, SamplePlaybackSession,
+    SamplePlaybackSessionState, SamplePlaybackSourceProbe, SamplePlaybackVisibility,
+    SettingsAppState, SourceFilesystemChangePlan, SourceRefreshCause, SourceRefreshRequest,
+    SourceScanFinish, SourceSelectionRequest, StarmapAuditionDragState, StarmapViewport,
+    StarmapViewportChange, StartupState, StatusState, TransactionState, UiAppState,
+    UnsupportedFilesDialogState, WaveformAppState, WaveformDestructiveEditKind,
     WaveformDestructiveEditPrompt, WaveformDestructiveEditTarget, WaveformDestructiveEditUiContext,
     WaveformEditSelectionSnapshot, WaveformPlaySelectionSnapshot, WaveformVisualSnapshot,
     run_folder_scan_worker,

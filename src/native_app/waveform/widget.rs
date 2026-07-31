@@ -52,6 +52,7 @@ pub(in crate::native_app::waveform) struct LiveSelectionPreviewAnchor {
 
 pub(in crate::native_app) fn waveform_viewport_view_with_tooltip(
     state: &WaveformState,
+    viewport_height: f32,
     tooltip: Option<&'static str>,
     beat_guides_enabled: bool,
     bpm_snap_enabled: bool,
@@ -66,6 +67,7 @@ pub(in crate::native_app) fn waveform_viewport_view_with_tooltip(
         beat_guide_count,
         playhead_occlusion_rect,
     );
+    let viewport_size = (WAVEFORM_WIDTH as f32, viewport_height);
     let interaction = ui::custom_widget(
         WaveformWidget::new(props.clone()).with_external_playmark_label_owner(),
         |output| {
@@ -75,7 +77,7 @@ pub(in crate::native_app) fn waveform_viewport_view_with_tooltip(
         },
     )
     .id(WAVEFORM_WIDGET_ID)
-    .size(WAVEFORM_WIDTH as f32, WAVEFORM_HEIGHT as f32);
+    .size(viewport_size.0, viewport_size.1);
     let interaction = if let Some(tooltip) = tooltip {
         interaction.tooltip(tooltip)
     } else {
@@ -95,7 +97,7 @@ pub(in crate::native_app) fn waveform_viewport_view_with_tooltip(
                 .map(GuiMessage::PlaymarkLabel)
         })
         .id(widget_ids::WAVEFORM_PLAYMARK_LABEL_ID)
-        .size(WAVEFORM_WIDTH as f32, WAVEFORM_HEIGHT as f32)
+        .size(viewport_size.0, viewport_size.1)
     });
     let layers = [
         waveform_signal_surface_view(
@@ -104,7 +106,7 @@ pub(in crate::native_app) fn waveform_viewport_view_with_tooltip(
             state.pending_sample_slide_frame_offset,
         )
         .id(WAVEFORM_SIGNAL_WIDGET_ID)
-        .size(WAVEFORM_WIDTH as f32, WAVEFORM_HEIGHT as f32),
+        .size(viewport_size.0, viewport_size.1),
         interaction,
     ]
     .into_iter()
@@ -112,7 +114,7 @@ pub(in crate::native_app) fn waveform_viewport_view_with_tooltip(
 
     ui::stack(layers)
         .id(widget_ids::WAVEFORM_VIEWPORT_STACK_ID)
-        .size(WAVEFORM_WIDTH as f32, WAVEFORM_HEIGHT as f32)
+        .size(viewport_size.0, viewport_size.1)
 }
 
 pub(super) fn signal_edit_selection_for_state(

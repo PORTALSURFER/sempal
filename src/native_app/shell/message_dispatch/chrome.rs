@@ -11,6 +11,9 @@ impl NativeAppState {
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
         match message {
+            GuiMessage::ResizeWaveformPanel(message) => {
+                self.ui.chrome.resize_waveform_panel(message);
+            }
             GuiMessage::ToggleJobDetails => {
                 let job_active = StatusBarViewModel::from_app_state(self)
                     .job_details

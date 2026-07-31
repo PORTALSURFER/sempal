@@ -4,7 +4,10 @@ use crate::native_app::{
         waveform_panel::{WAVEFORM_PANEL_HEIGHT, WAVEFORM_VIEW_HEIGHT, waveform_panel},
     },
     test_support::state::NativeAppStateFixture,
-    ui::ids::{WAVEFORM_LOADED_SAMPLE_DRAG_HANDLE_ID, WAVEFORM_PLAYMARK_LABEL_ID},
+    ui::ids::{
+        WAVEFORM_LOADED_SAMPLE_DRAG_HANDLE_ID, WAVEFORM_PLAYMARK_LABEL_ID,
+        WAVEFORM_RESIZE_HANDLE_ID,
+    },
 };
 use radiant::prelude::{self as ui, IntoView};
 
@@ -12,6 +15,58 @@ use radiant::prelude::{self as ui, IntoView};
 fn waveform_panel_uses_the_taller_editorial_viewport() {
     assert_eq!(WAVEFORM_VIEW_HEIGHT, 196.0);
     assert_eq!(WAVEFORM_PANEL_HEIGHT, 226.0);
+}
+
+#[test]
+fn waveform_panel_resize_handle_routes_drag_messages() {
+    let state = NativeAppStateFixture::default().build();
+    let drag = ui::DragHandleMessage::started(ui::Point::new(320.0, 222.0));
+    let surface = waveform_panel(WaveformPanelViewModel::from_app_state(&state)).into_surface();
+
+    assert!(surface.find_widget(WAVEFORM_RESIZE_HANDLE_ID).is_some());
+    assert_eq!(
+        waveform_panel(WaveformPanelViewModel::from_app_state(&state)).view_dispatch_widget_output(
+            WAVEFORM_RESIZE_HANDLE_ID,
+            ui::WidgetOutput::typed(drag.clone()),
+        ),
+        Some(crate::native_app::app::GuiMessage::ResizeWaveformPanel(
+            drag
+        )),
+    );
+}
+
+#[test]
+fn waveform_panel_resize_updates_panel_and_viewport_height() {
+    let mut state = NativeAppStateFixture::default().build();
+    let initial_height = state.ui.chrome.waveform_panel_height();
+    let delta = 64.0;
+
+    state.apply_message(
+        crate::native_app::app::GuiMessage::ResizeWaveformPanel(ui::DragHandleMessage::started(
+            ui::Point::new(320.0, initial_height),
+        )),
+        &mut ui::UiUpdateContext::default(),
+    );
+    state.apply_message(
+        crate::native_app::app::GuiMessage::ResizeWaveformPanel(ui::DragHandleMessage::moved(
+            ui::Point::new(320.0, initial_height + delta),
+        )),
+        &mut ui::UiUpdateContext::default(),
+    );
+
+    assert_eq!(
+        state.ui.chrome.waveform_panel_height(),
+        initial_height + delta
+    );
+    let frame = waveform_panel(WaveformPanelViewModel::from_app_state(&state))
+        .view_frame_at_size_with_default_theme(ui::Vector2::new(800.0, initial_height + delta));
+    let waveform = frame
+        .layout
+        .rects
+        .get(&crate::native_app::ui::ids::WAVEFORM_WIDGET_ID)
+        .expect("resized waveform should be laid out");
+
+    assert_eq!(waveform.height(), WAVEFORM_VIEW_HEIGHT + delta);
 }
 
 fn loaded_sample_drag_handle_tooltip(

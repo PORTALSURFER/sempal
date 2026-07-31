@@ -22,6 +22,9 @@ use crate::native_app::waveform::WaveformContextMenu;
 pub(in crate::native_app) const DEFAULT_BEAT_GUIDE_COUNT: u8 = 4;
 pub(in crate::native_app) const MIN_BEAT_GUIDE_COUNT: u8 = 2;
 pub(in crate::native_app) const MAX_BEAT_GUIDE_COUNT: u8 = 32;
+pub(in crate::native_app) const DEFAULT_WAVEFORM_PANEL_HEIGHT: f32 = 226.0;
+pub(in crate::native_app) const MIN_WAVEFORM_PANEL_HEIGHT: f32 = 94.0;
+pub(in crate::native_app) const MAX_WAVEFORM_PANEL_HEIGHT: f32 = 512.0;
 
 pub(in crate::native_app) struct UiAppState {
     pub(in crate::native_app) chrome: ChromeUiState,
@@ -52,6 +55,7 @@ impl UiAppState {
 
 pub(in crate::native_app) struct ChromeUiState {
     pub(in crate::native_app) folder_panel: panel_ui::PanelResizeState,
+    pub(in crate::native_app) waveform_panel: panel_ui::PanelResizeState,
     pub(in crate::native_app) job_details_open: bool,
     pub(in crate::native_app) transaction_list_open: bool,
     pub(in crate::native_app) shortcut_help_open: bool,
@@ -311,6 +315,7 @@ impl ChromeUiState {
     pub(in crate::native_app) fn new(folder_width: f32) -> Self {
         Self {
             folder_panel: panel_ui::PanelResizeState::new(folder_width),
+            waveform_panel: panel_ui::PanelResizeState::new(DEFAULT_WAVEFORM_PANEL_HEIGHT),
             job_details_open: false,
             transaction_list_open: false,
             shortcut_help_open: false,
@@ -328,6 +333,25 @@ impl ChromeUiState {
             beat_guide_count: DEFAULT_BEAT_GUIDE_COUNT,
             overflow_fades: OverflowFadeAnimations::default(),
         }
+    }
+
+    pub(in crate::native_app) fn waveform_panel_height(&self) -> f32 {
+        self.waveform_panel
+            .size()
+            .clamp(MIN_WAVEFORM_PANEL_HEIGHT, MAX_WAVEFORM_PANEL_HEIGHT)
+    }
+
+    pub(in crate::native_app) fn resize_waveform_panel(
+        &mut self,
+        message: radiant::widgets::DragHandleMessage,
+    ) {
+        self.waveform_panel.resize(
+            message,
+            panel_ui::PanelResizeConstraints::bottom(
+                MIN_WAVEFORM_PANEL_HEIGHT,
+                MAX_WAVEFORM_PANEL_HEIGHT,
+            ),
+        );
     }
 
     pub(in crate::native_app) fn set_beat_guide_count(&mut self, count: u8) {

@@ -56,6 +56,7 @@ pub(in crate::native_app) enum TrashMoveTarget {
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::native_app) enum GuiMessage {
     ResizeFolder(DragHandleMessage),
+    ResizeWaveformPanel(DragHandleMessage),
     FolderBrowser(FolderBrowserMessage),
     AddSourceDialogFinished(ui::PlatformResult),
     ContextPathCopyFinished {
