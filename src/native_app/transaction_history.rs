@@ -1,6 +1,7 @@
 mod app_state;
 mod capacity_gate;
 mod context;
+mod expected_identity_replacement;
 mod file_io;
 #[cfg(test)]
 mod generic;
