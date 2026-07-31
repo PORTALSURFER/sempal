@@ -76,6 +76,20 @@ fn named_profile_uses_isolated_profile_root() {
 }
 
 #[test]
+fn operation_journal_dir_is_profile_local() {
+    let _lock = app_dirs_test_lock();
+    let base = tempdir().unwrap();
+    let _base_guard = ConfigBaseGuard::set(base.path().to_path_buf());
+    let _profile_guard = PersistenceProfileGuard::named("journal-test");
+
+    let root = app_root_dir().unwrap();
+    let journal = operation_journal_dir().unwrap();
+
+    assert_eq!(journal, root.join("operation_journal"));
+    assert!(journal.is_dir());
+}
+
+#[test]
 fn live_profile_override_bypasses_test_isolation() {
     let _lock = app_dirs_test_lock();
     let live_base = tempdir().unwrap();

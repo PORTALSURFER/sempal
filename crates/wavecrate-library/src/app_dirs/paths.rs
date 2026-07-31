@@ -23,6 +23,11 @@ pub fn handoff_staging_dir() -> Result<PathBuf, AppDirError> {
     create_app_subdir("handoff_staging")
 }
 
+/// Return the profile-local durable operation-journal directory.
+pub fn operation_journal_dir() -> Result<PathBuf, AppDirError> {
+    create_app_subdir("operation_journal")
+}
+
 /// Return the root directory for rebuildable cache payloads.
 pub fn rebuildable_cache_root_dir() -> Result<PathBuf, AppDirError> {
     create_app_subdir("cache")

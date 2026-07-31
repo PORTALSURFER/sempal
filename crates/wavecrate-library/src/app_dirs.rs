@@ -17,8 +17,8 @@ mod storage_usage;
 pub use error::AppDirError;
 pub use overrides::{AppRootGuard, ConfigBaseGuard};
 pub use paths::{
-    clear_rebuildable_cache_payloads, handoff_staging_dir, logs_dir, rebuildable_cache_root_dir,
-    waveform_cache_dir,
+    clear_rebuildable_cache_payloads, handoff_staging_dir, logs_dir, operation_journal_dir,
+    rebuildable_cache_root_dir, waveform_cache_dir,
 };
 pub use profile::{PersistenceMode, PersistenceProfileGuard, ResolvedPersistence};
 pub use resolution::{
