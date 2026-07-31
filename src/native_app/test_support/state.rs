@@ -4,9 +4,9 @@ pub(in crate::native_app) use crate::native_app::app::{
     DEFAULT_VOLUME, FileMoveProgress, GuiMessage, LibraryAppState, MetadataAppState,
     MetadataMessage, NativeAppState, NativeFileDropHover, NormalizationProgress, SampleLoadResult,
     SamplePlaybackHistory, SamplePlaybackIntent, SamplePlaybackReady, SamplePlaybackRequest,
-    SettingsAppState, SourceProcessingProgress, StartupState, StatusState, UiAppState,
-    WaveformAppState, default_gui_shortcuts, format_sample_rate_label, shortcut_help_bindings,
-    shortcut_help_sections, view,
+    SettingsAppState, SourceProcessingProgress, StartupState, StatusState, TransactionState,
+    UiAppState, WaveformAppState, default_gui_shortcuts, format_sample_rate_label,
+    shortcut_help_bindings, shortcut_help_sections, view,
 };
 use crate::native_app::sample_library::folder_browser::view_contract::DEFAULT_FOLDER_WIDTH;
 pub(in crate::native_app) use crate::native_app::sample_library::folder_browser::{
@@ -78,7 +78,7 @@ impl NativeAppStateFixture {
             ),
             background: BackgroundTaskState::for_tests(),
             audio: AudioAppState::for_tests(),
-            transactions: Default::default(),
+            transactions: TransactionState::for_tests(),
             metadata: MetadataAppState::from_settings(&self.persisted_settings),
             frame_surface_revision_tracker: Default::default(),
             playhead_frame_diagnostics: Default::default(),

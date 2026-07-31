@@ -33,6 +33,9 @@ impl NativeAppState {
         let started_at = Instant::now();
         let config = wavecrate::sample_sources::config::load_or_default()
             .map_err(|err| format!("load app configuration: {err}"))?;
+        let transactions =
+            crate::native_app::app::TransactionState::with_profile_operation_journal();
+        let transaction_journal_diagnostic = transactions.startup_diagnostic();
         let has_configured_sources = !config.sources.is_empty();
         let mut folder_browser = FolderBrowserState::from_sample_sources_deferred(&config.sources);
         folder_browser.set_locked_folder_paths(&config.core.folder_locks);
@@ -77,7 +80,7 @@ impl NativeAppState {
             startup.release_update_check_pending = false;
             startup
         };
-        let state = Self {
+        let mut state = Self {
             ui: UiAppState::new(
                 ChromeUiState::new(DEFAULT_FOLDER_WIDTH),
                 StatusState::new("Select a sample to load"),
@@ -88,13 +91,16 @@ impl NativeAppState {
             waveform: WaveformAppState::new(WaveformState::load_default()?),
             background,
             audio,
-            transactions: Default::default(),
+            transactions,
             metadata: MetadataAppState::from_settings(&config.core),
             frame_surface_revision_tracker: Default::default(),
             playhead_frame_diagnostics: Default::default(),
             #[cfg(test)]
             scheduled_timer_messages: Vec::new(),
         };
+        if let Some(diagnostic) = transaction_journal_diagnostic {
+            state.ui.status.sample = diagnostic;
+        }
         emit_gui_action(
             "runtime.startup.load_default_state",
             Some("background"),
@@ -462,6 +468,7 @@ impl NativeAppState {
 
     pub(in crate::native_app) fn shutdown(&mut self) -> Option<serde_json::Value> {
         let started_at = Instant::now();
+        let operation_journal_released = self.transactions.release_operation_journal();
         let source_processing = self.background.source_processing.shutdown();
         let harvest_touched_unflushed = self.background.harvest_touched_persist.close();
         let harvest_selection_derivation_unflushed =
@@ -490,6 +497,7 @@ impl NativeAppState {
         Some(serde_json::json!({
             "waveform_cache_shutdown_flush_ms": duration_ms(elapsed),
             "source_processing": source_processing,
+            "operation_journal_released": operation_journal_released,
             "harvest_touched_unflushed": harvest_touched_unflushed,
             "harvest_selection_derivation_unflushed": harvest_selection_derivation_unflushed,
             "rating_persist_unflushed": rating_persist_unflushed,
