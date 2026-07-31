@@ -78,6 +78,11 @@ const REGISTERED_WIDGET_IDS: &[RegisteredWidgetId] = &[
         WAVEFORM_LOADED_SAMPLE_DRAG_HANDLE_ID,
         "waveform.loaded_sample_drag_handle"
     ),
+    registered_widget_id!(
+        Waveform,
+        WAVEFORM_RESIZE_HANDLE_ID,
+        "waveform.resize_handle"
+    ),
     registered_widget_id!(FolderTree, FOLDER_TREE_LIST_ID, "folder_tree.list"),
     registered_widget_id!(
         FolderTree,

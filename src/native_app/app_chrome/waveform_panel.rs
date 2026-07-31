@@ -1,6 +1,8 @@
 use radiant::prelude as ui;
 
-use crate::native_app::app::GuiMessage;
+#[cfg(test)]
+use crate::native_app::app::DEFAULT_WAVEFORM_PANEL_HEIGHT;
+use crate::native_app::app::{GuiMessage, MIN_WAVEFORM_PANEL_HEIGHT};
 use crate::native_app::app_chrome::view_models::waveform_panel::WaveformPanelViewModel;
 use crate::native_app::ui::ids as widget_ids;
 use crate::native_app::waveform::{
@@ -8,9 +10,16 @@ use crate::native_app::waveform::{
 };
 
 const WAVEFORM_STATUS_HEIGHT: f32 = 16.0;
+const WAVEFORM_SCROLLBAR_HEIGHT: f32 = 6.0;
+const WAVEFORM_RESIZE_HANDLE_HEIGHT: f32 = 8.0;
 const WAVEFORM_SAMPLE_DRAG_HANDLE_WIDTH: f32 = 14.0;
-pub(in crate::native_app) const WAVEFORM_VIEW_HEIGHT: f32 = 196.0;
-pub(in crate::native_app) const WAVEFORM_PANEL_HEIGHT: f32 = 226.0;
+#[cfg(test)]
+pub(in crate::native_app) const WAVEFORM_PANEL_HEIGHT: f32 = DEFAULT_WAVEFORM_PANEL_HEIGHT;
+#[cfg(test)]
+pub(in crate::native_app) const WAVEFORM_VIEW_HEIGHT: f32 = WAVEFORM_PANEL_HEIGHT
+    - WAVEFORM_STATUS_HEIGHT
+    - WAVEFORM_SCROLLBAR_HEIGHT
+    - WAVEFORM_RESIZE_HANDLE_HEIGHT;
 
 pub(in crate::native_app) fn waveform_panel(
     model: WaveformPanelViewModel<'_>,
@@ -25,22 +34,38 @@ pub(in crate::native_app) fn waveform_panel(
             model.failed_label.as_deref(),
             model.help_tooltips_enabled,
         ),
-        waveform_viewport_with_loading_state(&model),
+        waveform_viewport_with_loading_state(&model, waveform_view_height(model.panel_height)),
         waveform_scrollbar(model.waveform),
+        waveform_resize_handle(model.help_tooltips_enabled),
     ])
     .spacing(0.0)
     .fill_width()
-    .height(WAVEFORM_PANEL_HEIGHT)
+    .height(model.panel_height)
+}
+
+fn waveform_view_height(panel_height: f32) -> f32 {
+    (panel_height
+        - WAVEFORM_STATUS_HEIGHT
+        - WAVEFORM_SCROLLBAR_HEIGHT
+        - WAVEFORM_RESIZE_HANDLE_HEIGHT)
+        .max(
+            MIN_WAVEFORM_PANEL_HEIGHT
+                - WAVEFORM_STATUS_HEIGHT
+                - WAVEFORM_SCROLLBAR_HEIGHT
+                - WAVEFORM_RESIZE_HANDLE_HEIGHT,
+        )
 }
 
 fn waveform_viewport_with_loading_state(
     model: &WaveformPanelViewModel<'_>,
+    viewport_height: f32,
 ) -> ui::View<GuiMessage> {
     let tooltip = model.help_tooltips_enabled.then_some(
         "Waveform: click to set playback start, drag to select, Z zooms to selection, X zooms out.",
     );
     let viewport = waveform::waveform_viewport_view_with_tooltip(
         model.waveform,
+        viewport_height,
         tooltip,
         model.beat_guides_enabled,
         model.bpm_snap_enabled,
@@ -49,19 +74,19 @@ fn waveform_viewport_with_loading_state(
         model.playhead_occlusion_rect,
     )
     .fill_width()
-    .height(WAVEFORM_VIEW_HEIGHT);
+    .height(viewport_height);
     ui::overlay_stack(viewport)
         .overlay_opt(
             model
                 .drop_hover
-                .map(|hover| waveform_drop_hover_visual(hover.supported)),
+                .map(|hover| waveform_drop_hover_visual(hover.supported, viewport_height)),
         )
         .input_opt(waveform_loading_input_blocker(model))
         .into_view()
         .accepts_native_file_drop()
         .on_native_file_drop(GuiMessage::WaveformFileDrop)
         .fill_width()
-        .height(WAVEFORM_VIEW_HEIGHT)
+        .height(viewport_height)
 }
 
 fn waveform_loading_input_blocker(
@@ -73,11 +98,11 @@ fn waveform_loading_input_blocker(
             .key("waveform-loading-input-blocker")
             .input_only()
             .fill_width()
-            .height(WAVEFORM_VIEW_HEIGHT)
+            .height(waveform_view_height(model.panel_height))
     })
 }
 
-fn waveform_drop_hover_visual(supported: bool) -> ui::View<GuiMessage> {
+fn waveform_drop_hover_visual(supported: bool, viewport_height: f32) -> ui::View<GuiMessage> {
     let color = if supported {
         ui::Rgba8::new(74, 178, 116, 255)
     } else {
@@ -98,7 +123,19 @@ fn waveform_drop_hover_visual(supported: bool) -> ui::View<GuiMessage> {
         .view()
         .key("waveform-drop-hover-visual")
         .fill_width()
-        .height(WAVEFORM_VIEW_HEIGHT)
+        .height(viewport_height)
+}
+
+fn waveform_resize_handle(help_tooltips_enabled: bool) -> ui::View<GuiMessage> {
+    ui::drag_handle()
+        .hover_chrome_only()
+        .mapped(GuiMessage::ResizeWaveformPanel)
+        .key("waveform-resize-handle")
+        .id(widget_ids::WAVEFORM_RESIZE_HANDLE_ID)
+        .style(ui::WidgetStyle::subtle(ui::WidgetTone::Accent))
+        .tooltip_if(help_tooltips_enabled, "Resize waveform height")
+        .fill_width()
+        .height(WAVEFORM_RESIZE_HANDLE_HEIGHT)
 }
 
 fn waveform_title_row(
@@ -185,5 +222,5 @@ fn waveform_scrollbar(waveform: &WaveformState) -> ui::View<GuiMessage> {
             GuiMessage::Waveform(WaveformInteraction::ScrollTo { offset_fraction })
         })
         .fill_width()
-        .height(6.0)
+        .height(WAVEFORM_SCROLLBAR_HEIGHT)
 }

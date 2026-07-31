@@ -209,7 +209,8 @@ impl NativeAppState {
             | GuiMessage::HistoryFileIoFinished(_)
             | GuiMessage::NativeAudioDocumentOpenValidated { .. }
             | GuiMessage::WaveformFileDrop(_) => self.apply_file_dispatch(message, context),
-            GuiMessage::ToggleJobDetails
+            GuiMessage::ResizeWaveformPanel(_)
+            | GuiMessage::ToggleJobDetails
             | GuiMessage::CloseJobDetails
             | GuiMessage::RetryActiveSourceScan
             | GuiMessage::CancelActiveSourceScan
@@ -381,6 +382,7 @@ fn gui_message_profile_label(message: &GuiMessage) -> &'static str {
         GuiMessage::SampleBrowserWindowChanged(_) => "SampleBrowserWindowChanged",
         GuiMessage::FolderTreeWindowChanged(_) => "FolderTreeWindowChanged",
         GuiMessage::BrowserScrollAccepted(_) => "BrowserScrollAccepted",
+        GuiMessage::ResizeWaveformPanel(_) => "ResizeWaveformPanel",
         GuiMessage::FolderBrowser(message) => folder_browser_profile_label(message),
         GuiMessage::FolderScanProgress(_) => "FolderScanProgress",
         GuiMessage::FolderScanDiscoveryBatch(_) => "FolderScanDiscoveryBatch",
