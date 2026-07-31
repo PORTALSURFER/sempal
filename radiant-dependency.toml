@@ -4,5 +4,5 @@
 # sibling may remain on a feature branch or contain uncommitted work. Setup,
 # CI, and release helpers provision this exact revision into a clean checkout.
 repository = "https://github.com/PORTALSURFER/radiant.git"
-revision = "8bde063ed86b4e825c8368a888ff19eea25cd5ff"
+revision = "e0b604006fc970fa733b672e99a547b289b7bbc5"
 path = "../radiant"
