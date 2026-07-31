@@ -56,6 +56,9 @@ impl AppController {
         let Some(staged) = self.runtime.jobs.staged_audio_handoff() else {
             return;
         };
+        if !self.audio_target_matches_current(&staged.source_id, &staged.relative_path) {
+            return;
+        }
         if staged.decoded.cache_token != cache_token {
             return;
         }

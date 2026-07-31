@@ -46,6 +46,9 @@ impl AppController {
         &self,
         result: &AudioVisualResult,
     ) -> Option<ValidatedVisualHandoff> {
+        if !self.audio_target_matches_current(&result.source_id, &result.relative_path) {
+            return None;
+        }
         let staged = self.runtime.jobs.staged_audio_handoff()?;
         if staged.request_id != result.request_id
             || staged.source_id != result.source_id

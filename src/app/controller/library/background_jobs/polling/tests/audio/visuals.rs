@@ -9,7 +9,7 @@ use crate::app::controller::test_support::{
 use crate::app::controller::{AudioLoadIntent, PendingPlayback};
 use crate::app::state::WaveformView;
 use crate::app_core::ui_projection::project_waveform_model;
-use crate::sample_sources::Rating;
+use crate::sample_sources::{Rating, SourceId};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -20,6 +20,7 @@ fn audio_visual_message_commits_staged_handoff_before_playback() {
         prepare_with_source_and_wav_entries(vec![sample_entry("match.wav", Rating::NEUTRAL)]);
     let relative_path = Path::new("match.wav");
     write_test_wav(&source.root.join(relative_path), &[0.0, 0.25, -0.25, 0.5]);
+    controller.sample_view.wav.selected_wav = Some(relative_path.to_path_buf());
     controller.ui.waveform.loading = Some(relative_path.to_path_buf());
     controller
         .runtime
@@ -91,6 +92,7 @@ fn audio_visual_message_rerenders_stale_view_before_projecting_waveform_image() 
         prepare_with_source_and_wav_entries(vec![sample_entry("match.wav", Rating::NEUTRAL)]);
     let relative_path = Path::new("match.wav");
     write_test_wav(&source.root.join(relative_path), &[0.0, 0.25, -0.25, 0.5]);
+    controller.sample_view.wav.selected_wav = Some(relative_path.to_path_buf());
     controller.ui.waveform.loading = Some(relative_path.to_path_buf());
     controller.ui.waveform.view = WaveformView {
         start: 0.25,
@@ -164,4 +166,123 @@ fn audio_visual_message_rerenders_stale_view_before_projecting_waveform_image() 
         projected.waveform_image.is_some(),
         "visual should be rerendered for the current stale view before projection"
     );
+}
+
+#[test]
+/// A visual completion for the old selection must not publish or finalize its staged handoff.
+fn audio_visual_message_ignores_completion_for_old_selection() {
+    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![
+        sample_entry("old.wav", Rating::NEUTRAL),
+        sample_entry("new.wav", Rating::NEUTRAL),
+    ]);
+    let old_path = Path::new("old.wav");
+    let new_path = Path::new("new.wav");
+    write_test_wav(&source.root.join(old_path), &[0.0, 0.25, -0.25, 0.5]);
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
+    controller.sample_view.wav.selected_wav = Some(old_path.to_path_buf());
+
+    let outcome = decode_audio_outcome(&controller, &source, old_path);
+    let cache_token = outcome.decoded.cache_token;
+    controller.handle_audio_loaded(
+        PendingAudio {
+            request_id: 17,
+            source_id: source.id.clone(),
+            root: source.root.clone(),
+            relative_path: old_path.to_path_buf(),
+            intent: AudioLoadIntent::Selection,
+        },
+        outcome,
+    );
+    controller.selection_state.ctx.selected_source = Some(SourceId::from_string("new-source"));
+    controller.sample_view.wav.selected_wav = Some(new_path.to_path_buf());
+
+    controller.handle_audio_visual_loaded(AudioVisualResult {
+        request_id: 17,
+        source_id: source.id.clone(),
+        relative_path: old_path.to_path_buf(),
+        metadata: controller
+            .current_file_metadata(&source, old_path)
+            .expect("metadata"),
+        cache_token,
+        transients: Arc::from(vec![0.2, 0.7]),
+        image: None,
+        projected_image: None,
+        render_meta: None,
+        stretched: false,
+    });
+    controller.finalize_staged_audio_handoff(cache_token);
+
+    let staged = controller
+        .runtime
+        .jobs
+        .staged_audio_handoff()
+        .expect("stale visual must leave the old handoff untouched");
+    assert_eq!(staged.relative_path, old_path);
+    assert!(controller.sample_view.wav.loaded_wav.is_none());
+    assert!(controller.sample_view.wav.loaded_audio.is_none());
+    assert!(controller.sample_view.waveform.decoded.is_none());
+    assert!(controller.ui.waveform.image.is_none());
+    assert!(controller.ui.waveform.transients.is_empty());
+}
+
+#[test]
+/// Explicit compare-anchor playback may load a target that is not browser-selected.
+fn compare_anchor_visual_completion_preserves_explicit_playback_target() {
+    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![
+        sample_entry("anchor.wav", Rating::NEUTRAL),
+        sample_entry("current.wav", Rating::NEUTRAL),
+    ]);
+    let anchor_path = Path::new("anchor.wav");
+    let current_path = Path::new("current.wav");
+    write_test_wav(&source.root.join(anchor_path), &[0.0, 0.25, -0.25, 0.5]);
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
+    controller.sample_view.wav.selected_wav = Some(current_path.to_path_buf());
+    controller
+        .runtime
+        .jobs
+        .set_pending_playback(Some(PendingPlayback {
+            source_id: source.id.clone(),
+            relative_path: anchor_path.to_path_buf(),
+            looped: false,
+            start_override: None,
+            force_loaded_audio: true,
+        }));
+
+    let outcome = decode_audio_outcome(&controller, &source, anchor_path);
+    let cache_token = outcome.decoded.cache_token;
+    controller.handle_audio_loaded(
+        PendingAudio {
+            request_id: 17,
+            source_id: source.id.clone(),
+            root: source.root.clone(),
+            relative_path: anchor_path.to_path_buf(),
+            intent: AudioLoadIntent::Selection,
+        },
+        outcome,
+    );
+    controller.handle_audio_visual_loaded(AudioVisualResult {
+        request_id: 17,
+        source_id: source.id.clone(),
+        relative_path: anchor_path.to_path_buf(),
+        metadata: controller
+            .current_file_metadata(&source, anchor_path)
+            .expect("metadata"),
+        cache_token,
+        transients: Arc::from(vec![0.2, 0.7]),
+        image: None,
+        projected_image: None,
+        render_meta: None,
+        stretched: false,
+    });
+
+    assert_eq!(
+        controller.sample_view.wav.loaded_wav.as_deref(),
+        Some(anchor_path)
+    );
+    assert_eq!(controller.ui.loaded_wav.as_deref(), Some(anchor_path));
+    assert_eq!(
+        controller.sample_view.wav.selected_wav.as_deref(),
+        Some(current_path)
+    );
+    assert!(controller.runtime.jobs.pending_playback().is_none());
 }
