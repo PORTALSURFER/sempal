@@ -57,10 +57,12 @@ fn map_event(event: SourceProcessingEvent) -> GuiMessage {
         },
         SourceProcessingEvent::ManifestAuditFinished {
             lifecycle,
+            source_revision,
             complete,
         } => GuiMessage::SourceManifestAuditFinished {
             source_id: lifecycle.source_id,
             lifecycle_generation: lifecycle.generation,
+            source_revision,
             complete,
         },
         SourceProcessingEvent::Completed => {
@@ -451,6 +453,38 @@ mod tests {
                 lifecycle_generation: 23,
                 ..
             } if source_id == "source"
+        ));
+    }
+
+    #[test]
+    fn maps_manifest_audit_completion_revision_and_incomplete_state() {
+        let complete = map_event(SourceProcessingEvent::ManifestAuditFinished {
+            lifecycle: SourceProcessingLifecycle::new("source", 31),
+            source_revision: Some(47),
+            complete: true,
+        });
+        assert!(matches!(
+            complete,
+            GuiMessage::SourceManifestAuditFinished {
+                source_id,
+                lifecycle_generation: 31,
+                source_revision: Some(47),
+                complete: true,
+            } if source_id == "source"
+        ));
+
+        let incomplete = map_event(SourceProcessingEvent::ManifestAuditFinished {
+            lifecycle: SourceProcessingLifecycle::new("source", 31),
+            source_revision: None,
+            complete: false,
+        });
+        assert!(matches!(
+            incomplete,
+            GuiMessage::SourceManifestAuditFinished {
+                source_revision: None,
+                complete: false,
+                ..
+            }
         ));
     }
 }

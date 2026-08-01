@@ -244,11 +244,13 @@ fn decide_checkpoint_advance(
     current_source_revision: u64,
     current_root_identity: &str,
 ) -> CheckpointAdvanceOutcome {
-    if requested.source_id != expected_source_id
-        || requested.lifecycle_generation != current_lifecycle_generation
-        || requested.source_revision != current_source_revision
-        || requested.root_identity != current_root_identity
-    {
+    if !request_matches_current_fences(
+        requested,
+        expected_source_id,
+        current_lifecycle_generation,
+        current_source_revision,
+        current_root_identity,
+    ) {
         return CheckpointAdvanceOutcome::AuditRequired;
     }
 
@@ -277,6 +279,67 @@ fn decide_checkpoint_advance(
     CheckpointAdvanceOutcome::Superseded
 }
 
+fn request_matches_current_fences(
+    requested: &RevisionBoundCheckpoint,
+    expected_source_id: &str,
+    current_lifecycle_generation: u64,
+    current_source_revision: u64,
+    current_root_identity: &str,
+) -> bool {
+    requested.source_id == expected_source_id
+        && requested.lifecycle_generation == current_lifecycle_generation
+        && requested.source_revision == current_source_revision
+        && requested.root_identity == current_root_identity
+}
+
+fn decide_completed_fallback_audit(
+    current: Option<&SourceWatcherCheckpoint>,
+    requested: &RevisionBoundCheckpoint,
+    expected_source_id: &str,
+    current_lifecycle_generation: u64,
+    current_source_revision: u64,
+    current_root_identity: &str,
+) -> CheckpointAdvanceOutcome {
+    if requested.cause != CheckpointCause::CompletedFallbackAudit
+        || !request_matches_current_fences(
+            requested,
+            expected_source_id,
+            current_lifecycle_generation,
+            current_source_revision,
+            current_root_identity,
+        )
+    {
+        return CheckpointAdvanceOutcome::AuditRequired;
+    }
+
+    let Some(current) = current else {
+        // A completed source-wide audit is the authority that establishes the first
+        // revision-bound cursor after a missing checkpoint.
+        return CheckpointAdvanceOutcome::Applied;
+    };
+    if current.revision_bound().is_none() {
+        if current.root_identity != requested.root_identity || current.event_id > requested.event_id
+        {
+            return CheckpointAdvanceOutcome::AuditRequired;
+        }
+        // A valid legacy cursor can be upgraded by the completed audit. Malformed and unknown
+        // bytes never reach this branch because read_checkpoint_from_batch fails closed before
+        // the pure decision.
+        return CheckpointAdvanceOutcome::Applied;
+    }
+
+    // Existing v2 evidence keeps the ordinary monotonic decision, including idempotence and
+    // historical-baseline advancement.
+    decide_checkpoint_advance(
+        Some(current),
+        requested,
+        expected_source_id,
+        current_lifecycle_generation,
+        current_source_revision,
+        current_root_identity,
+    )
+}
+
 /// Apply a revision-bound watcher checkpoint from the source-processing owner.
 ///
 /// The caller owns lifecycle and live-root validation. This helper only performs bounded source
@@ -289,6 +352,44 @@ pub(in crate::native_app) fn write_revision_bound_checkpoint(
     requested: &RevisionBoundCheckpoint,
     current_lifecycle_generation: u64,
     current_root_identity: &str,
+) -> CheckpointAdvanceOutcome {
+    write_checkpoint(
+        source,
+        requested,
+        current_lifecycle_generation,
+        current_root_identity,
+        false,
+    )
+}
+
+/// Publish a completed fallback-audit barrier from the source-processing owner.
+///
+/// Unlike targeted replay, a complete source-wide audit is authoritative when no checkpoint
+/// exists and may upgrade a valid legacy cursor. The owner must have already checked the active
+/// lifecycle, source descriptor, live root identity, and completed-audit revision fences before
+/// calling this helper. Malformed, unknown, partial, stale, and regressed evidence remains
+/// audit-required and is never rewritten.
+pub(in crate::native_app) fn write_completed_fallback_audit_checkpoint(
+    source: &SampleSource,
+    requested: &RevisionBoundCheckpoint,
+    current_lifecycle_generation: u64,
+    current_root_identity: &str,
+) -> CheckpointAdvanceOutcome {
+    write_checkpoint(
+        source,
+        requested,
+        current_lifecycle_generation,
+        current_root_identity,
+        true,
+    )
+}
+
+fn write_checkpoint(
+    source: &SampleSource,
+    requested: &RevisionBoundCheckpoint,
+    current_lifecycle_generation: u64,
+    current_root_identity: &str,
+    allow_completed_fallback: bool,
 ) -> CheckpointAdvanceOutcome {
     let database = match source_database(source) {
         Ok(database) => database,
@@ -327,14 +428,25 @@ pub(in crate::native_app) fn write_revision_bound_checkpoint(
         Ok(current) => current,
         Err(outcome) => return outcome,
     };
-    let outcome = decide_checkpoint_advance(
-        current.as_ref(),
-        requested,
-        source.id.as_str(),
-        current_lifecycle_generation,
-        current_source_revision,
-        current_root_identity,
-    );
+    let outcome = if allow_completed_fallback {
+        decide_completed_fallback_audit(
+            current.as_ref(),
+            requested,
+            source.id.as_str(),
+            current_lifecycle_generation,
+            current_source_revision,
+            current_root_identity,
+        )
+    } else {
+        decide_checkpoint_advance(
+            current.as_ref(),
+            requested,
+            source.id.as_str(),
+            current_lifecycle_generation,
+            current_source_revision,
+            current_root_identity,
+        )
+    };
     if outcome != CheckpointAdvanceOutcome::Applied {
         return outcome;
     }
@@ -393,6 +505,17 @@ fn read_checkpoint_from_batch(
 
 #[derive(Clone, Debug)]
 pub(super) struct AuditBarrier(SourceWatcherCheckpoint);
+
+impl AuditBarrier {
+    pub(super) fn into_evidence(self) -> (String, u64) {
+        (self.0.root_identity, self.0.event_id)
+    }
+
+    #[cfg(test)]
+    pub(super) fn evidence(&self) -> (&str, u64) {
+        (&self.0.root_identity, self.0.event_id)
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum JournalRecovery {
@@ -558,36 +681,6 @@ pub(super) fn capture_audit_barrier(
     )))
 }
 
-/// Commit a pre-audit barrier only after a complete audit. Never sample the current global ID at
-/// completion: a live event after the barrier may not yet have committed and must stay replayable.
-pub(super) fn commit_audit_barrier(
-    sources: &[SampleSource],
-    source_id: &str,
-    barrier: AuditBarrier,
-) {
-    let Some(source) = sources
-        .iter()
-        .find(|source| source.id.as_str() == source_id)
-    else {
-        return;
-    };
-    let Some(root_identity) = std::fs::metadata(&source.root)
-        .ok()
-        .and_then(|metadata| stable_filesystem_identity(&source.root, &metadata))
-    else {
-        return;
-    };
-    if root_identity != barrier.0.root_identity {
-        return;
-    }
-    if let Err(error) = store_checkpoint(source, &barrier.0) {
-        tracing::warn!(
-            source_id,
-            "Could not establish post-audit source watcher checkpoint: {error}"
-        );
-    }
-}
-
 fn source_database(source: &SampleSource) -> Result<SourceDatabase, String> {
     let database_root = source.database_root().map_err(|error| error.to_string())?;
     SourceDatabase::open_for_background_job_with_database_root(&source.root, database_root)
@@ -603,6 +696,7 @@ fn load_checkpoint(source: &SampleSource) -> Result<Option<SourceWatcherCheckpoi
         .transpose()
 }
 
+#[cfg(test)]
 fn store_checkpoint(
     source: &SampleSource,
     checkpoint: &SourceWatcherCheckpoint,
@@ -882,6 +976,13 @@ mod tests {
         requested: &RevisionBoundCheckpoint,
     ) -> CheckpointAdvanceOutcome {
         decide_checkpoint_advance(current, requested, "source-a", 4, 9, "root-a")
+    }
+
+    fn decide_fallback(
+        current: Option<&SourceWatcherCheckpoint>,
+        requested: &RevisionBoundCheckpoint,
+    ) -> CheckpointAdvanceOutcome {
+        decide_completed_fallback_audit(current, requested, "source-a", 4, 9, "root-a")
     }
 
     #[cfg(target_os = "macos")]
@@ -1195,6 +1296,47 @@ mod tests {
         );
     }
 
+    #[test]
+    fn completed_fallback_audit_establishes_or_upgrades_only_matching_cursor_evidence() {
+        let mut requested = revision_bound_checkpoint(8);
+        requested.cause = CheckpointCause::CompletedFallbackAudit;
+        let legacy = SourceWatcherCheckpoint::legacy("root-a".to_string(), 7);
+
+        assert_eq!(
+            decide_fallback(None, &requested),
+            CheckpointAdvanceOutcome::Applied
+        );
+        assert_eq!(
+            decide_fallback(Some(&legacy), &requested),
+            CheckpointAdvanceOutcome::Applied
+        );
+
+        let newer = SourceWatcherCheckpoint::legacy("root-a".to_string(), 9);
+        assert_eq!(
+            decide_fallback(Some(&newer), &requested),
+            CheckpointAdvanceOutcome::AuditRequired
+        );
+
+        let wrong_root = SourceWatcherCheckpoint::legacy("root-b".to_string(), 7);
+        assert_eq!(
+            decide_fallback(Some(&wrong_root), &requested),
+            CheckpointAdvanceOutcome::AuditRequired
+        );
+
+        let targeted_request = revision_bound_checkpoint(8);
+        assert_eq!(
+            decide_fallback(None, &targeted_request),
+            CheckpointAdvanceOutcome::AuditRequired
+        );
+
+        let mut incomplete_request = requested;
+        incomplete_request.source_revision = 8;
+        assert_eq!(
+            decide_fallback(None, &incomplete_request),
+            CheckpointAdvanceOutcome::AuditRequired
+        );
+    }
+
     fn owner_checkpoint(
         source_id: &str,
         lifecycle_generation: u64,
@@ -1468,6 +1610,86 @@ mod tests {
             owner_checkpoint_bytes(&malformed_source).as_deref(),
             Some(malformed_bytes)
         );
+    }
+
+    #[test]
+    fn owner_commits_completed_fallback_audit_over_missing_or_legacy_checkpoint() {
+        for (source_id, initial_bytes) in [
+            ("owner-audit-missing", None),
+            (
+                "owner-audit-legacy",
+                Some(r#"{"root_identity":"{root_identity}","event_id":7}"#),
+            ),
+        ] {
+            let directory = tempfile::tempdir().expect("audit-barrier source");
+            let source = SampleSource::new_with_id(
+                SourceId::from_string(source_id),
+                directory.path().to_path_buf(),
+            );
+            let root_identity = stable_filesystem_identity(
+                &source.root,
+                &std::fs::metadata(&source.root).expect("source metadata"),
+            )
+            .expect("source root identity");
+            if let Some(template) = initial_bytes {
+                seed_owner_checkpoint(
+                    &source,
+                    &template.replace("{root_identity}", &root_identity),
+                );
+            }
+            let mut requested = owner_checkpoint(source_id, 4, 0, &root_identity, 8);
+            requested.cause = CheckpointCause::CompletedFallbackAudit;
+
+            assert_eq!(
+                write_completed_fallback_audit_checkpoint(&source, &requested, 4, &root_identity),
+                CheckpointAdvanceOutcome::Applied
+            );
+            assert_eq!(
+                owner_checkpoint_bytes(&source)
+                    .and_then(|value| parse_checkpoint(&value).ok())
+                    .and_then(|checkpoint| checkpoint.revision_bound()),
+                Some(requested)
+            );
+        }
+    }
+
+    #[test]
+    fn completed_fallback_audit_preserves_malformed_unknown_and_partial_bytes() {
+        let directory = tempfile::tempdir().expect("invalid fallback source");
+        let source_id = "owner-invalid-fallback";
+        let source = SampleSource::new_with_id(
+            SourceId::from_string(source_id),
+            directory.path().to_path_buf(),
+        );
+        let root_identity = stable_filesystem_identity(
+            &source.root,
+            &std::fs::metadata(&source.root).expect("source metadata"),
+        )
+        .expect("source root identity");
+        let cases = [
+            String::from("{not-json"),
+            format!(
+                r#"{{"root_identity":"{root_identity}","event_id":7,"format_version":2,"source_id":"{source_id}","lifecycle_generation":4,"source_revision":0,"cause":"completed_fallback_audit","unexpected":"evidence"}}"#
+            ),
+            format!(
+                r#"{{"root_identity":"{root_identity}","event_id":7,"format_version":2,"source_id":"{source_id}","lifecycle_generation":4,"source_revision":0}}"#
+            ),
+        ];
+
+        for bytes in cases {
+            seed_owner_checkpoint(&source, &bytes);
+            let mut requested = owner_checkpoint(source_id, 4, 0, &root_identity, 8);
+            requested.cause = CheckpointCause::CompletedFallbackAudit;
+
+            assert_eq!(
+                write_completed_fallback_audit_checkpoint(&source, &requested, 4, &root_identity,),
+                CheckpointAdvanceOutcome::AuditRequired
+            );
+            assert_eq!(
+                owner_checkpoint_bytes(&source).as_deref(),
+                Some(bytes.as_str())
+            );
+        }
     }
 
     #[test]

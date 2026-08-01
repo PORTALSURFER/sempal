@@ -3,7 +3,8 @@ use super::{
     source_descriptors_match,
 };
 use crate::native_app::sample_library::source_watcher::{
-    CheckpointAdvanceOutcome, RevisionBoundCheckpoint, write_revision_bound_checkpoint,
+    CheckpointAdvanceOutcome, CheckpointCause, RevisionBoundCheckpoint,
+    write_completed_fallback_audit_checkpoint, write_revision_bound_checkpoint,
 };
 use wavecrate_library::filesystem_identity::stable_filesystem_identity;
 
@@ -73,12 +74,20 @@ fn process_watcher_checkpoint(shared: &Arc<Shared>, request: RevisionBoundCheckp
             );
             return;
         }
-        write_revision_bound_checkpoint(
-            &current_source,
-            &request,
-            request.lifecycle_generation,
-            &root_identity,
-        )
+        match request.cause {
+            CheckpointCause::CompletedFallbackAudit => write_completed_fallback_audit_checkpoint(
+                &current_source,
+                &request,
+                request.lifecycle_generation,
+                &root_identity,
+            ),
+            CheckpointCause::TargetedReplay => write_revision_bound_checkpoint(
+                &current_source,
+                &request,
+                request.lifecycle_generation,
+                &root_identity,
+            ),
+        }
     };
     match outcome {
         CheckpointAdvanceOutcome::Applied => tracing::debug!(
@@ -268,6 +277,42 @@ mod tests {
             checkpoint_bytes(&source).expect("checkpoint bytes"),
             committed
         );
+    }
+
+    #[test]
+    fn queued_completed_fallback_audit_upgrades_legacy_checkpoint() {
+        let directory = tempfile::tempdir().expect("source directory");
+        let source = source(directory.path(), "source-a");
+        let shared = Arc::new(Shared::new(vec![source.clone()], None));
+        let generation = shared.control().source_lifecycle_generations["source-a"];
+        let root_identity = root_identity(&source);
+        seed_checkpoint_value(
+            &source,
+            &serde_json::json!({
+                "root_identity": root_identity,
+                "event_id": 7,
+            })
+            .to_string(),
+        );
+
+        let mut request = request(&source, generation, root_identity);
+        request.cause = CheckpointCause::CompletedFallbackAudit;
+        let handle = super::super::SourceProcessingBudgetHandle {
+            shared: Arc::clone(&shared),
+        };
+        handle.submit_watcher_checkpoint(request);
+        process_pending_watcher_checkpoints(&shared);
+
+        let checkpoint = serde_json::from_str::<serde_json::Value>(
+            &checkpoint_bytes(&source).expect("upgraded checkpoint bytes"),
+        )
+        .expect("checkpoint JSON");
+        assert_eq!(checkpoint["format_version"], 2);
+        assert_eq!(checkpoint["source_id"], source.id.as_str());
+        assert_eq!(checkpoint["lifecycle_generation"], generation);
+        assert_eq!(checkpoint["source_revision"], 0);
+        assert_eq!(checkpoint["event_id"], 8);
+        assert_eq!(checkpoint["cause"], "completed_fallback_audit");
     }
 
     #[test]

@@ -117,6 +117,7 @@ pub(in crate::native_app) enum SourceProcessingEvent {
     },
     ManifestAuditFinished {
         lifecycle: SourceProcessingLifecycle,
+        source_revision: Option<u64>,
         complete: bool,
     },
     Completed,

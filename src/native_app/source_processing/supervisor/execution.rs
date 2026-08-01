@@ -128,6 +128,7 @@ pub(super) fn execute_candidate_with_presentation(
                                 candidate.source.id.as_str(),
                                 lifecycle_generation,
                             ),
+                            source_revision: None,
                             complete: false,
                         });
                         return Err(error.to_string());
@@ -177,6 +178,7 @@ pub(super) fn execute_candidate_with_presentation(
                     .collect::<Vec<_>>(),
                 "Periodic source manifest audit committed"
             );
+            let source_revision = manifest_complete.then_some(outcome.committed_delta.revision);
             let browser_refresh_required = !outcome.committed_delta.is_empty()
                 && crate::native_app::source_processing::manifest_delta_requires_browser_refresh(
                     &outcome.committed_delta,
@@ -196,6 +198,7 @@ pub(super) fn execute_candidate_with_presentation(
                     candidate.source.id.as_str(),
                     lifecycle_generation,
                 ),
+                source_revision,
                 complete: manifest_complete,
             });
             if let Some(error) = content_incomplete_error {

@@ -104,6 +104,15 @@ pub(in crate::native_app) enum GuiMessage {
         source_id: String,
         reason: &'static str,
     },
+    /// Pre-audit watcher evidence ready for revision-bound publication by the source-processing
+    /// owner. The watcher only retains and forwards these in-memory values.
+    SourceWatcherAuditBarrierReady {
+        source_id: String,
+        lifecycle_generation: u64,
+        source_revision: u64,
+        root_identity: String,
+        event_id: u64,
+    },
     SourceFilesystemSyncFinished(SourceFilesystemSyncResult),
     CommittedFileMutationRequested(FileMutationWork),
     CommittedFileMutationFinished(FileMutationOutcome),
@@ -119,6 +128,7 @@ pub(in crate::native_app) enum GuiMessage {
     SourceManifestAuditFinished {
         source_id: String,
         lifecycle_generation: u64,
+        source_revision: Option<u64>,
         complete: bool,
     },
     NormalizationProgress(NormalizationProgress),

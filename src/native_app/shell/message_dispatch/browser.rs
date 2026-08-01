@@ -2,6 +2,7 @@ use radiant::prelude as ui;
 
 use crate::native_app::app::{ClipboardHandoffTarget, GuiMessage, NativeAppState};
 use crate::native_app::sample_library::folder_browser::commands::FolderBrowserMessage;
+use crate::native_app::sample_library::source_watcher::{CheckpointCause, RevisionBoundCheckpoint};
 
 impl NativeAppState {
     pub(super) fn apply_browser_dispatch(
@@ -163,6 +164,25 @@ impl NativeAppState {
                     .source_processing
                     .request_source_manifest_audit(&source_id, reason);
             }
+            GuiMessage::SourceWatcherAuditBarrierReady {
+                source_id,
+                lifecycle_generation,
+                source_revision,
+                root_identity,
+                event_id,
+            } => {
+                self.background
+                    .source_processing
+                    .budget_handle()
+                    .submit_watcher_checkpoint(RevisionBoundCheckpoint {
+                        source_id,
+                        lifecycle_generation,
+                        source_revision,
+                        root_identity,
+                        event_id,
+                        cause: CheckpointCause::CompletedFallbackAudit,
+                    });
+            }
             GuiMessage::SourceFilesystemSyncFinished(result) => {
                 self.finish_source_filesystem_sync(result, context);
             }
@@ -183,6 +203,7 @@ impl NativeAppState {
             GuiMessage::SourceManifestAuditFinished {
                 source_id,
                 lifecycle_generation,
+                source_revision,
                 complete,
             } => {
                 let source_is_current = self.library.folder_browser.source_exists(&source_id)
@@ -190,7 +211,12 @@ impl NativeAppState {
                         == Some(&lifecycle_generation);
                 if source_is_current {
                     if let Some(watcher) = self.library.source_watcher.as_ref() {
-                        watcher.finish_journal_barrier_audit(source_id, complete);
+                        watcher.finish_journal_barrier_audit(
+                            source_id,
+                            lifecycle_generation,
+                            source_revision,
+                            complete,
+                        );
                     }
                 }
             }

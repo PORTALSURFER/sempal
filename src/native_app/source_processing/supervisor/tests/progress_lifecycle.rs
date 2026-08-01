@@ -451,9 +451,23 @@ fn periodic_manifest_audit_wakes_browser_projection_after_committed_repair() {
             _ => None,
         })
         .expect("audit should publish a browser projection wake");
+    let (finished_lifecycle, finished_revision, finished_complete) = events
+        .iter()
+        .find_map(|event| match event {
+            SourceProcessingEvent::ManifestAuditFinished {
+                lifecycle,
+                source_revision,
+                complete,
+            } => Some((lifecycle, *source_revision, *complete)),
+            _ => None,
+        })
+        .expect("audit should publish its completion revision");
 
     assert_eq!(lifecycle.source_id, "audit-browser-wake");
     assert_eq!(lifecycle.generation, 0);
+    assert_eq!(finished_lifecycle, lifecycle);
+    assert_eq!(finished_revision, Some(committed_delta.revision));
+    assert!(finished_complete);
     assert_eq!(progress.lifecycle.source_id, "audit-browser-wake");
     assert_eq!(progress.completed, 1);
     assert_eq!(progress.total, 1);

@@ -682,6 +682,46 @@ fn source_completions_from_previous_readded_epoch_are_ignored() {
 }
 
 #[test]
+fn complete_fallback_barrier_handoff_enqueues_a_revision_bound_owner_checkpoint() {
+    let directory = tempfile::tempdir().expect("fallback barrier source");
+    let mut state = NativeAppStateFixture::default().build();
+    let source_id = state
+        .library
+        .folder_browser
+        .defer_add_source_path(directory.path().to_path_buf(), false)
+        .expect("source registered");
+    state.sync_source_watcher();
+    let lifecycle_generation = state.background.source_lifecycle_generations[&source_id];
+
+    state.apply_message(
+        GuiMessage::SourceWatcherAuditBarrierReady {
+            source_id: source_id.clone(),
+            lifecycle_generation,
+            source_revision: 37,
+            root_identity: String::from("captured-root"),
+            event_id: 91,
+        },
+        &mut ui::UiUpdateContext::default(),
+    );
+
+    let request = state
+        .background
+        .source_processing
+        .budget_handle()
+        .pending_watcher_checkpoint_for_tests()
+        .expect("owner checkpoint request");
+    assert_eq!(request.source_id, source_id);
+    assert_eq!(request.lifecycle_generation, lifecycle_generation);
+    assert_eq!(request.source_revision, 37);
+    assert_eq!(request.root_identity, "captured-root");
+    assert_eq!(request.event_id, 91);
+    assert_eq!(
+        request.cause,
+        crate::native_app::sample_library::source_watcher::CheckpointCause::CompletedFallbackAudit
+    );
+}
+
+#[test]
 fn incomplete_current_manifest_audit_delivery_requests_full_reconciliation() {
     let directory = tempfile::tempdir().expect("completion source");
     let mut state = NativeAppStateFixture::default().build();
