@@ -19,7 +19,7 @@ use serde_json::{Map, Value};
 use uuid::Uuid;
 
 use super::AbsentFinalRecoveryClassification;
-use super::absent_final_recovery::classify_absent_final_recovery;
+use super::absent_final_recovery::inspect_absent_final_recovery;
 pub(crate) use super::capacity_gate::VolumeIdentity;
 use super::capacity_gate::{DurableCapacityPlan, RejectedBeforeIntent};
 pub(crate) use super::expected_identity_replacement::ReplacementQualificationAssessment;
@@ -271,6 +271,18 @@ pub(crate) struct PreparedAbsentFinalNoReplace {
     pub(crate) copy_validated_evidence: PreparedFileEvidence,
 }
 
+/// Non-handle evidence observed after a staged absent-final entry became the final entry.
+///
+/// This is a journal observation only. It does not establish ownership, publication, adoption,
+/// pathname continuity, or a retained filesystem capability.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct AbsentFinalRecoveryObservation {
+    pub(crate) target_parent_stable_id: String,
+    pub(crate) final_stable_id: String,
+    pub(crate) final_len: u64,
+    pub(crate) final_content: PreparedFileEvidence,
+}
+
 /// Tagged runtime preparation contract used to select the publication guard.
 ///
 /// Schema-v1 records adapt only to `ExistingExpectedIdentity`.  The absent-final variant is
@@ -396,6 +408,8 @@ pub(crate) struct OperationRecord {
     pub(crate) prepared: Option<PreparedTargetContract>,
     /// Typed filesystem staging evidence. Legacy records do not contain this checkpoint.
     pub(crate) staged: Option<FilesystemStagedWaveformRestore>,
+    /// Optional schema-v2-only evidence from the read-only absent-final classifier.
+    pub(crate) absent_final_recovery_observation: Option<AbsentFinalRecoveryObservation>,
     /// Typed filesystem publication evidence. Legacy records do not contain this checkpoint.
     pub(crate) published: Option<FilesystemPublishedWaveformRestore>,
     /// Latest bounded assessment explaining why expected-identity replacement is not qualified.
@@ -411,6 +425,7 @@ pub(crate) struct OperationRecord {
 struct SchemaV2EvidencePresence {
     prepared: bool,
     staged: bool,
+    absent_final_recovery_observation: bool,
     published: bool,
 }
 
@@ -418,28 +433,38 @@ impl SchemaV2EvidencePresence {
     const NONE: Self = Self {
         prepared: false,
         staged: false,
+        absent_final_recovery_observation: false,
         published: false,
     };
     const PREPARED: Self = Self {
         prepared: true,
         staged: false,
+        absent_final_recovery_observation: false,
         published: false,
     };
     const PREPARED_STAGED: Self = Self {
         prepared: true,
         staged: true,
+        absent_final_recovery_observation: false,
+        published: false,
+    };
+    const PREPARED_STAGED_WITH_ABSENT_FINAL_RECOVERY_OBSERVATION: Self = Self {
+        prepared: true,
+        staged: true,
+        absent_final_recovery_observation: true,
         published: false,
     };
     const ALL: Self = Self {
         prepared: true,
         staged: true,
+        absent_final_recovery_observation: false,
         published: true,
     };
-
     fn from_record(record: &OperationRecord) -> Self {
         Self {
             prepared: record.prepared.is_some(),
             staged: record.staged.is_some(),
+            absent_final_recovery_observation: record.absent_final_recovery_observation.is_some(),
             published: record.published.is_some(),
         }
     }
@@ -486,6 +511,7 @@ impl From<PersistedOperationRecordV1> for OperationRecord {
                 .prepared
                 .map(PreparedTargetContract::ExistingExpectedIdentity),
             staged: record.staged,
+            absent_final_recovery_observation: None,
             published: record.published,
             replacement_qualification: record.replacement_qualification,
             created_unix_ms: record.created_unix_ms,
@@ -497,6 +523,12 @@ impl From<PersistedOperationRecordV1> for OperationRecord {
 fn persisted_v1_from_record(
     record: &OperationRecord,
 ) -> Result<PersistedOperationRecordV1, io::Error> {
+    if record.absent_final_recovery_observation.is_some() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "schema-v1 cannot encode absent-final recovery observation evidence",
+        ));
+    }
     let prepared = match record.prepared.as_ref() {
         None => None,
         Some(PreparedTargetContract::ExistingExpectedIdentity(prepared)) => Some(prepared.clone()),
@@ -549,6 +581,8 @@ struct PersistedOperationRecordV2 {
     prepared: Option<PersistedPreparedTargetContractV2>,
     #[serde(default)]
     staged: Option<FilesystemStagedWaveformRestore>,
+    #[serde(default)]
+    absent_final_recovery_observation: Option<AbsentFinalRecoveryObservation>,
     #[serde(default)]
     published: Option<FilesystemPublishedWaveformRestore>,
     #[serde(default)]
@@ -603,6 +637,7 @@ impl From<PersistedOperationRecordV2> for OperationRecord {
             capacity_plan: record.capacity_plan,
             prepared: record.prepared.map(Into::into),
             staged: record.staged,
+            absent_final_recovery_observation: record.absent_final_recovery_observation,
             published: record.published,
             replacement_qualification: record.replacement_qualification,
             created_unix_ms: record.created_unix_ms,
@@ -628,6 +663,7 @@ fn persisted_v2_from_record(
             .map(PersistedPreparedTargetContractV2::try_from)
             .transpose()?,
         staged: record.staged.clone(),
+        absent_final_recovery_observation: record.absent_final_recovery_observation.clone(),
         published: record.published.clone(),
         replacement_qualification: record.replacement_qualification.clone(),
         created_unix_ms: record.created_unix_ms,
@@ -850,6 +886,48 @@ fn validate_persisted_absent_final_prepared_value(value: &Value) -> Result<(), &
     Ok(())
 }
 
+fn validate_persisted_absent_final_recovery_observation_value(
+    value: &Value,
+) -> Result<(), &'static str> {
+    let object = strict_object(
+        value,
+        &[
+            "target_parent_stable_id",
+            "final_stable_id",
+            "final_len",
+            "final_content",
+        ],
+    )?;
+    for field in ["target_parent_stable_id", "final_stable_id"] {
+        if required_field(object, field)?
+            .as_str()
+            .is_none_or(str::is_empty)
+        {
+            return Err("persisted absent-final recovery identity must be a non-empty string");
+        }
+    }
+    if !required_field(object, "final_len")?.is_u64() {
+        return Err("persisted absent-final recovery final length must be an unsigned integer");
+    }
+    let final_content = required_field(object, "final_content")?;
+    validate_persisted_file_evidence_value(final_content)?;
+    let (variant, hash) = tagged_object(final_content)?;
+    if variant != "ContentHash" {
+        return Err("persisted absent-final recovery content must be ContentHash");
+    }
+    let hash = hash
+        .as_array()
+        .ok_or("persisted absent-final recovery content hash must be an array")?;
+    if hash.len() != 32
+        || hash
+            .iter()
+            .any(|byte| byte.as_u64().is_none_or(|byte| byte > 255))
+    {
+        return Err("persisted absent-final recovery content hash must contain 32 bytes");
+    }
+    Ok(())
+}
+
 fn validate_persisted_prepared_contract_v2_value(value: &Value) -> Result<(), &'static str> {
     let (variant, value) = tagged_object(value)?;
     match variant {
@@ -1005,6 +1083,7 @@ fn validate_persisted_v2_object_boundaries(value: &Value) -> Result<(), &'static
             "capacity_plan",
             "prepared",
             "staged",
+            "absent_final_recovery_observation",
             "published",
             "replacement_qualification",
             "created_unix_ms",
@@ -1023,6 +1102,11 @@ fn validate_persisted_v2_object_boundaries(value: &Value) -> Result<(), &'static
         }
     }
     validate_optional_field(object, "staged", validate_persisted_staged_value)?;
+    validate_optional_field(
+        object,
+        "absent_final_recovery_observation",
+        validate_persisted_absent_final_recovery_observation_value,
+    )?;
     validate_optional_field(object, "published", validate_persisted_published_value)?;
     validate_optional_field(
         object,
@@ -1109,6 +1193,7 @@ impl OperationRecord {
             capacity_plan,
             prepared: None,
             staged: None,
+            absent_final_recovery_observation: None,
             published: None,
             replacement_qualification: None,
             created_unix_ms: now,
@@ -1136,6 +1221,9 @@ impl OperationRecord {
         let mut updated = self.clone();
         updated.phase = phase;
         updated.disposition = disposition;
+        if phase != OperationPhase::FilesystemStaged {
+            updated.absent_final_recovery_observation = None;
+        }
         updated.updated_unix_ms = unix_millis();
         updated
     }
@@ -1162,10 +1250,21 @@ impl OperationRecord {
         let mut updated = self.clone();
         updated.phase = OperationPhase::FilesystemPublished;
         updated.disposition = OperationDisposition::None;
+        updated.absent_final_recovery_observation = None;
         updated.published = Some(published);
         // A qualified publication supersedes any prior unsupported assessment.  Keeping both
         // would make the durable record contradict its terminal filesystem evidence.
         updated.replacement_qualification = None;
+        updated.updated_unix_ms = unix_millis();
+        updated
+    }
+
+    fn with_absent_final_recovery_observation(
+        &self,
+        observation: AbsentFinalRecoveryObservation,
+    ) -> Self {
+        let mut updated = self.clone();
+        updated.absent_final_recovery_observation = Some(observation);
         updated.updated_unix_ms = unix_millis();
         updated
     }
@@ -1248,6 +1347,84 @@ fn validate_prepared_contract(prepared: &PreparedTargetContract) -> Result<(), S
     Ok(())
 }
 
+fn validate_absent_final_recovery_observation_shape(
+    observation: &AbsentFinalRecoveryObservation,
+) -> Result<(), String> {
+    if observation.target_parent_stable_id.is_empty() {
+        return Err(String::from(
+            "absent-final recovery observation target-parent identity is empty",
+        ));
+    }
+    if observation.final_stable_id.is_empty() {
+        return Err(String::from(
+            "absent-final recovery observation final identity is empty",
+        ));
+    }
+    if !matches!(
+        observation.final_content,
+        PreparedFileEvidence::ContentHash(_)
+    ) {
+        return Err(String::from(
+            "absent-final recovery observation requires exact final content hash evidence",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_absent_final_recovery_observation_record(
+    record: &OperationRecord,
+) -> Result<(), String> {
+    let Some(observation) = record.absent_final_recovery_observation.as_ref() else {
+        return Ok(());
+    };
+    validate_absent_final_recovery_observation_shape(observation)?;
+    if record.phase != OperationPhase::FilesystemStaged {
+        return Err(String::from(
+            "absent-final recovery observation requires the filesystem-staged phase",
+        ));
+    }
+    let Some(PreparedTargetContract::AbsentFinalNoReplace(prepared)) = record.prepared.as_ref()
+    else {
+        return Err(String::from(
+            "absent-final recovery observation requires absent-final preparation evidence",
+        ));
+    };
+    let Some(staged) = record.staged.as_ref() else {
+        return Err(String::from(
+            "absent-final recovery observation requires staged evidence",
+        ));
+    };
+    validate_absent_final_staged_checkpoint(prepared, staged)?;
+    if observation.target_parent_stable_id != prepared.target_parent.identity.stable_id {
+        return Err(String::from(
+            "absent-final recovery observation target-parent identity does not match preparation",
+        ));
+    }
+    let FilesystemStagedParticipant::CopyValidated { staging, evidence } = &staged.participant;
+    if observation.final_stable_id != staging.identity.stable_id
+        || observation.final_len != staging.identity.len
+    {
+        return Err(String::from(
+            "absent-final recovery observation final identity does not match staged evidence",
+        ));
+    }
+    let (
+        PreparedFileEvidence::ContentHash(staged_hash),
+        PreparedFileEvidence::ContentHash(observed_hash),
+    ) = (evidence, &observation.final_content)
+    else {
+        return Err(String::from(
+            "absent-final recovery observation content is not an exact hash",
+        ));
+    };
+    if staged_hash != observed_hash {
+        return Err(String::from(
+            "absent-final recovery observation content does not match staged evidence",
+        ));
+    }
+    Ok(())
+}
+
 /// Schema-v2 retains a cumulative evidence prefix for every non-terminal phase.  A
 /// pre-publication cancellation may stop at any prefix, while every other terminal disposition
 /// requires the complete publication evidence boundary.
@@ -1259,7 +1436,11 @@ fn schema_v2_phase_evidence_is_valid(
     match phase {
         OperationPhase::IntentDurable => evidence == SchemaV2EvidencePresence::NONE,
         OperationPhase::Prepared => evidence == SchemaV2EvidencePresence::PREPARED,
-        OperationPhase::FilesystemStaged => evidence == SchemaV2EvidencePresence::PREPARED_STAGED,
+        OperationPhase::FilesystemStaged => matches!(
+            evidence,
+            SchemaV2EvidencePresence::PREPARED_STAGED
+                | SchemaV2EvidencePresence::PREPARED_STAGED_WITH_ABSENT_FINAL_RECOVERY_OBSERVATION
+        ),
         OperationPhase::FilesystemPublished
         | OperationPhase::SourceReconciled
         | OperationPhase::GlobalReconciled
@@ -1282,14 +1463,13 @@ fn validate_schema_v2_phase_evidence_record(record: &OperationRecord) -> Result<
         return Ok(());
     }
     let evidence = SchemaV2EvidencePresence::from_record(record);
-    if schema_v2_phase_evidence_is_valid(record.phase, record.disposition, evidence) {
-        Ok(())
-    } else {
-        Err(format!(
+    if !schema_v2_phase_evidence_is_valid(record.phase, record.disposition, evidence) {
+        return Err(format!(
             "schema-v2 phase/evidence combination is invalid: phase={:?}, disposition={:?}, evidence={evidence:?}",
             record.phase, record.disposition,
-        ))
+        ));
     }
+    validate_absent_final_recovery_observation_record(record)
 }
 
 /// Summary of a startup scan. Scanning never mutates or deletes records.
@@ -1344,6 +1524,9 @@ pub(crate) enum JournalError {
     /// Publication evidence did not prove the complete guarded boundary.
     #[error("invalid publication evidence for operation {operation_id}: {reason}")]
     InvalidPublicationEvidence { operation_id: Uuid, reason: String },
+    /// Recovery observation did not match the live or durable absent-final contract.
+    #[error("invalid absent-final recovery observation for operation {operation_id}: {reason}")]
+    InvalidRecoveryObservation { operation_id: Uuid, reason: String },
 }
 
 /// Result boundary for the bounded pre-intent capacity gate.
@@ -1727,6 +1910,47 @@ impl OperationJournalStore {
                 to: OperationPhase::FilesystemStaged,
             }),
         }
+    }
+
+    fn record_absent_final_recovery_observation(
+        &mut self,
+        operation_id: Uuid,
+        observation: AbsentFinalRecoveryObservation,
+    ) -> Result<(), JournalError> {
+        let current = self
+            .records
+            .get(&operation_id)
+            .ok_or(JournalError::NotFound(operation_id))?;
+        if current.phase != OperationPhase::FilesystemStaged {
+            return Err(JournalError::InvalidRecoveryObservation {
+                operation_id,
+                reason: String::from(
+                    "absent-final recovery observation requires the filesystem-staged phase",
+                ),
+            });
+        }
+        if let Some(existing) = current.absent_final_recovery_observation.as_ref() {
+            if existing == &observation {
+                return Ok(());
+            }
+            return Err(JournalError::InvalidRecoveryObservation {
+                operation_id,
+                reason: String::from("conflicting absent-final recovery observation replay"),
+            });
+        }
+        let updated = current.with_absent_final_recovery_observation(observation);
+        validate_schema_v2_phase_evidence_record(&updated).map_err(|reason| {
+            JournalError::InvalidRecoveryObservation {
+                operation_id,
+                reason,
+            }
+        })?;
+        self.ensure_writable(operation_id)?;
+        let path = self.record_path(operation_id);
+        atomic_durable_write(&path, &updated)?;
+        self.records.insert(operation_id, updated);
+        self.rebuild_capacity_claims();
+        Ok(())
     }
 
     pub(crate) fn guarded_publish(
@@ -2838,6 +3062,15 @@ impl OperationJournalCoordinator {
         &self,
         operation_id: Uuid,
     ) -> Result<AbsentFinalRecoveryClassification, JournalError> {
+        Ok(self
+            .inspect_schema_v2_absent_final_recovery(operation_id)?
+            .classification)
+    }
+
+    fn inspect_schema_v2_absent_final_recovery(
+        &self,
+        operation_id: Uuid,
+    ) -> Result<super::absent_final_recovery::AbsentFinalRecoveryInspection, JournalError> {
         let record = self
             .store
             .record(operation_id)
@@ -2889,7 +3122,58 @@ impl OperationJournalCoordinator {
                 reason,
             }
         })?;
-        Ok(classify_absent_final_recovery(prepared, staged))
+        Ok(inspect_absent_final_recovery(prepared, staged))
+    }
+
+    /// Re-inspect one eligible absent-final record and durably retain only the exact
+    /// `StagingMissingFinalMatches` observation. This remains a filesystem-staged journal
+    /// observation; it does not publish, adopt, claim ownership, or mutate the namespace.
+    pub(crate) fn record_schema_v2_absent_final_recovery_observation(
+        &mut self,
+        operation_id: Uuid,
+    ) -> Result<AbsentFinalRecoveryClassification, JournalError> {
+        let inspection = self.inspect_schema_v2_absent_final_recovery(operation_id)?;
+        let existing = self
+            .store
+            .record(operation_id)
+            .and_then(|record| record.absent_final_recovery_observation.clone());
+        match (inspection.classification, inspection.observation, existing) {
+            (
+                AbsentFinalRecoveryClassification::StagingMissingFinalMatches,
+                Some(observation),
+                None,
+            ) => {
+                self.store
+                    .record_absent_final_recovery_observation(operation_id, observation)?;
+                Ok(AbsentFinalRecoveryClassification::StagingMissingFinalMatches)
+            }
+            (
+                AbsentFinalRecoveryClassification::StagingMissingFinalMatches,
+                Some(observation),
+                Some(existing),
+            ) if observation == existing => {
+                Ok(AbsentFinalRecoveryClassification::StagingMissingFinalMatches)
+            }
+            (AbsentFinalRecoveryClassification::StagingMissingFinalMatches, Some(_), Some(_)) => {
+                Err(JournalError::InvalidRecoveryObservation {
+                    operation_id,
+                    reason: String::from("conflicting live and durable absent-final evidence"),
+                })
+            }
+            (classification, None, None) => Ok(classification),
+            (classification, Some(_), None) => Err(JournalError::InvalidRecoveryObservation {
+                operation_id,
+                reason: format!(
+                    "classifier returned {classification:?} without a matching observation"
+                ),
+            }),
+            (classification, _, Some(_)) => Err(JournalError::InvalidRecoveryObservation {
+                operation_id,
+                reason: format!(
+                    "durable absent-final observation is stale for live classification {classification:?}"
+                ),
+            }),
+        }
     }
 
     /// Admit an intent durably and return its stable operation ID.
@@ -3916,6 +4200,21 @@ mod tests {
         let prepared_value = value["prepared"].clone();
         let staged_value = value["staged"].clone();
         let (prepared, staged, _) = absent_final_v2_fixture();
+        let recovery_observation = AbsentFinalRecoveryObservation {
+            target_parent_stable_id: prepared.target_parent.identity.stable_id.clone(),
+            final_stable_id: match &staged.participant {
+                FilesystemStagedParticipant::CopyValidated { staging, .. } => {
+                    staging.identity.stable_id.clone()
+                }
+            },
+            final_len: match &staged.participant {
+                FilesystemStagedParticipant::CopyValidated { staging, .. } => staging.identity.len,
+            },
+            final_content: match &staged.participant {
+                FilesystemStagedParticipant::CopyValidated { evidence, .. } => evidence.clone(),
+            },
+        };
+        let recovery_observation_value = serde_json::to_value(recovery_observation).unwrap();
         let publication = super::super::publication::test_absent_final_publication_evidence(
             &prepared.target_parent.identity,
             &staged,
@@ -3930,6 +4229,11 @@ mod tests {
         };
         value["staged"] = if evidence.staged {
             staged_value
+        } else {
+            Value::Null
+        };
+        value["absent_final_recovery_observation"] = if evidence.absent_final_recovery_observation {
+            recovery_observation_value
         } else {
             Value::Null
         };
@@ -3957,6 +4261,36 @@ mod tests {
             operation_id,
             &bytes,
         );
+    }
+
+    fn add_valid_recovery_observation(value: &mut Value) {
+        let (prepared, staged, _) = absent_final_v2_fixture();
+        let observation = AbsentFinalRecoveryObservation {
+            target_parent_stable_id: prepared.target_parent.identity.stable_id,
+            final_stable_id: match &staged.participant {
+                FilesystemStagedParticipant::CopyValidated { staging, .. } => {
+                    staging.identity.stable_id.clone()
+                }
+            },
+            final_len: match &staged.participant {
+                FilesystemStagedParticipant::CopyValidated { staging, .. } => staging.identity.len,
+            },
+            final_content: match &staged.participant {
+                FilesystemStagedParticipant::CopyValidated { evidence, .. } => evidence.clone(),
+            },
+        };
+        value["absent_final_recovery_observation"] =
+            serde_json::to_value(observation).expect("encode recovery observation");
+    }
+
+    fn assert_v2_recovery_observation_retained_as_malformed<F>(mutate: F)
+    where
+        F: FnOnce(&mut Value),
+    {
+        assert_v2_malformed_record_retained(|value| {
+            add_valid_recovery_observation(value);
+            mutate(value);
+        });
     }
 
     fn publication_with_reopened_identity_mismatch(
@@ -6124,6 +6458,103 @@ mod tests {
     }
 
     #[test]
+    fn schema_v2_absent_final_recovery_observation_round_trips_and_old_v2_defaults_absent() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let (directory, operation_id, path, mut value) = v2_absent_record_on_disk();
+        add_valid_recovery_observation(&mut value);
+        let bytes = serde_json::to_vec(&value).unwrap();
+        fs::write(&path, &bytes).unwrap();
+
+        let journal = OperationJournalCoordinator::open(directory.path().to_path_buf()).unwrap();
+        let observation = journal
+            .record(operation_id)
+            .unwrap()
+            .absent_final_recovery_observation
+            .clone();
+        assert!(observation.is_some());
+        assert_eq!(journal.recovery_summary().malformed_count, 0);
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        drop(journal);
+
+        value
+            .as_object_mut()
+            .unwrap()
+            .remove("absent_final_recovery_observation");
+        let old_v2_bytes = serde_json::to_vec(&value).unwrap();
+        fs::write(&path, &old_v2_bytes).unwrap();
+        let old_v2 = OperationJournalCoordinator::open(directory.path().to_path_buf()).unwrap();
+        assert_eq!(
+            old_v2
+                .record(operation_id)
+                .unwrap()
+                .absent_final_recovery_observation,
+            None
+        );
+        assert_eq!(old_v2.recovery_summary().malformed_count, 0);
+        assert_eq!(fs::read(&path).unwrap(), old_v2_bytes);
+    }
+
+    #[test]
+    fn schema_v1_recovery_observation_is_unknown_and_not_encoded() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let record = OperationRecord::new(intent(), Value::Null);
+        let operation_id = record.operation_id;
+        let path = directory.path().join(format!("{operation_id}.json"));
+        let mut value = schema_v1_value(&record);
+        add_valid_recovery_observation(&mut value);
+        let bytes = serde_json::to_vec(&value).unwrap();
+        fs::write(&path, &bytes).unwrap();
+
+        let journal = OperationJournalCoordinator::open(directory.path().to_path_buf()).unwrap();
+        assert!(journal.record(operation_id).is_none());
+        assert_eq!(journal.recovery_summary().malformed_count, 1);
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+
+        let mut runtime = record;
+        runtime.absent_final_recovery_observation = Some(AbsentFinalRecoveryObservation {
+            target_parent_stable_id: String::from("parent"),
+            final_stable_id: String::from("final"),
+            final_len: 4,
+            final_content: PreparedFileEvidence::ContentHash([7; 32]),
+        });
+        assert!(encode_schema_v1(&runtime).is_err());
+    }
+
+    #[test]
+    fn schema_v2_invalid_recovery_observation_evidence_is_retained_unchanged() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        assert_v2_recovery_observation_retained_as_malformed(|value| {
+            value["absent_final_recovery_observation"]
+                .as_object_mut()
+                .unwrap()
+                .insert(String::from("future_nested_evidence"), Value::Bool(true));
+        });
+        assert_v2_recovery_observation_retained_as_malformed(|value| {
+            value["absent_final_recovery_observation"]["final_content"] = serde_json::json!({
+                "Metadata": {"len": 4, "modified_ns": null, "is_dir": false}
+            });
+        });
+        assert_v2_recovery_observation_retained_as_malformed(|value| {
+            value["phase"] = serde_json::to_value(OperationPhase::Prepared).unwrap();
+        });
+        assert_v2_recovery_observation_retained_as_malformed(|value| {
+            value["staged"] = Value::Null;
+        });
+        assert_v2_recovery_observation_retained_as_malformed(|value| {
+            let prepared = value["prepared"]["AbsentFinalNoReplace"].clone();
+            value["prepared"] = serde_json::json!({"ExistingExpectedIdentity": prepared});
+        });
+        assert_v2_recovery_observation_retained_as_malformed(|value| {
+            value["absent_final_recovery_observation"]["final_len"] = Value::from(99_u64);
+        });
+        assert_v2_recovery_observation_retained_as_malformed(|value| {
+            value["absent_final_recovery_observation"]["final_stable_id"] =
+                Value::from("different-final");
+        });
+    }
+
+    #[test]
     fn schema_v2_phase_evidence_matrix_rejects_inconsistent_records() {
         let _lock = TEST_LOCK.lock().unwrap();
         let invalid_cases = [
@@ -6134,12 +6565,19 @@ mod tests {
                 SchemaV2EvidencePresence::PREPARED,
             ),
             (
+                "intent with absent-final recovery observation",
+                OperationPhase::IntentDurable,
+                OperationDisposition::None,
+                SchemaV2EvidencePresence::PREPARED_STAGED_WITH_ABSENT_FINAL_RECOVERY_OBSERVATION,
+            ),
+            (
                 "intent with staged evidence",
                 OperationPhase::IntentDurable,
                 OperationDisposition::None,
                 SchemaV2EvidencePresence {
                     prepared: false,
                     staged: true,
+                    absent_final_recovery_observation: false,
                     published: false,
                 },
             ),
@@ -6150,6 +6588,7 @@ mod tests {
                 SchemaV2EvidencePresence {
                     prepared: false,
                     staged: false,
+                    absent_final_recovery_observation: false,
                     published: true,
                 },
             ),
@@ -6166,12 +6605,19 @@ mod tests {
                 SchemaV2EvidencePresence::PREPARED_STAGED,
             ),
             (
+                "prepared with absent-final recovery observation",
+                OperationPhase::Prepared,
+                OperationDisposition::None,
+                SchemaV2EvidencePresence::PREPARED_STAGED_WITH_ABSENT_FINAL_RECOVERY_OBSERVATION,
+            ),
+            (
                 "prepared with published evidence",
                 OperationPhase::Prepared,
                 OperationDisposition::None,
                 SchemaV2EvidencePresence {
                     prepared: true,
                     staged: false,
+                    absent_final_recovery_observation: false,
                     published: true,
                 },
             ),
@@ -6182,6 +6628,7 @@ mod tests {
                 SchemaV2EvidencePresence {
                     prepared: false,
                     staged: true,
+                    absent_final_recovery_observation: false,
                     published: false,
                 },
             ),
@@ -6204,6 +6651,7 @@ mod tests {
                 SchemaV2EvidencePresence {
                     prepared: false,
                     staged: true,
+                    absent_final_recovery_observation: false,
                     published: true,
                 },
             ),
@@ -6214,6 +6662,7 @@ mod tests {
                 SchemaV2EvidencePresence {
                     prepared: true,
                     staged: false,
+                    absent_final_recovery_observation: false,
                     published: true,
                 },
             ),
@@ -6265,6 +6714,11 @@ mod tests {
                 OperationPhase::FilesystemStaged,
                 OperationDisposition::None,
                 SchemaV2EvidencePresence::PREPARED_STAGED,
+            ),
+            (
+                OperationPhase::FilesystemStaged,
+                OperationDisposition::None,
+                SchemaV2EvidencePresence::PREPARED_STAGED_WITH_ABSENT_FINAL_RECOVERY_OBSERVATION,
             ),
             (
                 OperationPhase::Terminal,
