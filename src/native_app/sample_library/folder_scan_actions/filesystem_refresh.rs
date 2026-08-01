@@ -8,6 +8,7 @@ use crate::native_app::app::{
 };
 use crate::native_app::sample_library::folder_scan_actions::filesystem_refresh_worker::{
     capture_source_root_identity, recover_source_filesystem_sync,
+    root_identity_matches_watcher_proof, run_targeted_sync_after_root_identity_gate,
     sync_source_database_paths_with_writer,
 };
 use crate::native_app::sample_library::source_prep::{
@@ -169,6 +170,10 @@ impl NativeAppState {
             self.maybe_run_pending_source_refresh(context);
             return;
         }
+        let watcher_root_identity_is_aligned = root_identity_matches_watcher_proof(
+            root_identity.as_deref(),
+            watcher_continuity_proof.as_ref(),
+        );
         match result.result {
             Ok(success) => {
                 let renames_reconciled = success.renames_reconciled;
@@ -309,12 +314,25 @@ impl NativeAppState {
                     error = %error,
                     "Failed to sync source database after filesystem change"
                 );
+                let (refresh_cause, reconciliation_reason) = if watcher_root_identity_is_aligned {
+                    (SourceRefreshCause::FilesystemSyncFailed, None)
+                } else {
+                    (
+                        SourceRefreshCause::WatcherAuthorityUnproven,
+                        Some("targeted_sync_watcher_authority_unproven"),
+                    )
+                };
+                if let Some(reason) = reconciliation_reason {
+                    self.background
+                        .source_processing
+                        .wake_source_for_full_reconciliation(&source_id, reason);
+                }
                 if source_id == self.library.folder_browser.selected_source_id() {
                     self.ui.status.sample = format!("Source sync failed: {error}");
                 }
                 self.queue_filesystem_source_refresh(
                     source_id,
-                    SourceRefreshCause::FilesystemSyncFailed,
+                    refresh_cause,
                     Some(result.lifecycle_generation),
                     Instant::now(),
                     context,
@@ -674,25 +692,35 @@ impl NativeAppState {
                 let lifecycle_generation = permit.lifecycle_generation();
                 let cancel = permit.cancel_token();
                 let scan_writer = permit.scan_writer();
-                let root_identity = capture_source_root_identity(&root);
+                let captured_root_identity = capture_source_root_identity(&root);
                 let recovery_source_id = source_id.clone();
                 let mut result = recover_source_filesystem_sync(
                     recovery_source_id,
                     lifecycle_generation,
                     changed_count,
                     || {
-                        sync_source_database_paths_with_writer(
-                            source_id,
-                            root,
-                            database_root,
-                            paths,
+                        run_targeted_sync_after_root_identity_gate(
+                            source_id.clone(),
+                            lifecycle_generation,
                             changed_count,
-                            cancel.as_ref(),
-                            &scan_writer,
+                            captured_root_identity.clone(),
+                            journal_checkpoint_event_id,
+                            watcher_continuity_proof.clone(),
+                            || {
+                                sync_source_database_paths_with_writer(
+                                    source_id,
+                                    root,
+                                    database_root,
+                                    paths,
+                                    changed_count,
+                                    cancel.as_ref(),
+                                    &scan_writer,
+                                )
+                            },
                         )
                     },
                 );
-                result.root_identity = root_identity;
+                result.root_identity = captured_root_identity;
                 result.journal_checkpoint_event_id = journal_checkpoint_event_id;
                 result.watcher_continuity_proof = watcher_continuity_proof;
                 let projection_ticket = match &mut result.result {
@@ -796,7 +824,10 @@ mod tests {
     use crate::native_app::{
         app::{BrowserProjectionDelta, SourceFilesystemSyncResult, SourceFilesystemSyncSuccess},
         sample_library::folder_browser::{FolderBrowserState, scan::scan_source_with_progress},
-        sample_library::source_watcher::{CheckpointCause, WatcherBackend, WatcherContinuityProof},
+        sample_library::source_watcher::{
+            CheckpointCause, WatcherBackend, WatcherContinuityProof,
+            watcher_replay_evidence_is_well_formed,
+        },
         test_support::state::NativeAppStateFixture,
     };
     use wavecrate::sample_sources::scanner::{CommittedSourceDelta, ManifestIdentityDelta};
@@ -1051,6 +1082,62 @@ mod tests {
             Some(current_revision),
             "invalid watcher authority must retain the last-good projection"
         );
+    }
+
+    #[test]
+    fn mismatched_worker_root_identity_failure_requests_authoritative_reconciliation() {
+        let (root, mut state, source_id, generation) = completion_test_state();
+        let current_revision = state
+            .library
+            .folder_browser
+            .source_projection_revision(&source_id)
+            .expect("current browser projection revision");
+        let proof = replay_proof("replaced-root", 73);
+        assert!(watcher_replay_evidence_is_well_formed(
+            Some(73),
+            Some(&proof)
+        ));
+        let result = SourceFilesystemSyncResult {
+            source_id: source_id.clone(),
+            lifecycle_generation: generation,
+            changed_count: 1,
+            root_identity: Some(stable_root_identity(root.path())),
+            journal_checkpoint_event_id: Some(73),
+            watcher_continuity_proof: Some(proof),
+            cancelled: false,
+            result: Err(String::from(
+                "Targeted source sync rejected because the captured source root identity does not match watcher replay evidence",
+            )),
+        };
+        let mut context = radiant::prelude::UiUpdateContext::default();
+
+        state.finish_source_filesystem_sync(result, &mut context);
+
+        assert_eq!(
+            state
+                .library
+                .folder_browser
+                .source_projection_revision(&source_id),
+            Some(current_revision),
+            "mismatched watcher authority must retain the last-good projection"
+        );
+        assert!(
+            state
+                .background
+                .source_processing
+                .budget_handle()
+                .pending_watcher_checkpoint_for_tests()
+                .is_none(),
+            "mismatched watcher authority must not emit a checkpoint"
+        );
+        assert!(
+            state
+                .background
+                .source_processing
+                .source_dirty_for_tests(&source_id),
+            "mismatched watcher authority must request authoritative reconciliation"
+        );
+        assert!(state.library.folder_scan_active());
     }
 
     #[test]

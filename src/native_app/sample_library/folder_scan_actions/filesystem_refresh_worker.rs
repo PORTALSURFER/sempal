@@ -15,6 +15,7 @@ use wavecrate_scan::sample_sources::scanner::{
 use crate::native_app::{
     app::{BrowserProjectionDelta, SourceFilesystemSyncResult, SourceFilesystemSyncSuccess},
     sample_library::folder_browser::model::file_entry_with_snapshot_metadata,
+    sample_library::source_watcher::WatcherContinuityProof,
 };
 
 const MAX_SYNC_ATTEMPTS: usize = 3;
@@ -70,6 +71,54 @@ pub(in crate::native_app) fn capture_source_root_identity(root: &Path) -> Option
     std::fs::metadata(root)
         .ok()
         .and_then(|metadata| stable_filesystem_identity(root, &metadata))
+}
+
+pub(in crate::native_app) fn root_identity_matches_watcher_proof(
+    root_identity: Option<&str>,
+    watcher_continuity_proof: Option<&WatcherContinuityProof>,
+) -> bool {
+    root_identity.is_some_and(|root_identity| {
+        watcher_continuity_proof.is_some_and(|proof| root_identity == proof.root_identity)
+    })
+}
+
+/// Run targeted database work only after the worker has established that the live source root is
+/// the root named by the watcher replay evidence. Completion still validates this captured
+/// identity after the work completes so a later replacement is handled by the existing race
+/// defense.
+pub(in crate::native_app) fn run_targeted_sync_after_root_identity_gate(
+    source_id: String,
+    lifecycle_generation: u64,
+    changed_count: usize,
+    root_identity: Option<String>,
+    journal_checkpoint_event_id: Option<u64>,
+    watcher_continuity_proof: Option<WatcherContinuityProof>,
+    work: impl FnOnce() -> SourceFilesystemSyncResult,
+) -> SourceFilesystemSyncResult {
+    if !root_identity_matches_watcher_proof(
+        root_identity.as_deref(),
+        watcher_continuity_proof.as_ref(),
+    ) {
+        return SourceFilesystemSyncResult {
+            source_id,
+            lifecycle_generation,
+            changed_count,
+            root_identity,
+            journal_checkpoint_event_id,
+            watcher_continuity_proof,
+            cancelled: false,
+            result: Err(String::from(
+                "Targeted source sync rejected because the captured source root identity is unavailable or does not match watcher replay evidence",
+            )),
+        };
+    }
+
+    let mut result = work();
+    result.lifecycle_generation = lifecycle_generation;
+    result.root_identity = root_identity;
+    result.journal_checkpoint_event_id = journal_checkpoint_event_id;
+    result.watcher_continuity_proof = watcher_continuity_proof;
+    result
 }
 
 pub(in crate::native_app) fn sync_source_database_paths_with_writer(
@@ -323,8 +372,13 @@ mod tests {
     use wavecrate::sample_sources::{Rating, SourceDatabase, scanner};
     use wavecrate_scan::sample_sources::scanner::{ScanWritePhase, ScanWriter};
 
+    use crate::native_app::sample_library::source_watcher::{
+        WatcherBackend, WatcherContinuityProof,
+    };
+
     use super::{
-        recover_source_filesystem_sync, sync_source_database_paths,
+        capture_source_root_identity, recover_source_filesystem_sync,
+        run_targeted_sync_after_root_identity_gate, sync_source_database_paths,
         sync_source_database_paths_with_writer,
     };
 
@@ -361,6 +415,50 @@ mod tests {
                     && self.manifest_locks.fetch_add(1, Ordering::AcqRel) == 1,
             }
         }
+    }
+
+    fn watcher_proof(root_identity: &str, event_id: u64) -> WatcherContinuityProof {
+        WatcherContinuityProof {
+            root_identity: root_identity.to_string(),
+            backend: WatcherBackend::Fsevents,
+            backend_device: 10,
+            watcher_generation: 4,
+            replay_coverage_start_event_id: event_id.saturating_sub(1),
+            replay_coverage_end_event_id: event_id,
+            acknowledged_end_event_id: event_id,
+        }
+    }
+
+    #[test]
+    fn mismatched_targeted_sync_root_is_rejected_before_database_work() {
+        let root = tempfile::tempdir().expect("source root");
+        let captured_root_identity = capture_source_root_identity(root.path());
+        let database_work_started = AtomicBool::new(false);
+        let proof = watcher_proof("replaced-root", 73);
+
+        let result = run_targeted_sync_after_root_identity_gate(
+            String::from("source-a"),
+            7,
+            1,
+            captured_root_identity.clone(),
+            Some(73),
+            Some(proof.clone()),
+            || {
+                database_work_started.store(true, Ordering::Release);
+                panic!("mismatched watcher root must not reach database work");
+            },
+        );
+
+        assert!(!database_work_started.load(Ordering::Acquire));
+        assert_eq!(result.root_identity, captured_root_identity);
+        assert_eq!(result.journal_checkpoint_event_id, Some(73));
+        assert_eq!(result.watcher_continuity_proof, Some(proof));
+        assert!(
+            result
+                .result
+                .expect_err("mismatched watcher root must be terminal")
+                .contains("root identity")
+        );
     }
 
     #[test]
