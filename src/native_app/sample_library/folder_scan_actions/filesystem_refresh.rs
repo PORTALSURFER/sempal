@@ -714,13 +714,13 @@ impl NativeAppState {
                                     paths,
                                     changed_count,
                                     cancel.as_ref(),
+                                    watcher_continuity_proof.clone(),
                                     &scan_writer,
                                 )
                             },
                         )
                     },
                 );
-                result.root_identity = captured_root_identity;
                 result.journal_checkpoint_event_id = journal_checkpoint_event_id;
                 result.watcher_continuity_proof = watcher_continuity_proof;
                 let projection_ticket = match &mut result.result {

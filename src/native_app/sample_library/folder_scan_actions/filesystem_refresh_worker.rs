@@ -63,6 +63,7 @@ pub(in crate::native_app) fn sync_source_database_paths(
         paths,
         changed_count,
         cancel,
+        None,
         &UncoordinatedScanWriter,
     )
 }
@@ -82,10 +83,9 @@ pub(in crate::native_app) fn root_identity_matches_watcher_proof(
     })
 }
 
-/// Run targeted database work only after the worker has established that the live source root is
-/// the root named by the watcher replay evidence. Completion still validates this captured
-/// identity after the work completes so a later replacement is handled by the existing race
-/// defense.
+/// Run targeted database work only after the worker has established that the captured source root
+/// is the root named by the watcher replay evidence. The database worker performs a second live
+/// identity check at its own boundary before opening the source database.
 pub(in crate::native_app) fn run_targeted_sync_after_root_identity_gate(
     source_id: String,
     lifecycle_generation: u64,
@@ -115,7 +115,6 @@ pub(in crate::native_app) fn run_targeted_sync_after_root_identity_gate(
 
     let mut result = work();
     result.lifecycle_generation = lifecycle_generation;
-    result.root_identity = root_identity;
     result.journal_checkpoint_event_id = journal_checkpoint_event_id;
     result.watcher_continuity_proof = watcher_continuity_proof;
     result
@@ -128,20 +127,44 @@ pub(in crate::native_app) fn sync_source_database_paths_with_writer(
     paths: Vec<PathBuf>,
     changed_count: usize,
     cancel: &AtomicBool,
+    watcher_continuity_proof: Option<WatcherContinuityProof>,
     writer: &impl ScanWriter,
 ) -> SourceFilesystemSyncResult {
     let root_identity = capture_source_root_identity(&root);
+    if watcher_continuity_proof.is_some()
+        && !root_identity_matches_watcher_proof(
+            root_identity.as_deref(),
+            watcher_continuity_proof.as_ref(),
+        )
+    {
+        return SourceFilesystemSyncResult {
+            source_id,
+            lifecycle_generation: 0,
+            changed_count,
+            root_identity,
+            journal_checkpoint_event_id: None,
+            watcher_continuity_proof,
+            cancelled: cancel.load(Ordering::Acquire),
+            result: Err(String::from(
+                "Targeted source sync rejected because the live source root identity is unavailable or does not match watcher replay evidence",
+            )),
+        };
+    }
     let mut result = Err(String::from("Source filesystem sync did not run"));
+    let mut observed_root_identity = root_identity;
     for attempt in 0..MAX_SYNC_ATTEMPTS {
-        result = sync_source_database_paths_once(
+        let sync_attempt = sync_source_database_paths_once(
             &source_id,
             &root,
             &database_root,
             &paths,
             cancel,
+            watcher_continuity_proof.as_ref(),
             writer,
         );
-        if result.is_ok() || cancel.load(Ordering::Acquire) {
+        observed_root_identity = sync_attempt.root_identity;
+        result = sync_attempt.result;
+        if result.is_ok() || cancel.load(Ordering::Acquire) || !sync_attempt.retryable {
             break;
         }
         let Some(delay) = SYNC_RETRY_DELAYS.get(attempt).copied() else {
@@ -163,12 +186,18 @@ pub(in crate::native_app) fn sync_source_database_paths_with_writer(
         source_id,
         lifecycle_generation: 0,
         changed_count,
-        root_identity,
+        root_identity: observed_root_identity,
         journal_checkpoint_event_id: None,
-        watcher_continuity_proof: None,
+        watcher_continuity_proof,
         cancelled: cancel.load(Ordering::Acquire),
         result,
     }
+}
+
+struct SourceDatabaseSyncAttempt {
+    root_identity: Option<String>,
+    result: Result<SourceFilesystemSyncSuccess, String>,
+    retryable: bool,
 }
 
 fn sync_source_database_paths_once(
@@ -177,18 +206,35 @@ fn sync_source_database_paths_once(
     database_root: &std::path::Path,
     paths: &[PathBuf],
     cancel: &AtomicBool,
+    watcher_continuity_proof: Option<&WatcherContinuityProof>,
     writer: &impl ScanWriter,
-) -> Result<SourceFilesystemSyncSuccess, String> {
+) -> SourceDatabaseSyncAttempt {
     let browser_delta_eligible = paths.iter().all(|path| is_supported_audio(path));
     let _writer = writer.lock(ScanWritePhase::Open);
+    let root_identity = capture_source_root_identity(root);
     if cancel.load(Ordering::Acquire) {
-        return Err(String::from(
-            "Source filesystem sync canceled before database open",
-        ));
+        return SourceDatabaseSyncAttempt {
+            root_identity,
+            result: Err(String::from(
+                "Source filesystem sync canceled before database open",
+            )),
+            retryable: false,
+        };
+    }
+    if watcher_continuity_proof.is_some()
+        && !root_identity_matches_watcher_proof(root_identity.as_deref(), watcher_continuity_proof)
+    {
+        return SourceDatabaseSyncAttempt {
+            root_identity,
+            result: Err(String::from(
+                "Targeted source sync rejected because the live source root identity is unavailable or does not match watcher replay evidence",
+            )),
+            retryable: false,
+        };
     }
     let database = SourceDatabase::open_for_background_job_with_database_root(root, database_root);
     drop(_writer);
-    database
+    let result = database
         .map_err(|err| format!("open source index: {err}"))
         .and_then(|db| {
             let (stats, mut incomplete_error) = match scanner::sync_paths_with_progress_and_writer(
@@ -263,7 +309,12 @@ fn sync_source_database_paths_once(
                 browser_projection_delta,
                 projection_handoff_ticket: None,
             })
-        })
+        });
+    SourceDatabaseSyncAttempt {
+        root_identity,
+        result,
+        retryable: true,
+    }
 }
 
 fn build_browser_projection_delta(
@@ -417,6 +468,22 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
+    struct CountingWriter {
+        database_open_started: Arc<AtomicBool>,
+    }
+
+    struct CountingGuard;
+
+    impl ScanWriter for CountingWriter {
+        type Guard = CountingGuard;
+
+        fn lock(&self, _phase: ScanWritePhase) -> Self::Guard {
+            self.database_open_started.store(true, Ordering::Release);
+            CountingGuard
+        }
+    }
+
     fn watcher_proof(root_identity: &str, event_id: u64) -> WatcherContinuityProof {
         WatcherContinuityProof {
             root_identity: root_identity.to_string(),
@@ -458,6 +525,62 @@ mod tests {
                 .result
                 .expect_err("mismatched watcher root must be terminal")
                 .contains("root identity")
+        );
+    }
+
+    #[test]
+    fn replacement_between_authority_gate_and_database_sync_is_rejected_before_open() {
+        let parent = tempfile::tempdir().expect("source parent");
+        let root = parent.path().join("source");
+        let replacement = parent.path().join("replacement");
+        let displaced = parent.path().join("displaced");
+        std::fs::create_dir(&root).expect("source root");
+        std::fs::create_dir(&replacement).expect("replacement root");
+
+        let captured_root_identity = capture_source_root_identity(&root);
+        let proof = watcher_proof(
+            captured_root_identity
+                .as_deref()
+                .expect("source root identity"),
+            73,
+        );
+        let database_open_started = Arc::new(AtomicBool::new(false));
+        let writer = CountingWriter {
+            database_open_started: database_open_started.clone(),
+        };
+        let result = run_targeted_sync_after_root_identity_gate(
+            String::from("source-a"),
+            7,
+            1,
+            captured_root_identity.clone(),
+            Some(73),
+            Some(proof.clone()),
+            || {
+                std::fs::rename(&root, &displaced).expect("displace source root");
+                std::fs::rename(&replacement, &root).expect("install replacement root");
+                sync_source_database_paths_with_writer(
+                    String::from("source-a"),
+                    root.clone(),
+                    root.clone(),
+                    vec![PathBuf::from("fresh.wav")],
+                    1,
+                    &AtomicBool::new(false),
+                    Some(proof.clone()),
+                    &writer,
+                )
+            },
+        );
+
+        let observed_root_identity = capture_source_root_identity(&root);
+        assert_ne!(observed_root_identity, captured_root_identity);
+        assert_eq!(result.root_identity, observed_root_identity);
+        assert_eq!(result.watcher_continuity_proof, Some(proof));
+        assert!(!database_open_started.load(Ordering::Acquire));
+        assert!(
+            result
+                .result
+                .expect_err("replacement must reject targeted sync")
+                .contains("live source root identity")
         );
     }
 
@@ -609,6 +732,7 @@ mod tests {
             vec![PathBuf::from("fresh.wav")],
             1,
             &AtomicBool::new(false),
+            None,
             &writer,
         );
 
