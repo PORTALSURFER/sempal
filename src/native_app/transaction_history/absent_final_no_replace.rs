@@ -8,11 +8,14 @@
 #![allow(dead_code)]
 
 use std::fs::File;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
-use super::operation_journal::{PreparedFileEvidence, PreparedObjectIdentity};
+use super::operation_journal::{
+    AbsentFinalAdoptionGuardRequest, PreparedFileEvidence, PreparedObjectIdentity,
+};
 use super::publication::{PublicationSynchronization, PublicationVisibility};
 
 mod sealed {
@@ -76,9 +79,42 @@ impl<'a> AbsentFinalAdoptionRequest<'a> {
     }
 }
 
+impl AbsentFinalAdoptionGuardRequest {
+    pub(super) fn try_new(
+        operation_id: Uuid,
+        target_parent_path: PathBuf,
+        final_leaf: PathBuf,
+        expected_target_parent_stable_id: String,
+        expected_final_stable_id: String,
+        expected_final_len: u64,
+        expected_final_content: [u8; 32],
+    ) -> Result<Self, AbsentFinalNoReplaceRequestError> {
+        if !is_single_clean_normal_leaf(&final_leaf) {
+            return Err(AbsentFinalNoReplaceRequestError::TargetLeafNotSingleCleanNormal);
+        }
+        if expected_target_parent_stable_id.is_empty() || expected_final_stable_id.is_empty() {
+            return Err(AbsentFinalNoReplaceRequestError::TargetLeafNotSingleCleanNormal);
+        }
+        Ok(Self {
+            operation_id,
+            target_parent_path,
+            final_leaf,
+            expected_target_parent_stable_id,
+            expected_final_stable_id,
+            expected_final_len,
+            expected_final_content,
+        })
+    }
+
+    pub(super) fn operation_id(&self) -> Uuid {
+        self.operation_id
+    }
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum AbsentFinalAdoptionOutcome {
     Qualified(QualifiedAbsentFinalAdoption),
+    OperationIdDrift,
     ParentIdentityDrift,
     FinalMissing,
     FinalIdentityDrift,
@@ -94,6 +130,45 @@ pub(crate) struct QualifiedAbsentFinalAdoption {
     pub(super) target_parent: PreparedObjectIdentity,
     pub(super) final_object: PreparedObjectIdentity,
     pub(super) final_content: PreparedFileEvidence,
+}
+
+/// A retained, read-only capability for a qualified absent-final adoption.
+///
+/// This deliberately has no serialization, comparison, or clone boundary. The retained
+/// descriptors, clean leaf, and exact content hash are the authority for a later binding check;
+/// the configured root pathname is not retained or consulted.
+pub(super) struct QualifiedAbsentFinalAdoptionGuard {
+    operation_id: Uuid,
+    target_parent: File,
+    final_object: File,
+    final_leaf: PathBuf,
+    target_parent_identity: PreparedObjectIdentity,
+    final_identity: PreparedObjectIdentity,
+    final_content: [u8; 32],
+}
+
+impl QualifiedAbsentFinalAdoptionGuard {
+    pub(super) fn revalidate_binding(
+        &self,
+        current_operation_id: Uuid,
+    ) -> Result<(), AbsentFinalAdoptionOutcome> {
+        #[cfg(unix)]
+        {
+            if self.operation_id != current_operation_id {
+                return Err(AbsentFinalAdoptionOutcome::OperationIdDrift);
+            }
+            return revalidate_unix_absent_final_adoption_guard(self);
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = (self, current_operation_id);
+            Err(AbsentFinalAdoptionOutcome::UnsupportedPlatform)
+        }
+    }
+
+    pub(super) fn operation_id(&self) -> Uuid {
+        self.operation_id
+    }
 }
 
 pub(super) trait AbsentFinalAdoptionAdapter: sealed::Sealed {
@@ -118,63 +193,188 @@ impl AbsentFinalAdoptionAdapter for ProductionAbsentFinalAdoptionAdapter {
     }
 }
 
+impl ProductionAbsentFinalAdoptionAdapter {
+    /// Acquire a retained, operation-bound guard through the live target-parent capability.
+    ///
+    /// This is the file-operation owner boundary: the journal request contains only durable
+    /// locators and expectations, while this adapter reacquires descriptors and verifies live
+    /// identity and exact content before retaining either descriptor.
+    pub(super) fn acquire_guard(
+        &self,
+        request: AbsentFinalAdoptionGuardRequest,
+    ) -> Result<QualifiedAbsentFinalAdoptionGuard, AbsentFinalAdoptionOutcome> {
+        #[cfg(unix)]
+        {
+            return acquire_unix_absent_final_adoption_guard(request);
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = request;
+            Err(AbsentFinalAdoptionOutcome::UnsupportedPlatform)
+        }
+    }
+}
+
 #[cfg(unix)]
-fn qualify_unix_absent_final_adoption(
-    request: AbsentFinalAdoptionRequest<'_>,
-) -> AbsentFinalAdoptionOutcome {
+fn open_final_relative(
+    target_parent: &File,
+    final_leaf: &Path,
+) -> Result<File, AbsentFinalAdoptionOutcome> {
     use std::ffi::CString;
     use std::os::fd::{AsRawFd, FromRawFd};
 
-    let parent = match super::operation_journal::descriptor_identity(request.target_parent) {
-        Ok(identity) if identity.stable_id == request.expected_target_parent.stable_id => identity,
-        Ok(_) => return AbsentFinalAdoptionOutcome::ParentIdentityDrift,
-        Err(_) => return AbsentFinalAdoptionOutcome::VerificationFailed,
-    };
-    let name = match CString::new(request.final_leaf.as_os_str().as_encoded_bytes()) {
-        Ok(name) => name,
-        Err(_) => return AbsentFinalAdoptionOutcome::VerificationFailed,
-    };
+    let name = CString::new(final_leaf.as_os_str().as_encoded_bytes())
+        .map_err(|_| AbsentFinalAdoptionOutcome::VerificationFailed)?;
     let fd = unsafe {
         libc::openat(
-            request.target_parent.as_raw_fd(),
+            target_parent.as_raw_fd(),
             name.as_ptr(),
             libc::O_RDONLY | libc::O_CLOEXEC | libc::O_NOFOLLOW | libc::O_NONBLOCK,
         )
     };
     if fd < 0 {
         return match std::io::Error::last_os_error().kind() {
-            std::io::ErrorKind::NotFound => AbsentFinalAdoptionOutcome::FinalMissing,
-            _ => AbsentFinalAdoptionOutcome::VerificationFailed,
+            std::io::ErrorKind::NotFound => Err(AbsentFinalAdoptionOutcome::FinalMissing),
+            _ => Err(AbsentFinalAdoptionOutcome::VerificationFailed),
         };
     }
-    let final_file = unsafe { File::from_raw_fd(fd) };
-    let metadata = match final_file.metadata() {
-        Ok(metadata) if metadata.is_file() => metadata,
-        Ok(_) => return AbsentFinalAdoptionOutcome::VerificationFailed,
-        Err(_) => return AbsentFinalAdoptionOutcome::VerificationFailed,
+    Ok(unsafe { File::from_raw_fd(fd) })
+}
+
+#[cfg(unix)]
+fn observe_final(
+    final_file: &File,
+) -> Result<(PreparedObjectIdentity, [u8; 32]), AbsentFinalAdoptionOutcome> {
+    let metadata = final_file
+        .metadata()
+        .map_err(|_| AbsentFinalAdoptionOutcome::VerificationFailed)?;
+    if !metadata.is_file() {
+        return Err(AbsentFinalAdoptionOutcome::VerificationFailed);
+    }
+    let identity = super::operation_journal::descriptor_identity(final_file)
+        .map_err(|_| AbsentFinalAdoptionOutcome::VerificationFailed)?;
+    let content = super::operation_journal::prepared_file_evidence(final_file);
+    let PreparedFileEvidence::ContentHash(hash) = content else {
+        return Err(AbsentFinalAdoptionOutcome::FinalContentDrift);
     };
-    let final_object = match super::operation_journal::descriptor_identity(&final_file) {
-        Ok(identity) => identity,
-        Err(_) => return AbsentFinalAdoptionOutcome::VerificationFailed,
+
+    let after_identity = super::operation_journal::descriptor_identity(final_file)
+        .map_err(|_| AbsentFinalAdoptionOutcome::VerificationFailed)?;
+    if after_identity.stable_id != identity.stable_id || after_identity.len != identity.len {
+        return Err(AbsentFinalAdoptionOutcome::FinalIdentityDrift);
+    }
+    Ok((after_identity, hash))
+}
+
+#[cfg(unix)]
+fn qualify_unix_absent_final_adoption(
+    request: AbsentFinalAdoptionRequest<'_>,
+) -> AbsentFinalAdoptionOutcome {
+    let target_parent_identity =
+        match super::operation_journal::descriptor_identity(request.target_parent) {
+            Ok(identity) if identity.stable_id == request.expected_target_parent.stable_id => {
+                identity
+            }
+            Ok(_) => return AbsentFinalAdoptionOutcome::ParentIdentityDrift,
+            Err(_) => return AbsentFinalAdoptionOutcome::VerificationFailed,
+        };
+    let final_object = match open_final_relative(request.target_parent, request.final_leaf) {
+        Ok(file) => file,
+        Err(outcome) => return outcome,
     };
-    if final_object.stable_id != request.expected_final_stable_id
-        || final_object.len != request.expected_final_len
-        || metadata.len() != request.expected_final_len
+    let (final_identity, final_content) = match observe_final(&final_object) {
+        Ok(observation) => observation,
+        Err(outcome) => return outcome,
+    };
+    if final_identity.stable_id != request.expected_final_stable_id
+        || final_identity.len != request.expected_final_len
     {
         return AbsentFinalAdoptionOutcome::FinalIdentityDrift;
     }
-    let final_content = super::operation_journal::prepared_file_evidence(&final_file);
-    if !matches!(
-        final_content,
-        PreparedFileEvidence::ContentHash(hash) if &hash == request.expected_final_content
-    ) {
+    if &final_content != request.expected_final_content {
         return AbsentFinalAdoptionOutcome::FinalContentDrift;
     }
     AbsentFinalAdoptionOutcome::Qualified(QualifiedAbsentFinalAdoption {
-        target_parent: parent,
+        target_parent: target_parent_identity,
+        final_object: final_identity,
+        final_content: PreparedFileEvidence::ContentHash(final_content),
+    })
+}
+
+#[cfg(unix)]
+fn acquire_unix_absent_final_adoption_guard(
+    request: AbsentFinalAdoptionGuardRequest,
+) -> Result<QualifiedAbsentFinalAdoptionGuard, AbsentFinalAdoptionOutcome> {
+    let (target_parent, target_capability) =
+        super::operation_journal::open_root(&request.target_parent_path)
+            .map_err(|_| AbsentFinalAdoptionOutcome::VerificationFailed)?;
+    if target_capability.identity.stable_id != request.expected_target_parent_stable_id {
+        return Err(AbsentFinalAdoptionOutcome::ParentIdentityDrift);
+    }
+    let final_request = AbsentFinalAdoptionRequest::try_new(
+        &target_parent,
+        &request.final_leaf,
+        &target_capability.identity,
+        &request.expected_final_stable_id,
+        request.expected_final_len,
+        &request.expected_final_content,
+    )
+    .map_err(|_| AbsentFinalAdoptionOutcome::VerificationFailed)?;
+    let final_object = open_final_relative(&target_parent, &request.final_leaf)?;
+    let (final_identity, final_content) = observe_final(&final_object)?;
+    if final_identity.stable_id != final_request.expected_final_stable_id
+        || final_identity.len != final_request.expected_final_len
+    {
+        return Err(AbsentFinalAdoptionOutcome::FinalIdentityDrift);
+    }
+    if final_content != request.expected_final_content {
+        return Err(AbsentFinalAdoptionOutcome::FinalContentDrift);
+    }
+    Ok(QualifiedAbsentFinalAdoptionGuard {
+        operation_id: request.operation_id,
+        target_parent,
         final_object,
+        final_leaf: request.final_leaf,
+        target_parent_identity: target_capability.identity,
+        final_identity,
         final_content,
     })
+}
+
+#[cfg(unix)]
+fn revalidate_unix_absent_final_adoption_guard(
+    guard: &QualifiedAbsentFinalAdoptionGuard,
+) -> Result<(), AbsentFinalAdoptionOutcome> {
+    let target_parent_identity =
+        super::operation_journal::descriptor_identity(&guard.target_parent)
+            .map_err(|_| AbsentFinalAdoptionOutcome::VerificationFailed)?;
+    if target_parent_identity.stable_id != guard.target_parent_identity.stable_id {
+        return Err(AbsentFinalAdoptionOutcome::ParentIdentityDrift);
+    }
+
+    let (retained_identity, retained_content) = observe_final(&guard.final_object)?;
+    if retained_identity.stable_id != guard.final_identity.stable_id
+        || retained_identity.len != guard.final_identity.len
+    {
+        return Err(AbsentFinalAdoptionOutcome::FinalIdentityDrift);
+    }
+    if retained_content != guard.final_content {
+        return Err(AbsentFinalAdoptionOutcome::FinalContentDrift);
+    }
+
+    let final_object = open_final_relative(&guard.target_parent, &guard.final_leaf)?;
+    let (final_identity, final_content) = observe_final(&final_object)?;
+    if final_identity.stable_id != guard.final_identity.stable_id
+        || final_identity.len != guard.final_identity.len
+        || final_identity.stable_id != retained_identity.stable_id
+        || final_identity.len != retained_identity.len
+    {
+        return Err(AbsentFinalAdoptionOutcome::FinalIdentityDrift);
+    }
+    if final_content != guard.final_content || final_content != retained_content {
+        return Err(AbsentFinalAdoptionOutcome::FinalContentDrift);
+    }
+    Ok(())
 }
 
 impl<'a> AbsentFinalNoReplaceRequest<'a> {

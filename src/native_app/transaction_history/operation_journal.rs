@@ -313,6 +313,21 @@ pub(crate) struct AbsentFinalAdoptionEvidence {
     pub(crate) final_content: PreparedFileEvidence,
 }
 
+/// An owned, non-authoritative handoff from durable journal evidence to the file-operation owner.
+///
+/// This request contains only a path locator, a clean final leaf, and exact durable expectations.
+/// It owns no descriptor, does not inspect the filesystem, and cannot establish that the locator
+/// currently names the expected objects.
+pub(crate) struct AbsentFinalAdoptionGuardRequest {
+    pub(super) operation_id: Uuid,
+    pub(super) target_parent_path: PathBuf,
+    pub(super) final_leaf: PathBuf,
+    pub(super) expected_target_parent_stable_id: String,
+    pub(super) expected_final_stable_id: String,
+    pub(super) expected_final_len: u64,
+    pub(super) expected_final_content: [u8; 32],
+}
+
 /// Tagged runtime preparation contract used to select the publication guard.
 ///
 /// Schema-v1 records adapt only to `ExistingExpectedIdentity`.  The absent-final variant is
@@ -3806,6 +3821,143 @@ impl OperationJournalCoordinator {
         Ok(outcome)
     }
 
+    /// Build an owned, non-authoritative handoff for a durably qualified absent-final adoption.
+    /// This method validates only the in-memory durable record. It never inspects or opens the
+    /// filesystem, writes the journal, changes phase/timestamps or capacity, or exposes a handle.
+    pub(crate) fn prepare_schema_v2_absent_final_adoption_guard_request(
+        &self,
+        operation_id: Uuid,
+    ) -> Result<AbsentFinalAdoptionGuardRequest, JournalError> {
+        let record = self
+            .store
+            .record(operation_id)
+            .ok_or(JournalError::NotFound(operation_id))?;
+        if record.operation_id != operation_id {
+            return Err(JournalError::InvalidRecoveryObservation {
+                operation_id,
+                reason: String::from("absent-final guard operation identity does not match record"),
+            });
+        }
+        if record.schema_version != SCHEMA_V2 {
+            return Err(JournalError::InvalidRecoveryObservation {
+                operation_id,
+                reason: String::from("absent-final guard requires schema-v2"),
+            });
+        }
+        if record.phase != OperationPhase::FilesystemStaged {
+            return Err(JournalError::InvalidRecoveryObservation {
+                operation_id,
+                reason: String::from("absent-final guard requires the filesystem-staged phase"),
+            });
+        }
+        validate_schema_v2_phase_evidence_record(record).map_err(|reason| {
+            JournalError::InvalidRecoveryObservation {
+                operation_id,
+                reason: format!("invalid durable absent-final guard record: {reason}"),
+            }
+        })?;
+        let Some(PreparedTargetContract::AbsentFinalNoReplace(prepared)) = record.prepared.as_ref()
+        else {
+            return Err(JournalError::InvalidRecoveryObservation {
+                operation_id,
+                reason: String::from("absent-final guard requires absent-final preparation"),
+            });
+        };
+        let Some(staged) = record.staged.as_ref() else {
+            return Err(JournalError::InvalidRecoveryObservation {
+                operation_id,
+                reason: String::from("absent-final guard requires staged evidence"),
+            });
+        };
+        validate_prepared_contract(&PreparedTargetContract::AbsentFinalNoReplace(
+            prepared.clone(),
+        ))
+        .map_err(|reason| JournalError::InvalidRecoveryObservation {
+            operation_id,
+            reason,
+        })?;
+        validate_absent_final_staged_checkpoint(prepared, staged).map_err(|reason| {
+            JournalError::InvalidRecoveryObservation {
+                operation_id,
+                reason,
+            }
+        })?;
+        let FilesystemStagedParticipant::CopyValidated { staging, evidence } = &staged.participant;
+        let Some(observation) = record.absent_final_recovery_observation.as_ref() else {
+            return Err(JournalError::InvalidRecoveryObservation {
+                operation_id,
+                reason: String::from("absent-final guard requires a recovery observation"),
+            });
+        };
+        let Some(proof) = record.absent_final_transaction_owned_proof.as_ref() else {
+            return Err(JournalError::InvalidRecoveryObservation {
+                operation_id,
+                reason: String::from("absent-final guard requires transaction-owned proof"),
+            });
+        };
+        let Some(adoption) = record.absent_final_adoption_evidence.as_ref() else {
+            return Err(JournalError::InvalidRecoveryObservation {
+                operation_id,
+                reason: String::from("absent-final guard requires durable adoption evidence"),
+            });
+        };
+        if proof.target_parent_stable_id != observation.target_parent_stable_id
+            || proof.final_stable_id != observation.final_stable_id
+            || proof.final_len != observation.final_len
+            || proof.final_content != observation.final_content
+            || adoption.target_parent_stable_id != proof.target_parent_stable_id
+            || adoption.final_stable_id != proof.final_stable_id
+            || adoption.final_len != proof.final_len
+            || adoption.final_content != proof.final_content
+        {
+            return Err(JournalError::InvalidRecoveryObservation {
+                operation_id,
+                reason: String::from(
+                    "absent-final guard durable or live evidence does not cross-match",
+                ),
+            });
+        }
+        let PreparedFileEvidence::ContentHash(expected_content) = &adoption.final_content else {
+            return Err(JournalError::InvalidRecoveryObservation {
+                operation_id,
+                reason: String::from("absent-final guard requires exact content evidence"),
+            });
+        };
+        if prepared.target_parent.identity.stable_id != adoption.target_parent_stable_id
+            || staging.identity.stable_id != adoption.final_stable_id
+            || staging.identity.len != adoption.final_len
+            || prepared.copy_validated_evidence != adoption.final_content
+            || evidence != &adoption.final_content
+        {
+            return Err(JournalError::InvalidRecoveryObservation {
+                operation_id,
+                reason: String::from(
+                    "absent-final guard evidence does not match prepared or staged contract",
+                ),
+            });
+        }
+        AbsentFinalAdoptionGuardRequest::try_new(
+            operation_id,
+            prepared.target_parent.path.clone(),
+            prepared.final_leaf.clone(),
+            adoption.target_parent_stable_id.clone(),
+            adoption.final_stable_id.clone(),
+            adoption.final_len,
+            *expected_content,
+        )
+        .map_err(|error| JournalError::InvalidRecoveryObservation {
+            operation_id,
+            reason: match error {
+                AbsentFinalNoReplaceRequestError::TargetLeafNotSingleCleanNormal => {
+                    String::from("absent-final guard final leaf is not clean")
+                }
+                AbsentFinalNoReplaceRequestError::StagingLeafNotSingleCleanNormal => {
+                    String::from("absent-final guard staging leaf is not applicable")
+                }
+            },
+        })
+    }
+
     /// Requalify an already-present transaction-owned final and durably retain only the exact
     /// capability-bound adoption evidence. This keeps the operation filesystem-staged and never
     /// performs publication or filesystem mutation.
@@ -4888,6 +5040,26 @@ mod tests {
             )
             .expect("admit real schema-v2 absent-final fixture");
         drop(target_parent);
+        (operation_id, final_path, staging_path)
+    }
+
+    #[cfg(unix)]
+    fn admit_real_absent_final_v2_adoption_fixture(
+        journal: &mut OperationJournalCoordinator,
+        directory: &tempfile::TempDir,
+    ) -> (Uuid, PathBuf, PathBuf) {
+        let (operation_id, final_path, staging_path) =
+            admit_real_absent_final_v2_fixture(journal, directory);
+        fs::rename(&staging_path, &final_path).expect("staging to final rename");
+        journal
+            .record_schema_v2_absent_final_recovery_observation(operation_id)
+            .expect("record exact recovery observation");
+        journal
+            .record_schema_v2_absent_final_transaction_owned_proof(operation_id)
+            .expect("record exact transaction-owned proof");
+        journal
+            .record_schema_v2_absent_final_adoption_evidence(operation_id)
+            .expect("record exact adoption evidence");
         (operation_id, final_path, staging_path)
     }
 
@@ -7543,6 +7715,207 @@ mod tests {
         assert_eq!(journal.store.capacity_claims(), &claims_before);
         assert_eq!(fs::read(&final_path).unwrap(), final_bytes_before);
         assert!(!staging_path.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn schema_v2_absent_final_adoption_guard_request_is_filesystem_free() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let directory = fixture_directory();
+        let mut journal = OperationJournalCoordinator::open(directory.path().to_path_buf())
+            .expect("open real fixture journal");
+        let (operation_id, final_path, staging_path) =
+            admit_real_absent_final_v2_adoption_fixture(&mut journal, &directory);
+
+        let record_before = journal.record(operation_id).unwrap().clone();
+        let path = journal.store.record_path(operation_id);
+        let bytes_before = fs::read(&path).expect("journal bytes before request construction");
+        let claims_before = journal.store.capacity_claims().clone();
+        fs::remove_file(&final_path).expect("remove final before request construction");
+
+        let request = journal
+            .prepare_schema_v2_absent_final_adoption_guard_request(operation_id)
+            .expect("durable request construction must not inspect the final");
+
+        assert_eq!(request.operation_id, operation_id);
+        assert_eq!(request.target_parent_path, final_path.parent().unwrap());
+        assert_eq!(request.final_leaf, PathBuf::from("final.wav"));
+        assert_eq!(journal.record(operation_id), Some(&record_before));
+        assert_eq!(fs::read(&path).unwrap(), bytes_before);
+        assert_eq!(journal.store.capacity_claims(), &claims_before);
+        assert!(!staging_path.exists());
+        assert!(!final_path.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn schema_v2_absent_final_adoption_guard_request_rejects_missing_or_mismatched_evidence() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        {
+            let directory = fixture_directory();
+            let mut journal = OperationJournalCoordinator::open(directory.path().to_path_buf())
+                .expect("open real fixture journal");
+            let (operation_id, final_path, staging_path) =
+                admit_real_absent_final_v2_fixture(&mut journal, &directory);
+            fs::rename(&staging_path, &final_path).expect("staging to final rename");
+            journal
+                .record_schema_v2_absent_final_recovery_observation(operation_id)
+                .expect("record exact recovery observation");
+            journal
+                .record_schema_v2_absent_final_transaction_owned_proof(operation_id)
+                .expect("record exact transaction-owned proof");
+
+            let record_before = journal.record(operation_id).unwrap().clone();
+            let path = journal.store.record_path(operation_id);
+            let bytes_before = fs::read(&path).expect("journal bytes before missing evidence");
+            let claims_before = journal.store.capacity_claims().clone();
+            let final_bytes_before = fs::read(&final_path).expect("final bytes before rejection");
+            let error = journal
+                .prepare_schema_v2_absent_final_adoption_guard_request(operation_id)
+                .err()
+                .expect("missing adoption evidence must reject guard request");
+
+            assert!(matches!(
+                error,
+                JournalError::InvalidRecoveryObservation { .. }
+            ));
+            assert_eq!(journal.record(operation_id), Some(&record_before));
+            assert_eq!(fs::read(&path).unwrap(), bytes_before);
+            assert_eq!(journal.store.capacity_claims(), &claims_before);
+            assert_eq!(fs::read(&final_path).unwrap(), final_bytes_before);
+        }
+
+        let directory = fixture_directory();
+        let mut journal = OperationJournalCoordinator::open(directory.path().to_path_buf())
+            .expect("open real fixture journal");
+        let (operation_id, final_path, staging_path) =
+            admit_real_absent_final_v2_adoption_fixture(&mut journal, &directory);
+        let mut invalid = journal.record(operation_id).unwrap().clone();
+        invalid
+            .absent_final_adoption_evidence
+            .as_mut()
+            .expect("durable adoption evidence")
+            .final_len += 1;
+        journal.store.records.insert(operation_id, invalid.clone());
+        let path = journal.store.record_path(operation_id);
+        let bytes_before = fs::read(&path).expect("journal bytes before mismatched evidence");
+        let claims_before = journal.store.capacity_claims().clone();
+        let final_bytes_before = fs::read(&final_path).expect("final bytes before rejection");
+        let error = journal
+            .prepare_schema_v2_absent_final_adoption_guard_request(operation_id)
+            .err()
+            .expect("mismatched adoption evidence must reject guard request");
+
+        assert!(matches!(
+            error,
+            JournalError::InvalidRecoveryObservation { .. }
+        ));
+        assert_eq!(journal.record(operation_id), Some(&invalid));
+        assert_eq!(fs::read(&path).unwrap(), bytes_before);
+        assert_eq!(journal.store.capacity_claims(), &claims_before);
+        assert_eq!(fs::read(&final_path).unwrap(), final_bytes_before);
+        assert!(!staging_path.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn schema_v2_absent_final_adoption_guard_is_adapter_bound_immutable_and_operation_fenced() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let directory = fixture_directory();
+        let mut journal = OperationJournalCoordinator::open(directory.path().to_path_buf())
+            .expect("open real fixture journal");
+        let (operation_id, final_path, staging_path) =
+            admit_real_absent_final_v2_adoption_fixture(&mut journal, &directory);
+
+        let record_before = journal.record(operation_id).unwrap().clone();
+        let path = journal.store.record_path(operation_id);
+        let bytes_before = fs::read(&path).expect("journal bytes before guard acquisition");
+        let claims_before = journal.store.capacity_claims().clone();
+        let final_bytes_before =
+            fs::read(&final_path).expect("final bytes before guard acquisition");
+        let request = journal
+            .prepare_schema_v2_absent_final_adoption_guard_request(operation_id)
+            .expect("prepare durable adoption guard request");
+        let guard = ProductionAbsentFinalAdoptionAdapter
+            .acquire_guard(request)
+            .expect("file-operation adapter acquires guard");
+
+        assert_eq!(guard.operation_id(), operation_id);
+        assert_eq!(
+            guard.revalidate_binding(Uuid::new_v4()),
+            Err(AbsentFinalAdoptionOutcome::OperationIdDrift)
+        );
+        assert!(guard.revalidate_binding(operation_id).is_ok());
+        assert_eq!(journal.record(operation_id), Some(&record_before));
+        assert_eq!(fs::read(&path).unwrap(), bytes_before);
+        assert_eq!(journal.store.capacity_claims(), &claims_before);
+        assert_eq!(fs::read(&final_path).unwrap(), final_bytes_before);
+        assert!(!staging_path.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn schema_v2_absent_final_adoption_guard_acquisition_rejects_root_drift() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let directory = fixture_directory();
+        let mut journal = OperationJournalCoordinator::open(directory.path().to_path_buf())
+            .expect("open real fixture journal");
+        let (operation_id, final_path, staging_path) =
+            admit_real_absent_final_v2_adoption_fixture(&mut journal, &directory);
+        let request = journal
+            .prepare_schema_v2_absent_final_adoption_guard_request(operation_id)
+            .expect("prepare durable adoption guard request");
+        let target_parent = final_path.parent().unwrap().to_path_buf();
+        let moved_parent = target_parent.with_file_name("moved-target-parent");
+        fs::rename(&target_parent, &moved_parent).expect("move target parent");
+        fs::create_dir(&target_parent).expect("replacement target parent");
+
+        let Err(outcome) = ProductionAbsentFinalAdoptionAdapter.acquire_guard(request) else {
+            panic!("replaced root path must not acquire a guard");
+        };
+        assert_eq!(outcome, AbsentFinalAdoptionOutcome::ParentIdentityDrift);
+        assert_eq!(
+            fs::read(moved_parent.join("final.wav")).unwrap(),
+            b"real staged bytes"
+        );
+        assert!(!final_path.exists());
+        assert!(!staging_path.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn schema_v2_absent_final_adoption_guard_revalidates_retained_parent_and_final() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let directory = fixture_directory();
+        let mut journal = OperationJournalCoordinator::open(directory.path().to_path_buf())
+            .expect("open real fixture journal");
+        let (operation_id, final_path, staging_path) =
+            admit_real_absent_final_v2_adoption_fixture(&mut journal, &directory);
+        let request = journal
+            .prepare_schema_v2_absent_final_adoption_guard_request(operation_id)
+            .expect("prepare durable adoption guard request");
+        let guard = ProductionAbsentFinalAdoptionAdapter
+            .acquire_guard(request)
+            .expect("file-operation adapter acquires guard");
+        let target_parent = final_path.parent().unwrap().to_path_buf();
+        let moved_parent = target_parent.with_file_name("moved-target-parent");
+        fs::rename(&target_parent, &moved_parent).expect("move target parent");
+        fs::create_dir(&target_parent).expect("replacement target parent");
+
+        assert!(guard.revalidate_binding(operation_id).is_ok());
+        assert_eq!(
+            fs::read(moved_parent.join("final.wav")).unwrap(),
+            b"real staged bytes"
+        );
+        assert!(!final_path.exists());
+        assert!(!staging_path.exists());
+
+        fs::write(moved_parent.join("final.wav"), b"real staged byte!")
+            .expect("change retained final content");
+        assert_eq!(
+            guard.revalidate_binding(operation_id),
+            Err(AbsentFinalAdoptionOutcome::FinalContentDrift)
+        );
     }
 
     #[cfg(unix)]
