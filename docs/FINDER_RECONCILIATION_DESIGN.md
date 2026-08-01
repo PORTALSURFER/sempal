@@ -281,9 +281,10 @@ cannot mutate the new generation.
 
 Every cancellation, rebind, stale-generation rejection, and queue eviction must
 retain uncertainty for its affected source/root and sequence interval. That
-uncertainty remains actionable until either the source writer returns a committed
-reconciliation acknowledgement covering it or an explicit authoritative
-source/root audit completes. Cancellation completion, rebinding, dropping a
+uncertainty remains actionable until the source writer returns a committed
+authoritative reconciliation acknowledgement whose committed boundary covers it,
+including for an explicit authoritative source/root audit; audit completion alone
+does not clear it. Cancellation completion, rebinding, dropping a
 stale record, draining a queue, receiving a projection message, or receiving a
 checkpoint request does not clear it. A restart with no replayable cursor is
 `Proof::Unproven`, routes through `WatcherAuthorityUnproven`, retains the
@@ -332,7 +333,7 @@ the existing contract.
 | --- | --- | --- |
 | Contract | Check provenance/proof separation, field names, scope meanings, workflow mapping, and compatibility seam | Review of this design and `git diff --check` |
 | Model/normalizer library (first PR) | Unit-test bounded raw envelopes, lossless/syntactic normalization, no I/O/type proof, proof non-escalation, and widening | Deterministic scope/provenance/proof assertions with no admission/lifecycle, adapter, or downstream dependency |
-| Admission/lifecycle library (second PR; required gate before adapters) | With synthetic envelopes/acknowledgements, deterministically test root mismatch, stale/duplicate delivery, per-source/global budgets and fairness, cancellation/rebind/restart, eviction/overflow/error, and retained uncertainty | No live/replay adapter proceeds until this gate passes; no cross-root/generation delivery or false checkpoint; every uncertainty survives until committed reconciliation acknowledgement or explicit audit |
+| Admission/lifecycle library (second PR; required gate before adapters) | With synthetic envelopes/acknowledgements, deterministically test root mismatch, stale/duplicate delivery, per-source/global budgets and fairness, cancellation/rebind/restart, eviction/overflow/error, and retained uncertainty | No live/replay adapter proceeds until this gate passes; no cross-root/generation delivery or false checkpoint; every uncertainty survives until a committed authoritative reconciliation acknowledgement whose committed boundary covers it; explicit authoritative audit completion alone is insufficient |
 | Live notify | In the third adapter PR, drive representative macOS live notifications through the existing seam | `Proof::Unproven`, `WatcherAuthorityUnproven`, last-good retention, no targeted authority/checkpoint |
 | Replay | In the third adapter PR, replay ordered/coalesced FSEvents batches, including an unavailable or gapped cursor | Only valid contiguous replay attaches proof; gaps use audit and last-good behavior |
 | Commit/recovery | In the fourth downstream integration PR, interrupt before and after writer/projection/checkpoint boundaries, then restart | Idempotent recovery from the last committed boundary |
