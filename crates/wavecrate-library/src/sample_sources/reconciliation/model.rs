@@ -147,6 +147,8 @@ impl std::error::Error for RawEnvelopeError {}
 pub enum RootRelativePathError {
     /// The path has no native spelling.
     Empty,
+    /// The path's native spelling contains an embedded NUL byte.
+    EmbeddedNul,
     /// The path is absolute.
     Absolute,
     /// The path is rooted without a relative root identity.
@@ -163,6 +165,7 @@ impl fmt::Display for RootRelativePathError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let message = match self {
             Self::Empty => "path is empty",
+            Self::EmbeddedNul => "path contains an embedded NUL byte",
             Self::Absolute => "path is absolute",
             Self::Rooted => "path is rooted",
             Self::ParentTraversal => "path contains parent traversal",
@@ -777,6 +780,24 @@ impl RawObservationLimits {
 }
 
 /// A bounded, ordered, non-empty raw observation envelope.
+///
+/// External consumers construct unproven envelopes through [`Self::try_new`].
+///
+/// ```compile_fail
+/// # use wavecrate_library::sample_sources::reconciliation::{
+/// #     Proof, RawObservation, RawObservationEnvelope, RawObservationLimits,
+/// #     RawObservationProvenance,
+/// # };
+/// # let provenance: RawObservationProvenance = unimplemented!();
+/// # let observations: Vec<RawObservation> = Vec::new();
+/// # let limits: RawObservationLimits = unimplemented!();
+/// let _ = RawObservationEnvelope::try_new_with_proof(
+///     provenance,
+///     observations,
+///     limits,
+///     Proof::Unproven,
+/// );
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RawObservationEnvelope {
     provenance: RawObservationProvenance,
@@ -797,7 +818,9 @@ impl RawObservationEnvelope {
     }
 
     /// Admit an envelope carrying a checked proof without changing the raw evidence.
-    pub fn try_new_with_proof(
+    // This module-private seam is reserved for the later library-owned replay authority.
+    #[allow(dead_code)]
+    pub(in crate::sample_sources::reconciliation) fn try_new_with_proof(
         provenance: RawObservationProvenance,
         observations: Vec<RawObservation>,
         limits: RawObservationLimits,
@@ -902,7 +925,9 @@ pub struct DurablePriorAcknowledgement {
 
 impl DurablePriorAcknowledgement {
     /// Construct an acknowledgement that has already been durably recorded by the owner.
-    pub const fn new(sequence: u64) -> Self {
+    // This module-private seam is reserved for the later library-owned replay authority.
+    #[allow(dead_code)]
+    pub(in crate::sample_sources::reconciliation) const fn new(sequence: u64) -> Self {
         Self { sequence }
     }
 
@@ -922,7 +947,9 @@ pub struct ReplayCoverage {
 
 impl ReplayCoverage {
     /// Construct a replay interval and retain whether the adapter proved contiguity.
-    pub const fn try_new(
+    // This module-private seam is reserved for the later library-owned replay authority.
+    #[allow(dead_code)]
+    pub(in crate::sample_sources::reconciliation) const fn try_new(
         after_sequence: u64,
         through_sequence: u64,
         contiguous: bool,
@@ -966,7 +993,9 @@ pub struct WatcherContinuityProof {
 
 impl WatcherContinuityProof {
     /// Construct a proof bound to provenance, durable acknowledgement, and contiguous coverage.
-    pub fn try_new(
+    // This module-private seam is reserved for the later library-owned replay authority.
+    #[allow(dead_code)]
+    pub(in crate::sample_sources::reconciliation) fn try_new(
         provenance: &RawObservationProvenance,
         prior_acknowledgement: Option<DurablePriorAcknowledgement>,
         replay_coverage: Option<ReplayCoverage>,
@@ -1070,6 +1099,9 @@ impl RootRelativePath {
     pub fn try_from_path(path: PathBuf) -> Result<Self, RootRelativePathError> {
         if path.as_os_str().is_empty() {
             return Err(RootRelativePathError::Empty);
+        }
+        if path.as_os_str().as_encoded_bytes().contains(&0) {
+            return Err(RootRelativePathError::EmbeddedNul);
         }
 
         let mut has_normal_component = false;

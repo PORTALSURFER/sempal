@@ -206,6 +206,62 @@ fn root_relative_paths_preserve_non_utf8_native_spelling() {
 }
 
 #[test]
+fn root_relative_paths_reject_embedded_nul_before_component_validation() {
+    assert_eq!(
+        RootRelativePath::try_from_path(PathBuf::from("../embedded\0nul")),
+        Err(RootRelativePathError::EmbeddedNul)
+    );
+    assert_eq!(
+        RootRelativePathError::EmbeddedNul.to_string(),
+        "path contains an embedded NUL byte"
+    );
+}
+
+#[test]
+fn embedded_nul_create_and_modify_evidence_is_retained_as_source_audit() {
+    let embedded_nul_path = PathBuf::from("embedded\0nul");
+    let observations = vec![
+        RawObservation::new(
+            RawEventKind::Create,
+            vec![RawObservedPath::new(
+                embedded_nul_path.clone(),
+                RawPathRole::Subject,
+            )],
+        ),
+        RawObservation::new(
+            RawEventKind::Modify,
+            vec![RawObservedPath::new(
+                embedded_nul_path,
+                RawPathRole::Subject,
+            )],
+        ),
+    ];
+    let raw = RawObservationEnvelope::try_new(
+        provenance("source-a", None, None, None, None),
+        observations.clone(),
+        limits(),
+    )
+    .expect("raw embedded-NUL evidence is admissible");
+
+    let normalized = normalize_observation(raw.clone());
+
+    assert_eq!(normalized.scopes().len(), observations.len());
+    assert!(normalized.scopes().iter().all(|scope| {
+        scope.kind() == ReconciliationScopeKind::SourceAudit
+            && scope.path().is_none()
+            && scope.reason()
+                == NormalizationReason::InvalidPath {
+                    error: RootRelativePathError::EmbeddedNul,
+                }
+    }));
+    assert_eq!(normalized.envelope(), &raw);
+    assert_eq!(
+        normalized.envelope().observations(),
+        observations.as_slice()
+    );
+}
+
+#[test]
 fn create_modify_directory_empty_folder_symlink_and_duplicates_keep_order() {
     let result = normalized(vec![RawObservation::new(
         RawEventKind::Create,
