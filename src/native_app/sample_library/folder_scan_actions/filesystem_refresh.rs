@@ -71,6 +71,8 @@ impl NativeAppState {
             overflowed,
             source_root_available,
             lifecycle_generation,
+            journal_checkpoint_event_id,
+            watcher_continuity_proof.clone(),
         ) {
             SourceFilesystemChangePlan::IgnoredSourceMissing { source_id } => {
                 self.background
@@ -438,6 +440,22 @@ impl NativeAppState {
                 );
                 continue;
             }
+            if pending.audit_required {
+                self.background
+                    .source_processing
+                    .request_source_manifest_audit(
+                        &pending.source_id,
+                        "deferred_watcher_replay_continuity_conflict",
+                    );
+                tracing::warn!(
+                    target: "wavecrate::source_processing",
+                    source_id = pending.source_id,
+                    queue_age_ms = pending.enqueued_at.elapsed().as_millis(),
+                    outcome = "targeted_sync_audit_required",
+                    "Queued watcher replay evidence could not be preserved safely"
+                );
+                break;
+            }
             let changed_count = pending.paths.len();
             tracing::info!(
                 target: "wavecrate::source_processing",
@@ -452,8 +470,8 @@ impl NativeAppState {
                 pending.source_id,
                 pending.paths,
                 changed_count,
-                None,
-                None,
+                pending.journal_checkpoint_event_id,
+                pending.watcher_continuity_proof,
                 context,
             );
             break;
@@ -599,6 +617,8 @@ impl NativeAppState {
                 false,
                 true,
                 Some(expected_lifecycle_generation),
+                journal_checkpoint_event_id,
+                watcher_continuity_proof.clone(),
             );
             return;
         }

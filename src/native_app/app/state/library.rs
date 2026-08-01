@@ -6,7 +6,9 @@ use crate::native_app::sample_library::folder_browser::{
     scan::{FolderScanDiscoveryBatch, FolderScanRequest, FolderScanResult},
 };
 use crate::native_app::sample_library::similarity_artifacts::SimilarityArtifactRefreshState;
-use crate::native_app::sample_library::source_watcher::GuiSourceWatcherHandle;
+use crate::native_app::sample_library::source_watcher::{
+    GuiSourceWatcherHandle, WatcherContinuityProof,
+};
 
 use super::{
     PendingSourceRefresh, SourceFilesystemChangePlan, SourceRefreshCause, SourceRefreshRequest,
@@ -156,6 +158,8 @@ impl LibraryAppState {
         overflowed: bool,
         source_root_available: bool,
         lifecycle_generation: Option<u64>,
+        journal_checkpoint_event_id: Option<u64>,
+        watcher_continuity_proof: Option<WatcherContinuityProof>,
     ) -> SourceFilesystemChangePlan {
         self.source_scan.plan_filesystem_change_for_generation(
             &mut self.folder_browser,
@@ -164,6 +168,8 @@ impl LibraryAppState {
             overflowed,
             source_root_available,
             lifecycle_generation,
+            journal_checkpoint_event_id,
+            watcher_continuity_proof,
         )
     }
 

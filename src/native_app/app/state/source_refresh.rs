@@ -1,5 +1,7 @@
 use std::{collections::BTreeSet, path::PathBuf, time::Instant};
 
+use crate::native_app::sample_library::source_watcher::WatcherContinuityProof;
+
 pub(super) struct QueuedSourceRefresh {
     pub(super) source_id: String,
     pub(super) selection_requested: bool,
@@ -13,6 +15,9 @@ pub(super) struct QueuedTargetedSourceSync {
     pub(super) source_id: String,
     pub(super) paths: BTreeSet<PathBuf>,
     pub(super) lifecycle_generation: Option<u64>,
+    pub(super) journal_checkpoint_event_id: Option<u64>,
+    pub(super) watcher_continuity_proof: Option<WatcherContinuityProof>,
+    pub(super) audit_required: bool,
     pub(super) enqueued_at: Instant,
 }
 
@@ -82,5 +87,8 @@ pub(in crate::native_app) struct PendingTargetedSourceSync {
     pub(in crate::native_app) source_id: String,
     pub(in crate::native_app) paths: Vec<PathBuf>,
     pub(in crate::native_app) lifecycle_generation: Option<u64>,
+    pub(in crate::native_app) journal_checkpoint_event_id: Option<u64>,
+    pub(in crate::native_app) watcher_continuity_proof: Option<WatcherContinuityProof>,
+    pub(in crate::native_app) audit_required: bool,
     pub(in crate::native_app) enqueued_at: Instant,
 }

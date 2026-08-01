@@ -4,11 +4,24 @@ use super::*;
 use crate::native_app::sample_library::folder_browser::scan::{
     FolderScanProgress, FolderScanRequest, scan_source_with_progress,
 };
+use crate::native_app::sample_library::source_watcher::{WatcherBackend, WatcherContinuityProof};
 
 fn temp_dir_with_wav() -> tempfile::TempDir {
     let root = tempfile::tempdir().expect("source root");
     fs::write(root.path().join("sample.wav"), [0_u8; 8]).expect("write sample");
     root
+}
+
+fn replay_proof(end_event_id: u64) -> WatcherContinuityProof {
+    WatcherContinuityProof {
+        root_identity: String::from("root-a"),
+        backend: WatcherBackend::Fsevents,
+        backend_device: 10,
+        watcher_generation: 4,
+        replay_coverage_start_event_id: end_event_id.saturating_sub(1),
+        replay_coverage_end_event_id: end_event_id,
+        acknowledged_end_event_id: end_event_id,
+    }
 }
 
 #[test]
@@ -1114,13 +1127,22 @@ fn watcher_paths_arriving_during_full_scan_coalesce_for_one_followup_sync() {
     let source_id = request.source_id.clone();
     workflow.start_scan(&request);
 
-    for paths in [
+    let proof = replay_proof(11);
+    for (index, paths) in [
         vec![PathBuf::from("sample.wav")],
         vec![
             PathBuf::from("sample.wav"),
             PathBuf::from("nested/extra.wav"),
         ],
-    ] {
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let (journal_checkpoint_event_id, watcher_continuity_proof) = if index == 0 {
+            (Some(11), Some(proof.clone()))
+        } else {
+            (None, None)
+        };
         assert!(matches!(
             workflow.plan_filesystem_change_for_generation(
                 &mut browser,
@@ -1129,6 +1151,8 @@ fn watcher_paths_arriving_during_full_scan_coalesce_for_one_followup_sync() {
                 false,
                 true,
                 Some(7),
+                journal_checkpoint_event_id,
+                watcher_continuity_proof,
             ),
             SourceFilesystemChangePlan::DeferredAlreadyRunning { .. }
         ));
@@ -1145,6 +1169,9 @@ fn watcher_paths_arriving_during_full_scan_coalesce_for_one_followup_sync() {
         .expect("one targeted followup");
     assert_eq!(pending.source_id, source_id);
     assert_eq!(pending.lifecycle_generation, Some(7));
+    assert_eq!(pending.journal_checkpoint_event_id, Some(11));
+    assert_eq!(pending.watcher_continuity_proof, Some(proof));
+    assert!(!pending.audit_required);
     assert_eq!(
         pending.paths,
         vec![
@@ -1153,6 +1180,83 @@ fn watcher_paths_arriving_during_full_scan_coalesce_for_one_followup_sync() {
         ]
     );
     assert!(workflow.next_pending_targeted_sync().is_none());
+}
+
+#[test]
+fn replay_watcher_paths_arriving_during_targeted_sync_retain_boundary() {
+    let root = temp_dir_with_wav();
+    let mut browser = FolderBrowserState::load_default();
+    let mut workflow = SourceScanWorkflow::new();
+    let request = workflow
+        .begin_add_source_path(&mut browser, root.path().to_path_buf(), 127)
+        .expect("source scan");
+    let source_id = request.source_id.clone();
+    workflow.start_scan(&request);
+    let result = scan_source_with_progress(request, |_| {}, |_| {});
+    workflow.finish_scan(&mut browser, result);
+    assert!(workflow.mark_targeted_sync_started(&source_id, 9));
+
+    let proof = replay_proof(21);
+    assert!(matches!(
+        workflow.plan_filesystem_change_for_generation(
+            &mut browser,
+            source_id.clone(),
+            &[PathBuf::from("sample.wav")],
+            false,
+            true,
+            Some(9),
+            Some(21),
+            Some(proof.clone()),
+        ),
+        SourceFilesystemChangePlan::DeferredAlreadyRunning { .. }
+    ));
+
+    workflow.mark_targeted_sync_finished(&source_id, 9);
+    let pending = workflow
+        .next_pending_targeted_sync()
+        .expect("deferred replay sync");
+    assert_eq!(pending.journal_checkpoint_event_id, Some(21));
+    assert_eq!(pending.watcher_continuity_proof, Some(proof));
+    assert!(!pending.audit_required);
+}
+
+#[test]
+fn incompatible_replay_boundaries_arriving_during_targeted_sync_require_audit() {
+    let root = temp_dir_with_wav();
+    let mut browser = FolderBrowserState::load_default();
+    let mut workflow = SourceScanWorkflow::new();
+    let request = workflow
+        .begin_add_source_path(&mut browser, root.path().to_path_buf(), 128)
+        .expect("source scan");
+    let source_id = request.source_id.clone();
+    workflow.start_scan(&request);
+    let result = scan_source_with_progress(request, |_| {}, |_| {});
+    workflow.finish_scan(&mut browser, result);
+    assert!(workflow.mark_targeted_sync_started(&source_id, 10));
+
+    for (event_id, path) in [(31, "first.wav"), (32, "second.wav")] {
+        assert!(matches!(
+            workflow.plan_filesystem_change_for_generation(
+                &mut browser,
+                source_id.clone(),
+                &[PathBuf::from(path)],
+                false,
+                true,
+                Some(10),
+                Some(event_id),
+                Some(replay_proof(event_id)),
+            ),
+            SourceFilesystemChangePlan::DeferredAlreadyRunning { .. }
+        ));
+    }
+
+    workflow.mark_targeted_sync_finished(&source_id, 10);
+    let pending = workflow
+        .next_pending_targeted_sync()
+        .expect("deferred replay sync");
+    assert!(pending.audit_required);
+    assert_eq!(pending.journal_checkpoint_event_id, None);
+    assert_eq!(pending.watcher_continuity_proof, None);
 }
 
 #[test]
@@ -1181,6 +1285,8 @@ fn pending_full_scan_subsumes_watcher_paths_before_execution() {
             false,
             true,
             Some(9),
+            None,
+            None,
         ),
         SourceFilesystemChangePlan::DeferredAlreadyRunning { .. }
     ));
@@ -1209,6 +1315,8 @@ fn full_fallback_waits_for_active_targeted_sync_and_supersedes_queued_paths() {
             false,
             true,
             Some(11),
+            None,
+            None,
         ),
         SourceFilesystemChangePlan::DeferredAlreadyRunning { .. }
     ));
@@ -1250,6 +1358,8 @@ fn source_retirement_purges_targeted_sync_causal_state() {
             false,
             true,
             Some(13),
+            None,
+            None,
         ),
         SourceFilesystemChangePlan::DeferredAlreadyRunning { .. }
     ));

@@ -16,6 +16,7 @@ use crate::native_app::sample_library::folder_browser::{
         FolderScanResult,
     },
 };
+use crate::native_app::sample_library::source_watcher::{WatcherBackend, WatcherContinuityProof};
 use wavecrate::sample_sources::scanner::CommittedSourceDelta;
 
 #[cfg(test)]
@@ -378,6 +379,8 @@ impl SourceScanWorkflow {
         overflowed: bool,
         source_root_available: bool,
         lifecycle_generation: Option<u64>,
+        journal_checkpoint_event_id: Option<u64>,
+        watcher_continuity_proof: Option<WatcherContinuityProof>,
     ) -> SourceFilesystemChangePlan {
         let Some(source_missing) =
             browser.apply_observed_source_availability(&source_id, source_root_available)
@@ -401,6 +404,15 @@ impl SourceScanWorkflow {
                 .iter()
                 .any(|pending| pending.source_id == source_id);
             if full_scan_pending_for_source && !full_scan_active_for_source {
+                if journal_checkpoint_event_id.is_some() || watcher_continuity_proof.is_some() {
+                    self.queue_targeted_sync(
+                        source_id.clone(),
+                        paths,
+                        lifecycle_generation,
+                        journal_checkpoint_event_id,
+                        watcher_continuity_proof,
+                    );
+                }
                 tracing::info!(
                     target: "wavecrate::source_processing",
                     source_id,
@@ -411,7 +423,13 @@ impl SourceScanWorkflow {
                 return SourceFilesystemChangePlan::DeferredAlreadyRunning { source_id };
             }
             if full_scan_active_for_source || self.active_targeted_syncs.contains_key(&source_id) {
-                self.queue_targeted_sync(source_id.clone(), paths, lifecycle_generation);
+                self.queue_targeted_sync(
+                    source_id.clone(),
+                    paths,
+                    lifecycle_generation,
+                    journal_checkpoint_event_id,
+                    watcher_continuity_proof,
+                );
                 return SourceFilesystemChangePlan::DeferredAlreadyRunning { source_id };
             }
             return SourceFilesystemChangePlan::SyncPaths {
@@ -482,6 +500,9 @@ impl SourceScanWorkflow {
             source_id: pending.source_id,
             paths: pending.paths.into_iter().collect(),
             lifecycle_generation: pending.lifecycle_generation,
+            journal_checkpoint_event_id: pending.journal_checkpoint_event_id,
+            watcher_continuity_proof: pending.watcher_continuity_proof,
+            audit_required: pending.audit_required,
             enqueued_at: pending.enqueued_at,
         })
     }
@@ -501,6 +522,8 @@ impl SourceScanWorkflow {
             paths,
             overflowed,
             source_root_available,
+            None,
+            None,
             None,
         )
     }
@@ -741,6 +764,8 @@ impl SourceScanWorkflow {
         source_id: String,
         paths: &[PathBuf],
         lifecycle_generation: Option<u64>,
+        journal_checkpoint_event_id: Option<u64>,
+        watcher_continuity_proof: Option<WatcherContinuityProof>,
     ) {
         let pending = self
             .pending_targeted_syncs
@@ -749,14 +774,56 @@ impl SourceScanWorkflow {
                 source_id: source_id.clone(),
                 paths: BTreeSet::new(),
                 lifecycle_generation,
+                journal_checkpoint_event_id: None,
+                watcher_continuity_proof: None,
+                audit_required: false,
                 enqueued_at: Instant::now(),
             });
         if pending.lifecycle_generation != lifecycle_generation {
             pending.paths.clear();
             pending.lifecycle_generation = lifecycle_generation;
+            pending.journal_checkpoint_event_id = None;
+            pending.watcher_continuity_proof = None;
+            pending.audit_required = false;
             pending.enqueued_at = Instant::now();
         }
         pending.paths.extend(paths.iter().cloned());
+        if !pending.audit_required {
+            let incoming_boundary_is_valid = match (
+                journal_checkpoint_event_id,
+                watcher_continuity_proof.as_ref(),
+            ) {
+                (None, None) => true,
+                (Some(event_id), Some(proof)) => {
+                    !proof.root_identity.is_empty()
+                        && proof.backend == WatcherBackend::Fsevents
+                        && proof.backend_device != 0
+                        && proof.watcher_generation != 0
+                        && proof.replay_coverage_start_event_id
+                            <= proof.replay_coverage_end_event_id
+                        && proof.replay_coverage_end_event_id == proof.acknowledged_end_event_id
+                        && proof.acknowledged_end_event_id == event_id
+                }
+                _ => false,
+            };
+            if !incoming_boundary_is_valid {
+                pending.audit_required = true;
+                pending.journal_checkpoint_event_id = None;
+                pending.watcher_continuity_proof = None;
+            } else if let Some(event_id) = journal_checkpoint_event_id {
+                let boundary_matches = pending.journal_checkpoint_event_id == Some(event_id)
+                    && pending.watcher_continuity_proof.as_ref()
+                        == watcher_continuity_proof.as_ref();
+                if pending.journal_checkpoint_event_id.is_none() {
+                    pending.journal_checkpoint_event_id = Some(event_id);
+                    pending.watcher_continuity_proof = watcher_continuity_proof;
+                } else if !boundary_matches {
+                    pending.audit_required = true;
+                    pending.journal_checkpoint_event_id = None;
+                    pending.watcher_continuity_proof = None;
+                }
+            }
+        }
         tracing::info!(
             target: "wavecrate::source_processing",
             source_id,
