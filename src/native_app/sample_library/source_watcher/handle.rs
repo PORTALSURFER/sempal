@@ -288,12 +288,16 @@ impl GuiSourceWatcherHandle {
     pub(in crate::native_app) fn finish_journal_barrier_audit(
         &self,
         source_id: String,
+        lifecycle_generation: u64,
+        source_revision: Option<u64>,
         complete: bool,
     ) {
         let _ = self
             .command_tx
             .send(GuiSourceWatchCommand::FinishJournalBarrierAudit {
                 source_id,
+                lifecycle_generation,
+                source_revision,
                 complete,
             });
     }
@@ -369,6 +373,8 @@ enum GuiSourceWatchCommand {
     },
     FinishJournalBarrierAudit {
         source_id: String,
+        lifecycle_generation: u64,
+        source_revision: Option<u64>,
         complete: bool,
     },
     #[cfg(test)]
@@ -402,7 +408,7 @@ fn run_source_watcher(
     let mut restart_delay = WATCHER_RESTART_MIN;
     let mut next_root_refresh = Instant::now();
     let mut root_identity_recovery = RootIdentityRecovery::default();
-    let mut audit_barriers = HashMap::new();
+    let mut audit_barriers = HashMap::<String, journal::AuditBarrier>::new();
     let mut deferred_audit_barrier_sources = HashSet::new();
     let mut watcher_has_been_ready = false;
     let mut watcher_unavailable_reported = false;
@@ -438,11 +444,27 @@ fn run_source_watcher(
             }
             Ok(GuiSourceWatchCommand::FinishJournalBarrierAudit {
                 source_id,
+                lifecycle_generation,
+                source_revision,
                 complete,
             }) => {
                 if complete {
-                    if let Some(barrier) = audit_barriers.remove(&source_id) {
-                        journal::commit_audit_barrier(&state.sources, &source_id, barrier);
+                    if let Some(source_revision) = source_revision {
+                        if let Some(barrier) = audit_barriers.remove(&source_id) {
+                            let checkpoint = barrier.into_revision_bound(
+                                source_id.clone(),
+                                lifecycle_generation,
+                                source_revision,
+                            );
+                            let _ = message_tx
+                                .send(GuiMessage::SourceWatcherCheckpointReady(checkpoint));
+                        }
+                    } else {
+                        tracing::warn!(
+                            source_id,
+                            lifecycle_generation,
+                            "Completed source audit did not provide a committed revision for its watcher barrier"
+                        );
                     }
                 }
                 if deferred_audit_barrier_sources.remove(&source_id) {

@@ -42,6 +42,7 @@ use crate::native_app::sample_library::folder_scan_actions::FolderScanMaintenanc
 use crate::native_app::sample_library::native_file_drop_actions::PreparedFileMutationChange;
 use crate::native_app::sample_library::native_file_open_actions::NativeAudioDocumentOpenValidation;
 use crate::native_app::sample_library::similarity_scores::SimilarityScoresResult;
+use crate::native_app::sample_library::source_watcher::RevisionBoundCheckpoint;
 use crate::native_app::sample_library::trash_actions::movement::TrashMoveOutcome;
 use crate::native_app::transaction_history::{HistoryFileIoCommand, HistoryFileIoResult};
 use crate::native_app::waveform::{PlaymarkLabelMessage, WaveformInteraction};
@@ -104,6 +105,9 @@ pub(in crate::native_app) enum GuiMessage {
         source_id: String,
         reason: &'static str,
     },
+    /// A completed fallback audit produced a barrier that must be persisted by the source
+    /// processing owner. This message carries only typed in-memory evidence; it performs no I/O.
+    SourceWatcherCheckpointReady(RevisionBoundCheckpoint),
     SourceFilesystemSyncFinished(SourceFilesystemSyncResult),
     CommittedFileMutationRequested(FileMutationWork),
     CommittedFileMutationFinished(FileMutationOutcome),
@@ -119,6 +123,7 @@ pub(in crate::native_app) enum GuiMessage {
     SourceManifestAuditFinished {
         source_id: String,
         lifecycle_generation: u64,
+        source_revision: Option<u64>,
         complete: bool,
     },
     NormalizationProgress(NormalizationProgress),

@@ -128,6 +128,7 @@ pub(super) fn execute_candidate_with_presentation(
                                 candidate.source.id.as_str(),
                                 lifecycle_generation,
                             ),
+                            source_revision: None,
                             complete: false,
                         });
                         return Err(error.to_string());
@@ -181,6 +182,7 @@ pub(super) fn execute_candidate_with_presentation(
                 && crate::native_app::source_processing::manifest_delta_requires_browser_refresh(
                     &outcome.committed_delta,
                 );
+            let committed_source_revision = outcome.committed_delta.revision;
             let audit_published = publish_event(SourceProcessingEvent::ManifestAuditCommitted {
                 lifecycle: SourceProcessingLifecycle::new(
                     candidate.source.id.as_str(),
@@ -196,6 +198,7 @@ pub(super) fn execute_candidate_with_presentation(
                     candidate.source.id.as_str(),
                     lifecycle_generation,
                 ),
+                source_revision: Some(committed_source_revision),
                 complete: manifest_complete,
             });
             if let Some(error) = content_incomplete_error {

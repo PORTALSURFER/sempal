@@ -57,10 +57,12 @@ fn map_event(event: SourceProcessingEvent) -> GuiMessage {
         },
         SourceProcessingEvent::ManifestAuditFinished {
             lifecycle,
+            source_revision,
             complete,
         } => GuiMessage::SourceManifestAuditFinished {
             source_id: lifecycle.source_id,
             lifecycle_generation: lifecycle.generation,
+            source_revision,
             complete,
         },
         SourceProcessingEvent::Completed => {
@@ -450,6 +452,20 @@ mod tests {
                 source_id,
                 lifecycle_generation: 23,
                 ..
+            } if source_id == "source"
+        ));
+
+        assert!(matches!(
+            map_event(SourceProcessingEvent::ManifestAuditFinished {
+                lifecycle: SourceProcessingLifecycle::new("source", 23),
+                source_revision: Some(41),
+                complete: true,
+            }),
+            GuiMessage::SourceManifestAuditFinished {
+                source_id,
+                lifecycle_generation: 23,
+                source_revision: Some(41),
+                complete: true,
             } if source_id == "source"
         ));
     }
