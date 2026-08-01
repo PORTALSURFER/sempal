@@ -16,7 +16,9 @@ use crate::native_app::sample_library::folder_browser::{
         FolderScanResult,
     },
 };
-use crate::native_app::sample_library::source_watcher::{WatcherBackend, WatcherContinuityProof};
+use crate::native_app::sample_library::source_watcher::{
+    WatcherContinuityProof, watcher_replay_evidence_is_well_formed,
+};
 use wavecrate::sample_sources::scanner::CommittedSourceDelta;
 
 #[cfg(test)]
@@ -46,6 +48,7 @@ pub(in crate::native_app) enum SourceFilesystemChangePlan {
     },
     QueueRefresh {
         source_id: String,
+        cause: SourceRefreshCause,
     },
 }
 
@@ -395,6 +398,10 @@ impl SourceScanWorkflow {
             return SourceFilesystemChangePlan::IgnoredSourceMissing { source_id };
         }
         if !overflowed && !paths.is_empty() {
+            let watcher_replay_proven = watcher_replay_evidence_is_well_formed(
+                journal_checkpoint_event_id,
+                watcher_continuity_proof.as_ref(),
+            );
             let full_scan_active_for_source = self
                 .progress
                 .as_ref()
@@ -404,13 +411,19 @@ impl SourceScanWorkflow {
                 .iter()
                 .any(|pending| pending.source_id == source_id);
             if full_scan_pending_for_source && !full_scan_active_for_source {
-                if journal_checkpoint_event_id.is_some() || watcher_continuity_proof.is_some() {
+                if watcher_replay_proven {
                     self.queue_targeted_sync(
                         source_id.clone(),
                         paths,
                         lifecycle_generation,
                         journal_checkpoint_event_id,
                         watcher_continuity_proof,
+                    );
+                } else {
+                    self.queue_required_refresh_with_context(
+                        source_id.clone(),
+                        SourceRefreshCause::WatcherAuthorityUnproven,
+                        lifecycle_generation,
                     );
                 }
                 tracing::info!(
@@ -432,6 +445,12 @@ impl SourceScanWorkflow {
                 );
                 return SourceFilesystemChangePlan::DeferredAlreadyRunning { source_id };
             }
+            if !watcher_replay_proven {
+                return SourceFilesystemChangePlan::QueueRefresh {
+                    source_id,
+                    cause: SourceRefreshCause::WatcherAuthorityUnproven,
+                };
+            }
             return SourceFilesystemChangePlan::SyncPaths {
                 source_id,
                 changed_count: paths.len(),
@@ -446,7 +465,10 @@ impl SourceScanWorkflow {
             );
             return SourceFilesystemChangePlan::DeferredAlreadyRunning { source_id };
         }
-        SourceFilesystemChangePlan::QueueRefresh { source_id }
+        SourceFilesystemChangePlan::QueueRefresh {
+            source_id,
+            cause: SourceRefreshCause::WatcherOverflow,
+        }
     }
 
     pub(in crate::native_app) fn mark_targeted_sync_started(
@@ -791,36 +813,15 @@ impl SourceScanWorkflow {
             pending.enqueued_at = Instant::now();
         }
         pending.paths.extend(paths.iter().cloned());
+        if journal_checkpoint_event_id.is_none() || watcher_continuity_proof.is_none() {
+            pending.proofless_evidence_seen = true;
+        }
         if !pending.audit_required {
-            let incoming_boundary_is_valid = match (
+            let incoming_boundary_is_valid = watcher_replay_evidence_is_well_formed(
                 journal_checkpoint_event_id,
                 watcher_continuity_proof.as_ref(),
-            ) {
-                (None, None) => true,
-                (Some(event_id), Some(proof)) => {
-                    !proof.root_identity.is_empty()
-                        && proof.backend == WatcherBackend::Fsevents
-                        && proof.backend_device != 0
-                        && proof.watcher_generation != 0
-                        && proof.replay_coverage_start_event_id
-                            <= proof.replay_coverage_end_event_id
-                        && proof.replay_coverage_end_event_id == proof.acknowledged_end_event_id
-                        && proof.acknowledged_end_event_id == event_id
-                }
-                _ => false,
-            };
+            );
             if !incoming_boundary_is_valid {
-                pending.audit_required = true;
-                pending.journal_checkpoint_event_id = None;
-                pending.watcher_continuity_proof = None;
-            } else if journal_checkpoint_event_id.is_none() {
-                pending.proofless_evidence_seen = true;
-                if pending.journal_checkpoint_event_id.is_some() {
-                    pending.audit_required = true;
-                    pending.journal_checkpoint_event_id = None;
-                    pending.watcher_continuity_proof = None;
-                }
-            } else if pending.proofless_evidence_seen {
                 pending.audit_required = true;
                 pending.journal_checkpoint_event_id = None;
                 pending.watcher_continuity_proof = None;

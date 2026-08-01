@@ -1,6 +1,24 @@
 use super::*;
 use std::path::Path;
 
+use crate::native_app::sample_library::source_watcher::{WatcherBackend, WatcherContinuityProof};
+
+fn replay_proof(root: &Path, end_event_id: u64) -> WatcherContinuityProof {
+    let metadata = fs::metadata(root).expect("source metadata");
+    WatcherContinuityProof {
+        root_identity: wavecrate_library::filesystem_identity::stable_filesystem_identity(
+            root, &metadata,
+        )
+        .expect("stable source root identity"),
+        backend: WatcherBackend::Fsevents,
+        backend_device: 10,
+        watcher_generation: 4,
+        replay_coverage_start_event_id: end_event_id.saturating_sub(1),
+        replay_coverage_end_event_id: end_event_id,
+        acknowledged_end_event_id: end_event_id,
+    }
+}
+
 #[test]
 fn adding_source_after_startup_registers_it_before_scan_admission_and_finish() {
     let source_root = tempfile::tempdir().expect("source root");
@@ -100,8 +118,8 @@ fn foreground_scan_terminal_release_admits_coalesced_watcher_paths() {
         vec![sample_path],
         false,
         true,
-        None,
-        None,
+        Some(11),
+        Some(replay_proof(source_root.path(), 11)),
         &mut context,
     );
     assert!(
