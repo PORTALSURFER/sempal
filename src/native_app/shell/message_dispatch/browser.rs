@@ -163,6 +163,23 @@ impl NativeAppState {
                     .source_processing
                     .request_source_manifest_audit(&source_id, reason);
             }
+            GuiMessage::SourceWatcherCheckpointReady(request) => {
+                if self
+                    .library
+                    .folder_browser
+                    .source_exists(&request.source_id)
+                    && self
+                        .background
+                        .source_lifecycle_generations
+                        .get(&request.source_id)
+                        == Some(&request.lifecycle_generation)
+                {
+                    self.background
+                        .source_processing
+                        .budget_handle()
+                        .submit_watcher_checkpoint(request);
+                }
+            }
             GuiMessage::SourceFilesystemSyncFinished(result) => {
                 self.finish_source_filesystem_sync(result, context);
             }
@@ -183,6 +200,7 @@ impl NativeAppState {
             GuiMessage::SourceManifestAuditFinished {
                 source_id,
                 lifecycle_generation,
+                source_revision,
                 complete,
             } => {
                 let source_is_current = self.library.folder_browser.source_exists(&source_id)
@@ -190,7 +208,12 @@ impl NativeAppState {
                         == Some(&lifecycle_generation);
                 if source_is_current {
                     if let Some(watcher) = self.library.source_watcher.as_ref() {
-                        watcher.finish_journal_barrier_audit(source_id, complete);
+                        watcher.finish_journal_barrier_audit(
+                            source_id,
+                            lifecycle_generation,
+                            source_revision,
+                            complete,
+                        );
                     }
                 }
             }

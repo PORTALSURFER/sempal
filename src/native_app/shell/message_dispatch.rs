@@ -93,6 +93,7 @@ impl NativeAppState {
             | GuiMessage::SourceFilesystemChanged { .. }
             | GuiMessage::SourceWatcherReady { .. }
             | GuiMessage::SourceWatcherJournalGap { .. }
+            | GuiMessage::SourceWatcherCheckpointReady(_)
             | GuiMessage::SourceFilesystemSyncFinished(_)
             | GuiMessage::SourceManifestAuditCommitted { .. }
             | GuiMessage::SourceManifestAuditFinished { .. }
@@ -394,6 +395,7 @@ fn gui_message_profile_label(message: &GuiMessage) -> &'static str {
         GuiMessage::SourceFilesystemChanged { .. } => "SourceFilesystemChanged",
         GuiMessage::SourceWatcherReady { .. } => "SourceWatcherReady",
         GuiMessage::SourceWatcherJournalGap { .. } => "SourceWatcherJournalGap",
+        GuiMessage::SourceWatcherCheckpointReady(_) => "SourceWatcherCheckpointReady",
         GuiMessage::SourceFilesystemSyncFinished(_) => "SourceFilesystemSyncFinished",
         GuiMessage::SourceManifestAuditCommitted { .. } => "SourceManifestAuditCommitted",
         GuiMessage::SourceManifestAuditFinished { .. } => "SourceManifestAuditFinished",
