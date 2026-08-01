@@ -18,6 +18,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use uuid::Uuid;
 
+use super::AbsentFinalRecoveryClassification;
+use super::absent_final_recovery::classify_absent_final_recovery;
 pub(crate) use super::capacity_gate::VolumeIdentity;
 use super::capacity_gate::{DurableCapacityPlan, RejectedBeforeIntent};
 pub(crate) use super::expected_identity_replacement::ReplacementQualificationAssessment;
@@ -1201,6 +1203,18 @@ fn validate_prepared_contract(prepared: &PreparedTargetContract) -> Result<(), S
     let PreparedTargetContract::AbsentFinalNoReplace(prepared) = prepared else {
         return Ok(());
     };
+    if !prepared.source_root.path.is_absolute()
+        || prepared.source_root.identity.stable_id.is_empty()
+    {
+        return Err(String::from(
+            "absent-final source-root capability is not an absolute, identified root",
+        ));
+    }
+    if !prepared.target_parent.path.is_absolute() {
+        return Err(String::from(
+            "absent-final target-parent capability path must be absolute",
+        ));
+    }
     if prepared.target_parent.identity.stable_id.is_empty() {
         return Err(String::from(
             "absent-final target-parent capability identity is empty",
@@ -2102,7 +2116,7 @@ pub(super) fn descriptor_identity(file: &File) -> Result<PreparedObjectIdentity,
     })
 }
 
-fn open_root(path: &Path) -> Result<(File, PreparedRootCapability), String> {
+pub(super) fn open_root(path: &Path) -> Result<(File, PreparedRootCapability), String> {
     let file =
         super::capacity_gate::open_no_follow_path(path).map_err(|error| error.to_string())?;
     if !file.metadata().map_err(|error| error.to_string())?.is_dir() {
@@ -2817,6 +2831,67 @@ impl OperationJournalCoordinator {
         self.store.recovery_summary()
     }
 
+    /// Classify one eligible schema-v2 absent-final record by reacquiring and inspecting its
+    /// target-parent capability. This method is observation-only: it never updates the record,
+    /// writes journal bytes, changes disposition, or alters capacity claims.
+    pub(crate) fn classify_schema_v2_absent_final_recovery(
+        &self,
+        operation_id: Uuid,
+    ) -> Result<AbsentFinalRecoveryClassification, JournalError> {
+        let record = self
+            .store
+            .record(operation_id)
+            .ok_or(JournalError::NotFound(operation_id))?;
+        if record.schema_version != SCHEMA_V2 {
+            return Err(JournalError::InvalidPublicationEvidence {
+                operation_id,
+                reason: String::from("absent-final recovery requires schema-v2"),
+            });
+        }
+        if record.phase != OperationPhase::FilesystemStaged {
+            return Err(JournalError::InvalidPublicationEvidence {
+                operation_id,
+                reason: String::from("absent-final recovery requires the filesystem-staged phase"),
+            });
+        }
+        validate_schema_v2_phase_evidence_record(record).map_err(|reason| {
+            JournalError::InvalidPublicationEvidence {
+                operation_id,
+                reason,
+            }
+        })?;
+        let prepared = record
+            .prepared
+            .as_ref()
+            .ok_or(JournalError::MissingPreparedEvidence(operation_id))?;
+        let PreparedTargetContract::AbsentFinalNoReplace(prepared) = prepared else {
+            return Err(JournalError::InvalidPublicationEvidence {
+                operation_id,
+                reason: String::from(
+                    "absent-final recovery requires absent-final preparation evidence",
+                ),
+            });
+        };
+        let staged = record
+            .staged
+            .as_ref()
+            .ok_or(JournalError::MissingPreparedEvidence(operation_id))?;
+        validate_prepared_contract(&PreparedTargetContract::AbsentFinalNoReplace(
+            prepared.clone(),
+        ))
+        .map_err(|reason| JournalError::InvalidPublicationEvidence {
+            operation_id,
+            reason,
+        })?;
+        validate_absent_final_staged_checkpoint(prepared, staged).map_err(|reason| {
+            JournalError::InvalidPublicationEvidence {
+                operation_id,
+                reason,
+            }
+        })?;
+        Ok(classify_absent_final_recovery(prepared, staged))
+    }
+
     /// Admit an intent durably and return its stable operation ID.
     #[cfg(test)]
     pub(crate) fn admit(
@@ -2833,7 +2908,7 @@ impl OperationJournalCoordinator {
     /// Explicit test-only constructor for the schema-v2 absent-final contract. Production
     /// waveform-restore admission remains on `OperationRecord::new`, which is schema-v1.
     #[cfg(test)]
-    fn admit_schema_v2_absent_final_for_test(
+    pub(super) fn admit_schema_v2_absent_final_for_test(
         &mut self,
         intent: OperationIntent,
         payload: Value,
@@ -2867,6 +2942,16 @@ impl OperationJournalCoordinator {
         })?;
         self.store.admit_capacity(record)?;
         Ok(operation_id)
+    }
+
+    #[cfg(test)]
+    pub(super) fn record_path_for_test(&self, operation_id: Uuid) -> PathBuf {
+        self.store.record_path(operation_id)
+    }
+
+    #[cfg(test)]
+    pub(super) fn capacity_claims_for_test(&self) -> BTreeMap<VolumeIdentity, u64> {
+        self.store.capacity_claims.clone()
     }
 
     /// Admit exactly one bounded waveform restore after owner-thread capacity discovery.
@@ -6472,5 +6557,53 @@ mod tests {
         assert_eq!(record.disposition, OperationDisposition::AuditRequired);
         assert_eq!(record.staged.as_ref(), Some(&staged));
         assert!(record.published.is_none());
+    }
+
+    #[test]
+    fn absent_final_recovery_rejects_schema_v2_existing_target_contract() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let mut journal =
+            OperationJournalCoordinator::open(directory.path().to_path_buf()).unwrap();
+        let (prepared, staged, capacity_plan) = absent_final_v2_fixture();
+        let FilesystemStagedParticipant::CopyValidated { staging, evidence } =
+            staged.participant.clone();
+        let identity = staging.identity.clone();
+        let existing = PreparedWaveformRestore {
+            direction: prepared.direction,
+            source_id: prepared.source_id.clone(),
+            source_root: prepared.source_root.clone(),
+            target_root: prepared.target_parent.clone(),
+            target: PreparedLeafLocator {
+                relative_path: prepared.final_leaf.clone(),
+                identity: identity.clone(),
+            },
+            backup_root: prepared.target_parent.clone(),
+            backup: PreparedLeafLocator {
+                relative_path: prepared.staging.relative_path.clone(),
+                identity: identity.clone(),
+            },
+            replacement: ReplaceExpectedIdentity::Existing(identity),
+            staging: prepared.staging.clone(),
+            evidence: PreparedRestoreEvidence {
+                target: PreparedFileEvidence::Missing,
+                backup: evidence,
+            },
+        };
+        let mut record = OperationRecord::new_v2_absent_final_with_capacity_plan(
+            intent(),
+            serde_json::json!({"schema": 2}),
+            prepared,
+            staged,
+            capacity_plan,
+        );
+        let operation_id = record.operation_id;
+        record.prepared = Some(PreparedTargetContract::ExistingExpectedIdentity(existing));
+        journal.store.admit_capacity(record).unwrap();
+
+        assert!(matches!(
+            journal.classify_schema_v2_absent_final_recovery(operation_id),
+            Err(JournalError::InvalidPublicationEvidence { .. })
+        ));
     }
 }
