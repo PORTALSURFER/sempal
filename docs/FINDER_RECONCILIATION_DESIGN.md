@@ -310,9 +310,12 @@ the existing contract.
    cancellation, and acknowledgement boundaries. Use synthetic envelopes and
    acknowledgements for deterministic tests covering root mismatch,
    stale/duplicate delivery, budgets/fairness, cancellation/rebind/restart,
-   eviction/overflow/error, and retained uncertainty. This is a required gate
-   before any live/replay adapter or downstream workflow, projection,
-   checkpoint, crash-recovery, or native integration.
+   eviction/overflow/error, and retained uncertainty. The tests must prove that
+   retained uncertainty clears only after a committed authoritative
+   reconciliation acknowledgement whose committed boundary covers it; audit
+   completion alone cannot clear it. This is a required gate before any
+   live/replay adapter or downstream workflow, projection, checkpoint,
+   crash-recovery, or native integration.
 3. Live/replay adapter PR: connect the validated library boundary to live
    notify and the replay adapter. Live notify must emit `Proof::Unproven` and
    preserve the merged #1024 `WatcherAuthorityUnproven` audit/last-good
