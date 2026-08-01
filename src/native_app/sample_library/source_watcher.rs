@@ -25,7 +25,6 @@ fn doubled_duration(current: Duration, maximum: Duration) -> Duration {
 }
 
 pub(in crate::native_app) use handle::GuiSourceWatcherHandle;
-#[cfg(test)]
 pub(in crate::native_app) use journal::WatcherBackend;
 pub(in crate::native_app) use journal::{
     CheckpointAdvanceOutcome, CheckpointCause, RevisionBoundCheckpoint, WatcherContinuityProof,
