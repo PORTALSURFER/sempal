@@ -17,6 +17,7 @@ pub(super) struct QueuedTargetedSourceSync {
     pub(super) lifecycle_generation: Option<u64>,
     pub(super) journal_checkpoint_event_id: Option<u64>,
     pub(super) watcher_continuity_proof: Option<WatcherContinuityProof>,
+    pub(super) proofless_evidence_seen: bool,
     pub(super) audit_required: bool,
     pub(super) enqueued_at: Instant,
 }
@@ -89,6 +90,7 @@ pub(in crate::native_app) struct PendingTargetedSourceSync {
     pub(in crate::native_app) lifecycle_generation: Option<u64>,
     pub(in crate::native_app) journal_checkpoint_event_id: Option<u64>,
     pub(in crate::native_app) watcher_continuity_proof: Option<WatcherContinuityProof>,
+    pub(in crate::native_app) proofless_evidence_seen: bool,
     pub(in crate::native_app) audit_required: bool,
     pub(in crate::native_app) enqueued_at: Instant,
 }

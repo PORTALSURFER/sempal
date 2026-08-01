@@ -502,6 +502,7 @@ impl SourceScanWorkflow {
             lifecycle_generation: pending.lifecycle_generation,
             journal_checkpoint_event_id: pending.journal_checkpoint_event_id,
             watcher_continuity_proof: pending.watcher_continuity_proof,
+            proofless_evidence_seen: pending.proofless_evidence_seen,
             audit_required: pending.audit_required,
             enqueued_at: pending.enqueued_at,
         })
@@ -776,6 +777,7 @@ impl SourceScanWorkflow {
                 lifecycle_generation,
                 journal_checkpoint_event_id: None,
                 watcher_continuity_proof: None,
+                proofless_evidence_seen: false,
                 audit_required: false,
                 enqueued_at: Instant::now(),
             });
@@ -784,6 +786,7 @@ impl SourceScanWorkflow {
             pending.lifecycle_generation = lifecycle_generation;
             pending.journal_checkpoint_event_id = None;
             pending.watcher_continuity_proof = None;
+            pending.proofless_evidence_seen = false;
             pending.audit_required = false;
             pending.enqueued_at = Instant::now();
         }
@@ -807,6 +810,17 @@ impl SourceScanWorkflow {
                 _ => false,
             };
             if !incoming_boundary_is_valid {
+                pending.audit_required = true;
+                pending.journal_checkpoint_event_id = None;
+                pending.watcher_continuity_proof = None;
+            } else if journal_checkpoint_event_id.is_none() {
+                pending.proofless_evidence_seen = true;
+                if pending.journal_checkpoint_event_id.is_some() {
+                    pending.audit_required = true;
+                    pending.journal_checkpoint_event_id = None;
+                    pending.watcher_continuity_proof = None;
+                }
+            } else if pending.proofless_evidence_seen {
                 pending.audit_required = true;
                 pending.journal_checkpoint_event_id = None;
                 pending.watcher_continuity_proof = None;

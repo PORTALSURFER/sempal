@@ -451,6 +451,7 @@ impl NativeAppState {
                     target: "wavecrate::source_processing",
                     source_id = pending.source_id,
                     queue_age_ms = pending.enqueued_at.elapsed().as_millis(),
+                    proofless_evidence_seen = pending.proofless_evidence_seen,
                     outcome = "targeted_sync_audit_required",
                     "Queued watcher replay evidence could not be preserved safely"
                 );
