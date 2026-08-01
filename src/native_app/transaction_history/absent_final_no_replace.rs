@@ -53,6 +53,65 @@ pub(super) struct AbsentFinalAdoptionRequest<'a> {
     expected_final_content: &'a [u8; 32],
 }
 
+/// An owned, non-authoritative request for live adoption qualification.
+///
+/// The journal constructs this from durable preparation, recovery observation, and transaction-
+/// owned proof. The adapter reacquires the target-parent capability and revalidates the final;
+/// this request carries no borrowed descriptor.
+pub(super) struct AbsentFinalAdoptionQualificationRequest {
+    pub(super) operation_id: Uuid,
+    pub(super) target_parent_path: PathBuf,
+    pub(super) final_leaf: PathBuf,
+    pub(super) expected_target_parent_stable_id: String,
+    pub(super) expected_final_stable_id: String,
+    pub(super) expected_final_len: u64,
+    pub(super) expected_final_content: [u8; 32],
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum AbsentFinalAdoptionQualificationRequestError {
+    TargetParentPathNotAbsolute,
+    FinalLeafNotSingleCleanNormal,
+    TargetParentIdentityEmpty,
+    FinalIdentityEmpty,
+}
+
+impl AbsentFinalAdoptionQualificationRequest {
+    pub(super) fn try_new(
+        operation_id: Uuid,
+        target_parent_path: PathBuf,
+        final_leaf: PathBuf,
+        expected_target_parent_stable_id: String,
+        expected_final_stable_id: String,
+        expected_final_len: u64,
+        expected_final_content: [u8; 32],
+    ) -> Result<Self, AbsentFinalAdoptionQualificationRequestError> {
+        if !target_parent_path.is_absolute() {
+            return Err(AbsentFinalAdoptionQualificationRequestError::TargetParentPathNotAbsolute);
+        }
+        if !is_single_clean_normal_leaf(&final_leaf) {
+            return Err(
+                AbsentFinalAdoptionQualificationRequestError::FinalLeafNotSingleCleanNormal,
+            );
+        }
+        if expected_target_parent_stable_id.is_empty() {
+            return Err(AbsentFinalAdoptionQualificationRequestError::TargetParentIdentityEmpty);
+        }
+        if expected_final_stable_id.is_empty() {
+            return Err(AbsentFinalAdoptionQualificationRequestError::FinalIdentityEmpty);
+        }
+        Ok(Self {
+            operation_id,
+            target_parent_path,
+            final_leaf,
+            expected_target_parent_stable_id,
+            expected_final_stable_id,
+            expected_final_len,
+            expected_final_content,
+        })
+    }
+}
+
 impl<'a> AbsentFinalAdoptionRequest<'a> {
     pub(super) fn try_new(
         target_parent: &'a File,
@@ -132,6 +191,20 @@ pub(crate) struct QualifiedAbsentFinalAdoption {
     pub(super) final_content: PreparedFileEvidence,
 }
 
+/// Operation-fenced evidence returned by the physical file owner after live adoption
+/// qualification. It contains no retained handle or mutation capability.
+#[derive(Debug, Eq, PartialEq)]
+pub(super) struct AbsentFinalAdoptionQualificationResult {
+    pub(super) operation_id: Uuid,
+    pub(super) outcome: AbsentFinalAdoptionOutcome,
+}
+
+impl AbsentFinalAdoptionQualificationResult {
+    pub(super) fn operation_id(&self) -> Uuid {
+        self.operation_id
+    }
+}
+
 /// A retained, read-only capability for a qualified absent-final adoption.
 ///
 /// This deliberately has no serialization, comparison, or clone boundary. The retained
@@ -173,6 +246,10 @@ impl QualifiedAbsentFinalAdoptionGuard {
 
 pub(super) trait AbsentFinalAdoptionAdapter: sealed::Sealed {
     fn qualify(&self, request: AbsentFinalAdoptionRequest<'_>) -> AbsentFinalAdoptionOutcome;
+    fn qualify_owned(
+        &self,
+        request: AbsentFinalAdoptionQualificationRequest,
+    ) -> AbsentFinalAdoptionQualificationResult;
 }
 
 pub(super) struct ProductionAbsentFinalAdoptionAdapter;
@@ -189,6 +266,24 @@ impl AbsentFinalAdoptionAdapter for ProductionAbsentFinalAdoptionAdapter {
         {
             let _ = request;
             AbsentFinalAdoptionOutcome::UnsupportedPlatform
+        }
+    }
+
+    fn qualify_owned(
+        &self,
+        request: AbsentFinalAdoptionQualificationRequest,
+    ) -> AbsentFinalAdoptionQualificationResult {
+        let operation_id = request.operation_id;
+        #[cfg(unix)]
+        let outcome = qualify_unix_owned_absent_final_adoption(&request);
+        #[cfg(not(unix))]
+        let outcome = {
+            let _ = request;
+            AbsentFinalAdoptionOutcome::UnsupportedPlatform
+        };
+        AbsentFinalAdoptionQualificationResult {
+            operation_id,
+            outcome,
         }
     }
 }
@@ -299,6 +394,32 @@ fn qualify_unix_absent_final_adoption(
         final_object: final_identity,
         final_content: PreparedFileEvidence::ContentHash(final_content),
     })
+}
+
+#[cfg(unix)]
+fn qualify_unix_owned_absent_final_adoption(
+    request: &AbsentFinalAdoptionQualificationRequest,
+) -> AbsentFinalAdoptionOutcome {
+    let (target_parent, target_capability) =
+        match super::operation_journal::open_root(&request.target_parent_path) {
+            Ok(value) => value,
+            Err(_) => return AbsentFinalAdoptionOutcome::VerificationFailed,
+        };
+    if target_capability.identity.stable_id != request.expected_target_parent_stable_id {
+        return AbsentFinalAdoptionOutcome::ParentIdentityDrift;
+    }
+    let borrowed_request = match AbsentFinalAdoptionRequest::try_new(
+        &target_parent,
+        &request.final_leaf,
+        &target_capability.identity,
+        &request.expected_final_stable_id,
+        request.expected_final_len,
+        &request.expected_final_content,
+    ) {
+        Ok(request) => request,
+        Err(_) => return AbsentFinalAdoptionOutcome::VerificationFailed,
+    };
+    qualify_unix_absent_final_adoption(borrowed_request)
 }
 
 #[cfg(unix)]
@@ -1241,6 +1362,64 @@ mod tests {
         let outcome = ProductionAbsentFinalAdoptionAdapter.qualify(request);
         assert!(matches!(outcome, AbsentFinalAdoptionOutcome::Qualified(_)));
         assert!(!fixture.staging_path().exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn owned_adoption_qualification_reacquires_and_returns_operation_bound_evidence() {
+        let fixture = Fixture::new();
+        fs::rename(fixture.staging_path(), fixture.target_path()).expect("stage final");
+        let final_file = File::open(fixture.target_path()).expect("final file");
+        let final_identity = descriptor_identity(&final_file).expect("final identity");
+        let expected_content = match &fixture.expected_content {
+            PreparedFileEvidence::ContentHash(hash) => *hash,
+            _ => panic!("fixture must have exact content"),
+        };
+        let operation_id = Uuid::new_v4();
+        let request = AbsentFinalAdoptionQualificationRequest::try_new(
+            operation_id,
+            fixture.target_parent_path.clone(),
+            PathBuf::from(TARGET_LEAF),
+            fixture.target_parent_identity.stable_id.clone(),
+            final_identity.stable_id,
+            final_identity.len,
+            expected_content,
+        )
+        .expect("owned adoption request");
+        let result = ProductionAbsentFinalAdoptionAdapter.qualify_owned(request);
+
+        assert_eq!(result.operation_id(), operation_id);
+        assert!(matches!(
+            result.outcome,
+            AbsentFinalAdoptionOutcome::Qualified(_)
+        ));
+        assert!(!fixture.staging_path().exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn owned_adoption_qualification_request_does_not_claim_missing_final() {
+        let fixture = Fixture::new();
+        let expected_content = match &fixture.expected_content {
+            PreparedFileEvidence::ContentHash(hash) => *hash,
+            _ => panic!("fixture must have exact content"),
+        };
+        let operation_id = Uuid::new_v4();
+        let request = AbsentFinalAdoptionQualificationRequest::try_new(
+            operation_id,
+            fixture.target_parent_path.clone(),
+            PathBuf::from(TARGET_LEAF),
+            fixture.target_parent_identity.stable_id.clone(),
+            fixture.expected_staging.stable_id.clone(),
+            fixture.expected_staging.len,
+            expected_content,
+        )
+        .expect("owned adoption request without live inspection");
+        let result = ProductionAbsentFinalAdoptionAdapter.qualify_owned(request);
+
+        assert_eq!(result.operation_id(), operation_id);
+        assert_eq!(result.outcome, AbsentFinalAdoptionOutcome::FinalMissing);
+        assert!(!fixture.target_path().exists());
     }
 
     #[cfg(unix)]
