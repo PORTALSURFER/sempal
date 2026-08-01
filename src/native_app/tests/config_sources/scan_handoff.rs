@@ -101,6 +101,7 @@ fn foreground_scan_terminal_release_admits_coalesced_watcher_paths() {
         false,
         true,
         None,
+        None,
         &mut context,
     );
     assert!(
@@ -254,6 +255,7 @@ fn source_filesystem_change_during_scan_is_refreshed_after_scan_finishes() {
         true,
         true,
         None,
+        None,
         &mut context,
     );
 
@@ -264,6 +266,7 @@ fn source_filesystem_change_during_scan_is_refreshed_after_scan_finishes() {
             overflowed: true,
             source_root_available: true,
             journal_checkpoint_event_id: None,
+            watcher_continuity_proof: None,
         },
         &mut context,
     );

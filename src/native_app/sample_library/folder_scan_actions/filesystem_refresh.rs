@@ -14,7 +14,9 @@ use crate::native_app::sample_library::source_prep::{
     CacheWarmIntent, MetadataRefreshIntent, ReadinessIntent, SourceFeedbackIntent,
     SourcePrepIntents, SourcePriorityIntent,
 };
-use crate::native_app::sample_library::source_watcher::{CheckpointCause, RevisionBoundCheckpoint};
+use crate::native_app::sample_library::source_watcher::{
+    CheckpointCause, RevisionBoundCheckpoint, WatcherContinuityProof,
+};
 use crate::native_app::source_processing::{
     ExternalScanHandoff, manifest_delta_requires_browser_refresh,
 };
@@ -54,6 +56,7 @@ impl NativeAppState {
         overflowed: bool,
         source_root_available: bool,
         journal_checkpoint_event_id: Option<u64>,
+        watcher_continuity_proof: Option<WatcherContinuityProof>,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
         let started_at = Instant::now();
@@ -98,6 +101,7 @@ impl NativeAppState {
                     paths,
                     changed_count,
                     journal_checkpoint_event_id,
+                    watcher_continuity_proof,
                     context,
                 );
                 emit_gui_action(
@@ -139,6 +143,7 @@ impl NativeAppState {
         let source_id = result.source_id;
         let root_identity = result.root_identity;
         let journal_checkpoint_event_id = result.journal_checkpoint_event_id;
+        let watcher_continuity_proof = result.watcher_continuity_proof;
         self.library
             .mark_targeted_source_sync_finished(&source_id, result.lifecycle_generation);
         if self.background.source_lifecycle_generations.get(&source_id)
@@ -201,8 +206,12 @@ impl NativeAppState {
                     );
                 }
                 if !result.cancelled && projection_accepted && incomplete_error.is_none() {
-                    match (root_identity, journal_checkpoint_event_id) {
-                        (Some(root_identity), Some(event_id)) => self
+                    match (
+                        root_identity,
+                        journal_checkpoint_event_id,
+                        watcher_continuity_proof,
+                    ) {
+                        (Some(root_identity), Some(event_id), Some(proof)) => self
                             .background
                             .source_processing
                             .budget_handle()
@@ -213,8 +222,22 @@ impl NativeAppState {
                                 root_identity,
                                 event_id,
                                 cause: CheckpointCause::TargetedReplay,
+                                continuity_proof: Some(proof),
                             }),
-                        (None, _) => {
+                        (Some(root_identity), Some(event_id), None) => self
+                            .background
+                            .source_processing
+                            .budget_handle()
+                            .submit_watcher_checkpoint(RevisionBoundCheckpoint {
+                                source_id: source_id.clone(),
+                                lifecycle_generation: result.lifecycle_generation,
+                                source_revision: delta.revision,
+                                root_identity,
+                                event_id,
+                                cause: CheckpointCause::TargetedReplay,
+                                continuity_proof: None,
+                            }),
+                        (None, _, _) => {
                             incomplete_error = Some(String::from(
                                 "targeted filesystem sync completed without worker-captured source root identity",
                             ));
@@ -226,7 +249,7 @@ impl NativeAppState {
                                 "Refusing targeted watcher checkpoint without worker-captured root identity"
                             );
                         }
-                        (Some(_), None) => tracing::debug!(
+                        (Some(_), None, _) => tracing::debug!(
                             source_id = %source_id,
                             revision = delta.revision,
                             "Skipping targeted watcher checkpoint because replay event identity is unavailable"
@@ -430,6 +453,7 @@ impl NativeAppState {
                 pending.paths,
                 changed_count,
                 None,
+                None,
                 context,
             );
             break;
@@ -534,6 +558,7 @@ impl NativeAppState {
         paths: Vec<PathBuf>,
         changed_count: usize,
         journal_checkpoint_event_id: Option<u64>,
+        watcher_continuity_proof: Option<WatcherContinuityProof>,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
         if paths.is_empty() {
@@ -589,6 +614,7 @@ impl NativeAppState {
                         changed_count,
                         root_identity: capture_source_root_identity(&root),
                         journal_checkpoint_event_id,
+                        watcher_continuity_proof,
                         cancelled: true,
                         result: Err(String::from("Source filesystem sync canceled")),
                     };
@@ -616,6 +642,7 @@ impl NativeAppState {
                 );
                 result.root_identity = root_identity;
                 result.journal_checkpoint_event_id = journal_checkpoint_event_id;
+                result.watcher_continuity_proof = watcher_continuity_proof;
                 let projection_ticket = match &mut result.result {
                     Ok(success)
                         if !result.cancelled
@@ -783,6 +810,7 @@ mod tests {
             changed_count: 1,
             root_identity: None,
             journal_checkpoint_event_id: Some(73),
+            watcher_continuity_proof: None,
             cancelled: false,
             result: Ok(SourceFilesystemSyncSuccess {
                 renames_reconciled: 0,
@@ -832,6 +860,7 @@ mod tests {
             changed_count: 1,
             root_identity,
             journal_checkpoint_event_id: Some(73),
+            watcher_continuity_proof: None,
             cancelled: false,
             result: Ok(SourceFilesystemSyncSuccess {
                 renames_reconciled: 0,

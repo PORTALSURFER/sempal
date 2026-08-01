@@ -649,6 +649,7 @@ fn source_completions_from_previous_readded_epoch_are_ignored() {
             changed_count: 1,
             root_identity: None,
             journal_checkpoint_event_id: None,
+            watcher_continuity_proof: None,
             cancelled: true,
             result: Err(String::from("old epoch cancelled")),
         }),

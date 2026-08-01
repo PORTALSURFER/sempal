@@ -25,7 +25,8 @@ use wavecrate_library::{
     sample_sources::db::META_SOURCE_WATCHER_CHECKPOINT,
 };
 
-const CHECKPOINT_FORMAT_VERSION: u32 = 2;
+const V2_CHECKPOINT_FORMAT_VERSION: u32 = 2;
+const CHECKPOINT_FORMAT_VERSION: u32 = 3;
 const LEGACY_CHECKPOINT_FIELDS: [&str; 2] = ["root_identity", "event_id"];
 const V2_CHECKPOINT_FIELDS: [&str; 7] = [
     "root_identity",
@@ -36,12 +37,44 @@ const V2_CHECKPOINT_FIELDS: [&str; 7] = [
     "source_revision",
     "cause",
 ];
+const V3_CHECKPOINT_FIELDS: [&str; 8] = [
+    "root_identity",
+    "event_id",
+    "format_version",
+    "source_id",
+    "lifecycle_generation",
+    "source_revision",
+    "cause",
+    "continuity_proof",
+];
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(in crate::native_app) enum CheckpointCause {
     TargetedReplay,
     CompletedFallbackAudit,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(in crate::native_app) enum WatcherBackend {
+    Fsevents,
+}
+
+/// Evidence that a macOS replay covered one contiguous FSEvents cursor window.
+///
+/// `watcher_generation` is allocated by this process for each replay stream. It is deliberately
+/// not derived from an FSEventStream pointer or any other address-like value.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(in crate::native_app) struct WatcherContinuityProof {
+    pub(in crate::native_app) root_identity: String,
+    pub(in crate::native_app) backend: WatcherBackend,
+    pub(in crate::native_app) backend_device: u64,
+    pub(in crate::native_app) watcher_generation: u64,
+    pub(in crate::native_app) replay_coverage_start_event_id: u64,
+    pub(in crate::native_app) replay_coverage_end_event_id: u64,
+    pub(in crate::native_app) acknowledged_end_event_id: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -52,6 +85,7 @@ pub(in crate::native_app) struct RevisionBoundCheckpoint {
     pub(in crate::native_app) root_identity: String,
     pub(in crate::native_app) event_id: u64,
     pub(in crate::native_app) cause: CheckpointCause,
+    pub(in crate::native_app) continuity_proof: Option<WatcherContinuityProof>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -78,6 +112,8 @@ struct SourceWatcherCheckpoint {
     source_revision: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     cause: Option<CheckpointCause>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    continuity_proof: Option<WatcherContinuityProof>,
 }
 
 impl SourceWatcherCheckpoint {
@@ -90,24 +126,31 @@ impl SourceWatcherCheckpoint {
             lifecycle_generation: None,
             source_revision: None,
             cause: None,
+            continuity_proof: None,
         }
     }
 
     fn from_revision_bound(checkpoint: &RevisionBoundCheckpoint) -> Self {
+        let format_version = if checkpoint.continuity_proof.is_some() {
+            CHECKPOINT_FORMAT_VERSION
+        } else {
+            V2_CHECKPOINT_FORMAT_VERSION
+        };
         Self {
             root_identity: checkpoint.root_identity.clone(),
             event_id: checkpoint.event_id,
-            format_version: Some(CHECKPOINT_FORMAT_VERSION),
+            format_version: Some(format_version),
             source_id: Some(checkpoint.source_id.clone()),
             lifecycle_generation: Some(checkpoint.lifecycle_generation),
             source_revision: Some(checkpoint.source_revision),
             cause: Some(checkpoint.cause),
+            continuity_proof: checkpoint.continuity_proof.clone(),
         }
     }
 
     fn revision_bound(&self) -> Option<RevisionBoundCheckpoint> {
         let (
-            Some(CHECKPOINT_FORMAT_VERSION),
+            Some(format_version),
             Some(source_id),
             Some(lifecycle_generation),
             Some(source_revision),
@@ -122,6 +165,11 @@ impl SourceWatcherCheckpoint {
         else {
             return None;
         };
+        if format_version != V2_CHECKPOINT_FORMAT_VERSION
+            && (format_version != CHECKPOINT_FORMAT_VERSION || self.continuity_proof.is_none())
+        {
+            return None;
+        }
         Some(RevisionBoundCheckpoint {
             source_id,
             lifecycle_generation,
@@ -129,6 +177,7 @@ impl SourceWatcherCheckpoint {
             root_identity: self.root_identity.clone(),
             event_id: self.event_id,
             cause,
+            continuity_proof: self.continuity_proof.clone(),
         })
     }
 }
@@ -211,10 +260,14 @@ fn parse_checkpoint(value: &str) -> Result<SourceWatcherCheckpoint, String> {
         ));
     }
 
-    if !has_exact_checkpoint_fields(&object, &V2_CHECKPOINT_FIELDS) {
+    let format_version = if has_exact_checkpoint_fields(&object, &V2_CHECKPOINT_FIELDS) {
+        V2_CHECKPOINT_FORMAT_VERSION
+    } else if has_exact_checkpoint_fields(&object, &V3_CHECKPOINT_FIELDS) {
+        CHECKPOINT_FORMAT_VERSION
+    } else {
         return Err("watcher checkpoint has an unsupported field shape".to_string());
-    }
-    if checkpoint_u64(&object, "format_version")? != u64::from(CHECKPOINT_FORMAT_VERSION) {
+    };
+    if checkpoint_u64(&object, "format_version")? != u64::from(format_version) {
         return Err("watcher checkpoint has an unsupported format version".to_string());
     }
 
@@ -225,15 +278,63 @@ fn parse_checkpoint(value: &str) -> Result<SourceWatcherCheckpoint, String> {
             .ok_or_else(|| "watcher checkpoint is missing cause".to_string())?,
     )
     .map_err(|error| format!("checkpoint cause is invalid: {error}"))?;
+    let continuity_proof = if format_version == CHECKPOINT_FORMAT_VERSION {
+        Some(
+            serde_json::from_value(
+                object
+                    .get("continuity_proof")
+                    .cloned()
+                    .ok_or_else(|| "watcher checkpoint is missing continuity proof".to_string())?,
+            )
+            .map_err(|error| format!("continuity proof is invalid: {error}"))?,
+        )
+    } else {
+        None
+    };
     Ok(SourceWatcherCheckpoint {
         root_identity: checkpoint_string(&object, "root_identity")?,
         event_id: checkpoint_u64(&object, "event_id")?,
-        format_version: Some(CHECKPOINT_FORMAT_VERSION),
+        format_version: Some(format_version),
         source_id: Some(checkpoint_string(&object, "source_id")?),
         lifecycle_generation: Some(checkpoint_u64(&object, "lifecycle_generation")?),
         source_revision: Some(checkpoint_u64(&object, "source_revision")?),
         cause: Some(cause),
+        continuity_proof,
     })
+}
+
+fn continuity_proof_is_well_formed(
+    proof: &WatcherContinuityProof,
+    expected_root_identity: &str,
+    expected_acknowledged_end: u64,
+) -> bool {
+    !proof.root_identity.is_empty()
+        && proof.root_identity == expected_root_identity
+        && proof.backend == WatcherBackend::Fsevents
+        && proof.backend_device != 0
+        && proof.watcher_generation != 0
+        && proof.replay_coverage_start_event_id <= proof.replay_coverage_end_event_id
+        && proof.replay_coverage_end_event_id == proof.acknowledged_end_event_id
+        && proof.acknowledged_end_event_id == expected_acknowledged_end
+}
+
+fn same_continuity_identity(left: &WatcherContinuityProof, right: &WatcherContinuityProof) -> bool {
+    left.root_identity == right.root_identity
+        && left.backend == right.backend
+        && left.backend_device == right.backend_device
+        && left.watcher_generation == right.watcher_generation
+}
+
+/// Validate the self-contained portion of a targeted replay request before the owner opens a
+/// source database. The durable decision still compares the proof with the prior acknowledged
+/// checkpoint under the source writer gate.
+pub(in crate::native_app) fn targeted_replay_request_has_valid_proof(
+    requested: &RevisionBoundCheckpoint,
+) -> bool {
+    requested.cause == CheckpointCause::TargetedReplay
+        && requested.continuity_proof.as_ref().is_some_and(|proof| {
+            continuity_proof_is_well_formed(proof, &requested.root_identity, requested.event_id)
+        })
 }
 
 fn decide_checkpoint_advance(
@@ -253,6 +354,9 @@ fn decide_checkpoint_advance(
     }
 
     if requested.cause == CheckpointCause::CompletedFallbackAudit {
+        if requested.continuity_proof.is_some() {
+            return CheckpointAdvanceOutcome::AuditRequired;
+        }
         let Some(current) = current else {
             // A completed source-wide audit is the authority that establishes the first
             // revision-bound cursor after a missing checkpoint.
@@ -269,8 +373,45 @@ fn decide_checkpoint_advance(
             // closed before the pure decision.
             return CheckpointAdvanceOutcome::Applied;
         }
+        let Some(current) = current.revision_bound() else {
+            return CheckpointAdvanceOutcome::AuditRequired;
+        };
+        if current.source_id != requested.source_id
+            || current.source_revision > current_source_revision
+            || current.root_identity != requested.root_identity
+            || current.event_id > requested.event_id
+        {
+            return CheckpointAdvanceOutcome::AuditRequired;
+        }
+        if let Some(current_proof) = current.continuity_proof.as_ref()
+            && !continuity_proof_is_well_formed(
+                current_proof,
+                &current.root_identity,
+                current.event_id,
+            )
+        {
+            return CheckpointAdvanceOutcome::AuditRequired;
+        }
+        if current == *requested {
+            return CheckpointAdvanceOutcome::AlreadyApplied;
+        }
+        return if current.event_id == requested.event_id {
+            CheckpointAdvanceOutcome::Superseded
+        } else {
+            CheckpointAdvanceOutcome::Applied
+        };
     }
 
+    let Some(requested_proof) = requested.continuity_proof.as_ref() else {
+        return CheckpointAdvanceOutcome::AuditRequired;
+    };
+    if !continuity_proof_is_well_formed(
+        requested_proof,
+        &requested.root_identity,
+        requested.event_id,
+    ) {
+        return CheckpointAdvanceOutcome::AuditRequired;
+    }
     let Some(current) = current else {
         return CheckpointAdvanceOutcome::AuditRequired;
     };
@@ -284,6 +425,25 @@ fn decide_checkpoint_advance(
     {
         return CheckpointAdvanceOutcome::AuditRequired;
     }
+    let Some(current_proof) = current.continuity_proof.as_ref() else {
+        if current.cause != CheckpointCause::CompletedFallbackAudit
+            || requested_proof.replay_coverage_start_event_id != current.event_id
+        {
+            return CheckpointAdvanceOutcome::AuditRequired;
+        }
+        return if requested.event_id > current.event_id {
+            CheckpointAdvanceOutcome::Applied
+        } else if requested.event_id == current.event_id {
+            CheckpointAdvanceOutcome::Superseded
+        } else {
+            CheckpointAdvanceOutcome::AuditRequired
+        };
+    };
+    if !continuity_proof_is_well_formed(current_proof, &current.root_identity, current.event_id)
+        || !same_continuity_identity(current_proof, requested_proof)
+    {
+        return CheckpointAdvanceOutcome::AuditRequired;
+    }
     if current == *requested {
         return CheckpointAdvanceOutcome::AlreadyApplied;
     }
@@ -291,9 +451,18 @@ fn decide_checkpoint_advance(
         return CheckpointAdvanceOutcome::AuditRequired;
     }
     if requested.event_id > current.event_id {
+        if requested_proof.replay_coverage_start_event_id != current.event_id {
+            return CheckpointAdvanceOutcome::AuditRequired;
+        }
         return CheckpointAdvanceOutcome::Applied;
     }
-    CheckpointAdvanceOutcome::Superseded
+    if requested_proof.replay_coverage_start_event_id
+        == current_proof.replay_coverage_start_event_id
+    {
+        CheckpointAdvanceOutcome::Superseded
+    } else {
+        CheckpointAdvanceOutcome::AuditRequired
+    }
 }
 
 /// Apply a revision-bound watcher checkpoint from the source-processing owner.
@@ -428,6 +597,7 @@ impl AuditBarrier {
             root_identity: self.0.root_identity,
             event_id: self.0.event_id,
             cause: CheckpointCause::CompletedFallbackAudit,
+            continuity_proof: None,
         }
     }
 }
@@ -437,7 +607,7 @@ pub(super) enum JournalRecovery {
     #[cfg(target_os = "macos")]
     Changes {
         paths: Vec<PathBuf>,
-        event_id: u64,
+        proof: WatcherContinuityProof,
     },
     FullAudit {
         reason: &'static str,
@@ -463,7 +633,7 @@ pub(super) fn recover_sources(
 fn classify_replayed_paths(
     source: &SampleSource,
     paths: Vec<PathBuf>,
-    event_id: u64,
+    proof: WatcherContinuityProof,
 ) -> JournalRecovery {
     let paths = paths
         .into_iter()
@@ -478,7 +648,7 @@ fn classify_replayed_paths(
             reason: "journal_replay_empty_paths",
         }
     } else {
-        JournalRecovery::Changes { paths, event_id }
+        JournalRecovery::Changes { paths, proof }
     }
 }
 
@@ -525,8 +695,8 @@ fn recover_source(source: &SampleSource, native_watcher: bool) -> JournalRecover
 
     #[cfg(target_os = "macos")]
     {
-        match replay_fsevents(&source.root, checkpoint.event_id) {
-            Ok((paths, event_id)) => classify_replayed_paths(source, paths, event_id),
+        match replay_fsevents(&source.root, root_identity, checkpoint.event_id) {
+            Ok((paths, proof)) => classify_replayed_paths(source, paths, proof),
             Err(reason) => JournalRecovery::FullAudit { reason },
         }
     }
@@ -624,8 +794,23 @@ fn store_checkpoint(
 }
 
 #[cfg(target_os = "macos")]
-fn replay_fsevents(root: &Path, event_id: u64) -> Result<(Vec<PathBuf>, u64), &'static str> {
-    macos::replay(root, event_id).map(|replay| (replay.paths, replay.event_id))
+fn replay_fsevents(
+    root: &Path,
+    root_identity: String,
+    event_id: u64,
+) -> Result<(Vec<PathBuf>, WatcherContinuityProof), &'static str> {
+    macos::replay(root, event_id).map(|replay| {
+        let proof = WatcherContinuityProof {
+            root_identity,
+            backend: WatcherBackend::Fsevents,
+            backend_device: replay.backend_device,
+            watcher_generation: replay.watcher_generation,
+            replay_coverage_start_event_id: replay.replay_start_event_id,
+            replay_coverage_end_event_id: replay.replay_end_event_id,
+            acknowledged_end_event_id: replay.replay_end_event_id,
+        };
+        (replay.paths, proof)
+    })
 }
 
 #[cfg(target_os = "macos")]
@@ -635,7 +820,7 @@ mod macos {
     use std::{
         ffi::{CStr, c_void},
         ptr,
-        sync::{Mutex, mpsc},
+        sync::{Mutex, OnceLock, atomic::AtomicU64, mpsc},
         time::Duration,
     };
 
@@ -652,14 +837,30 @@ mod macos {
     #[derive(Default)]
     struct HistoryState {
         paths: Vec<PathBuf>,
+        replay_start_event_id: u64,
         history_done: bool,
         history_lost: bool,
         latest_event_id: u64,
     }
 
+    impl HistoryState {
+        fn new(replay_start_event_id: u64) -> Self {
+            Self {
+                paths: Vec::new(),
+                replay_start_event_id,
+                history_done: false,
+                history_lost: false,
+                latest_event_id: replay_start_event_id,
+            }
+        }
+    }
+
     pub(super) struct HistoryReplay {
         pub(super) paths: Vec<PathBuf>,
-        pub(super) event_id: u64,
+        pub(super) replay_start_event_id: u64,
+        pub(super) replay_end_event_id: u64,
+        pub(super) backend_device: u64,
+        pub(super) watcher_generation: u64,
     }
 
     struct HistoryContext {
@@ -678,6 +879,12 @@ mod macos {
     // history worker that created them.
     unsafe impl Send for RunLoopHandle {}
 
+    fn next_watcher_generation() -> u64 {
+        static NEXT_WATCHER_GENERATION: OnceLock<AtomicU64> = OnceLock::new();
+        let counter = NEXT_WATCHER_GENERATION.get_or_init(|| AtomicU64::new(1));
+        counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    }
+
     #[link(name = "CoreFoundation", kind = "framework")]
     unsafe extern "C" {
         fn CFRetain(cf: cf::CFRef) -> cf::CFRef;
@@ -687,10 +894,16 @@ mod macos {
         let (result_tx, result_rx) = mpsc::sync_channel(1);
         let (run_loop_tx, run_loop_rx) = mpsc::sync_channel(1);
         let root = root.to_path_buf();
+        let watcher_generation = next_watcher_generation();
         let worker = std::thread::Builder::new()
             .name("wavecrate-fsevents-history".to_string())
             .spawn(move || {
-                let _ = result_tx.send(replay_on_run_loop(&root, event_id, run_loop_tx));
+                let _ = result_tx.send(replay_on_run_loop(
+                    &root,
+                    event_id,
+                    watcher_generation,
+                    run_loop_tx,
+                ));
             })
             .map_err(|_| "watcher_history_thread_unavailable")?;
         let run_loop = match run_loop_rx.recv_timeout(HISTORY_TIMEOUT) {
@@ -725,12 +938,13 @@ mod macos {
     fn replay_on_run_loop(
         root: &Path,
         event_id: u64,
+        watcher_generation: u64,
         run_loop_tx: mpsc::SyncSender<RunLoopHandle>,
     ) -> Result<HistoryReplay, &'static str> {
         let (ready_tx, ready_rx) = mpsc::channel();
         let context = Box::new(HistoryContext {
             root: root.to_path_buf(),
-            state: Mutex::new(HistoryState::default()),
+            state: Mutex::new(HistoryState::new(event_id)),
             ready_tx,
         });
         let context = Box::into_raw(context);
@@ -739,6 +953,19 @@ mod macos {
             Err(error) => {
                 unsafe { drop(Box::from_raw(context)) };
                 return Err(error);
+            }
+        };
+        let backend_device = match u64::try_from(unsafe {
+            fs::FSEventStreamGetDeviceBeingWatched(stream as fs::ConstFSEventStreamRef)
+        }) {
+            Ok(device) if device != 0 => device,
+            _ => {
+                unsafe {
+                    fs::FSEventStreamInvalidate(stream);
+                    fs::FSEventStreamRelease(stream);
+                    drop(Box::from_raw(context));
+                }
+                return Err("watcher_history_device_unavailable");
             }
         };
         let run_loop = unsafe { cf::CFRunLoopGetCurrent() };
@@ -784,7 +1011,10 @@ mod macos {
         state.paths.dedup();
         Ok(HistoryReplay {
             paths: state.paths,
-            event_id: state.latest_event_id.max(event_id),
+            replay_start_event_id: state.replay_start_event_id,
+            replay_end_event_id: state.latest_event_id.max(event_id),
+            backend_device,
+            watcher_generation,
         })
     }
 
@@ -875,6 +1105,23 @@ mod tests {
     use wavecrate::sample_sources::SourceId;
     use wavecrate_library::sample_sources::SourceDatabase;
 
+    fn continuity_proof(
+        root_identity: &str,
+        watcher_generation: u64,
+        start: u64,
+        end: u64,
+    ) -> WatcherContinuityProof {
+        WatcherContinuityProof {
+            root_identity: root_identity.to_string(),
+            backend: WatcherBackend::Fsevents,
+            backend_device: 10,
+            watcher_generation,
+            replay_coverage_start_event_id: start,
+            replay_coverage_end_event_id: end,
+            acknowledged_end_event_id: end,
+        }
+    }
+
     fn revision_bound_checkpoint(event_id: u64) -> RevisionBoundCheckpoint {
         RevisionBoundCheckpoint {
             source_id: "source-a".to_string(),
@@ -883,6 +1130,12 @@ mod tests {
             root_identity: "root-a".to_string(),
             event_id,
             cause: CheckpointCause::TargetedReplay,
+            continuity_proof: Some(continuity_proof(
+                "root-a",
+                4,
+                event_id.saturating_sub(1),
+                event_id,
+            )),
         }
     }
 
@@ -903,7 +1156,7 @@ mod tests {
         );
 
         assert_eq!(
-            classify_replayed_paths(&source, Vec::new(), 11),
+            classify_replayed_paths(&source, Vec::new(), continuity_proof("root-a", 4, 10, 11)),
             JournalRecovery::FullAudit {
                 reason: "journal_replay_empty_paths",
             }
@@ -919,11 +1172,12 @@ mod tests {
             directory.path().to_path_buf(),
         );
 
+        let proof = continuity_proof("root-a", 4, 10, 11);
         assert_eq!(
-            classify_replayed_paths(&source, vec![source.root.join("kick.wav")], 11,),
+            classify_replayed_paths(&source, vec![source.root.join("kick.wav")], proof.clone(),),
             JournalRecovery::Changes {
                 paths: vec![PathBuf::from("kick.wav")],
-                event_id: 11,
+                proof,
             }
         );
     }
@@ -977,6 +1231,16 @@ mod tests {
         }"#;
 
         assert!(parse_checkpoint(json).is_err());
+    }
+
+    #[test]
+    fn unknown_continuity_proof_fields_fail_closed() {
+        let checkpoint =
+            SourceWatcherCheckpoint::from_revision_bound(&revision_bound_checkpoint(7));
+        let mut value = serde_json::to_value(checkpoint).expect("checkpoint JSON value");
+        value["continuity_proof"]["unexpected"] = serde_json::json!("evidence");
+
+        assert!(parse_checkpoint(&value.to_string()).is_err());
     }
 
     #[test]
@@ -1078,7 +1342,8 @@ mod tests {
         let checkpoint = SourceWatcherCheckpoint::from_revision_bound(&expected);
         let json = serde_json::to_string(&checkpoint).expect("revision-bound checkpoint JSON");
 
-        assert!(json.contains(r#""format_version":2"#));
+        assert!(json.contains(r#""format_version":3"#));
+        assert!(json.contains(r#""backend":"fsevents""#));
         assert!(json.contains(r#""cause":"targeted_replay""#));
         assert_eq!(
             parse_checkpoint(&json)
@@ -1163,6 +1428,62 @@ mod tests {
     }
 
     #[test]
+    fn targeted_replay_requires_contiguous_matching_proof_evidence() {
+        let current_request = revision_bound_checkpoint(7);
+        let current = SourceWatcherCheckpoint::from_revision_bound(&current_request);
+
+        let mut missing_proof = revision_bound_checkpoint(8);
+        missing_proof.continuity_proof = None;
+        assert_eq!(
+            decide(Some(&current), &missing_proof),
+            CheckpointAdvanceOutcome::AuditRequired
+        );
+
+        let mut restarted = revision_bound_checkpoint(8);
+        restarted
+            .continuity_proof
+            .as_mut()
+            .expect("continuity proof")
+            .watcher_generation = 5;
+        assert_eq!(
+            decide(Some(&current), &restarted),
+            CheckpointAdvanceOutcome::AuditRequired
+        );
+
+        let mut different_device = revision_bound_checkpoint(8);
+        different_device
+            .continuity_proof
+            .as_mut()
+            .expect("continuity proof")
+            .backend_device = 11;
+        assert_eq!(
+            decide(Some(&current), &different_device),
+            CheckpointAdvanceOutcome::AuditRequired
+        );
+
+        let mut gap = revision_bound_checkpoint(8);
+        gap.continuity_proof
+            .as_mut()
+            .expect("continuity proof")
+            .replay_coverage_start_event_id = 6;
+        assert_eq!(
+            decide(Some(&current), &gap),
+            CheckpointAdvanceOutcome::AuditRequired
+        );
+
+        let mut regressed = revision_bound_checkpoint(6);
+        regressed
+            .continuity_proof
+            .as_mut()
+            .expect("continuity proof")
+            .replay_coverage_start_event_id = 5;
+        assert_eq!(
+            decide(Some(&current), &regressed),
+            CheckpointAdvanceOutcome::AuditRequired
+        );
+    }
+
+    #[test]
     fn historical_v2_baseline_allows_revision_and_lifecycle_advance() {
         let mut historical = revision_bound_checkpoint(7);
         historical.lifecycle_generation = 3;
@@ -1176,6 +1497,7 @@ mod tests {
 
         let mut equal_event_request = revision_bound_checkpoint(7);
         equal_event_request.cause = CheckpointCause::CompletedFallbackAudit;
+        equal_event_request.continuity_proof = None;
         assert_eq!(
             decide(Some(&historical), &equal_event_request),
             CheckpointAdvanceOutcome::Superseded
@@ -1208,6 +1530,7 @@ mod tests {
     fn completed_fallback_audit_establishes_or_upgrades_a_valid_cursor() {
         let mut requested = revision_bound_checkpoint(8);
         requested.cause = CheckpointCause::CompletedFallbackAudit;
+        requested.continuity_proof = None;
         let legacy = SourceWatcherCheckpoint::legacy("root-a".to_string(), 7);
 
         assert_eq!(decide(None, &requested), CheckpointAdvanceOutcome::Applied);
@@ -1228,9 +1551,60 @@ mod tests {
     }
 
     #[test]
+    fn completed_fallback_baseline_admits_the_next_targeted_proof_only_from_its_cursor() {
+        let mut fallback = revision_bound_checkpoint(7);
+        fallback.cause = CheckpointCause::CompletedFallbackAudit;
+        fallback.continuity_proof = None;
+        let current = SourceWatcherCheckpoint::from_revision_bound(&fallback);
+
+        assert_eq!(
+            decide(Some(&current), &revision_bound_checkpoint(8)),
+            CheckpointAdvanceOutcome::Applied
+        );
+
+        let mut gap = revision_bound_checkpoint(8);
+        gap.continuity_proof
+            .as_mut()
+            .expect("continuity proof")
+            .replay_coverage_start_event_id = 6;
+        assert_eq!(
+            decide(Some(&current), &gap),
+            CheckpointAdvanceOutcome::AuditRequired
+        );
+
+        let mut proofless_target = revision_bound_checkpoint(8);
+        proofless_target.continuity_proof = None;
+        assert_eq!(
+            decide(Some(&current), &proofless_target),
+            CheckpointAdvanceOutcome::AuditRequired
+        );
+    }
+
+    #[test]
+    fn completed_fallback_does_not_overwrite_a_malformed_proof() {
+        let mut malformed = revision_bound_checkpoint(7);
+        malformed
+            .continuity_proof
+            .as_mut()
+            .expect("continuity proof")
+            .acknowledged_end_event_id = 6;
+        let current = SourceWatcherCheckpoint::from_revision_bound(&malformed);
+
+        let mut fallback = revision_bound_checkpoint(8);
+        fallback.cause = CheckpointCause::CompletedFallbackAudit;
+        fallback.continuity_proof = None;
+
+        assert_eq!(
+            decide(Some(&current), &fallback),
+            CheckpointAdvanceOutcome::AuditRequired
+        );
+    }
+
+    #[test]
     fn completed_fallback_audit_never_regresses_or_crosses_root_identity() {
         let mut requested = revision_bound_checkpoint(8);
         requested.cause = CheckpointCause::CompletedFallbackAudit;
+        requested.continuity_proof = None;
 
         let mut newer = SourceWatcherCheckpoint::legacy("root-a".to_string(), 9);
         assert_eq!(
@@ -1259,6 +1633,12 @@ mod tests {
             root_identity: root_identity.to_string(),
             event_id,
             cause: CheckpointCause::TargetedReplay,
+            continuity_proof: Some(continuity_proof(
+                root_identity,
+                4,
+                event_id.saturating_sub(1),
+                event_id,
+            )),
         }
     }
 
@@ -1539,6 +1919,7 @@ mod tests {
             }
             let mut requested = owner_checkpoint(source_id, 4, 0, "root-a", 8);
             requested.cause = CheckpointCause::CompletedFallbackAudit;
+            requested.continuity_proof = None;
 
             assert_eq!(
                 write_revision_bound_checkpoint(&source, &requested, 4, "root-a"),

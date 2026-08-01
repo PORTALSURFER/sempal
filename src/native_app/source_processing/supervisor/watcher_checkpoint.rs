@@ -3,7 +3,8 @@ use super::{
     source_descriptors_match,
 };
 use crate::native_app::sample_library::source_watcher::{
-    CheckpointAdvanceOutcome, RevisionBoundCheckpoint, write_revision_bound_checkpoint,
+    CheckpointAdvanceOutcome, CheckpointCause, RevisionBoundCheckpoint,
+    targeted_replay_request_has_valid_proof, write_revision_bound_checkpoint,
 };
 use wavecrate_library::filesystem_identity::stable_filesystem_identity;
 
@@ -27,6 +28,21 @@ fn process_watcher_checkpoint(shared: &Arc<Shared>, request: RevisionBoundCheckp
         );
         return;
     };
+    if request.cause == CheckpointCause::TargetedReplay
+        && !targeted_replay_request_has_valid_proof(&request)
+    {
+        tracing::debug!(
+            source_id = request.source_id.as_str(),
+            event_id = request.event_id,
+            "Rejecting targeted watcher checkpoint without a well-formed continuity proof"
+        );
+        request_source_manifest_audit(
+            shared.as_ref(),
+            request.source_id.as_str(),
+            "watcher_checkpoint_proof_missing_or_malformed",
+        );
+        return;
+    }
     let outcome = {
         let _writer = shared.database_writer.lock(DatabasePhase::Publish);
         let Some(current_source) = configured_source_for_request(shared, &request) else {
@@ -147,7 +163,9 @@ fn live_root_identity(source: &SampleSource) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::native_app::sample_library::source_watcher::CheckpointCause;
+    use crate::native_app::sample_library::source_watcher::{
+        CheckpointCause, WatcherBackend, WatcherContinuityProof,
+    };
     use crate::native_app::source_processing::SourceProcessingSupervisor;
     use std::{
         sync::atomic::Ordering,
@@ -174,9 +192,18 @@ mod tests {
             source_id: source.id.as_str().to_string(),
             lifecycle_generation,
             source_revision: 0,
-            root_identity,
+            root_identity: root_identity.clone(),
             event_id: 8,
             cause: CheckpointCause::TargetedReplay,
+            continuity_proof: Some(WatcherContinuityProof {
+                root_identity: root_identity.clone(),
+                backend: WatcherBackend::Fsevents,
+                backend_device: 10,
+                watcher_generation: 1,
+                replay_coverage_start_event_id: 7,
+                replay_coverage_end_event_id: 8,
+                acknowledged_end_event_id: 8,
+            }),
         }
     }
 
@@ -186,11 +213,20 @@ mod tests {
             &serde_json::json!({
                 "root_identity": root_identity,
                 "event_id": 7,
-                "format_version": 2,
+                "format_version": 3,
                 "source_id": source.id.as_str(),
                 "lifecycle_generation": lifecycle_generation,
                 "source_revision": 0,
-                "cause": "targeted_replay"
+                "cause": "targeted_replay",
+                "continuity_proof": {
+                    "root_identity": root_identity,
+                    "backend": "fsevents",
+                    "backend_device": 10,
+                    "watcher_generation": 1,
+                    "replay_coverage_start_event_id": 6,
+                    "replay_coverage_end_event_id": 7,
+                    "acknowledged_end_event_id": 7
+                }
             })
             .to_string(),
         );
@@ -227,6 +263,7 @@ mod tests {
             root_identity: "root-a".to_string(),
             event_id: 1,
             cause: CheckpointCause::TargetedReplay,
+            continuity_proof: None,
         };
 
         handle.submit_watcher_checkpoint(request);
@@ -268,6 +305,95 @@ mod tests {
             checkpoint_bytes(&source).expect("checkpoint bytes"),
             committed
         );
+    }
+
+    #[test]
+    fn queue_rejects_stale_watcher_generation_and_preserves_checkpoint_bytes() {
+        let directory = tempfile::tempdir().expect("source directory");
+        let source = source(directory.path(), "source-a");
+        let shared = Arc::new(Shared::new(vec![source.clone()], None));
+        let lifecycle_generation = shared.control().source_lifecycle_generations["source-a"];
+        let root_identity = root_identity(&source);
+        seed_checkpoint(&source, lifecycle_generation, &root_identity);
+        let before = checkpoint_bytes(&source).expect("seeded checkpoint");
+        let mut stale = request(&source, lifecycle_generation, root_identity);
+        stale
+            .continuity_proof
+            .as_mut()
+            .expect("continuity proof")
+            .watcher_generation = 2;
+
+        let handle = super::super::SourceProcessingBudgetHandle {
+            shared: Arc::clone(&shared),
+        };
+        handle.submit_watcher_checkpoint(stale);
+        process_pending_watcher_checkpoints(&shared);
+
+        assert!(
+            shared
+                .control()
+                .force_manifest_audit_sources
+                .contains(source.id.as_str())
+        );
+        assert_eq!(checkpoint_bytes(&source).as_deref(), Some(before.as_str()));
+    }
+
+    #[test]
+    fn queue_rejects_proofless_targeted_request_at_owner_admission() {
+        let directory = tempfile::tempdir().expect("source directory");
+        let source = source(directory.path(), "source-a");
+        let shared = Arc::new(Shared::new(vec![source.clone()], None));
+        let lifecycle_generation = shared.control().source_lifecycle_generations["source-a"];
+        let root_identity = root_identity(&source);
+        let mut proofless = request(&source, lifecycle_generation, root_identity);
+        proofless.continuity_proof = None;
+
+        let handle = super::super::SourceProcessingBudgetHandle {
+            shared: Arc::clone(&shared),
+        };
+        handle.submit_watcher_checkpoint(proofless);
+        process_pending_watcher_checkpoints(&shared);
+
+        assert!(
+            shared
+                .control()
+                .force_manifest_audit_sources
+                .contains(source.id.as_str())
+        );
+        assert_eq!(checkpoint_bytes(&source), None);
+    }
+
+    #[test]
+    fn queue_admits_targeted_proof_after_completed_audit_baseline() {
+        let directory = tempfile::tempdir().expect("source directory");
+        let source = source(directory.path(), "source-a");
+        let shared = Arc::new(Shared::new(vec![source.clone()], None));
+        let lifecycle_generation = shared.control().source_lifecycle_generations["source-a"];
+        let root_identity = root_identity(&source);
+        let baseline = serde_json::json!({
+            "root_identity": root_identity,
+            "event_id": 7,
+            "format_version": 2,
+            "source_id": source.id.as_str(),
+            "lifecycle_generation": lifecycle_generation,
+            "source_revision": 0,
+            "cause": "completed_fallback_audit"
+        });
+        seed_checkpoint_value(&source, &baseline.to_string());
+
+        let handle = super::super::SourceProcessingBudgetHandle {
+            shared: Arc::clone(&shared),
+        };
+        handle.submit_watcher_checkpoint(request(&source, lifecycle_generation, root_identity));
+        process_pending_watcher_checkpoints(&shared);
+
+        let checkpoint = serde_json::from_str::<serde_json::Value>(
+            &checkpoint_bytes(&source).expect("targeted checkpoint"),
+        )
+        .expect("targeted checkpoint JSON");
+        assert_eq!(checkpoint["format_version"], 3);
+        assert_eq!(checkpoint["event_id"], 8);
+        assert_eq!(checkpoint["continuity_proof"]["watcher_generation"], 1);
     }
 
     #[test]

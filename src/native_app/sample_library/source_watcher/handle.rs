@@ -831,6 +831,7 @@ fn run_source_watcher(
                 overflowed: event.overflowed,
                 source_root_available: event.source_root_available,
                 journal_checkpoint_event_id: None,
+                watcher_continuity_proof: None,
             });
         }
     }
@@ -911,10 +912,10 @@ fn publish_closed_app_journal_recovery(
     {
         match recovery {
             #[cfg(target_os = "macos")]
-            JournalRecovery::Changes { paths, event_id } if paths.is_empty() => {
+            JournalRecovery::Changes { paths, proof } if paths.is_empty() => {
                 tracing::info!(
                     source_id = source.id.as_str(),
-                    event_id,
+                    replay_end_event_id = proof.replay_coverage_end_event_id,
                     "Empty closed-application source watcher replay requires a bounded manifest audit"
                 );
                 if defer_audit_barriers {
@@ -932,10 +933,14 @@ fn publish_closed_app_journal_recovery(
                 }
             }
             #[cfg(target_os = "macos")]
-            JournalRecovery::Changes { paths, event_id } => {
+            JournalRecovery::Changes { paths, proof } => {
                 tracing::info!(
                     source_id = source.id.as_str(),
                     path_count = paths.len(),
+                    replay_start_event_id = proof.replay_coverage_start_event_id,
+                    replay_end_event_id = proof.replay_coverage_end_event_id,
+                    backend_device = proof.backend_device,
+                    watcher_generation = proof.watcher_generation,
                     "Replaying closed-application source watcher changes"
                 );
                 let _ = message_tx.send(GuiMessage::SourceFilesystemChanged {
@@ -943,7 +948,8 @@ fn publish_closed_app_journal_recovery(
                     paths,
                     overflowed: false,
                     source_root_available: true,
-                    journal_checkpoint_event_id: Some(event_id),
+                    journal_checkpoint_event_id: Some(proof.acknowledged_end_event_id),
+                    watcher_continuity_proof: Some(proof),
                 });
             }
             JournalRecovery::FullAudit { reason } => {

@@ -138,6 +138,7 @@ impl NativeAppState {
                 overflowed,
                 source_root_available,
                 journal_checkpoint_event_id,
+                watcher_continuity_proof,
             } => {
                 self.refresh_source_after_filesystem_change(
                     source_id,
@@ -145,6 +146,7 @@ impl NativeAppState {
                     overflowed,
                     source_root_available,
                     journal_checkpoint_event_id,
+                    watcher_continuity_proof,
                     context,
                 );
             }
