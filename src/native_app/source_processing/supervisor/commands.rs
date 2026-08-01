@@ -23,6 +23,24 @@ impl SourceAuditLifecycleCause {
     }
 }
 
+pub(super) fn request_source_manifest_audit(
+    shared: &super::Shared,
+    source_id: &str,
+    reason: &'static str,
+) {
+    let mut control = shared.control();
+    if !control.source_is_active(source_id) {
+        return;
+    }
+    control
+        .force_manifest_audit_sources
+        .insert(source_id.to_string());
+    control.deferred_lifecycle_audit_sources.remove(source_id);
+    control.mark_source_dirty(source_id, reason);
+    drop(control);
+    shared.wake.notify_one();
+}
+
 impl SourceProcessingSupervisor {
     /// Admit a newly configured source before its first external scan starts.
     ///
@@ -88,17 +106,7 @@ impl SourceProcessingSupervisor {
         source_id: &str,
         reason: &'static str,
     ) {
-        let mut control = self.shared.control();
-        if !control.source_is_active(source_id) {
-            return;
-        }
-        control
-            .force_manifest_audit_sources
-            .insert(source_id.to_string());
-        control.deferred_lifecycle_audit_sources.remove(source_id);
-        control.mark_source_dirty(source_id, reason);
-        drop(control);
-        self.shared.wake.notify_one();
+        request_source_manifest_audit(self.shared.as_ref(), source_id, reason);
     }
 
     pub(in crate::native_app) fn wake_source(&self, source_id: &str, reason: &'static str) {

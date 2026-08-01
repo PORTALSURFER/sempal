@@ -25,6 +25,10 @@ fn doubled_duration(current: Duration, maximum: Duration) -> Duration {
 }
 
 pub(in crate::native_app) use handle::GuiSourceWatcherHandle;
+pub(in crate::native_app) use journal::{
+    CheckpointAdvanceOutcome, CheckpointCause, RevisionBoundCheckpoint,
+    write_revision_bound_checkpoint,
+};
 
 #[cfg(test)]
 #[path = "source_watcher/tests.rs"]

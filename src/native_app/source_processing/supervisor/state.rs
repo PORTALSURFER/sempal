@@ -10,6 +10,7 @@ use super::{
     SampleSource, SourceAuditLifecycleCause, SourceHealthPublicationOutcome, SourceProcessingEvent,
     SourceProcessingEventSink, SourceProcessingHealthEvent, SupervisorTelemetry, sources_by_id,
 };
+use std::collections::VecDeque;
 
 #[derive(Clone)]
 pub(super) struct ExternalScanAdmission {
@@ -148,6 +149,7 @@ impl Shared {
                 deferred_lifecycle_audit_sources: BTreeSet::new(),
                 pending_readiness_deltas: BTreeMap::new(),
                 pending_projection_fences: BTreeMap::new(),
+                pending_watcher_checkpoints: VecDeque::new(),
                 accepted_manifest_revisions: BTreeMap::new(),
                 awaiting_foreground_refresh_sources: BTreeSet::new(),
                 force_manifest_audit_sources: BTreeSet::new(),

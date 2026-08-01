@@ -19,6 +19,25 @@ pub struct ManifestCommitResult {
 }
 
 impl SourceWriteBatch<'_> {
+    /// Read a metadata value from the active write transaction.
+    ///
+    /// The value is read from the same snapshot and writer reservation that will commit the
+    /// batch, so callers can make a revision-fenced decision without opening a second
+    /// connection or observing a newer transaction after the decision.
+    pub fn get_metadata(&self, key: &str) -> Result<Option<String>, SourceDbError> {
+        self.tx
+            .query_row("SELECT value FROM metadata WHERE key = ?1", [key], |row| {
+                row.get(0)
+            })
+            .optional()
+            .map_err(map_sql_error)
+    }
+
+    /// Read the current manifest revision from the active write transaction.
+    pub fn get_revision(&self) -> Result<u64, SourceDbError> {
+        manifest_revision(&self.tx)
+    }
+
     /// Return whether the source traversal policy still matches the scan snapshot.
     pub fn matches_source_traversal_policy(
         &self,

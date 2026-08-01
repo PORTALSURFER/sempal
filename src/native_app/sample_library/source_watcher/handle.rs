@@ -285,19 +285,6 @@ impl GuiSourceWatcherHandle {
             });
     }
 
-    pub(in crate::native_app) fn advance_journal_checkpoint(
-        &self,
-        source_id: String,
-        event_id: u64,
-    ) {
-        let _ = self
-            .command_tx
-            .send(GuiSourceWatchCommand::AdvanceJournalCheckpoint {
-                source_id,
-                event_id,
-            });
-    }
-
     pub(in crate::native_app) fn finish_journal_barrier_audit(
         &self,
         source_id: String,
@@ -380,10 +367,6 @@ enum GuiSourceWatchCommand {
         echoes: Vec<CommittedWatcherEcho>,
         cursor: RevisionFirstCursor,
     },
-    AdvanceJournalCheckpoint {
-        source_id: String,
-        event_id: u64,
-    },
     FinishJournalBarrierAudit {
         source_id: String,
         complete: bool,
@@ -453,10 +436,6 @@ fn run_source_watcher(
                     Instant::now(),
                 );
             }
-            Ok(GuiSourceWatchCommand::AdvanceJournalCheckpoint {
-                source_id,
-                event_id,
-            }) => journal::advance_after_reconciliation(&state.sources, &source_id, event_id),
             Ok(GuiSourceWatchCommand::FinishJournalBarrierAudit {
                 source_id,
                 complete,
@@ -893,11 +872,24 @@ fn publish_closed_app_journal_recovery(
         match recovery {
             #[cfg(target_os = "macos")]
             JournalRecovery::Changes { paths, event_id } if paths.is_empty() => {
-                journal::advance_after_reconciliation(sources, source.id.as_str(), event_id);
-                tracing::debug!(
+                tracing::info!(
                     source_id = source.id.as_str(),
-                    "Durable source watcher journal found no closed-application changes"
+                    event_id,
+                    "Empty closed-application source watcher replay requires a bounded manifest audit"
                 );
+                if defer_audit_barriers {
+                    deferred_audit_barrier_sources.insert(source.id.as_str().to_string());
+                } else {
+                    if let Some(barrier) =
+                        journal::capture_audit_barrier(sources, source.id.as_str())
+                    {
+                        audit_barriers.insert(source.id.as_str().to_string(), barrier);
+                    }
+                    let _ = message_tx.send(GuiMessage::SourceWatcherJournalGap {
+                        source_id: source.id.as_str().to_string(),
+                        reason: "journal_replay_empty_paths",
+                    });
+                }
             }
             #[cfg(target_os = "macos")]
             JournalRecovery::Changes { paths, event_id } => {

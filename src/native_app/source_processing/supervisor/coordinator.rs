@@ -1,3 +1,4 @@
+use super::watcher_checkpoint::process_pending_watcher_checkpoints;
 use super::{
     Arc, BTreeMap, BTreeSet, CoordinatorExecutionState, Duration, ExecutionPool, FairScheduler,
     Instant, RuntimeCandidate, RuntimeTask, SAFETY_SWEEP_INTERVAL, Shared, SourceDiscoveryStats,
@@ -28,6 +29,10 @@ pub(super) fn run_coordinator(shared: Arc<Shared>) {
     #[cfg(test)]
     let mut synthetic_connections = BTreeMap::<String, rusqlite::Connection>::new();
     loop {
+        if shared.control().shutdown {
+            break;
+        }
+        process_pending_watcher_checkpoints(&shared);
         let (
             sources,
             dirty_sources,
