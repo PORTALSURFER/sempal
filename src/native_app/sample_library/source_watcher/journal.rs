@@ -260,8 +260,7 @@ fn decide_checkpoint_advance(
     };
 
     if current.source_id != requested.source_id
-        || current.lifecycle_generation != requested.lifecycle_generation
-        || current.source_revision != requested.source_revision
+        || current.source_revision > current_source_revision
         || current.root_identity != requested.root_identity
     {
         return CheckpointAdvanceOutcome::AuditRequired;
@@ -1086,15 +1085,14 @@ mod tests {
     }
 
     #[test]
-    fn invalid_revision_bound_requests_require_an_audit() {
-        let current_request = revision_bound_checkpoint(7);
-        let current = SourceWatcherCheckpoint::from_revision_bound(&current_request);
+    fn historical_lifecycle_advances_but_invalid_requests_require_an_audit() {
+        let mut historical_request = revision_bound_checkpoint(7);
+        historical_request.lifecycle_generation = 3;
+        let current = SourceWatcherCheckpoint::from_revision_bound(&historical_request);
 
-        let mut stale_lifecycle = revision_bound_checkpoint(8);
-        stale_lifecycle.lifecycle_generation = 3;
         assert_eq!(
-            decide(Some(&current), &stale_lifecycle),
-            CheckpointAdvanceOutcome::AuditRequired
+            decide(Some(&current), &revision_bound_checkpoint(8)),
+            CheckpointAdvanceOutcome::Applied
         );
 
         let mut mismatched_revision = revision_bound_checkpoint(8);
@@ -1152,6 +1150,38 @@ mod tests {
         assert_eq!(
             decide(Some(&current), &revision_bound_checkpoint(8)),
             CheckpointAdvanceOutcome::Applied
+        );
+    }
+
+    #[test]
+    fn historical_v2_baseline_allows_revision_and_lifecycle_advance() {
+        let mut historical = revision_bound_checkpoint(7);
+        historical.lifecycle_generation = 3;
+        historical.source_revision = 8;
+        let historical = SourceWatcherCheckpoint::from_revision_bound(&historical);
+
+        assert_eq!(
+            decide(Some(&historical), &revision_bound_checkpoint(8)),
+            CheckpointAdvanceOutcome::Applied
+        );
+
+        let mut equal_event_request = revision_bound_checkpoint(7);
+        equal_event_request.cause = CheckpointCause::CompletedFallbackAudit;
+        assert_eq!(
+            decide(Some(&historical), &equal_event_request),
+            CheckpointAdvanceOutcome::Superseded
+        );
+    }
+
+    #[test]
+    fn stored_revision_ahead_of_current_truth_requires_an_audit() {
+        let mut historical = revision_bound_checkpoint(7);
+        historical.source_revision = 10;
+        let historical = SourceWatcherCheckpoint::from_revision_bound(&historical);
+
+        assert_eq!(
+            decide(Some(&historical), &revision_bound_checkpoint(8)),
+            CheckpointAdvanceOutcome::AuditRequired
         );
     }
 
@@ -1239,6 +1269,140 @@ mod tests {
                 .get_revision()
                 .expect("source revision"),
             0
+        );
+    }
+
+    #[test]
+    fn owner_advances_historical_checkpoint_after_manifest_revision_and_lifecycle_advance() {
+        let directory = tempfile::tempdir().expect("source directory");
+        let source = SampleSource::new_with_id(
+            SourceId::from_string("owner-historical-baseline"),
+            directory.path().to_path_buf(),
+        );
+        let historical = owner_checkpoint("owner-historical-baseline", 4, 0, "root-a", 7);
+        seed_owner_checkpoint(
+            &source,
+            &serde_json::to_string(&SourceWatcherCheckpoint::from_revision_bound(&historical))
+                .expect("serialize historical checkpoint"),
+        );
+
+        let database = SourceDatabase::open_for_test_fixture_source_write(&source.root)
+            .expect("source database");
+        let initial_revision = database.get_revision().expect("initial source revision");
+        let mut batch = database.write_batch().expect("manifest transaction");
+        batch
+            .upsert_file(std::path::Path::new("fixture.wav"), 1, 1)
+            .expect("fixture manifest row");
+        let (manifest_revision, _) = batch
+            .commit_with_manifest_snapshot()
+            .expect("fixture manifest commit");
+        assert_eq!(manifest_revision, initial_revision + 1);
+
+        let requested = owner_checkpoint(
+            "owner-historical-baseline",
+            5,
+            manifest_revision,
+            "root-a",
+            8,
+        );
+        assert_eq!(
+            write_revision_bound_checkpoint(&source, &requested, 5, "root-a"),
+            CheckpointAdvanceOutcome::Applied
+        );
+        assert_eq!(
+            owner_checkpoint_bytes(&source)
+                .and_then(|value| parse_checkpoint(&value).ok())
+                .and_then(|checkpoint| checkpoint.revision_bound()),
+            Some(requested)
+        );
+        assert_eq!(
+            SourceDatabase::open_for_test_fixture_source_write(&source.root)
+                .expect("reopen source database")
+                .get_revision()
+                .expect("source revision"),
+            manifest_revision
+        );
+    }
+
+    #[test]
+    fn owner_preserves_checkpoint_when_stored_revision_is_ahead_of_current_truth() {
+        let directory = tempfile::tempdir().expect("source directory");
+        let source = SampleSource::new_with_id(
+            SourceId::from_string("owner-future-revision"),
+            directory.path().to_path_buf(),
+        );
+        let historical = owner_checkpoint("owner-future-revision", 4, 1, "root-a", 7);
+        let historical_bytes =
+            serde_json::to_string(&SourceWatcherCheckpoint::from_revision_bound(&historical))
+                .expect("serialize future checkpoint");
+        seed_owner_checkpoint(&source, &historical_bytes);
+
+        let requested = owner_checkpoint("owner-future-revision", 5, 0, "root-a", 8);
+        assert_eq!(
+            write_revision_bound_checkpoint(&source, &requested, 5, "root-a"),
+            CheckpointAdvanceOutcome::AuditRequired
+        );
+        assert_eq!(
+            owner_checkpoint_bytes(&source).as_deref(),
+            Some(historical_bytes.as_str())
+        );
+    }
+
+    #[test]
+    fn owner_preserves_checkpoint_when_event_regresses() {
+        let directory = tempfile::tempdir().expect("source directory");
+        let source = SampleSource::new_with_id(
+            SourceId::from_string("owner-event-regression"),
+            directory.path().to_path_buf(),
+        );
+        let historical = owner_checkpoint("owner-event-regression", 4, 0, "root-a", 8);
+        let historical_bytes =
+            serde_json::to_string(&SourceWatcherCheckpoint::from_revision_bound(&historical))
+                .expect("serialize historical checkpoint");
+        seed_owner_checkpoint(&source, &historical_bytes);
+
+        let requested = owner_checkpoint("owner-event-regression", 5, 0, "root-a", 7);
+        assert_eq!(
+            write_revision_bound_checkpoint(&source, &requested, 5, "root-a"),
+            CheckpointAdvanceOutcome::AuditRequired
+        );
+        assert_eq!(
+            owner_checkpoint_bytes(&source).as_deref(),
+            Some(historical_bytes.as_str())
+        );
+    }
+
+    #[test]
+    fn owner_preserves_historical_checkpoint_at_equal_event_boundary() {
+        let directory = tempfile::tempdir().expect("source directory");
+        let source = SampleSource::new_with_id(
+            SourceId::from_string("owner-equal-event"),
+            directory.path().to_path_buf(),
+        );
+        let historical = owner_checkpoint("owner-equal-event", 4, 0, "root-a", 8);
+        let historical_bytes =
+            serde_json::to_string(&SourceWatcherCheckpoint::from_revision_bound(&historical))
+                .expect("serialize historical checkpoint");
+        seed_owner_checkpoint(&source, &historical_bytes);
+
+        let database = SourceDatabase::open_for_test_fixture_source_write(&source.root)
+            .expect("source database");
+        let mut batch = database.write_batch().expect("manifest transaction");
+        batch
+            .upsert_file(std::path::Path::new("fixture.wav"), 1, 1)
+            .expect("fixture manifest row");
+        let (manifest_revision, _) = batch
+            .commit_with_manifest_snapshot()
+            .expect("fixture manifest commit");
+        let requested = owner_checkpoint("owner-equal-event", 5, manifest_revision, "root-a", 8);
+
+        assert_eq!(
+            write_revision_bound_checkpoint(&source, &requested, 5, "root-a"),
+            CheckpointAdvanceOutcome::Superseded
+        );
+        assert_eq!(
+            owner_checkpoint_bytes(&source).as_deref(),
+            Some(historical_bytes.as_str())
         );
     }
 
