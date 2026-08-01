@@ -20,10 +20,14 @@ use uuid::Uuid;
 
 use super::AbsentFinalRecoveryClassification;
 use super::absent_final_no_replace::{
-    AbsentFinalAdoptionAdapter, AbsentFinalAdoptionOutcome, AbsentFinalNoReplaceRequestError,
-    ProductionAbsentFinalAdoptionAdapter,
+    AbsentFinalAdoptionAdapter, AbsentFinalAdoptionOutcome,
+    AbsentFinalAdoptionQualificationRequest, AbsentFinalAdoptionQualificationResult,
+    AbsentFinalNoReplaceRequestError, ProductionAbsentFinalAdoptionAdapter,
 };
-use super::absent_final_recovery::inspect_absent_final_recovery;
+use super::absent_final_recovery::{
+    AbsentFinalRecoveryAdapter, AbsentFinalRecoveryRequest, AbsentFinalRecoveryResult,
+    ProductionAbsentFinalRecoveryAdapter,
+};
 pub(crate) use super::capacity_gate::VolumeIdentity;
 use super::capacity_gate::{DurableCapacityPlan, RejectedBeforeIntent};
 pub(crate) use super::expected_identity_replacement::ReplacementQualificationAssessment;
@@ -2762,6 +2766,36 @@ pub(crate) struct OperationJournalCoordinator {
     store: OperationJournalStore,
 }
 
+fn validate_absent_final_recovery_result_operation_id(
+    operation_id: Uuid,
+    result: AbsentFinalRecoveryResult,
+) -> Result<AbsentFinalRecoveryResult, JournalError> {
+    if result.operation_id() != operation_id {
+        return Err(JournalError::InvalidRecoveryObservation {
+            operation_id,
+            reason: String::from(
+                "absent-final recovery adapter returned evidence for another operation",
+            ),
+        });
+    }
+    Ok(result)
+}
+
+fn validate_absent_final_adoption_result_operation_id(
+    operation_id: Uuid,
+    result: AbsentFinalAdoptionQualificationResult,
+) -> Result<AbsentFinalAdoptionOutcome, JournalError> {
+    if result.operation_id() != operation_id {
+        return Err(JournalError::InvalidRecoveryObservation {
+            operation_id,
+            reason: String::from(
+                "absent-final adoption adapter returned evidence for another operation",
+            ),
+        });
+    }
+    Ok(result.outcome)
+}
+
 fn clean_relative_path(path: &Path) -> Result<(), String> {
     if path.as_os_str().is_empty() || path.is_absolute() {
         return Err(String::from("path must be a non-empty relative locator"));
@@ -3515,26 +3549,33 @@ impl OperationJournalCoordinator {
         self.store.recovery_summary()
     }
 
-    /// Classify one eligible schema-v2 absent-final record by reacquiring and inspecting its
-    /// target-parent capability. This method is observation-only: it never updates the record,
-    /// writes journal bytes, changes disposition, or alters capacity claims.
+    /// Classify one eligible schema-v2 absent-final record through the physical file-owner
+    /// adapter. This method is observation-only: it never updates the record, writes journal
+    /// bytes, changes disposition, or alters capacity claims.
     pub(crate) fn classify_schema_v2_absent_final_recovery(
         &self,
         operation_id: Uuid,
     ) -> Result<AbsentFinalRecoveryClassification, JournalError> {
         Ok(self
-            .inspect_schema_v2_absent_final_recovery(operation_id)?
+            .run_schema_v2_absent_final_recovery(operation_id)?
             .classification)
     }
 
-    fn inspect_schema_v2_absent_final_recovery(
+    /// Build an owned recovery handoff from durable evidence without touching the filesystem.
+    fn prepare_schema_v2_absent_final_recovery_request(
         &self,
         operation_id: Uuid,
-    ) -> Result<super::absent_final_recovery::AbsentFinalRecoveryInspection, JournalError> {
+    ) -> Result<AbsentFinalRecoveryRequest, JournalError> {
         let record = self
             .store
             .record(operation_id)
             .ok_or(JournalError::NotFound(operation_id))?;
+        if record.operation_id != operation_id {
+            return Err(JournalError::InvalidPublicationEvidence {
+                operation_id,
+                reason: String::from("absent-final recovery record operation identity changed"),
+            });
+        }
         if record.schema_version != SCHEMA_V2 {
             return Err(JournalError::InvalidPublicationEvidence {
                 operation_id,
@@ -3582,7 +3623,29 @@ impl OperationJournalCoordinator {
                 reason,
             }
         })?;
-        Ok(inspect_absent_final_recovery(prepared, staged))
+        let FilesystemStagedParticipant::CopyValidated { staging, evidence } = &staged.participant;
+        AbsentFinalRecoveryRequest::try_new(
+            operation_id,
+            prepared.target_parent.path.clone(),
+            prepared.target_parent.identity.clone(),
+            staging.relative_path.clone(),
+            prepared.final_leaf.clone(),
+            staging.identity.clone(),
+            evidence.clone(),
+        )
+        .map_err(|error| JournalError::InvalidPublicationEvidence {
+            operation_id,
+            reason: format!("invalid absent-final recovery request: {error:?}"),
+        })
+    }
+
+    fn run_schema_v2_absent_final_recovery(
+        &self,
+        operation_id: Uuid,
+    ) -> Result<AbsentFinalRecoveryResult, JournalError> {
+        let request = self.prepare_schema_v2_absent_final_recovery_request(operation_id)?;
+        let result = ProductionAbsentFinalRecoveryAdapter.inspect(request);
+        validate_absent_final_recovery_result_operation_id(operation_id, result)
     }
 
     /// Re-inspect one eligible absent-final record and durably retain only the exact
@@ -3592,12 +3655,12 @@ impl OperationJournalCoordinator {
         &mut self,
         operation_id: Uuid,
     ) -> Result<AbsentFinalRecoveryClassification, JournalError> {
-        let inspection = self.inspect_schema_v2_absent_final_recovery(operation_id)?;
+        let result = self.run_schema_v2_absent_final_recovery(operation_id)?;
         let existing = self
             .store
             .record(operation_id)
             .and_then(|record| record.absent_final_recovery_observation.clone());
-        match (inspection.classification, inspection.observation, existing) {
+        match (result.classification, result.observation, existing) {
             (
                 AbsentFinalRecoveryClassification::StagingMissingFinalMatches,
                 Some(observation),
@@ -3644,19 +3707,18 @@ impl OperationJournalCoordinator {
         &mut self,
         operation_id: Uuid,
     ) -> Result<AbsentFinalRecoveryClassification, JournalError> {
-        let inspection = self.inspect_schema_v2_absent_final_recovery(operation_id)?;
-        let AbsentFinalRecoveryClassification::StagingMissingFinalMatches =
-            inspection.classification
+        let result = self.run_schema_v2_absent_final_recovery(operation_id)?;
+        let AbsentFinalRecoveryClassification::StagingMissingFinalMatches = result.classification
         else {
             return Err(JournalError::InvalidRecoveryObservation {
                 operation_id,
                 reason: format!(
                     "absent-final transaction-owned proof requires StagingMissingFinalMatches, got {:?}",
-                    inspection.classification
+                    result.classification
                 ),
             });
         };
-        let Some(live_observation) = inspection.observation else {
+        let Some(live_observation) = result.observation else {
             return Err(JournalError::InvalidRecoveryObservation {
                 operation_id,
                 reason: String::from(
@@ -3706,15 +3768,15 @@ impl OperationJournalCoordinator {
         Ok(AbsentFinalRecoveryClassification::StagingMissingFinalMatches)
     }
 
-    /// Qualify an already-present absent-final entry through a freshly reacquired, identity-checked
-    /// target-parent capability. This is observation-only: it never writes the journal, changes
-    /// phase/timestamps/capacity, or mutates the filesystem.
+    /// Qualify an already-present absent-final entry through the physical file-owner adapters.
+    /// This is observation-only: it never writes the journal, changes phase/timestamps/capacity,
+    /// or mutates the filesystem.
     pub(crate) fn qualify_schema_v2_absent_final_adoption(
         &self,
         operation_id: Uuid,
     ) -> Result<AbsentFinalAdoptionOutcome, JournalError> {
-        let inspection = self
-            .inspect_schema_v2_absent_final_recovery(operation_id)
+        let recovery = self
+            .run_schema_v2_absent_final_recovery(operation_id)
             .map_err(|error| match error {
                 JournalError::NotFound(_) => error,
                 error => JournalError::InvalidRecoveryObservation {
@@ -3723,17 +3785,23 @@ impl OperationJournalCoordinator {
                 },
             })?;
         if !matches!(
-            inspection.classification,
+            recovery.classification,
             AbsentFinalRecoveryClassification::StagingMissingFinalMatches
         ) {
             return Err(JournalError::InvalidRecoveryObservation {
                 operation_id,
                 reason: format!(
                     "absent-final adoption requires StagingMissingFinalMatches, got {:?}",
-                    inspection.classification
+                    recovery.classification
                 ),
             });
         }
+        let Some(live_observation) = recovery.observation else {
+            return Err(JournalError::InvalidRecoveryObservation {
+                operation_id,
+                reason: String::from("absent-final adoption requires a live recovery observation"),
+            });
+        };
         let record = self
             .store
             .record(operation_id)
@@ -3750,6 +3818,14 @@ impl OperationJournalCoordinator {
                 reason: String::from("absent-final adoption requires transaction-owned proof"),
             });
         };
+        if live_observation != *observation {
+            return Err(JournalError::InvalidRecoveryObservation {
+                operation_id,
+                reason: String::from(
+                    "live absent-final recovery observation conflicts with durable observation",
+                ),
+            });
+        }
         if proof.target_parent_stable_id != observation.target_parent_stable_id
             || proof.final_stable_id != observation.final_stable_id
             || proof.final_len != observation.final_len
@@ -3773,41 +3849,23 @@ impl OperationJournalCoordinator {
                 reason: String::from("absent-final adoption requires exact content proof"),
             });
         };
-        let (target_parent, target_capability) =
-            open_root(&prepared.target_parent.path).map_err(|reason| {
-                JournalError::InvalidRecoveryObservation {
-                    operation_id,
-                    reason: format!("could not reacquire target-parent capability: {reason}"),
-                }
-            })?;
-        if target_capability.identity.stable_id != proof.target_parent_stable_id {
-            return Err(JournalError::InvalidRecoveryObservation {
-                operation_id,
-                reason: String::from("reacquired target-parent identity conflicts with proof"),
-            });
-        }
-        let request = super::absent_final_no_replace::AbsentFinalAdoptionRequest::try_new(
-            &target_parent,
-            &prepared.final_leaf,
-            &target_capability.identity,
-            &proof.final_stable_id,
+        let request = AbsentFinalAdoptionQualificationRequest::try_new(
+            operation_id,
+            prepared.target_parent.path.clone(),
+            prepared.final_leaf.clone(),
+            proof.target_parent_stable_id.clone(),
+            proof.final_stable_id.clone(),
             proof.final_len,
-            expected_content,
+            *expected_content,
         )
         .map_err(|error| JournalError::InvalidRecoveryObservation {
             operation_id,
-            reason: match error {
-                AbsentFinalNoReplaceRequestError::TargetLeafNotSingleCleanNormal => {
-                    String::from("absent-final adoption final leaf is not clean")
-                }
-                AbsentFinalNoReplaceRequestError::StagingLeafNotSingleCleanNormal => {
-                    String::from("absent-final adoption staging leaf is not applicable")
-                }
-            },
+            reason: format!("invalid absent-final adoption request: {error:?}"),
         })?;
-        let outcome = ProductionAbsentFinalAdoptionAdapter.qualify(request);
+        let result = ProductionAbsentFinalAdoptionAdapter.qualify_owned(request);
+        let outcome = validate_absent_final_adoption_result_operation_id(operation_id, result)?;
         if let AbsentFinalAdoptionOutcome::Qualified(qualified) = &outcome {
-            if qualified.target_parent != target_capability.identity
+            if qualified.target_parent.stable_id != proof.target_parent_stable_id
                 || qualified.final_object.stable_id != proof.final_stable_id
                 || qualified.final_object.len != proof.final_len
                 || qualified.final_content != proof.final_content
@@ -4926,6 +4984,31 @@ mod tests {
                 protected_free_bytes: super::super::capacity_gate::PROTECTED_FREE_SPACE_FLOOR,
             }],
         }
+    }
+
+    #[test]
+    fn absent_final_adapter_results_are_operation_fenced_before_use() {
+        let operation_id = Uuid::new_v4();
+        let recovery_result = AbsentFinalRecoveryResult {
+            operation_id: Uuid::new_v4(),
+            classification: AbsentFinalRecoveryClassification::NeitherPresent,
+            observation: None,
+        };
+        assert!(matches!(
+            validate_absent_final_recovery_result_operation_id(operation_id, recovery_result),
+            Err(JournalError::InvalidRecoveryObservation { operation_id: id, .. })
+                if id == operation_id
+        ));
+
+        let adoption_result = AbsentFinalAdoptionQualificationResult {
+            operation_id: Uuid::new_v4(),
+            outcome: AbsentFinalAdoptionOutcome::UnsupportedPlatform,
+        };
+        assert!(matches!(
+            validate_absent_final_adoption_result_operation_id(operation_id, adoption_result),
+            Err(JournalError::InvalidRecoveryObservation { operation_id: id, .. })
+                if id == operation_id
+        ));
     }
 
     fn absent_final_v2_fixture() -> (
@@ -7715,6 +7798,30 @@ mod tests {
         assert_eq!(journal.store.capacity_claims(), &claims_before);
         assert_eq!(fs::read(&final_path).unwrap(), final_bytes_before);
         assert!(!staging_path.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn schema_v2_absent_final_recovery_request_is_filesystem_free() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let directory = fixture_directory();
+        let mut journal = OperationJournalCoordinator::open(directory.path().to_path_buf())
+            .expect("open real fixture journal");
+        let (operation_id, final_path, staging_path) =
+            admit_real_absent_final_v2_fixture(&mut journal, &directory);
+        let target_parent = final_path.parent().unwrap().to_path_buf();
+        fs::remove_dir_all(&target_parent).expect("remove live target parent");
+
+        let request = journal
+            .prepare_schema_v2_absent_final_recovery_request(operation_id)
+            .expect("durable recovery request must not inspect live paths");
+
+        assert_eq!(request.operation_id, operation_id);
+        assert_eq!(request.target_parent_path, target_parent);
+        assert_eq!(request.staging_leaf, PathBuf::from("staging.wav"));
+        assert_eq!(request.final_leaf, PathBuf::from("final.wav"));
+        assert!(!staging_path.exists());
+        assert!(!final_path.exists());
     }
 
     #[cfg(unix)]

@@ -8,21 +8,93 @@
 
 #[cfg(unix)]
 use std::fs::File;
-#[cfg(unix)]
 use std::path::Path;
+use std::path::PathBuf;
+use uuid::Uuid;
 
 use super::absent_final_no_replace::{
     exact_content_evidence_matches, stable_id_and_length_matches,
 };
 use super::operation_journal::{
     AbsentFinalRecoveryObservation, FilesystemStagedParticipant, FilesystemStagedWaveformRestore,
-    PreparedAbsentFinalNoReplace,
+    PreparedAbsentFinalNoReplace, PreparedFileEvidence, PreparedObjectIdentity,
 };
 #[cfg(unix)]
-use super::operation_journal::{
-    PreparedFileEvidence, PreparedObjectIdentity, descriptor_identity, open_root,
-    prepared_file_evidence,
-};
+use super::operation_journal::{descriptor_identity, open_root, prepared_file_evidence};
+
+mod sealed {
+    pub trait Sealed {}
+}
+
+/// A request for the physical file owner to inspect one durable absent-final checkpoint.
+///
+/// The request owns only durable locators and expectations. It deliberately contains no open
+/// descriptor, filesystem capability, or mutation authority; the production adapter reacquires
+/// those capabilities before interpreting the locators.
+pub(super) struct AbsentFinalRecoveryRequest {
+    pub(super) operation_id: Uuid,
+    pub(super) target_parent_path: PathBuf,
+    pub(super) expected_target_parent: PreparedObjectIdentity,
+    pub(super) staging_leaf: PathBuf,
+    pub(super) final_leaf: PathBuf,
+    pub(super) expected_staging: PreparedObjectIdentity,
+    pub(super) expected_content: PreparedFileEvidence,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum AbsentFinalRecoveryRequestError {
+    TargetParentPathNotAbsolute,
+    TargetParentIdentityEmpty,
+    StagingLeafNotSingleCleanNormal,
+    FinalLeafNotSingleCleanNormal,
+    StagingAndFinalLeafEqual,
+    StagingIdentityEmpty,
+    StagingContentNotExact,
+}
+
+impl AbsentFinalRecoveryRequest {
+    /// Construct an owned recovery request without touching the filesystem.
+    pub(super) fn try_new(
+        operation_id: Uuid,
+        target_parent_path: PathBuf,
+        expected_target_parent: PreparedObjectIdentity,
+        staging_leaf: PathBuf,
+        final_leaf: PathBuf,
+        expected_staging: PreparedObjectIdentity,
+        expected_content: PreparedFileEvidence,
+    ) -> Result<Self, AbsentFinalRecoveryRequestError> {
+        if !target_parent_path.is_absolute() {
+            return Err(AbsentFinalRecoveryRequestError::TargetParentPathNotAbsolute);
+        }
+        if expected_target_parent.stable_id.is_empty() {
+            return Err(AbsentFinalRecoveryRequestError::TargetParentIdentityEmpty);
+        }
+        if !is_single_clean_normal_leaf(&staging_leaf) {
+            return Err(AbsentFinalRecoveryRequestError::StagingLeafNotSingleCleanNormal);
+        }
+        if !is_single_clean_normal_leaf(&final_leaf) {
+            return Err(AbsentFinalRecoveryRequestError::FinalLeafNotSingleCleanNormal);
+        }
+        if staging_leaf == final_leaf {
+            return Err(AbsentFinalRecoveryRequestError::StagingAndFinalLeafEqual);
+        }
+        if expected_staging.stable_id.is_empty() {
+            return Err(AbsentFinalRecoveryRequestError::StagingIdentityEmpty);
+        }
+        if !matches!(&expected_content, PreparedFileEvidence::ContentHash(_)) {
+            return Err(AbsentFinalRecoveryRequestError::StagingContentNotExact);
+        }
+        Ok(Self {
+            operation_id,
+            target_parent_path,
+            expected_target_parent,
+            staging_leaf,
+            final_leaf,
+            expected_staging,
+            expected_content,
+        })
+    }
+}
 
 /// Whether the durable staging locator is present while a final collision is observed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -68,6 +140,51 @@ pub(super) struct AbsentFinalRecoveryInspection {
     pub(super) observation: Option<AbsentFinalRecoveryObservation>,
 }
 
+/// Operation-fenced evidence returned by the physical file owner.
+///
+/// The result contains no descriptors or mutation capabilities. A caller must correlate the
+/// operation ID before interpreting or persisting the evidence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct AbsentFinalRecoveryResult {
+    pub(super) operation_id: Uuid,
+    pub(super) classification: AbsentFinalRecoveryClassification,
+    pub(super) observation: Option<AbsentFinalRecoveryObservation>,
+}
+
+impl AbsentFinalRecoveryResult {
+    pub(super) fn operation_id(&self) -> Uuid {
+        self.operation_id
+    }
+}
+
+pub(super) trait AbsentFinalRecoveryAdapter: sealed::Sealed {
+    fn inspect(&self, request: AbsentFinalRecoveryRequest) -> AbsentFinalRecoveryResult;
+}
+
+pub(super) struct ProductionAbsentFinalRecoveryAdapter;
+
+impl sealed::Sealed for ProductionAbsentFinalRecoveryAdapter {}
+
+impl AbsentFinalRecoveryAdapter for ProductionAbsentFinalRecoveryAdapter {
+    fn inspect(&self, request: AbsentFinalRecoveryRequest) -> AbsentFinalRecoveryResult {
+        let operation_id = request.operation_id;
+        #[cfg(unix)]
+        let inspection = inspect_unix(&request);
+        #[cfg(not(unix))]
+        let inspection = {
+            let _ = request;
+            inspection(AbsentFinalRecoveryClassification::IdentityAmbiguous(
+                AbsentFinalRecoveryAmbiguity::UnsupportedDescriptorRelativeInspection,
+            ))
+        };
+        AbsentFinalRecoveryResult {
+            operation_id,
+            classification: inspection.classification,
+            observation: inspection.observation,
+        }
+    }
+}
+
 #[cfg(unix)]
 #[derive(Debug)]
 enum LeafInspectionError {
@@ -102,34 +219,24 @@ pub(super) fn inspect_absent_final_recovery(
     prepared: &PreparedAbsentFinalNoReplace,
     staged: &FilesystemStagedWaveformRestore,
 ) -> AbsentFinalRecoveryInspection {
-    #[cfg(unix)]
-    {
-        return classify_unix(prepared, staged);
-    }
-
-    #[cfg(not(unix))]
-    {
-        let _ = (prepared, staged);
-        AbsentFinalRecoveryInspection {
-            classification: AbsentFinalRecoveryClassification::IdentityAmbiguous(
-                AbsentFinalRecoveryAmbiguity::UnsupportedDescriptorRelativeInspection,
-            ),
-            observation: None,
+    let request = match request_from_prepared(Uuid::nil(), prepared, staged) {
+        Ok(request) => request,
+        Err(_) => {
+            return inspection(AbsentFinalRecoveryClassification::IdentityAmbiguous(
+                AbsentFinalRecoveryAmbiguity::StagingInspectionRaceOrFailure,
+            ));
         }
+    };
+    let result = ProductionAbsentFinalRecoveryAdapter.inspect(request);
+    AbsentFinalRecoveryInspection {
+        classification: result.classification,
+        observation: result.observation,
     }
 }
 
 #[cfg(unix)]
-fn classify_unix(
-    prepared: &PreparedAbsentFinalNoReplace,
-    staged: &FilesystemStagedWaveformRestore,
-) -> AbsentFinalRecoveryInspection {
-    let FilesystemStagedParticipant::CopyValidated {
-        staging: expected_staging,
-        evidence: expected_content,
-    } = &staged.participant;
-
-    let (target_parent, reacquired_parent) = match open_root(&prepared.target_parent.path) {
+fn inspect_unix(request: &AbsentFinalRecoveryRequest) -> AbsentFinalRecoveryInspection {
+    let (target_parent, reacquired_parent) = match open_root(&request.target_parent_path) {
         Ok(value) => value,
         Err(_) => {
             return inspection(AbsentFinalRecoveryClassification::IdentityAmbiguous(
@@ -137,13 +244,13 @@ fn classify_unix(
             ));
         }
     };
-    if reacquired_parent.identity.stable_id != prepared.target_parent.identity.stable_id {
+    if reacquired_parent.identity.stable_id != request.expected_target_parent.stable_id {
         return inspection(AbsentFinalRecoveryClassification::IdentityAmbiguous(
             AbsentFinalRecoveryAmbiguity::TargetParentIdentityChanged,
         ));
     }
 
-    let staging = match inspect_leaf(&target_parent, &prepared.staging.relative_path) {
+    let staging = match inspect_leaf(&target_parent, &request.staging_leaf) {
         Ok(observation) => observation,
         Err(error) => {
             return inspection(AbsentFinalRecoveryClassification::IdentityAmbiguous(
@@ -154,12 +261,12 @@ fn classify_unix(
     let staging_present = match &staging {
         LeafObservation::Missing => false,
         LeafObservation::Present { identity, content } => {
-            if !stable_id_and_length_matches(identity, &expected_staging.identity) {
+            if !stable_id_and_length_matches(identity, &request.expected_staging) {
                 return inspection(AbsentFinalRecoveryClassification::IdentityAmbiguous(
                     AbsentFinalRecoveryAmbiguity::StagingIdentityDrift,
                 ));
             }
-            if !exact_content_evidence_matches(expected_content, content) {
+            if !exact_content_evidence_matches(&request.expected_content, content) {
                 return inspection(AbsentFinalRecoveryClassification::IdentityAmbiguous(
                     AbsentFinalRecoveryAmbiguity::StagingContentDrift,
                 ));
@@ -168,7 +275,7 @@ fn classify_unix(
         }
     };
 
-    let final_observation = match inspect_leaf(&target_parent, &prepared.final_leaf) {
+    let final_observation = match inspect_leaf(&target_parent, &request.final_leaf) {
         Ok(observation) => observation,
         Err(error) => {
             return inspection(AbsentFinalRecoveryClassification::IdentityAmbiguous(
@@ -182,7 +289,7 @@ fn classify_unix(
         }
         LeafObservation::Missing => inspection(AbsentFinalRecoveryClassification::NeitherPresent),
         LeafObservation::Present { identity, content } => {
-            if identity.stable_id != expected_staging.identity.stable_id {
+            if identity.stable_id != request.expected_staging.stable_id {
                 return inspection(AbsentFinalRecoveryClassification::Collision {
                     staging: if staging_present {
                         CollisionStagingState::Present
@@ -191,12 +298,12 @@ fn classify_unix(
                     },
                 });
             }
-            if !stable_id_and_length_matches(&identity, &expected_staging.identity) {
+            if !stable_id_and_length_matches(&identity, &request.expected_staging) {
                 return inspection(AbsentFinalRecoveryClassification::IdentityAmbiguous(
                     AbsentFinalRecoveryAmbiguity::FinalIdentityLengthDrift,
                 ));
             }
-            if !exact_content_evidence_matches(expected_content, &content) {
+            if !exact_content_evidence_matches(&request.expected_content, &content) {
                 return inspection(AbsentFinalRecoveryClassification::IdentityAmbiguous(
                     AbsentFinalRecoveryAmbiguity::FinalContentDrift,
                 ));
@@ -323,6 +430,37 @@ fn final_ambiguity(error: LeafInspectionError) -> AbsentFinalRecoveryAmbiguity {
             AbsentFinalRecoveryAmbiguity::FinalInspectionRaceOrFailure
         }
     }
+}
+
+fn request_from_prepared(
+    operation_id: Uuid,
+    prepared: &PreparedAbsentFinalNoReplace,
+    staged: &FilesystemStagedWaveformRestore,
+) -> Result<AbsentFinalRecoveryRequest, AbsentFinalRecoveryRequestError> {
+    let FilesystemStagedParticipant::CopyValidated { staging, evidence } = &staged.participant;
+    AbsentFinalRecoveryRequest::try_new(
+        operation_id,
+        prepared.target_parent.path.clone(),
+        prepared.target_parent.identity.clone(),
+        staging.relative_path.clone(),
+        prepared.final_leaf.clone(),
+        staging.identity.clone(),
+        evidence.clone(),
+    )
+}
+
+fn is_single_clean_normal_leaf(path: &Path) -> bool {
+    if path.as_os_str().is_empty() || path.is_absolute() {
+        return false;
+    }
+    let mut components = path.components();
+    let Some(std::path::Component::Normal(component)) = components.next() else {
+        return false;
+    };
+    if components.next().is_some() || Path::new(component) != path {
+        return false;
+    }
+    !component.as_encoded_bytes().contains(&0)
 }
 
 #[cfg(all(test, unix))]
@@ -487,6 +625,30 @@ mod tests {
             fixture.classify(),
             AbsentFinalRecoveryClassification::NeitherPresent
         );
+    }
+
+    #[test]
+    fn owned_recovery_request_is_filesystem_free_before_adapter_inspection() {
+        let fixture = Fixture::new();
+        let operation_id = Uuid::new_v4();
+        let request = request_from_prepared(operation_id, &fixture.prepared, &fixture.staged)
+            .expect("durable recovery request");
+
+        fs::remove_dir_all(&fixture.target_parent_path).expect("remove live target parent");
+        assert_eq!(request.operation_id, operation_id);
+        assert_eq!(request.target_parent_path, fixture.target_parent_path);
+        assert_eq!(request.staging_leaf, PathBuf::from(STAGING_LEAF));
+        assert_eq!(request.final_leaf, PathBuf::from(FINAL_LEAF));
+
+        let result = ProductionAbsentFinalRecoveryAdapter.inspect(request);
+        assert_eq!(result.operation_id(), operation_id);
+        assert_eq!(
+            result.classification,
+            AbsentFinalRecoveryClassification::IdentityAmbiguous(
+                AbsentFinalRecoveryAmbiguity::TargetParentReacquisitionFailed
+            )
+        );
+        assert!(result.observation.is_none());
     }
 
     #[test]
