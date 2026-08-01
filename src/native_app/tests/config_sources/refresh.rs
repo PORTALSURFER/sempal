@@ -1,5 +1,22 @@
 use super::*;
 use crate::native_app::app::SourceSelectionRequest;
+use crate::native_app::sample_library::source_watcher::{WatcherBackend, WatcherContinuityProof};
+
+fn replay_proof(root: &std::path::Path, end_event_id: u64) -> WatcherContinuityProof {
+    let metadata = fs::metadata(root).expect("source metadata");
+    WatcherContinuityProof {
+        root_identity: wavecrate_library::filesystem_identity::stable_filesystem_identity(
+            root, &metadata,
+        )
+        .expect("stable source root identity"),
+        backend: WatcherBackend::Fsevents,
+        backend_device: 10,
+        watcher_generation: 4,
+        replay_coverage_start_event_id: end_event_id.saturating_sub(1),
+        replay_coverage_end_event_id: end_event_id,
+        acknowledged_end_event_id: end_event_id,
+    }
+}
 
 #[test]
 fn context_source_refresh_queues_scan_without_clearing_loaded_tree() {
@@ -317,8 +334,8 @@ fn source_filesystem_change_syncs_removed_file_to_source_database() {
             paths: vec![PathBuf::from("stale.wav")],
             overflowed: false,
             source_root_available: true,
-            journal_checkpoint_event_id: None,
-            watcher_continuity_proof: None,
+            journal_checkpoint_event_id: Some(21),
+            watcher_continuity_proof: Some(replay_proof(source_root.path(), 21)),
         },
         &mut context,
     );

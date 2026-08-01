@@ -27,6 +27,7 @@ pub(in crate::native_app) enum SourceRefreshCause {
     DeferredSourceAdd,
     DeferredSelection,
     WatcherOverflow,
+    WatcherAuthorityUnproven,
     ManifestAudit { committed_revision: u64 },
     ProjectionRevisionGap { committed_revision: u64 },
     FilesystemSyncIncomplete,
@@ -40,6 +41,7 @@ impl SourceRefreshCause {
             Self::DeferredSourceAdd => "deferred_source_add",
             Self::DeferredSelection => "deferred_selection",
             Self::WatcherOverflow => "watcher_overflow",
+            Self::WatcherAuthorityUnproven => "watcher_authority_unproven",
             Self::ManifestAudit { .. } => "manifest_audit",
             Self::ProjectionRevisionGap { .. } => "projection_revision_gap",
             Self::FilesystemSyncIncomplete => "filesystem_sync_incomplete",
@@ -55,6 +57,7 @@ impl SourceRefreshCause {
             Self::DeferredSourceAdd
             | Self::DeferredSelection
             | Self::WatcherOverflow
+            | Self::WatcherAuthorityUnproven
             | Self::FilesystemSyncIncomplete
             | Self::FilesystemSyncFailed
             | Self::ScanCancelled => None,
@@ -62,6 +65,9 @@ impl SourceRefreshCause {
     }
 
     pub(super) fn merge(self, incoming: Self) -> Self {
+        if self == Self::WatcherAuthorityUnproven || incoming == Self::WatcherAuthorityUnproven {
+            return Self::WatcherAuthorityUnproven;
+        }
         match (self.committed_revision(), incoming.committed_revision()) {
             (Some(current), Some(incoming_revision)) => {
                 if incoming_revision >= current {

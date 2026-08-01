@@ -1097,12 +1097,15 @@ fn targeted_watcher_hint_does_not_patch_browser_before_commit() {
     fs::remove_file(root.path().join("sample.wav")).expect("remove sample");
 
     assert!(matches!(
-        workflow.plan_filesystem_change(
+        workflow.plan_filesystem_change_for_generation(
             &mut browser,
             source_id,
             &[PathBuf::from("sample.wav")],
             false,
             true,
+            Some(7),
+            Some(9),
+            Some(replay_proof(9)),
         ),
         SourceFilesystemChangePlan::SyncPaths {
             changed_count: 1,
@@ -1114,6 +1117,131 @@ fn targeted_watcher_hint_does_not_patch_browser_before_commit() {
         1,
         "the watcher path is only a hint until the source database commit completes"
     );
+}
+
+#[test]
+fn unproven_idle_watcher_evidence_queues_authoritative_refresh() {
+    let mut malformed = replay_proof(60);
+    malformed.backend_device = 0;
+    let cases: Vec<(&str, Option<u64>, Option<WatcherContinuityProof>)> = vec![
+        ("proofless", None, None),
+        ("cursor-only", Some(60), None),
+        ("proof-only", None, Some(replay_proof(60))),
+        ("malformed", Some(60), Some(malformed)),
+        ("mismatched", Some(61), Some(replay_proof(60))),
+    ];
+
+    for (label, event_id, proof) in cases {
+        let root = temp_dir_with_wav();
+        let mut browser = FolderBrowserState::load_default();
+        let mut workflow = SourceScanWorkflow::new();
+        let request = workflow
+            .begin_add_source_path(&mut browser, root.path().to_path_buf(), 133)
+            .expect("source scan");
+        let source_id = request.source_id.clone();
+        workflow.start_scan(&request);
+        let result = scan_source_with_progress(request, |_| {}, |_| {});
+        workflow.finish_scan(&mut browser, result);
+
+        assert!(
+            matches!(
+                workflow.plan_filesystem_change_for_generation(
+                    &mut browser,
+                    source_id.clone(),
+                    &[PathBuf::from("sample.wav")],
+                    false,
+                    true,
+                    Some(7),
+                    event_id,
+                    proof,
+                ),
+                SourceFilesystemChangePlan::QueueRefresh {
+                    cause: SourceRefreshCause::WatcherAuthorityUnproven,
+                    ..
+                }
+            ),
+            "{label} watcher evidence must not target-sync"
+        );
+        assert_eq!(
+            workflow.next_pending_refresh_if_idle(),
+            Some(source_id),
+            "{label} watcher evidence must queue authoritative refresh"
+        );
+    }
+}
+
+#[test]
+fn proofless_watcher_paths_during_full_scan_require_audit() {
+    let root = temp_dir_with_wav();
+    let mut browser = FolderBrowserState::load_default();
+    let mut workflow = SourceScanWorkflow::new();
+    let request = workflow
+        .begin_add_source_path(&mut browser, root.path().to_path_buf(), 134)
+        .expect("active scan");
+    let source_id = request.source_id.clone();
+    workflow.start_scan(&request);
+
+    assert!(matches!(
+        workflow.plan_filesystem_change_for_generation(
+            &mut browser,
+            source_id.clone(),
+            &[PathBuf::from("proofless.wav")],
+            false,
+            true,
+            Some(12),
+            None,
+            None,
+        ),
+        SourceFilesystemChangePlan::DeferredAlreadyRunning { .. }
+    ));
+
+    let result = scan_source_with_progress(request, |_| {}, |_| {});
+    workflow.finish_scan(&mut browser, result);
+    let pending = workflow
+        .next_pending_targeted_sync()
+        .expect("deferred audit");
+    assert!(pending.audit_required);
+    assert!(pending.proofless_evidence_seen);
+    assert_eq!(pending.journal_checkpoint_event_id, None);
+    assert_eq!(pending.watcher_continuity_proof, None);
+}
+
+#[test]
+fn proofless_watcher_paths_during_targeted_sync_require_audit() {
+    let root = temp_dir_with_wav();
+    let mut browser = FolderBrowserState::load_default();
+    let mut workflow = SourceScanWorkflow::new();
+    let request = workflow
+        .begin_add_source_path(&mut browser, root.path().to_path_buf(), 135)
+        .expect("active scan");
+    let source_id = request.source_id.clone();
+    workflow.start_scan(&request);
+    let result = scan_source_with_progress(request, |_| {}, |_| {});
+    workflow.finish_scan(&mut browser, result);
+    assert!(workflow.mark_targeted_sync_started(&source_id, 14));
+
+    assert!(matches!(
+        workflow.plan_filesystem_change_for_generation(
+            &mut browser,
+            source_id.clone(),
+            &[PathBuf::from("proofless.wav")],
+            false,
+            true,
+            Some(14),
+            None,
+            None,
+        ),
+        SourceFilesystemChangePlan::DeferredAlreadyRunning { .. }
+    ));
+
+    workflow.mark_targeted_sync_finished(&source_id, 14);
+    let pending = workflow
+        .next_pending_targeted_sync()
+        .expect("deferred audit");
+    assert!(pending.audit_required);
+    assert!(pending.proofless_evidence_seen);
+    assert_eq!(pending.journal_checkpoint_event_id, None);
+    assert_eq!(pending.watcher_continuity_proof, None);
 }
 
 #[test]

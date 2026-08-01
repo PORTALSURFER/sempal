@@ -318,6 +318,22 @@ fn continuity_proof_is_well_formed(
         && proof.acknowledged_end_event_id == expected_acknowledged_end
 }
 
+/// Validate the complete cursor/proof boundary carried by a watcher replay message.
+///
+/// A missing cursor or proof is not a replay boundary. The application may retain such evidence
+/// for an authoritative audit, but it must not admit it as targeted work.
+pub(in crate::native_app) fn watcher_replay_evidence_is_well_formed(
+    event_id: Option<u64>,
+    proof: Option<&WatcherContinuityProof>,
+) -> bool {
+    match (event_id, proof) {
+        (Some(event_id), Some(proof)) => {
+            continuity_proof_is_well_formed(proof, &proof.root_identity, event_id)
+        }
+        _ => false,
+    }
+}
+
 fn same_continuity_identity(left: &WatcherContinuityProof, right: &WatcherContinuityProof) -> bool {
     left.root_identity == right.root_identity
         && left.backend == right.backend
