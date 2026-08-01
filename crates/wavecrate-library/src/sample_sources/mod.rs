@@ -10,6 +10,8 @@ pub mod db;
 pub mod library;
 /// Durable source-readiness and convergence coordination contracts.
 pub mod readiness;
+/// Backend-neutral Finder observation reconciliation contracts.
+pub mod reconciliation;
 mod source_entry;
 
 pub use audio_support::{
