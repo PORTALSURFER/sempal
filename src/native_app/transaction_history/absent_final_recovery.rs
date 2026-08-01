@@ -15,7 +15,8 @@ use super::absent_final_no_replace::{
     exact_content_evidence_matches, stable_id_and_length_matches,
 };
 use super::operation_journal::{
-    FilesystemStagedParticipant, FilesystemStagedWaveformRestore, PreparedAbsentFinalNoReplace,
+    AbsentFinalRecoveryObservation, FilesystemStagedParticipant, FilesystemStagedWaveformRestore,
+    PreparedAbsentFinalNoReplace,
 };
 #[cfg(unix)]
 use super::operation_journal::{
@@ -61,6 +62,12 @@ pub(crate) enum AbsentFinalRecoveryClassification {
     IdentityAmbiguous(AbsentFinalRecoveryAmbiguity),
 }
 
+/// Internal inspection result retaining the exact non-handle evidence for a final match.
+pub(super) struct AbsentFinalRecoveryInspection {
+    pub(super) classification: AbsentFinalRecoveryClassification,
+    pub(super) observation: Option<AbsentFinalRecoveryObservation>,
+}
+
 #[cfg(unix)]
 #[derive(Debug)]
 enum LeafInspectionError {
@@ -86,6 +93,15 @@ pub(super) fn classify_absent_final_recovery(
     prepared: &PreparedAbsentFinalNoReplace,
     staged: &FilesystemStagedWaveformRestore,
 ) -> AbsentFinalRecoveryClassification {
+    inspect_absent_final_recovery(prepared, staged).classification
+}
+
+/// Inspect one eligible absent-final staging checkpoint and retain the exact evidence needed by
+/// the journal observation seam. The result contains no handles or mutation capability.
+pub(super) fn inspect_absent_final_recovery(
+    prepared: &PreparedAbsentFinalNoReplace,
+    staged: &FilesystemStagedWaveformRestore,
+) -> AbsentFinalRecoveryInspection {
     #[cfg(unix)]
     {
         return classify_unix(prepared, staged);
@@ -94,9 +110,12 @@ pub(super) fn classify_absent_final_recovery(
     #[cfg(not(unix))]
     {
         let _ = (prepared, staged);
-        AbsentFinalRecoveryClassification::IdentityAmbiguous(
-            AbsentFinalRecoveryAmbiguity::UnsupportedDescriptorRelativeInspection,
-        )
+        AbsentFinalRecoveryInspection {
+            classification: AbsentFinalRecoveryClassification::IdentityAmbiguous(
+                AbsentFinalRecoveryAmbiguity::UnsupportedDescriptorRelativeInspection,
+            ),
+            observation: None,
+        }
     }
 }
 
@@ -104,7 +123,7 @@ pub(super) fn classify_absent_final_recovery(
 fn classify_unix(
     prepared: &PreparedAbsentFinalNoReplace,
     staged: &FilesystemStagedWaveformRestore,
-) -> AbsentFinalRecoveryClassification {
+) -> AbsentFinalRecoveryInspection {
     let FilesystemStagedParticipant::CopyValidated {
         staging: expected_staging,
         evidence: expected_content,
@@ -113,35 +132,37 @@ fn classify_unix(
     let (target_parent, reacquired_parent) = match open_root(&prepared.target_parent.path) {
         Ok(value) => value,
         Err(_) => {
-            return AbsentFinalRecoveryClassification::IdentityAmbiguous(
+            return inspection(AbsentFinalRecoveryClassification::IdentityAmbiguous(
                 AbsentFinalRecoveryAmbiguity::TargetParentReacquisitionFailed,
-            );
+            ));
         }
     };
     if reacquired_parent.identity.stable_id != prepared.target_parent.identity.stable_id {
-        return AbsentFinalRecoveryClassification::IdentityAmbiguous(
+        return inspection(AbsentFinalRecoveryClassification::IdentityAmbiguous(
             AbsentFinalRecoveryAmbiguity::TargetParentIdentityChanged,
-        );
+        ));
     }
 
     let staging = match inspect_leaf(&target_parent, &prepared.staging.relative_path) {
         Ok(observation) => observation,
         Err(error) => {
-            return AbsentFinalRecoveryClassification::IdentityAmbiguous(staging_ambiguity(error));
+            return inspection(AbsentFinalRecoveryClassification::IdentityAmbiguous(
+                staging_ambiguity(error),
+            ));
         }
     };
     let staging_present = match &staging {
         LeafObservation::Missing => false,
         LeafObservation::Present { identity, content } => {
             if !stable_id_and_length_matches(identity, &expected_staging.identity) {
-                return AbsentFinalRecoveryClassification::IdentityAmbiguous(
+                return inspection(AbsentFinalRecoveryClassification::IdentityAmbiguous(
                     AbsentFinalRecoveryAmbiguity::StagingIdentityDrift,
-                );
+                ));
             }
             if !exact_content_evidence_matches(expected_content, content) {
-                return AbsentFinalRecoveryClassification::IdentityAmbiguous(
+                return inspection(AbsentFinalRecoveryClassification::IdentityAmbiguous(
                     AbsentFinalRecoveryAmbiguity::StagingContentDrift,
-                );
+                ));
             }
             true
         }
@@ -150,40 +171,62 @@ fn classify_unix(
     let final_observation = match inspect_leaf(&target_parent, &prepared.final_leaf) {
         Ok(observation) => observation,
         Err(error) => {
-            return AbsentFinalRecoveryClassification::IdentityAmbiguous(final_ambiguity(error));
+            return inspection(AbsentFinalRecoveryClassification::IdentityAmbiguous(
+                final_ambiguity(error),
+            ));
         }
     };
     match final_observation {
         LeafObservation::Missing if staging_present => {
-            AbsentFinalRecoveryClassification::StagingPresentFinalAbsent
+            inspection(AbsentFinalRecoveryClassification::StagingPresentFinalAbsent)
         }
-        LeafObservation::Missing => AbsentFinalRecoveryClassification::NeitherPresent,
+        LeafObservation::Missing => inspection(AbsentFinalRecoveryClassification::NeitherPresent),
         LeafObservation::Present { identity, content } => {
             if identity.stable_id != expected_staging.identity.stable_id {
-                return AbsentFinalRecoveryClassification::Collision {
+                return inspection(AbsentFinalRecoveryClassification::Collision {
                     staging: if staging_present {
                         CollisionStagingState::Present
                     } else {
                         CollisionStagingState::Missing
                     },
-                };
+                });
             }
             if !stable_id_and_length_matches(&identity, &expected_staging.identity) {
-                return AbsentFinalRecoveryClassification::IdentityAmbiguous(
+                return inspection(AbsentFinalRecoveryClassification::IdentityAmbiguous(
                     AbsentFinalRecoveryAmbiguity::FinalIdentityLengthDrift,
-                );
+                ));
             }
             if !exact_content_evidence_matches(expected_content, &content) {
-                return AbsentFinalRecoveryClassification::IdentityAmbiguous(
+                return inspection(AbsentFinalRecoveryClassification::IdentityAmbiguous(
                     AbsentFinalRecoveryAmbiguity::FinalContentDrift,
-                );
+                ));
             }
             if staging_present {
-                AbsentFinalRecoveryClassification::BothPresent
+                inspection(AbsentFinalRecoveryClassification::BothPresent)
             } else {
-                AbsentFinalRecoveryClassification::StagingMissingFinalMatches
+                let PreparedFileEvidence::ContentHash(hash) = content else {
+                    return inspection(AbsentFinalRecoveryClassification::IdentityAmbiguous(
+                        AbsentFinalRecoveryAmbiguity::FinalContentUnavailable,
+                    ));
+                };
+                AbsentFinalRecoveryInspection {
+                    classification: AbsentFinalRecoveryClassification::StagingMissingFinalMatches,
+                    observation: Some(AbsentFinalRecoveryObservation {
+                        target_parent_stable_id: reacquired_parent.identity.stable_id,
+                        final_stable_id: identity.stable_id,
+                        final_len: identity.len,
+                        final_content: PreparedFileEvidence::ContentHash(hash),
+                    }),
+                }
             }
         }
+    }
+}
+
+fn inspection(classification: AbsentFinalRecoveryClassification) -> AbsentFinalRecoveryInspection {
+    AbsentFinalRecoveryInspection {
+        classification,
+        observation: None,
     }
 }
 
@@ -682,6 +725,222 @@ mod tests {
             bytes_before
         );
         assert_eq!(reopened.capacity_claims_for_test(), capacity_before);
+    }
+
+    #[test]
+    fn coordinator_records_matching_observation_idempotently_and_after_restart() {
+        let directory = tempfile::tempdir().expect("journal directory");
+        let fixture = Fixture::new();
+        let mut journal = OperationJournalCoordinator::open(directory.path().to_path_buf())
+            .expect("open journal");
+        let operation_id = journal
+            .admit_schema_v2_absent_final_for_test(
+                test_intent(),
+                serde_json::json!({"schema": 2}),
+                fixture.prepared.clone(),
+                fixture.staged.clone(),
+                valid_capacity_plan(),
+            )
+            .expect("admit absent-final record");
+        fs::rename(fixture.staging_path(), fixture.final_path()).expect("rename into final");
+        let record_path = journal.record_path_for_test(operation_id);
+        let capacity_before = journal.capacity_claims_for_test();
+
+        assert_eq!(
+            journal
+                .record_schema_v2_absent_final_recovery_observation(operation_id)
+                .expect("record matching observation"),
+            AbsentFinalRecoveryClassification::StagingMissingFinalMatches
+        );
+        let record_after_first = journal.record(operation_id).cloned().expect("record");
+        let bytes_after_first = fs::read(&record_path).expect("record bytes");
+        let observation = record_after_first
+            .absent_final_recovery_observation
+            .as_ref()
+            .expect("recovery observation");
+        assert_eq!(
+            observation.target_parent_stable_id,
+            fixture.prepared.target_parent.identity.stable_id
+        );
+        assert_eq!(
+            observation.final_stable_id,
+            match &fixture.staged.participant {
+                FilesystemStagedParticipant::CopyValidated { staging, .. } => {
+                    staging.identity.stable_id.clone()
+                }
+            }
+        );
+        assert_eq!(observation.final_len, STAGING_BYTES.len() as u64);
+        assert!(matches!(
+            observation.final_content,
+            PreparedFileEvidence::ContentHash(_)
+        ));
+        assert_eq!(record_after_first.phase, OperationPhase::FilesystemStaged);
+        assert_eq!(journal.capacity_claims_for_test(), capacity_before);
+
+        journal
+            .record_schema_v2_absent_final_recovery_observation(operation_id)
+            .expect("repeat equivalent observation");
+        assert_eq!(journal.record(operation_id), Some(&record_after_first));
+        assert_eq!(
+            fs::read(&record_path).expect("repeat record bytes"),
+            bytes_after_first
+        );
+        assert_eq!(journal.capacity_claims_for_test(), capacity_before);
+        drop(journal);
+
+        let reopened = OperationJournalCoordinator::open(directory.path().to_path_buf())
+            .expect("reopen journal");
+        assert_eq!(
+            reopened
+                .record(operation_id)
+                .and_then(|record| record.absent_final_recovery_observation.as_ref()),
+            record_after_first
+                .absent_final_recovery_observation
+                .as_ref()
+        );
+        assert_eq!(
+            reopened
+                .classify_schema_v2_absent_final_recovery(operation_id)
+                .expect("revalidate live matching state"),
+            AbsentFinalRecoveryClassification::StagingMissingFinalMatches
+        );
+        fs::write(fixture.final_path(), vec![b'x'; STAGING_BYTES.len()])
+            .expect("drift final content");
+        assert_eq!(
+            reopened
+                .classify_schema_v2_absent_final_recovery(operation_id)
+                .expect("classify changed live state"),
+            AbsentFinalRecoveryClassification::IdentityAmbiguous(
+                AbsentFinalRecoveryAmbiguity::FinalContentDrift
+            )
+        );
+        assert_eq!(
+            reopened
+                .record(operation_id)
+                .and_then(|record| record.absent_final_recovery_observation.as_ref()),
+            record_after_first
+                .absent_final_recovery_observation
+                .as_ref()
+        );
+    }
+
+    #[test]
+    fn coordinator_rejects_stale_or_conflicting_observation_without_durable_change() {
+        let directory = tempfile::tempdir().expect("journal directory");
+        let fixture = Fixture::new();
+        let mut journal = OperationJournalCoordinator::open(directory.path().to_path_buf())
+            .expect("open journal");
+        let operation_id = journal
+            .admit_schema_v2_absent_final_for_test(
+                test_intent(),
+                serde_json::json!({"schema": 2}),
+                fixture.prepared.clone(),
+                fixture.staged.clone(),
+                valid_capacity_plan(),
+            )
+            .expect("admit absent-final record");
+        fs::rename(fixture.staging_path(), fixture.final_path()).expect("rename into final");
+        journal
+            .record_schema_v2_absent_final_recovery_observation(operation_id)
+            .expect("record initial observation");
+        let record_before = journal
+            .record(operation_id)
+            .cloned()
+            .expect("record before");
+        let path = journal.record_path_for_test(operation_id);
+        let bytes_before = fs::read(&path).expect("bytes before stale evidence");
+        let capacity_before = journal.capacity_claims_for_test();
+
+        fs::write(fixture.final_path(), vec![b'x'; STAGING_BYTES.len()])
+            .expect("drift final content");
+        assert!(matches!(
+            journal.record_schema_v2_absent_final_recovery_observation(operation_id),
+            Err(crate::native_app::transaction_history::operation_journal::JournalError::InvalidRecoveryObservation { .. })
+        ));
+        assert_eq!(journal.record(operation_id), Some(&record_before));
+        assert_eq!(
+            fs::read(&path).expect("bytes after stale evidence"),
+            bytes_before
+        );
+        assert_eq!(journal.capacity_claims_for_test(), capacity_before);
+
+        fs::remove_file(fixture.final_path()).expect("remove stale final");
+        fs::write(fixture.final_path(), STAGING_BYTES).expect("replace final identity");
+        assert!(matches!(
+            journal.record_schema_v2_absent_final_recovery_observation(operation_id),
+            Err(crate::native_app::transaction_history::operation_journal::JournalError::InvalidRecoveryObservation { .. })
+        ));
+        assert_eq!(journal.record(operation_id), Some(&record_before));
+        assert_eq!(
+            fs::read(&path).expect("bytes after conflicting evidence"),
+            bytes_before
+        );
+        assert_eq!(journal.capacity_claims_for_test(), capacity_before);
+    }
+
+    #[test]
+    fn coordinator_does_not_record_nonmatching_classifications() {
+        let cases = [
+            AbsentFinalRecoveryClassification::StagingPresentFinalAbsent,
+            AbsentFinalRecoveryClassification::BothPresent,
+            AbsentFinalRecoveryClassification::NeitherPresent,
+            AbsentFinalRecoveryClassification::Collision {
+                staging: CollisionStagingState::Present,
+            },
+        ];
+        for expected in cases {
+            let directory = tempfile::tempdir().expect("journal directory");
+            let fixture = Fixture::new();
+            let mut journal = OperationJournalCoordinator::open(directory.path().to_path_buf())
+                .expect("open journal");
+            let operation_id = journal
+                .admit_schema_v2_absent_final_for_test(
+                    test_intent(),
+                    serde_json::json!({"schema": 2}),
+                    fixture.prepared.clone(),
+                    fixture.staged.clone(),
+                    valid_capacity_plan(),
+                )
+                .expect("admit absent-final record");
+            match expected {
+                AbsentFinalRecoveryClassification::StagingPresentFinalAbsent => {}
+                AbsentFinalRecoveryClassification::BothPresent => {
+                    fs::hard_link(fixture.staging_path(), fixture.final_path())
+                        .expect("hard-link final");
+                }
+                AbsentFinalRecoveryClassification::NeitherPresent => {
+                    fs::remove_file(fixture.staging_path()).expect("remove staging");
+                }
+                AbsentFinalRecoveryClassification::Collision { .. } => {
+                    fs::write(fixture.final_path(), b"foreign final").expect("foreign final");
+                }
+                other => panic!("unexpected nonmatching fixture {other:?}"),
+            }
+            let path = journal.record_path_for_test(operation_id);
+            let bytes_before = fs::read(&path).expect("bytes before nonmatching classification");
+            let record_before = journal.record(operation_id).cloned().expect("record");
+            let capacity_before = journal.capacity_claims_for_test();
+            assert_eq!(
+                journal
+                    .record_schema_v2_absent_final_recovery_observation(operation_id)
+                    .expect("nonmatching classification"),
+                expected
+            );
+            assert_eq!(journal.record(operation_id), Some(&record_before));
+            assert_eq!(
+                fs::read(&path).expect("bytes after nonmatching classification"),
+                bytes_before
+            );
+            assert_eq!(journal.capacity_claims_for_test(), capacity_before);
+            assert!(
+                journal
+                    .record(operation_id)
+                    .unwrap()
+                    .absent_final_recovery_observation
+                    .is_none()
+            );
+        }
     }
 
     #[test]
