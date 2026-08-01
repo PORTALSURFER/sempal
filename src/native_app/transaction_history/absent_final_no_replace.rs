@@ -37,6 +37,146 @@ pub(super) struct AbsentFinalNoReplaceRequest<'a> {
     expected_content: &'a PreparedFileEvidence,
 }
 
+/// A read-only request to qualify an already-present final through a retained parent capability.
+///
+/// The request borrows the capability and carries only durable identity/content expectations. It
+/// contains no pathname outside the clean final leaf and grants no namespace mutation authority.
+pub(super) struct AbsentFinalAdoptionRequest<'a> {
+    target_parent: &'a File,
+    final_leaf: &'a Path,
+    expected_target_parent: &'a PreparedObjectIdentity,
+    expected_final_stable_id: &'a str,
+    expected_final_len: u64,
+    expected_final_content: &'a [u8; 32],
+}
+
+impl<'a> AbsentFinalAdoptionRequest<'a> {
+    pub(super) fn try_new(
+        target_parent: &'a File,
+        final_leaf: &'a Path,
+        expected_target_parent: &'a PreparedObjectIdentity,
+        expected_final_stable_id: &'a str,
+        expected_final_len: u64,
+        expected_final_content: &'a [u8; 32],
+    ) -> Result<Self, AbsentFinalNoReplaceRequestError> {
+        if !is_single_clean_normal_leaf(final_leaf) {
+            return Err(AbsentFinalNoReplaceRequestError::TargetLeafNotSingleCleanNormal);
+        }
+        if expected_final_stable_id.is_empty() {
+            return Err(AbsentFinalNoReplaceRequestError::TargetLeafNotSingleCleanNormal);
+        }
+        Ok(Self {
+            target_parent,
+            final_leaf,
+            expected_target_parent,
+            expected_final_stable_id,
+            expected_final_len,
+            expected_final_content,
+        })
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) enum AbsentFinalAdoptionOutcome {
+    Qualified(QualifiedAbsentFinalAdoption),
+    ParentIdentityDrift,
+    FinalMissing,
+    FinalIdentityDrift,
+    FinalContentDrift,
+    UnsupportedPlatform,
+    VerificationFailed,
+}
+
+/// Transient evidence from one descriptor-relative adoption qualification.
+/// It intentionally contains no path or open handle.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct QualifiedAbsentFinalAdoption {
+    pub(super) target_parent: PreparedObjectIdentity,
+    pub(super) final_object: PreparedObjectIdentity,
+    pub(super) final_content: PreparedFileEvidence,
+}
+
+pub(super) trait AbsentFinalAdoptionAdapter: sealed::Sealed {
+    fn qualify(&self, request: AbsentFinalAdoptionRequest<'_>) -> AbsentFinalAdoptionOutcome;
+}
+
+pub(super) struct ProductionAbsentFinalAdoptionAdapter;
+
+impl sealed::Sealed for ProductionAbsentFinalAdoptionAdapter {}
+
+impl AbsentFinalAdoptionAdapter for ProductionAbsentFinalAdoptionAdapter {
+    fn qualify(&self, request: AbsentFinalAdoptionRequest<'_>) -> AbsentFinalAdoptionOutcome {
+        #[cfg(unix)]
+        {
+            return qualify_unix_absent_final_adoption(request);
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = request;
+            AbsentFinalAdoptionOutcome::UnsupportedPlatform
+        }
+    }
+}
+
+#[cfg(unix)]
+fn qualify_unix_absent_final_adoption(
+    request: AbsentFinalAdoptionRequest<'_>,
+) -> AbsentFinalAdoptionOutcome {
+    use std::ffi::CString;
+    use std::os::fd::{AsRawFd, FromRawFd};
+
+    let parent = match super::operation_journal::descriptor_identity(request.target_parent) {
+        Ok(identity) if identity.stable_id == request.expected_target_parent.stable_id => identity,
+        Ok(_) => return AbsentFinalAdoptionOutcome::ParentIdentityDrift,
+        Err(_) => return AbsentFinalAdoptionOutcome::VerificationFailed,
+    };
+    let name = match CString::new(request.final_leaf.as_os_str().as_encoded_bytes()) {
+        Ok(name) => name,
+        Err(_) => return AbsentFinalAdoptionOutcome::VerificationFailed,
+    };
+    let fd = unsafe {
+        libc::openat(
+            request.target_parent.as_raw_fd(),
+            name.as_ptr(),
+            libc::O_RDONLY | libc::O_CLOEXEC | libc::O_NOFOLLOW | libc::O_NONBLOCK,
+        )
+    };
+    if fd < 0 {
+        return match std::io::Error::last_os_error().kind() {
+            std::io::ErrorKind::NotFound => AbsentFinalAdoptionOutcome::FinalMissing,
+            _ => AbsentFinalAdoptionOutcome::VerificationFailed,
+        };
+    }
+    let final_file = unsafe { File::from_raw_fd(fd) };
+    let metadata = match final_file.metadata() {
+        Ok(metadata) if metadata.is_file() => metadata,
+        Ok(_) => return AbsentFinalAdoptionOutcome::VerificationFailed,
+        Err(_) => return AbsentFinalAdoptionOutcome::VerificationFailed,
+    };
+    let final_object = match super::operation_journal::descriptor_identity(&final_file) {
+        Ok(identity) => identity,
+        Err(_) => return AbsentFinalAdoptionOutcome::VerificationFailed,
+    };
+    if final_object.stable_id != request.expected_final_stable_id
+        || final_object.len != request.expected_final_len
+        || metadata.len() != request.expected_final_len
+    {
+        return AbsentFinalAdoptionOutcome::FinalIdentityDrift;
+    }
+    let final_content = super::operation_journal::prepared_file_evidence(&final_file);
+    if !matches!(
+        final_content,
+        PreparedFileEvidence::ContentHash(hash) if &hash == request.expected_final_content
+    ) {
+        return AbsentFinalAdoptionOutcome::FinalContentDrift;
+    }
+    AbsentFinalAdoptionOutcome::Qualified(QualifiedAbsentFinalAdoption {
+        target_parent: parent,
+        final_object,
+        final_content,
+    })
+}
+
 impl<'a> AbsentFinalNoReplaceRequest<'a> {
     /// Build a request after validating both namespace leaves without touching the filesystem.
     pub(super) fn try_new(
@@ -877,6 +1017,122 @@ mod tests {
         ));
         assert_not_qualified(&outcome);
         assert!(!fixture.target_path().exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn adoption_qualifies_final_after_staging_to_final_rename() {
+        let fixture = Fixture::new();
+        fs::rename(fixture.staging_path(), fixture.target_path()).expect("stage final");
+        let final_file = File::open(fixture.target_path()).expect("final file");
+        let final_identity = descriptor_identity(&final_file).expect("final identity");
+        let request = AbsentFinalAdoptionRequest::try_new(
+            &fixture.target_parent,
+            Path::new(TARGET_LEAF),
+            &fixture.target_parent_identity,
+            &final_identity.stable_id,
+            final_identity.len,
+            match &fixture.expected_content {
+                PreparedFileEvidence::ContentHash(hash) => hash,
+                _ => panic!("fixture must have exact content"),
+            },
+        )
+        .expect("valid adoption request");
+        let outcome = ProductionAbsentFinalAdoptionAdapter.qualify(request);
+        assert!(matches!(outcome, AbsentFinalAdoptionOutcome::Qualified(_)));
+        assert!(!fixture.staging_path().exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn adoption_missing_final_and_replacement_fail_closed() {
+        let fixture = Fixture::new();
+        let hash = match &fixture.expected_content {
+            PreparedFileEvidence::ContentHash(hash) => hash,
+            _ => panic!("fixture must have exact content"),
+        };
+        let request = AbsentFinalAdoptionRequest::try_new(
+            &fixture.target_parent,
+            Path::new(TARGET_LEAF),
+            &fixture.target_parent_identity,
+            &fixture.expected_staging.stable_id,
+            fixture.expected_staging.len,
+            hash,
+        )
+        .expect("valid adoption request");
+        assert_eq!(
+            ProductionAbsentFinalAdoptionAdapter.qualify(request),
+            AbsentFinalAdoptionOutcome::FinalMissing
+        );
+        fs::write(fixture.target_path(), b"replacement").expect("replacement final");
+        let request = AbsentFinalAdoptionRequest::try_new(
+            &fixture.target_parent,
+            Path::new(TARGET_LEAF),
+            &fixture.target_parent_identity,
+            &fixture.expected_staging.stable_id,
+            fixture.expected_staging.len,
+            hash,
+        )
+        .expect("valid adoption request");
+        assert!(matches!(
+            ProductionAbsentFinalAdoptionAdapter.qualify(request),
+            AbsentFinalAdoptionOutcome::FinalIdentityDrift
+                | AbsentFinalAdoptionOutcome::FinalContentDrift
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn adoption_rejects_parent_identity_and_final_symlink() {
+        let fixture = Fixture::new();
+        let hash = match &fixture.expected_content {
+            PreparedFileEvidence::ContentHash(hash) => hash,
+            _ => panic!("fixture must have exact content"),
+        };
+        let mut wrong_parent = fixture.target_parent_identity.clone();
+        wrong_parent.stable_id = String::from("wrong-parent");
+        let request = AbsentFinalAdoptionRequest::try_new(
+            &fixture.target_parent,
+            Path::new(TARGET_LEAF),
+            &wrong_parent,
+            &fixture.expected_staging.stable_id,
+            fixture.expected_staging.len,
+            hash,
+        )
+        .expect("valid adoption request");
+        assert_eq!(
+            ProductionAbsentFinalAdoptionAdapter.qualify(request),
+            AbsentFinalAdoptionOutcome::ParentIdentityDrift
+        );
+        std::os::unix::fs::symlink(fixture.staging_path(), fixture.target_path())
+            .expect("symlink final");
+        let request = AbsentFinalAdoptionRequest::try_new(
+            &fixture.target_parent,
+            Path::new(TARGET_LEAF),
+            &fixture.target_parent_identity,
+            &fixture.expected_staging.stable_id,
+            fixture.expected_staging.len,
+            hash,
+        )
+        .expect("valid adoption request");
+        assert_eq!(
+            ProductionAbsentFinalAdoptionAdapter.qualify(request),
+            AbsentFinalAdoptionOutcome::VerificationFailed
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn adoption_parent_reacquisition_rejects_symlink_path() {
+        let fixture = Fixture::new();
+        let alias = fixture
+            .target_parent_path
+            .parent()
+            .expect("fixture parent")
+            .join("target-parent-alias");
+        std::os::unix::fs::symlink(&fixture.target_parent_path, &alias)
+            .expect("symlink target parent");
+        assert!(super::super::operation_journal::open_root(&alias).is_err());
     }
 
     #[cfg(all(target_os = "macos", test))]

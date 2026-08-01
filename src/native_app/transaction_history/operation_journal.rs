@@ -19,6 +19,10 @@ use serde_json::{Map, Value};
 use uuid::Uuid;
 
 use super::AbsentFinalRecoveryClassification;
+use super::absent_final_no_replace::{
+    AbsentFinalAdoptionAdapter, AbsentFinalAdoptionOutcome, AbsentFinalNoReplaceRequestError,
+    ProductionAbsentFinalAdoptionAdapter,
+};
 use super::absent_final_recovery::inspect_absent_final_recovery;
 pub(crate) use super::capacity_gate::VolumeIdentity;
 use super::capacity_gate::{DurableCapacityPlan, RejectedBeforeIntent};
@@ -3485,6 +3489,121 @@ impl OperationJournalCoordinator {
         Ok(AbsentFinalRecoveryClassification::StagingMissingFinalMatches)
     }
 
+    /// Qualify an already-present absent-final entry through a freshly reacquired, identity-checked
+    /// target-parent capability. This is observation-only: it never writes the journal, changes
+    /// phase/timestamps/capacity, or mutates the filesystem.
+    pub(crate) fn qualify_schema_v2_absent_final_adoption(
+        &self,
+        operation_id: Uuid,
+    ) -> Result<AbsentFinalAdoptionOutcome, JournalError> {
+        let inspection = self
+            .inspect_schema_v2_absent_final_recovery(operation_id)
+            .map_err(|error| match error {
+                JournalError::NotFound(_) => error,
+                error => JournalError::InvalidRecoveryObservation {
+                    operation_id,
+                    reason: format!("invalid durable absent-final adoption precondition: {error}"),
+                },
+            })?;
+        if !matches!(
+            inspection.classification,
+            AbsentFinalRecoveryClassification::StagingMissingFinalMatches
+        ) {
+            return Err(JournalError::InvalidRecoveryObservation {
+                operation_id,
+                reason: format!(
+                    "absent-final adoption requires StagingMissingFinalMatches, got {:?}",
+                    inspection.classification
+                ),
+            });
+        }
+        let record = self
+            .store
+            .record(operation_id)
+            .ok_or(JournalError::NotFound(operation_id))?;
+        let Some(observation) = record.absent_final_recovery_observation.as_ref() else {
+            return Err(JournalError::InvalidRecoveryObservation {
+                operation_id,
+                reason: String::from("absent-final adoption requires a recovery observation"),
+            });
+        };
+        let Some(proof) = record.absent_final_transaction_owned_proof.as_ref() else {
+            return Err(JournalError::InvalidRecoveryObservation {
+                operation_id,
+                reason: String::from("absent-final adoption requires transaction-owned proof"),
+            });
+        };
+        if proof.target_parent_stable_id != observation.target_parent_stable_id
+            || proof.final_stable_id != observation.final_stable_id
+            || proof.final_len != observation.final_len
+            || proof.final_content != observation.final_content
+        {
+            return Err(JournalError::InvalidRecoveryObservation {
+                operation_id,
+                reason: String::from("absent-final adoption proof conflicts with observation"),
+            });
+        }
+        let Some(PreparedTargetContract::AbsentFinalNoReplace(prepared)) = record.prepared.as_ref()
+        else {
+            return Err(JournalError::InvalidRecoveryObservation {
+                operation_id,
+                reason: String::from("absent-final adoption requires absent-final preparation"),
+            });
+        };
+        let PreparedFileEvidence::ContentHash(expected_content) = &proof.final_content else {
+            return Err(JournalError::InvalidRecoveryObservation {
+                operation_id,
+                reason: String::from("absent-final adoption requires exact content proof"),
+            });
+        };
+        let (target_parent, target_capability) =
+            open_root(&prepared.target_parent.path).map_err(|reason| {
+                JournalError::InvalidRecoveryObservation {
+                    operation_id,
+                    reason: format!("could not reacquire target-parent capability: {reason}"),
+                }
+            })?;
+        if target_capability.identity.stable_id != proof.target_parent_stable_id {
+            return Err(JournalError::InvalidRecoveryObservation {
+                operation_id,
+                reason: String::from("reacquired target-parent identity conflicts with proof"),
+            });
+        }
+        let request = super::absent_final_no_replace::AbsentFinalAdoptionRequest::try_new(
+            &target_parent,
+            &prepared.final_leaf,
+            &target_capability.identity,
+            &proof.final_stable_id,
+            proof.final_len,
+            expected_content,
+        )
+        .map_err(|error| JournalError::InvalidRecoveryObservation {
+            operation_id,
+            reason: match error {
+                AbsentFinalNoReplaceRequestError::TargetLeafNotSingleCleanNormal => {
+                    String::from("absent-final adoption final leaf is not clean")
+                }
+                AbsentFinalNoReplaceRequestError::StagingLeafNotSingleCleanNormal => {
+                    String::from("absent-final adoption staging leaf is not applicable")
+                }
+            },
+        })?;
+        let outcome = ProductionAbsentFinalAdoptionAdapter.qualify(request);
+        if let AbsentFinalAdoptionOutcome::Qualified(qualified) = &outcome {
+            if qualified.target_parent != target_capability.identity
+                || qualified.final_object.stable_id != proof.final_stable_id
+                || qualified.final_object.len != proof.final_len
+                || qualified.final_content != proof.final_content
+            {
+                return Err(JournalError::InvalidRecoveryObservation {
+                    operation_id,
+                    reason: String::from("qualified absent-final evidence conflicts with proof"),
+                });
+            }
+        }
+        Ok(outcome)
+    }
+
     /// Admit an intent durably and return its stable operation ID.
     #[cfg(test)]
     pub(crate) fn admit(
@@ -4461,6 +4580,56 @@ mod tests {
             )
             .expect("admit schema-v2 absent-final fixture");
         (operation_id, prepared, staged)
+    }
+
+    #[cfg(unix)]
+    fn admit_real_absent_final_v2_fixture(
+        journal: &mut OperationJournalCoordinator,
+        directory: &tempfile::TempDir,
+    ) -> (Uuid, PathBuf, PathBuf) {
+        let target_parent_path = directory.path().join("target-parent");
+        fs::create_dir(&target_parent_path).expect("real target parent");
+        let staging_path = target_parent_path.join("staging.wav");
+        let final_path = target_parent_path.join("final.wav");
+        fs::write(&staging_path, b"real staged bytes").expect("real staging bytes");
+        let (target_parent, target_parent_capability) =
+            open_root(&target_parent_path).expect("real target parent capability");
+        let staging = File::open(&staging_path).expect("real staging file");
+        let staging_identity = descriptor_identity(&staging).expect("real staging identity");
+        let evidence = prepared_file_evidence(&staging);
+        let prepared = PreparedAbsentFinalNoReplace {
+            direction: PreparedRestoreDirection::Undo,
+            source_id: String::from("real-v2-fixture-source"),
+            source_root: target_parent_capability.clone(),
+            target_parent: target_parent_capability,
+            final_leaf: PathBuf::from("final.wav"),
+            staging: PreparedStagingLocator {
+                relative_path: PathBuf::from("staging.wav"),
+                absent: true,
+            },
+            final_observation: AbsentFinalObservation::ObservedAbsent,
+            copy_validated_evidence: evidence.clone(),
+        };
+        let staged = FilesystemStagedWaveformRestore {
+            participant: FilesystemStagedParticipant::CopyValidated {
+                staging: PreparedLeafLocator {
+                    relative_path: PathBuf::from("staging.wav"),
+                    identity: staging_identity,
+                },
+                evidence,
+            },
+        };
+        let operation_id = journal
+            .admit_schema_v2_absent_final_for_test(
+                intent(),
+                serde_json::json!({"schema": 2}),
+                prepared,
+                staged,
+                valid_capacity_plan(),
+            )
+            .expect("admit real schema-v2 absent-final fixture");
+        drop(target_parent);
+        (operation_id, final_path, staging_path)
     }
 
     fn invalid_v2_admission_record() -> OperationRecord {
@@ -6868,6 +7037,171 @@ mod tests {
         );
         assert_eq!(old_v2.recovery_summary().malformed_count, 0);
         assert_eq!(fs::read(&path).unwrap(), old_v2_bytes);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn schema_v2_absent_final_adoption_qualification_is_exact_and_observation_only() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let directory = fixture_directory();
+        let mut journal = OperationJournalCoordinator::open(directory.path().to_path_buf())
+            .expect("open real fixture journal");
+        let (operation_id, final_path, staging_path) =
+            admit_real_absent_final_v2_fixture(&mut journal, &directory);
+        fs::rename(&staging_path, &final_path).expect("staging to final rename");
+        journal
+            .record_schema_v2_absent_final_recovery_observation(operation_id)
+            .expect("record exact recovery observation");
+        journal
+            .record_schema_v2_absent_final_transaction_owned_proof(operation_id)
+            .expect("record exact transaction-owned proof");
+
+        let record_before = journal.record(operation_id).unwrap().clone();
+        let proof = record_before
+            .absent_final_transaction_owned_proof
+            .clone()
+            .expect("durable transaction-owned proof");
+        let path = journal.store.record_path(operation_id);
+        let bytes_before = fs::read(&path).expect("journal bytes before qualification");
+        let claims_before = journal.store.capacity_claims().clone();
+        let final_bytes_before = fs::read(&final_path).expect("final bytes before qualification");
+        assert!(!staging_path.exists());
+
+        let outcome = journal
+            .qualify_schema_v2_absent_final_adoption(operation_id)
+            .expect("qualify real absent-final adoption");
+        let AbsentFinalAdoptionOutcome::Qualified(qualified) = outcome else {
+            panic!("expected qualified adoption outcome");
+        };
+        assert_eq!(
+            qualified.target_parent.stable_id,
+            proof.target_parent_stable_id
+        );
+        assert_eq!(qualified.final_object.stable_id, proof.final_stable_id);
+        assert_eq!(qualified.final_object.len, proof.final_len);
+        assert_eq!(qualified.final_content, proof.final_content);
+        assert_eq!(journal.record(operation_id), Some(&record_before));
+        assert_eq!(fs::read(&path).unwrap(), bytes_before);
+        assert_eq!(journal.store.capacity_claims(), &claims_before);
+        assert_eq!(fs::read(&final_path).unwrap(), final_bytes_before);
+        assert!(!staging_path.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn schema_v2_absent_final_adoption_missing_evidence_is_immutable() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        for record_proof in [false, true] {
+            let directory = fixture_directory();
+            let mut journal = OperationJournalCoordinator::open(directory.path().to_path_buf())
+                .expect("open real fixture journal");
+            let (operation_id, final_path, staging_path) =
+                admit_real_absent_final_v2_fixture(&mut journal, &directory);
+            fs::rename(&staging_path, &final_path).expect("staging to final rename");
+            journal
+                .record_schema_v2_absent_final_recovery_observation(operation_id)
+                .expect("record exact recovery observation");
+            if !record_proof {
+                let record = journal.record(operation_id).unwrap().clone();
+                let path = journal.store.record_path(operation_id);
+                let bytes_before = fs::read(&path).unwrap();
+                let claims_before = journal.store.capacity_claims().clone();
+                let final_bytes_before = fs::read(&final_path).unwrap();
+                let error = journal
+                    .qualify_schema_v2_absent_final_adoption(operation_id)
+                    .unwrap_err();
+                assert!(matches!(
+                    error,
+                    JournalError::InvalidRecoveryObservation { .. }
+                ));
+                assert_eq!(journal.record(operation_id), Some(&record));
+                assert_eq!(fs::read(&path).unwrap(), bytes_before);
+                assert_eq!(journal.store.capacity_claims(), &claims_before);
+                assert_eq!(fs::read(&final_path).unwrap(), final_bytes_before);
+                assert!(!staging_path.exists());
+                continue;
+            }
+            journal
+                .record_schema_v2_absent_final_transaction_owned_proof(operation_id)
+                .expect("record exact transaction-owned proof");
+            let mut invalid = journal.record(operation_id).unwrap().clone();
+            invalid.absent_final_recovery_observation = None;
+            journal.store.records.insert(operation_id, invalid.clone());
+            let path = journal.store.record_path(operation_id);
+            let bytes_before = fs::read(&path).unwrap();
+            let claims_before = journal.store.capacity_claims().clone();
+            let final_bytes_before = fs::read(&final_path).unwrap();
+            let error = journal
+                .qualify_schema_v2_absent_final_adoption(operation_id)
+                .unwrap_err();
+            assert!(matches!(
+                error,
+                JournalError::InvalidRecoveryObservation { .. }
+            ));
+            assert_eq!(journal.record(operation_id), Some(&invalid));
+            assert_eq!(fs::read(&path).unwrap(), bytes_before);
+            assert_eq!(journal.store.capacity_claims(), &claims_before);
+            assert_eq!(fs::read(&final_path).unwrap(), final_bytes_before);
+            assert!(!staging_path.exists());
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn schema_v2_absent_final_adoption_stale_final_and_parent_are_immutable() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        for replace_parent in [false, true] {
+            let directory = fixture_directory();
+            let mut journal = OperationJournalCoordinator::open(directory.path().to_path_buf())
+                .expect("open real fixture journal");
+            let (operation_id, final_path, staging_path) =
+                admit_real_absent_final_v2_fixture(&mut journal, &directory);
+            fs::rename(&staging_path, &final_path).expect("staging to final rename");
+            journal
+                .record_schema_v2_absent_final_recovery_observation(operation_id)
+                .expect("record exact recovery observation");
+            journal
+                .record_schema_v2_absent_final_transaction_owned_proof(operation_id)
+                .expect("record exact transaction-owned proof");
+            let path = journal.store.record_path(operation_id);
+            let record_before = journal.record(operation_id).unwrap().clone();
+            let bytes_before = fs::read(&path).unwrap();
+            let claims_before = journal.store.capacity_claims().clone();
+
+            let final_bytes_before = if replace_parent {
+                let target_parent = final_path.parent().unwrap().to_path_buf();
+                let moved_parent = target_parent.with_file_name("moved-target-parent");
+                fs::rename(&target_parent, &moved_parent).expect("move target parent");
+                fs::create_dir(&target_parent).expect("replacement target parent");
+                let moved_final = moved_parent.join("final.wav");
+                fs::read(moved_final).expect("moved final bytes")
+            } else {
+                fs::write(&final_path, b"stale replacement bytes").expect("replace final");
+                fs::read(&final_path).expect("stale final bytes")
+            };
+            let error = journal
+                .qualify_schema_v2_absent_final_adoption(operation_id)
+                .unwrap_err();
+            assert!(matches!(
+                error,
+                JournalError::InvalidRecoveryObservation { .. }
+            ));
+            assert_eq!(journal.record(operation_id), Some(&record_before));
+            assert_eq!(fs::read(&path).unwrap(), bytes_before);
+            assert_eq!(journal.store.capacity_claims(), &claims_before);
+            if replace_parent {
+                let moved_final = final_path
+                    .parent()
+                    .unwrap()
+                    .with_file_name("moved-target-parent")
+                    .join("final.wav");
+                assert_eq!(fs::read(moved_final).unwrap(), final_bytes_before);
+                assert!(!final_path.exists());
+            } else {
+                assert_eq!(fs::read(&final_path).unwrap(), final_bytes_before);
+            }
+            assert!(!staging_path.exists());
+        }
     }
 
     #[test]
