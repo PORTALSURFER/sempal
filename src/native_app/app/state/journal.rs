@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 use uuid::Uuid;
 
+use crate::native_app::transaction_history::acquire_absent_final_publication_guard;
 use crate::native_app::transaction_history::operation_journal::{
     BoundedAdmissionError, FilesystemStageOutcome, JournalError, OperationDisposition,
     OperationIntent, OperationJournalCoordinator, OperationPhase, PreparedOperationOutcome,
@@ -674,9 +675,33 @@ fn run_owner(
                                     .map_err(JournalOperationError::Journal)?
                                 {
                                     FilesystemStageOutcome::FilesystemStaged(operation_id) => {
-                                        coordinator
-                                            .attempt_publish_staged_waveform_restore(operation_id)
-                                            .map_err(JournalOperationError::Journal)
+                                        if let Some(mut context) = coordinator
+                                            .prepare_absent_final_publication_attempt_if_needed(
+                                                operation_id,
+                                            )
+                                            .map_err(JournalOperationError::Journal)?
+                                        {
+                                            let request = context
+                                                .take_guard_request()
+                                                .map_err(JournalOperationError::Journal)?;
+                                            let owner_result =
+                                                acquire_absent_final_publication_guard(
+                                                    request,
+                                                    operation_id,
+                                                );
+                                            coordinator
+                                                .commit_absent_final_publication_attempt(
+                                                    context,
+                                                    owner_result,
+                                                )
+                                                .map_err(JournalOperationError::Journal)
+                                        } else {
+                                            coordinator
+                                                .attempt_publish_staged_waveform_restore(
+                                                    operation_id,
+                                                )
+                                                .map_err(JournalOperationError::Journal)
+                                        }
                                     }
                                     outcome => Ok(outcome),
                                 }

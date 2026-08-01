@@ -1,4 +1,5 @@
 mod absent_final_no_replace;
+#[cfg(test)]
 mod absent_final_recovery;
 mod app_state;
 mod capacity_gate;
@@ -12,6 +13,8 @@ pub(in crate::native_app) mod operation_journal;
 pub(in crate::native_app) mod publication;
 mod summary;
 
+pub(in crate::native_app) use absent_final_no_replace::acquire_absent_final_publication_guard;
+#[cfg(test)]
 pub(in crate::native_app) use absent_final_recovery::AbsentFinalRecoveryClassification;
 pub(in crate::native_app) use capacity_gate::RejectedBeforeIntent;
 pub(in crate::native_app) use capacity_gate::open_no_follow_path;

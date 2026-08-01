@@ -1,9 +1,8 @@
 //! Capability-bound qualification for an absent-final, no-replace claim.
 //!
-//! The production adapter in this module is deliberately fail-closed.  The only namespace
-//! mutation is the macOS test adapter, which exists to qualify the descriptor-relative primitive
-//! before a future file-operation owner is allowed to call it.  This is a bounded test seam, not
-//! a macOS-wide or APFS-wide qualification claim.
+//! The legacy borrowed/owned adoption qualification adapters are test-only. Production publication
+//! uses the owner-facing guard function, which acquires and consumes the capability-bound result
+//! without exposing a generic publication constructor or a recovery/adoption coordinator seam.
 
 #![allow(dead_code)]
 
@@ -40,10 +39,11 @@ pub(super) struct AbsentFinalNoReplaceRequest<'a> {
     expected_content: &'a PreparedFileEvidence,
 }
 
-/// A read-only request to qualify an already-present final through a retained parent capability.
+/// A read-only request for descriptor-relative adoption qualification.
 ///
-/// The request borrows the capability and carries only durable identity/content expectations. It
-/// contains no pathname outside the clean final leaf and grants no namespace mutation authority.
+/// The owner guard and the legacy test-only adapter borrow the capability and carry only durable
+/// identity/content expectations. The request contains no pathname outside the clean final leaf
+/// and grants no namespace mutation authority.
 pub(super) struct AbsentFinalAdoptionRequest<'a> {
     target_parent: &'a File,
     final_leaf: &'a Path,
@@ -53,11 +53,12 @@ pub(super) struct AbsentFinalAdoptionRequest<'a> {
     expected_final_content: &'a [u8; 32],
 }
 
-/// An owned, non-authoritative request for live adoption qualification.
+/// Test-only owned request for the legacy coordinator recovery/adoption seam.
 ///
 /// The journal constructs this from durable preparation, recovery observation, and transaction-
 /// owned proof. The adapter reacquires the target-parent capability and revalidates the final;
 /// this request carries no borrowed descriptor.
+#[cfg(test)]
 pub(super) struct AbsentFinalAdoptionQualificationRequest {
     pub(super) operation_id: Uuid,
     pub(super) target_parent_path: PathBuf,
@@ -68,6 +69,7 @@ pub(super) struct AbsentFinalAdoptionQualificationRequest {
     pub(super) expected_final_content: [u8; 32],
 }
 
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum AbsentFinalAdoptionQualificationRequestError {
     TargetParentPathNotAbsolute,
@@ -76,6 +78,7 @@ pub(super) enum AbsentFinalAdoptionQualificationRequestError {
     FinalIdentityEmpty,
 }
 
+#[cfg(test)]
 impl AbsentFinalAdoptionQualificationRequest {
     pub(super) fn try_new(
         operation_id: Uuid,
@@ -172,6 +175,7 @@ impl AbsentFinalAdoptionGuardRequest {
 
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum AbsentFinalAdoptionOutcome {
+    #[cfg(test)]
     Qualified(QualifiedAbsentFinalAdoption),
     OperationIdDrift,
     ParentIdentityDrift,
@@ -182,8 +186,9 @@ pub(crate) enum AbsentFinalAdoptionOutcome {
     VerificationFailed,
 }
 
-/// Transient evidence from one descriptor-relative adoption qualification.
+/// Test-only transient evidence from one descriptor-relative adoption qualification.
 /// It intentionally contains no path or open handle.
+#[cfg(test)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct QualifiedAbsentFinalAdoption {
     pub(super) target_parent: PreparedObjectIdentity,
@@ -191,14 +196,16 @@ pub(crate) struct QualifiedAbsentFinalAdoption {
     pub(super) final_content: PreparedFileEvidence,
 }
 
-/// Operation-fenced evidence returned by the physical file owner after live adoption
-/// qualification. It contains no retained handle or mutation capability.
+/// Test-only operation-fenced result from the legacy adoption qualification seam.
+/// It contains no retained handle or mutation capability.
+#[cfg(test)]
 #[derive(Debug, Eq, PartialEq)]
 pub(super) struct AbsentFinalAdoptionQualificationResult {
     pub(super) operation_id: Uuid,
     pub(super) outcome: AbsentFinalAdoptionOutcome,
 }
 
+#[cfg(test)]
 impl AbsentFinalAdoptionQualificationResult {
     pub(super) fn operation_id(&self) -> Uuid {
         self.operation_id
@@ -242,8 +249,33 @@ impl QualifiedAbsentFinalAdoptionGuard {
     pub(super) fn operation_id(&self) -> Uuid {
         self.operation_id
     }
+
+    fn into_operation_bound_publication(
+        self,
+        expected_operation_id: Uuid,
+    ) -> Result<OperationBoundQualifiedAbsentFinalNoReplace, AbsentFinalAdoptionOutcome> {
+        // Keep the guard alive until the last possible moment.  This rechecks the retained
+        // parent descriptor, retained final descriptor, and the freshly reopened final through
+        // that same descriptor before any publication evidence is created.
+        self.revalidate_binding(expected_operation_id)?;
+
+        let operation_id = self.operation_id;
+        Ok(OperationBoundQualifiedAbsentFinalNoReplace {
+            operation_id,
+            qualified: QualifiedAbsentFinalNoReplace {
+                target_parent_identity: self.target_parent_identity,
+                root_path_continuity: RootPathContinuity::NotClaimed,
+                reopened_final: self.final_identity,
+                reopened_content: PreparedFileEvidence::ContentHash(self.final_content),
+                visibility: PublicationVisibility::VisibilityVerified,
+                synchronization: PublicationSynchronization::SyncUnsupportedOrUnverified,
+            },
+        })
+    }
 }
 
+/// Test-only legacy adapter; production publication uses the owner-facing guard function below.
+#[cfg(test)]
 pub(super) trait AbsentFinalAdoptionAdapter: sealed::Sealed {
     fn qualify(&self, request: AbsentFinalAdoptionRequest<'_>) -> AbsentFinalAdoptionOutcome;
     fn qualify_owned(
@@ -256,6 +288,7 @@ pub(super) struct ProductionAbsentFinalAdoptionAdapter;
 
 impl sealed::Sealed for ProductionAbsentFinalAdoptionAdapter {}
 
+#[cfg(test)]
 impl AbsentFinalAdoptionAdapter for ProductionAbsentFinalAdoptionAdapter {
     fn qualify(&self, request: AbsentFinalAdoptionRequest<'_>) -> AbsentFinalAdoptionOutcome {
         #[cfg(unix)]
@@ -308,6 +341,33 @@ impl ProductionAbsentFinalAdoptionAdapter {
             Err(AbsentFinalAdoptionOutcome::UnsupportedPlatform)
         }
     }
+
+    /// Consume a retained adoption guard into sealed, operation-bound publication evidence.
+    ///
+    /// The conversion is intentionally owned by the adapter boundary.  Callers cannot retain,
+    /// clone, serialize, compare, or inspect the descriptors that backed the guard.
+    pub(super) fn consume_guard_for_publication(
+        &self,
+        guard: QualifiedAbsentFinalAdoptionGuard,
+        expected_operation_id: Uuid,
+    ) -> Result<OperationBoundQualifiedAbsentFinalNoReplace, AbsentFinalAdoptionOutcome> {
+        guard.into_operation_bound_publication(expected_operation_id)
+    }
+}
+
+/// Execute the live absent-final qualification at the physical file-owner boundary.
+///
+/// The journal supplies only the owned request and expected operation identity.  Descriptor
+/// acquisition and the consuming retained-capability revalidation stay in this module so the
+/// coordinator cannot accidentally perform live filesystem work while assembling publication
+/// evidence.
+pub(in crate::native_app) fn acquire_absent_final_publication_guard(
+    request: AbsentFinalAdoptionGuardRequest,
+    expected_operation_id: Uuid,
+) -> Result<OperationBoundQualifiedAbsentFinalNoReplace, AbsentFinalAdoptionOutcome> {
+    let adapter = ProductionAbsentFinalAdoptionAdapter;
+    let guard = adapter.acquire_guard(request)?;
+    adapter.consume_guard_for_publication(guard, expected_operation_id)
 }
 
 #[cfg(unix)]
@@ -361,7 +421,7 @@ fn observe_final(
     Ok((after_identity, hash))
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, test))]
 fn qualify_unix_absent_final_adoption(
     request: AbsentFinalAdoptionRequest<'_>,
 ) -> AbsentFinalAdoptionOutcome {
@@ -396,7 +456,7 @@ fn qualify_unix_absent_final_adoption(
     })
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, test))]
 fn qualify_unix_owned_absent_final_adoption(
     request: &AbsentFinalAdoptionQualificationRequest,
 ) -> AbsentFinalAdoptionOutcome {
@@ -619,6 +679,32 @@ pub(super) struct QualifiedAbsentFinalNoReplace {
     reopened_content: PreparedFileEvidence,
     visibility: PublicationVisibility,
     synchronization: PublicationSynchronization,
+}
+
+/// Sealed publication evidence that remains operation-bound until the journal verifies the ID.
+///
+/// This type deliberately has no descriptor, pathname, serialization, comparison, or clone
+/// boundary.  The journal may only obtain the typed publication evidence by consuming it with the
+/// expected operation ID after its exact record snapshot has been checked.
+pub(in crate::native_app) struct OperationBoundQualifiedAbsentFinalNoReplace {
+    operation_id: Uuid,
+    qualified: QualifiedAbsentFinalNoReplace,
+}
+
+impl OperationBoundQualifiedAbsentFinalNoReplace {
+    pub(super) fn operation_id(&self) -> Uuid {
+        self.operation_id
+    }
+
+    pub(super) fn into_qualified(
+        self,
+        expected_operation_id: Uuid,
+    ) -> Result<QualifiedAbsentFinalNoReplace, AbsentFinalAdoptionOutcome> {
+        if self.operation_id != expected_operation_id {
+            return Err(AbsentFinalAdoptionOutcome::OperationIdDrift);
+        }
+        Ok(self.qualified)
+    }
 }
 
 impl QualifiedAbsentFinalNoReplace {
@@ -1394,6 +1480,40 @@ mod tests {
             AbsentFinalAdoptionOutcome::Qualified(_)
         ));
         assert!(!fixture.staging_path().exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn publication_guard_consuming_conversion_revalidates_retained_final() {
+        let fixture = Fixture::new();
+        fs::rename(fixture.staging_path(), fixture.target_path()).expect("stage final");
+        let final_file = File::open(fixture.target_path()).expect("final file");
+        let final_identity = descriptor_identity(&final_file).expect("final identity");
+        let expected_content = match &fixture.expected_content {
+            PreparedFileEvidence::ContentHash(hash) => *hash,
+            _ => panic!("fixture must have exact content"),
+        };
+        let operation_id = Uuid::new_v4();
+        let request = AbsentFinalAdoptionGuardRequest::try_new(
+            operation_id,
+            fixture.target_parent_path.clone(),
+            PathBuf::from(TARGET_LEAF),
+            fixture.target_parent_identity.stable_id.clone(),
+            final_identity.stable_id,
+            final_identity.len,
+            expected_content,
+        )
+        .expect("publication guard request");
+        let guard = ProductionAbsentFinalAdoptionAdapter
+            .acquire_guard(request)
+            .expect("acquire publication guard");
+
+        fs::write(fixture.target_path(), b"prepared staging byte!")
+            .expect("mutate retained final with equal-length content");
+        assert!(matches!(
+            ProductionAbsentFinalAdoptionAdapter.consume_guard_for_publication(guard, operation_id),
+            Err(AbsentFinalAdoptionOutcome::FinalContentDrift)
+        ));
     }
 
     #[cfg(unix)]
