@@ -30,8 +30,10 @@ target behavior until implemented and validated.
 - Make overflow, backend errors, missing identity, and stale generations
   explicit and conservatively recoverable.
 - Keep capture bounded and non-blocking, with fairness between sources.
-- Normalize all backends into the same work scopes and retain a narrow adapter to
-  the existing workflow and persistence owners.
+- Keep the model/normalizer and backend-neutral admission/lifecycle library
+  slices independently testable before live/replay adapters, then normalize all
+  backends into the same work scopes and retain a narrow adapter to the existing
+  workflow and persistence owners.
 - Make root and generation boundaries impossible to cross accidentally.
 - Allow cancellation, restart, crash recovery, and later replay without
   claiming completion for work that was not committed.
@@ -294,24 +296,32 @@ must be idempotent at the workflow/source-writer boundary and must not advance a
 checkpoint until the corresponding work is committed and projected according to
 the existing contract.
 
-## PR sequence with first code slice
+## PR sequence with bounded library slices
 
-1. First PR, library-only: define the bounded raw envelope,
+1. Pure model/normalizer library PR: define the bounded raw envelope,
    `RawObservationProvenance`, separate `Proof`/`WatcherContinuityProof` types,
    and a pure conservative normalizer with deterministic tests. This PR has no
-   watcher callback, live/replay adapter, `GuiMessage`, `BTreeSet` coalescing,
-   source-writer/database mutation, filesystem I/O, or persistent schema.
-2. Later adapter PR: connect the library boundary to live notify and the
-   replay adapter. Live notify must emit `Proof::Unproven` and preserve the
-   merged #1024 `WatcherAuthorityUnproven` audit/last-good behavior; only the
-   replay adapter may attach a validated continuity proof. The adapter PR must
-   define the compatibility handoff without claiming that current
-   `BTreeSet`/`GuiMessage` preserves raw order.
-3. Add admission queues, reserved overflow/error capacity, fairness, and
-   cancellation/restart generation tests, retaining uncertainty across every
-   eviction and stale boundary.
-4. Integrate committed workflow, projection, and checkpoint acknowledgements,
-   then validate crash recovery and native macOS behavior.
+   admission supervisor, watcher callback, live/replay adapter, `GuiMessage`,
+   `BTreeSet` coalescing, source-writer/database mutation, filesystem I/O, or
+   persistent schema.
+2. Separate backend-neutral library-only admission/lifecycle PR: add the
+   bounded admission supervisor, lifecycle generation, queue budgets, fairness,
+   cancellation, and acknowledgement boundaries. Use synthetic envelopes and
+   acknowledgements for deterministic tests covering root mismatch,
+   stale/duplicate delivery, budgets/fairness, cancellation/rebind/restart,
+   eviction/overflow/error, and retained uncertainty. This is a required gate
+   before any live/replay adapter or downstream workflow, projection,
+   checkpoint, crash-recovery, or native integration.
+3. Live/replay adapter PR: connect the validated library boundary to live
+   notify and the replay adapter. Live notify must emit `Proof::Unproven` and
+   preserve the merged #1024 `WatcherAuthorityUnproven` audit/last-good
+   behavior; only the replay adapter may attach a validated continuity proof.
+   The adapter PR must define the compatibility handoff without claiming that
+   current `BTreeSet`/`GuiMessage` preserves raw order.
+4. Downstream workflow/projection/checkpoint/crash/native integration: integrate
+   committed acknowledgements with the existing workflow, source-writer,
+   projection, and checkpoint boundaries, then validate crash recovery and
+   native macOS behavior.
 5. Handle directory truth, `schema/CommittedSourceDelta`, recursive hydration,
    a new backend/cursor, durable raw retention, and PR #980 only as separately
    scoped later work.
@@ -321,13 +331,12 @@ the existing contract.
 | Area | Target validation | Required evidence |
 | --- | --- | --- |
 | Contract | Check provenance/proof separation, field names, scope meanings, workflow mapping, and compatibility seam | Review of this design and `git diff --check` |
-| First library PR | Unit-test bounded raw envelopes, lossless/syntactic normalization, no I/O/type proof, proof non-escalation, and widening | Deterministic scope/provenance/proof assertions with no adapter or downstream dependency |
-| Boundaries | Test invalid paths, root mismatch, stale generation, duplicate IDs, cursor gaps, overflow, and errors | No cross-root/generation delivery and no false checkpoint |
-| Queue/lifecycle | Exercise per-source/global budgets, fairness, cancellation, rebind, restart, stale rejection, and repeated overflow | Every uncertainty survives until committed reconciliation acknowledgement or explicit audit |
-| Live notify | In the later adapter PR, drive representative macOS live notifications through the existing seam | `Proof::Unproven`, `WatcherAuthorityUnproven`, last-good retention, no targeted authority/checkpoint |
-| Replay | In the later adapter PR, replay ordered/coalesced FSEvents batches, including an unavailable or gapped cursor | Only valid contiguous replay attaches proof; gaps use audit and last-good behavior |
-| Commit/recovery | Interrupt before and after writer/projection/checkpoint boundaries, then restart | Idempotent recovery from the last committed boundary |
-| Native acceptance | Use the normal writable macOS development profile with real sources | User-visible refresh/reconciliation behavior and no stale-generation effects |
+| Model/normalizer library (first PR) | Unit-test bounded raw envelopes, lossless/syntactic normalization, no I/O/type proof, proof non-escalation, and widening | Deterministic scope/provenance/proof assertions with no admission/lifecycle, adapter, or downstream dependency |
+| Admission/lifecycle library (second PR; required gate before adapters) | With synthetic envelopes/acknowledgements, deterministically test root mismatch, stale/duplicate delivery, per-source/global budgets and fairness, cancellation/rebind/restart, eviction/overflow/error, and retained uncertainty | No live/replay adapter proceeds until this gate passes; no cross-root/generation delivery or false checkpoint; every uncertainty survives until committed reconciliation acknowledgement or explicit audit |
+| Live notify | In the third adapter PR, drive representative macOS live notifications through the existing seam | `Proof::Unproven`, `WatcherAuthorityUnproven`, last-good retention, no targeted authority/checkpoint |
+| Replay | In the third adapter PR, replay ordered/coalesced FSEvents batches, including an unavailable or gapped cursor | Only valid contiguous replay attaches proof; gaps use audit and last-good behavior |
+| Commit/recovery | In the fourth downstream integration PR, interrupt before and after writer/projection/checkpoint boundaries, then restart | Idempotent recovery from the last committed boundary |
+| Native acceptance | In the fourth downstream integration PR, use the normal writable macOS development profile with real sources | User-visible refresh/reconciliation behavior and no stale-generation effects |
 
 ## Explicit non-goals and risks
 
