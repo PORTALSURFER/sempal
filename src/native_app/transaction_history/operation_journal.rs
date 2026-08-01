@@ -18,12 +18,18 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use uuid::Uuid;
 
+#[cfg(test)]
 use super::AbsentFinalRecoveryClassification;
+#[cfg(test)]
 use super::absent_final_no_replace::{
-    AbsentFinalAdoptionAdapter, AbsentFinalAdoptionOutcome,
-    AbsentFinalAdoptionQualificationRequest, AbsentFinalAdoptionQualificationResult,
-    AbsentFinalNoReplaceRequestError, ProductionAbsentFinalAdoptionAdapter,
+    AbsentFinalAdoptionAdapter, AbsentFinalAdoptionQualificationRequest,
+    AbsentFinalAdoptionQualificationResult, ProductionAbsentFinalAdoptionAdapter,
 };
+use super::absent_final_no_replace::{
+    AbsentFinalAdoptionOutcome, AbsentFinalNoReplaceRequestError,
+    OperationBoundQualifiedAbsentFinalNoReplace,
+};
+#[cfg(test)]
 use super::absent_final_recovery::{
     AbsentFinalRecoveryAdapter, AbsentFinalRecoveryRequest, AbsentFinalRecoveryResult,
     ProductionAbsentFinalRecoveryAdapter,
@@ -466,7 +472,7 @@ pub(crate) struct OperationRecord {
     /// adoption through a live target-parent capability.
     pub(crate) absent_final_adoption_evidence: Option<AbsentFinalAdoptionEvidence>,
     /// Typed filesystem publication evidence. Legacy records do not contain this checkpoint.
-    pub(crate) published: Option<FilesystemPublishedWaveformRestore>,
+    published: Option<FilesystemPublishedWaveformRestore>,
     /// Latest bounded assessment explaining why expected-identity replacement is not qualified.
     /// Legacy schema-v1 records do not contain this field.
     pub(crate) replacement_qualification: Option<ReplacementQualificationAssessment>,
@@ -1476,6 +1482,7 @@ impl OperationRecord {
         updated
     }
 
+    #[cfg(test)]
     fn with_absent_final_recovery_observation(
         &self,
         observation: AbsentFinalRecoveryObservation,
@@ -1486,6 +1493,7 @@ impl OperationRecord {
         updated
     }
 
+    #[cfg(test)]
     fn with_absent_final_transaction_owned_proof(
         &self,
         proof: AbsentFinalTransactionOwnedProof,
@@ -1496,6 +1504,7 @@ impl OperationRecord {
         updated
     }
 
+    #[cfg(test)]
     fn with_absent_final_adoption_evidence(&self, evidence: AbsentFinalAdoptionEvidence) -> Self {
         let mut updated = self.clone();
         updated.absent_final_adoption_evidence = Some(evidence);
@@ -2294,6 +2303,7 @@ impl OperationJournalStore {
         }
     }
 
+    #[cfg(test)]
     fn record_absent_final_recovery_observation(
         &mut self,
         operation_id: Uuid,
@@ -2335,6 +2345,7 @@ impl OperationJournalStore {
         Ok(())
     }
 
+    #[cfg(test)]
     fn record_absent_final_transaction_owned_proof(
         &mut self,
         operation_id: Uuid,
@@ -2376,6 +2387,7 @@ impl OperationJournalStore {
         Ok(())
     }
 
+    #[cfg(test)]
     fn record_absent_final_adoption_evidence(
         &mut self,
         operation_id: Uuid,
@@ -2417,7 +2429,7 @@ impl OperationJournalStore {
         Ok(())
     }
 
-    pub(crate) fn guarded_publish(
+    fn guarded_publish(
         &mut self,
         operation_id: Uuid,
         published: FilesystemPublishedWaveformRestore,
@@ -2766,6 +2778,30 @@ pub(crate) struct OperationJournalCoordinator {
     store: OperationJournalStore,
 }
 
+/// Exact authorizing snapshot and its non-authoritative live adoption handoff.
+///
+/// The request is built from the same cloned record that is later used as the publication fence.
+/// Keeping both values together prevents a live guard from being committed on behalf of a newer
+/// record that happens to reuse the same operation ID.
+pub(crate) struct AbsentFinalPublicationAttemptContext {
+    authorizing_record: OperationRecord,
+    guard_request: Option<AbsentFinalAdoptionGuardRequest>,
+}
+
+impl AbsentFinalPublicationAttemptContext {
+    pub(crate) fn take_guard_request(
+        &mut self,
+    ) -> Result<AbsentFinalAdoptionGuardRequest, JournalError> {
+        self.guard_request
+            .take()
+            .ok_or(JournalError::InvalidRecoveryObservation {
+                operation_id: self.authorizing_record.operation_id,
+                reason: String::from("absent-final guard request was already consumed"),
+            })
+    }
+}
+
+#[cfg(test)]
 fn validate_absent_final_recovery_result_operation_id(
     operation_id: Uuid,
     result: AbsentFinalRecoveryResult,
@@ -2781,6 +2817,7 @@ fn validate_absent_final_recovery_result_operation_id(
     Ok(result)
 }
 
+#[cfg(test)]
 fn validate_absent_final_adoption_result_operation_id(
     operation_id: Uuid,
     result: AbsentFinalAdoptionQualificationResult,
@@ -3549,9 +3586,10 @@ impl OperationJournalCoordinator {
         self.store.recovery_summary()
     }
 
-    /// Classify one eligible schema-v2 absent-final record through the physical file-owner
-    /// adapter. This method is observation-only: it never updates the record, writes journal
-    /// bytes, changes disposition, or alters capacity claims.
+    /// Test-only legacy classification through the pre-owner-routed recovery adapter. This
+    /// method is observation-only: it never updates the record, writes journal bytes, changes
+    /// disposition, or alters capacity claims.
+    #[cfg(test)]
     pub(crate) fn classify_schema_v2_absent_final_recovery(
         &self,
         operation_id: Uuid,
@@ -3561,7 +3599,8 @@ impl OperationJournalCoordinator {
             .classification)
     }
 
-    /// Build an owned recovery handoff from durable evidence without touching the filesystem.
+    /// Build the test-only legacy recovery handoff without touching the filesystem.
+    #[cfg(test)]
     fn prepare_schema_v2_absent_final_recovery_request(
         &self,
         operation_id: Uuid,
@@ -3639,6 +3678,7 @@ impl OperationJournalCoordinator {
         })
     }
 
+    #[cfg(test)]
     fn run_schema_v2_absent_final_recovery(
         &self,
         operation_id: Uuid,
@@ -3648,9 +3688,10 @@ impl OperationJournalCoordinator {
         validate_absent_final_recovery_result_operation_id(operation_id, result)
     }
 
-    /// Re-inspect one eligible absent-final record and durably retain only the exact
-    /// `StagingMissingFinalMatches` observation. This remains a filesystem-staged journal
-    /// observation; it does not publish, adopt, claim ownership, or mutate the namespace.
+    /// Test-only legacy observation step. It durably retains only the exact
+    /// `StagingMissingFinalMatches` observation; it does not publish, adopt, claim ownership, or
+    /// mutate the namespace.
+    #[cfg(test)]
     pub(crate) fn record_schema_v2_absent_final_recovery_observation(
         &mut self,
         operation_id: Uuid,
@@ -3699,10 +3740,10 @@ impl OperationJournalCoordinator {
         }
     }
 
-    /// Re-inspect one eligible absent-final record and durably retain a distinct adoption proof
-    /// only after the live reopened final exactly matches the durable recovery observation. The
-    /// proof is evidence-only: it carries no pathname, capability, publication claim, or
-    /// filesystem mutation authority, and the operation remains filesystem-staged.
+    /// Test-only legacy proof step. It durably retains a distinct adoption proof only after the
+    /// live reopened final exactly matches the durable recovery observation. The proof is
+    /// evidence-only and the operation remains filesystem-staged.
+    #[cfg(test)]
     pub(crate) fn record_schema_v2_absent_final_transaction_owned_proof(
         &mut self,
         operation_id: Uuid,
@@ -3768,9 +3809,9 @@ impl OperationJournalCoordinator {
         Ok(AbsentFinalRecoveryClassification::StagingMissingFinalMatches)
     }
 
-    /// Qualify an already-present absent-final entry through the physical file-owner adapters.
-    /// This is observation-only: it never writes the journal, changes phase/timestamps/capacity,
-    /// or mutates the filesystem.
+    /// Test-only legacy adoption qualification through the pre-owner-routed adapters. This is
+    /// observation-only and never writes the journal or mutates the filesystem.
+    #[cfg(test)]
     pub(crate) fn qualify_schema_v2_absent_final_adoption(
         &self,
         operation_id: Uuid,
@@ -3879,17 +3920,57 @@ impl OperationJournalCoordinator {
         Ok(outcome)
     }
 
-    /// Build an owned, non-authoritative handoff for a durably qualified absent-final adoption.
-    /// This method validates only the in-memory durable record. It never inspects or opens the
-    /// filesystem, writes the journal, changes phase/timestamps or capacity, or exposes a handle.
-    pub(crate) fn prepare_schema_v2_absent_final_adoption_guard_request(
+    /// Build the exact authorizing snapshot and an owned, non-authoritative handoff for a
+    /// durably qualified absent-final adoption. This method validates only the in-memory durable
+    /// record. It never inspects or opens the filesystem, writes the journal, changes
+    /// phase/timestamps or capacity, or exposes a handle.
+    fn prepare_absent_final_publication_attempt(
         &self,
         operation_id: Uuid,
-    ) -> Result<AbsentFinalAdoptionGuardRequest, JournalError> {
+    ) -> Result<AbsentFinalPublicationAttemptContext, JournalError> {
+        let authorizing_record = self
+            .store
+            .record(operation_id)
+            .cloned()
+            .ok_or(JournalError::NotFound(operation_id))?;
+        let guard_request = self.prepare_absent_final_adoption_guard_request_from_record(
+            operation_id,
+            &authorizing_record,
+        )?;
+        Ok(AbsentFinalPublicationAttemptContext {
+            authorizing_record,
+            guard_request: Some(guard_request),
+        })
+    }
+
+    /// Prepare the exact snapshot and owned request only when this is the staged schema-v2
+    /// absent-final contract. The returned context retains the snapshot until the file-owner
+    /// result is committed or rejected.
+    pub(crate) fn prepare_absent_final_publication_attempt_if_needed(
+        &self,
+        operation_id: Uuid,
+    ) -> Result<Option<AbsentFinalPublicationAttemptContext>, JournalError> {
         let record = self
             .store
             .record(operation_id)
             .ok_or(JournalError::NotFound(operation_id))?;
+        if record.phase != OperationPhase::FilesystemStaged
+            || !matches!(
+                record.prepared.as_ref(),
+                Some(PreparedTargetContract::AbsentFinalNoReplace(_))
+            )
+        {
+            return Ok(None);
+        }
+        self.prepare_absent_final_publication_attempt(operation_id)
+            .map(Some)
+    }
+
+    fn prepare_absent_final_adoption_guard_request_from_record(
+        &self,
+        operation_id: Uuid,
+        record: &OperationRecord,
+    ) -> Result<AbsentFinalAdoptionGuardRequest, JournalError> {
         if record.operation_id != operation_id {
             return Err(JournalError::InvalidRecoveryObservation {
                 operation_id,
@@ -4016,9 +4097,20 @@ impl OperationJournalCoordinator {
         })
     }
 
-    /// Requalify an already-present transaction-owned final and durably retain only the exact
-    /// capability-bound adoption evidence. This keeps the operation filesystem-staged and never
-    /// performs publication or filesystem mutation.
+    /// Build the test-only legacy adoption handoff. The request remains filesystem-free and is
+    /// constructed from one exact record snapshot.
+    #[cfg(test)]
+    pub(crate) fn prepare_schema_v2_absent_final_adoption_guard_request(
+        &self,
+        operation_id: Uuid,
+    ) -> Result<AbsentFinalAdoptionGuardRequest, JournalError> {
+        let mut context = self.prepare_absent_final_publication_attempt(operation_id)?;
+        context.take_guard_request()
+    }
+
+    /// Test-only legacy evidence-building step. This keeps the operation filesystem-staged and
+    /// never performs publication or filesystem mutation.
+    #[cfg(test)]
     pub(crate) fn record_schema_v2_absent_final_adoption_evidence(
         &mut self,
         operation_id: Uuid,
@@ -4459,11 +4551,130 @@ impl OperationJournalCoordinator {
         }
     }
 
+    fn validate_already_published_absent_final_noop(
+        &self,
+        operation_id: Uuid,
+    ) -> Result<FilesystemStageOutcome, JournalError> {
+        let record = self
+            .store
+            .record(operation_id)
+            .ok_or(JournalError::NotFound(operation_id))?;
+        if record.phase != OperationPhase::FilesystemPublished
+            || !matches!(
+                record.prepared.as_ref(),
+                Some(PreparedTargetContract::AbsentFinalNoReplace(_))
+            )
+        {
+            return Err(JournalError::IllegalTransition {
+                operation_id,
+                from: record.phase,
+                to: OperationPhase::FilesystemPublished,
+            });
+        }
+        validate_record_publication(record).map_err(|reason| {
+            JournalError::InvalidPublicationEvidence {
+                operation_id,
+                reason: format!("already-published absent-final evidence is invalid: {reason}"),
+            }
+        })?;
+        Ok(FilesystemStageOutcome::FilesystemPublished(operation_id))
+    }
+
+    fn absent_final_publication_failure(
+        &mut self,
+        authorizing_record: &OperationRecord,
+        reason: String,
+    ) -> Result<FilesystemStageOutcome, JournalError> {
+        let operation_id = authorizing_record.operation_id;
+        let current = self
+            .store
+            .record(operation_id)
+            .ok_or(JournalError::NotFound(operation_id))?;
+        if current != authorizing_record {
+            return Err(JournalError::InvalidPublicationEvidence {
+                operation_id,
+                reason: String::from(
+                    "absent-final publication snapshot changed before failure disposition",
+                ),
+            });
+        }
+        self.update_attempt_disposition(operation_id, OperationDisposition::AuditRequired, reason)
+    }
+
+    pub(crate) fn commit_absent_final_publication_attempt(
+        &mut self,
+        context: AbsentFinalPublicationAttemptContext,
+        owner_result: Result<
+            OperationBoundQualifiedAbsentFinalNoReplace,
+            AbsentFinalAdoptionOutcome,
+        >,
+    ) -> Result<FilesystemStageOutcome, JournalError> {
+        let authorizing_record = context.authorizing_record;
+        let operation_id = authorizing_record.operation_id;
+        let operation_bound = match owner_result {
+            Ok(operation_bound) => operation_bound,
+            Err(outcome) => {
+                return self.absent_final_publication_failure(
+                    &authorizing_record,
+                    format!("absent-final adoption guard failed: {outcome:?}"),
+                );
+            }
+        };
+        if operation_bound.operation_id() != operation_id {
+            return Err(JournalError::InvalidPublicationEvidence {
+                operation_id,
+                reason: String::from(
+                    "absent-final publication evidence returned for another operation",
+                ),
+            });
+        }
+        let current = self
+            .store
+            .record(operation_id)
+            .ok_or(JournalError::NotFound(operation_id))?;
+        if current != &authorizing_record {
+            return Err(JournalError::InvalidPublicationEvidence {
+                operation_id,
+                reason: String::from(
+                    "absent-final publication authorizing record changed before commit",
+                ),
+            });
+        }
+
+        let qualified = operation_bound
+            .into_qualified(operation_id)
+            .map_err(|outcome| JournalError::InvalidPublicationEvidence {
+                operation_id,
+                reason: format!("absent-final publication operation fence failed: {outcome:?}"),
+            })?;
+        let published =
+            super::publication::from_qualified_absent_final_no_replace_result(qualified);
+        let prepared = authorizing_record
+            .prepared
+            .as_ref()
+            .ok_or(JournalError::MissingPreparedEvidence(operation_id))?;
+        let staged = authorizing_record
+            .staged
+            .as_ref()
+            .ok_or(JournalError::MissingPreparedEvidence(operation_id))?;
+        super::publication::validate_absent_final_no_replace_publication(
+            prepared, staged, &published,
+        )
+        .map_err(|reason| JournalError::InvalidPublicationEvidence {
+            operation_id,
+            reason,
+        })?;
+
+        match self.store.guarded_publish(operation_id, published) {
+            Ok(()) => Ok(FilesystemStageOutcome::FilesystemPublished(operation_id)),
+            Err(error) => Ok(FilesystemStageOutcome::JournalWriteFailed {
+                operation_id,
+                reason: error.to_string(),
+            }),
+        }
+    }
+
     /// Attempt publication of one already-staged restore through the sealed adapter seam.
-    ///
-    /// The production adapter is intentionally unsupported in this slice, so this method cannot
-    /// mutate the target namespace.  A test-only adapter exercises the same guarded evidence
-    /// path without standing in for a platform qualification.
     pub(crate) fn attempt_publish_staged_waveform_restore(
         &mut self,
         operation_id: Uuid,
@@ -4482,11 +4693,36 @@ impl OperationJournalCoordinator {
     where
         A: ExpectedIdentityReplacementAdapter,
     {
+        let (phase, is_absent_final) = {
+            let record = self
+                .store
+                .record(operation_id)
+                .ok_or(JournalError::NotFound(operation_id))?;
+            (
+                record.phase,
+                matches!(
+                    record.prepared.as_ref(),
+                    Some(PreparedTargetContract::AbsentFinalNoReplace(_))
+                ),
+            )
+        };
+        if is_absent_final && phase == OperationPhase::FilesystemPublished {
+            return self.validate_already_published_absent_final_noop(operation_id);
+        }
+        if is_absent_final && phase == OperationPhase::FilesystemStaged {
+            let _ = self.prepare_absent_final_publication_attempt(operation_id)?;
+            return Err(JournalError::InvalidPublicationEvidence {
+                operation_id,
+                reason: String::from(
+                    "absent-final publication requires the physical file-owner handoff",
+                ),
+            });
+        }
         let record = self
             .store
             .record(operation_id)
             .ok_or(JournalError::NotFound(operation_id))?;
-        if record.phase != OperationPhase::FilesystemStaged {
+        if phase != OperationPhase::FilesystemStaged {
             return Err(JournalError::IllegalTransition {
                 operation_id,
                 from: record.phase,
@@ -4509,13 +4745,12 @@ impl OperationJournalCoordinator {
         let prepared = match prepared {
             PreparedTargetContract::ExistingExpectedIdentity(prepared) => prepared,
             PreparedTargetContract::AbsentFinalNoReplace(_) => {
-                return self.update_attempt_disposition(
+                return Err(JournalError::InvalidPublicationEvidence {
                     operation_id,
-                    OperationDisposition::AuditRequired,
-                    String::from(
-                        "schema-v2 absent-final publication requires its explicit qualified seam",
+                    reason: String::from(
+                        "absent-final publication requires the physical file-owner handoff",
                     ),
-                );
+                });
             }
         };
 
@@ -4624,9 +4859,11 @@ impl OperationJournalCoordinator {
         self.update_attempt_disposition(operation_id, OperationDisposition::AuditRequired, reason)
     }
 
-    /// Advance a staged waveform restore only with typed, validated publication evidence.
-    /// This records evidence; it deliberately does not perform the publication primitive.
-    pub(crate) fn guarded_publish(
+    /// Test-only compatibility helper for exercising the existing publication validator.
+    /// Production callers must use the owner-routed absent-final commit or the expected-identity
+    /// adapter path above.
+    #[cfg(test)]
+    fn guarded_publish(
         &mut self,
         operation_id: Uuid,
         published: FilesystemPublishedWaveformRestore,
@@ -5144,6 +5381,20 @@ mod tests {
             .record_schema_v2_absent_final_adoption_evidence(operation_id)
             .expect("record exact adoption evidence");
         (operation_id, final_path, staging_path)
+    }
+
+    #[cfg(unix)]
+    fn publish_absent_final_via_owner_route(
+        journal: &mut OperationJournalCoordinator,
+        operation_id: Uuid,
+    ) -> Result<FilesystemStageOutcome, JournalError> {
+        let mut context = journal
+            .prepare_absent_final_publication_attempt_if_needed(operation_id)?
+            .expect("staged absent-final contract must prepare an owner handoff");
+        let request = context.take_guard_request()?;
+        let owner_result =
+            super::super::acquire_absent_final_publication_guard(request, operation_id);
+        journal.commit_absent_final_publication_attempt(context, owner_result)
     }
 
     fn invalid_v2_admission_record() -> OperationRecord {
@@ -7802,6 +8053,125 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn schema_v2_absent_final_publication_advances_with_validated_claims() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let directory = fixture_directory();
+        let mut journal = OperationJournalCoordinator::open(directory.path().to_path_buf())
+            .expect("open real fixture journal");
+        let (operation_id, final_path, staging_path) =
+            admit_real_absent_final_v2_adoption_fixture(&mut journal, &directory);
+        let claims_before = journal.store.capacity_claims().clone();
+
+        assert_eq!(
+            publish_absent_final_via_owner_route(&mut journal, operation_id)
+                .expect("publish real absent-final adoption"),
+            FilesystemStageOutcome::FilesystemPublished(operation_id)
+        );
+
+        let record = journal.record(operation_id).expect("published record");
+        assert_eq!(record.phase, OperationPhase::FilesystemPublished);
+        assert_eq!(record.disposition, OperationDisposition::None);
+        assert!(record.absent_final_recovery_observation.is_none());
+        assert!(record.absent_final_transaction_owned_proof.is_none());
+        assert!(record.absent_final_adoption_evidence.is_none());
+        let prepared = record.prepared.as_ref().expect("prepared evidence");
+        let staged = record.staged.as_ref().expect("staged evidence");
+        let published = record.published.as_ref().expect("publication evidence");
+        assert!(is_absent_final_no_replace_publication(published));
+        assert!(validate_absent_final_no_replace_publication(prepared, staged, published).is_ok());
+        assert_eq!(journal.store.capacity_claims(), &claims_before);
+        assert_eq!(fs::read(&final_path).unwrap(), b"real staged bytes");
+        assert!(!staging_path.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn schema_v2_absent_final_publication_survives_close_and_reopen() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let directory = fixture_directory();
+        let mut journal = OperationJournalCoordinator::open(directory.path().to_path_buf())
+            .expect("open real fixture journal");
+        let (operation_id, final_path, _staging_path) =
+            admit_real_absent_final_v2_adoption_fixture(&mut journal, &directory);
+        publish_absent_final_via_owner_route(&mut journal, operation_id)
+            .expect("publish real absent-final adoption");
+        let path = journal.store.record_path(operation_id);
+        let bytes_before = fs::read(&path).expect("published journal bytes");
+        let claims_before = journal.store.capacity_claims().clone();
+        drop(journal);
+
+        let reopened = OperationJournalCoordinator::open(directory.path().to_path_buf())
+            .expect("reopen published journal");
+        let record = reopened.record(operation_id).expect("reopened record");
+        assert_eq!(record.phase, OperationPhase::FilesystemPublished);
+        assert!(record.published.is_some());
+        assert_eq!(reopened.store.capacity_claims(), &claims_before);
+        assert_eq!(fs::read(&path).unwrap(), bytes_before);
+        assert_eq!(fs::read(&final_path).unwrap(), b"real staged bytes");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn schema_v2_absent_final_equal_replay_is_byte_stable_and_conflicting_replay_rejected() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let directory = fixture_directory();
+        let mut journal = OperationJournalCoordinator::open(directory.path().to_path_buf())
+            .expect("open real fixture journal");
+        let (operation_id, _final_path, _staging_path) =
+            admit_real_absent_final_v2_adoption_fixture(&mut journal, &directory);
+        publish_absent_final_via_owner_route(&mut journal, operation_id)
+            .expect("publish real absent-final adoption");
+        let path = journal.store.record_path(operation_id);
+        let publication = journal
+            .record(operation_id)
+            .and_then(|record| record.published.clone())
+            .expect("publication evidence");
+        let bytes_before = fs::read(&path).expect("journal bytes before replay");
+
+        journal
+            .guarded_publish(operation_id, publication.clone())
+            .expect("equal publication replay");
+        assert_eq!(fs::read(&path).unwrap(), bytes_before);
+
+        let conflicting = publication_with_reopened_identity_mismatch(&publication);
+        assert!(matches!(
+            journal.guarded_publish(operation_id, conflicting),
+            Err(JournalError::InvalidPublicationEvidence { .. })
+        ));
+        assert_eq!(fs::read(&path).unwrap(), bytes_before);
+        assert_eq!(
+            journal.record(operation_id).unwrap().published.as_ref(),
+            Some(&publication)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn schema_v2_absent_final_already_published_second_call_is_filesystem_free_and_byte_stable() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let directory = fixture_directory();
+        let mut journal = OperationJournalCoordinator::open(directory.path().to_path_buf())
+            .expect("open real fixture journal");
+        let (operation_id, final_path, _staging_path) =
+            admit_real_absent_final_v2_adoption_fixture(&mut journal, &directory);
+        publish_absent_final_via_owner_route(&mut journal, operation_id)
+            .expect("publish real absent-final adoption");
+        let path = journal.store.record_path(operation_id);
+        let bytes_before = fs::read(&path).expect("journal bytes before second call");
+        fs::remove_dir_all(final_path.parent().unwrap()).expect("remove live target parent");
+
+        assert_eq!(
+            journal
+                .attempt_publish_staged_waveform_restore(operation_id)
+                .expect("already-published no-op"),
+            FilesystemStageOutcome::FilesystemPublished(operation_id)
+        );
+        assert_eq!(fs::read(&path).unwrap(), bytes_before);
+        assert!(!final_path.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn schema_v2_absent_final_recovery_request_is_filesystem_free() {
         let _lock = TEST_LOCK.lock().unwrap();
         let directory = fixture_directory();
@@ -7926,7 +8296,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn schema_v2_absent_final_adoption_guard_is_adapter_bound_immutable_and_operation_fenced() {
+    fn schema_v2_absent_final_adoption_guard_owner_route_is_operation_fenced() {
         let _lock = TEST_LOCK.lock().unwrap();
         let directory = fixture_directory();
         let mut journal = OperationJournalCoordinator::open(directory.path().to_path_buf())
@@ -7936,23 +8306,18 @@ mod tests {
 
         let record_before = journal.record(operation_id).unwrap().clone();
         let path = journal.store.record_path(operation_id);
-        let bytes_before = fs::read(&path).expect("journal bytes before guard acquisition");
+        let bytes_before = fs::read(&path).expect("journal bytes before owner handoff");
         let claims_before = journal.store.capacity_claims().clone();
-        let final_bytes_before =
-            fs::read(&final_path).expect("final bytes before guard acquisition");
-        let request = journal
-            .prepare_schema_v2_absent_final_adoption_guard_request(operation_id)
-            .expect("prepare durable adoption guard request");
-        let guard = ProductionAbsentFinalAdoptionAdapter
-            .acquire_guard(request)
-            .expect("file-operation adapter acquires guard");
-
-        assert_eq!(guard.operation_id(), operation_id);
-        assert_eq!(
-            guard.revalidate_binding(Uuid::new_v4()),
+        let final_bytes_before = fs::read(&final_path).expect("final bytes before owner handoff");
+        let mut context = journal
+            .prepare_absent_final_publication_attempt_if_needed(operation_id)
+            .expect("prepare owner handoff")
+            .expect("absent-final owner handoff");
+        let request = context.take_guard_request().expect("take owner request");
+        assert!(matches!(
+            super::super::acquire_absent_final_publication_guard(request, Uuid::new_v4()),
             Err(AbsentFinalAdoptionOutcome::OperationIdDrift)
-        );
-        assert!(guard.revalidate_binding(operation_id).is_ok());
+        ));
         assert_eq!(journal.record(operation_id), Some(&record_before));
         assert_eq!(fs::read(&path).unwrap(), bytes_before);
         assert_eq!(journal.store.capacity_claims(), &claims_before);
@@ -7977,7 +8342,9 @@ mod tests {
         fs::rename(&target_parent, &moved_parent).expect("move target parent");
         fs::create_dir(&target_parent).expect("replacement target parent");
 
-        let Err(outcome) = ProductionAbsentFinalAdoptionAdapter.acquire_guard(request) else {
+        let Err(outcome) =
+            super::super::acquire_absent_final_publication_guard(request, operation_id)
+        else {
             panic!("replaced root path must not acquire a guard");
         };
         assert_eq!(outcome, AbsentFinalAdoptionOutcome::ParentIdentityDrift);
@@ -7991,38 +8358,80 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn schema_v2_absent_final_adoption_guard_revalidates_retained_parent_and_final() {
+    fn schema_v2_absent_final_publication_snapshot_mismatch_preserves_newer_record_and_bytes() {
         let _lock = TEST_LOCK.lock().unwrap();
         let directory = fixture_directory();
         let mut journal = OperationJournalCoordinator::open(directory.path().to_path_buf())
             .expect("open real fixture journal");
         let (operation_id, final_path, staging_path) =
             admit_real_absent_final_v2_adoption_fixture(&mut journal, &directory);
-        let request = journal
-            .prepare_schema_v2_absent_final_adoption_guard_request(operation_id)
-            .expect("prepare durable adoption guard request");
-        let guard = ProductionAbsentFinalAdoptionAdapter
-            .acquire_guard(request)
-            .expect("file-operation adapter acquires guard");
-        let target_parent = final_path.parent().unwrap().to_path_buf();
-        let moved_parent = target_parent.with_file_name("moved-target-parent");
-        fs::rename(&target_parent, &moved_parent).expect("move target parent");
-        fs::create_dir(&target_parent).expect("replacement target parent");
+        let mut context = journal
+            .prepare_absent_final_publication_attempt_if_needed(operation_id)
+            .expect("prepare publication attempt context")
+            .expect("absent-final publication attempt context");
+        let request = context
+            .take_guard_request()
+            .expect("take adoption guard request");
+        let operation_bound =
+            super::super::acquire_absent_final_publication_guard(request, operation_id)
+                .expect("file-owner adoption guard result");
 
-        assert!(guard.revalidate_binding(operation_id).is_ok());
-        assert_eq!(
-            fs::read(moved_parent.join("final.wav")).unwrap(),
-            b"real staged bytes"
-        );
-        assert!(!final_path.exists());
+        let mut newer_record = journal.record(operation_id).unwrap().clone();
+        newer_record.payload = serde_json::json!({"newer": true});
+        newer_record.updated_unix_ms += 1;
+        let path = journal.store.record_path(operation_id);
+        atomic_durable_write(&path, &newer_record).expect("write newer record snapshot");
+        journal
+            .store
+            .records
+            .insert(operation_id, newer_record.clone());
+        let newer_bytes = fs::read(&path).expect("newer record bytes");
+        let claims_before = journal.store.capacity_claims().clone();
+        let final_bytes_before = fs::read(&final_path).expect("final bytes before mismatch");
+
+        assert!(matches!(
+            journal.commit_absent_final_publication_attempt(context, Ok(operation_bound)),
+            Err(JournalError::InvalidPublicationEvidence { .. })
+        ));
+        assert_eq!(journal.record(operation_id), Some(&newer_record));
+        assert_eq!(fs::read(&path).unwrap(), newer_bytes);
+        assert_eq!(journal.store.capacity_claims(), &claims_before);
+        assert_eq!(fs::read(&final_path).unwrap(), final_bytes_before);
         assert!(!staging_path.exists());
+        assert!(journal.record(operation_id).unwrap().published.is_none());
+    }
 
-        fs::write(moved_parent.join("final.wav"), b"real staged byte!")
-            .expect("change retained final content");
-        assert_eq!(
-            guard.revalidate_binding(operation_id),
-            Err(AbsentFinalAdoptionOutcome::FinalContentDrift)
-        );
+    #[cfg(unix)]
+    #[test]
+    fn schema_v2_absent_final_journal_write_failure_preserves_staged_recovery() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let directory = fixture_directory();
+        let mut journal = OperationJournalCoordinator::open(directory.path().to_path_buf())
+            .expect("open real fixture journal");
+        let (operation_id, final_path, staging_path) =
+            admit_real_absent_final_v2_adoption_fixture(&mut journal, &directory);
+        let record_before = journal.record(operation_id).unwrap().clone();
+        let path = journal.store.record_path(operation_id);
+        let bytes_before = fs::read(&path).expect("journal bytes before write failure");
+        let claims_before = journal.store.capacity_claims().clone();
+        let temporary_path = journal
+            .store
+            .directory
+            .join(format!(".{operation_id}.json.tmp"));
+        fs::create_dir(&temporary_path).expect("block journal temporary path");
+
+        assert!(matches!(
+            publish_absent_final_via_owner_route(&mut journal, operation_id)
+                .expect("publication write failure outcome"),
+            FilesystemStageOutcome::JournalWriteFailed { operation_id: id, .. }
+                if id == operation_id
+        ));
+        assert_eq!(journal.record(operation_id), Some(&record_before));
+        assert_eq!(fs::read(&path).unwrap(), bytes_before);
+        assert_eq!(journal.store.capacity_claims(), &claims_before);
+        assert_eq!(fs::read(&final_path).unwrap(), b"real staged bytes");
+        assert!(!staging_path.exists());
+        fs::remove_dir_all(temporary_path).expect("remove journal temporary-path fault");
     }
 
     #[cfg(unix)]
@@ -8838,7 +9247,8 @@ mod tests {
 
         assert!(matches!(
             journal.attempt_publish_staged_waveform_restore(operation_id),
-            Ok(FilesystemStageOutcome::AuditRequired { operation_id: id, .. }) if id == operation_id
+            Err(JournalError::InvalidRecoveryObservation { operation_id: id, .. })
+                if id == operation_id
         ));
         let record = journal.record(operation_id).unwrap();
         assert_eq!(record.phase, OperationPhase::FilesystemStaged);

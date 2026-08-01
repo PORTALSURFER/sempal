@@ -102,7 +102,7 @@ struct ReopenedFinalEvidence {
 
 /// Typed evidence required to advance a waveform restore to `FilesystemPublished`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub(crate) struct FilesystemPublishedWaveformRestore {
+pub(super) struct FilesystemPublishedWaveformRestore {
     mode: FilesystemPublicationMode,
     final_claim: FinalNamespaceClaim,
     reopened_final: ReopenedFinalEvidence,
@@ -143,7 +143,6 @@ pub(super) fn from_qualified_adapter_result(
 }
 
 /// Construct absent-final publication evidence only from the sealed, qualified adapter result.
-#[allow(dead_code)]
 pub(super) fn from_qualified_absent_final_no_replace_result(
     qualified: QualifiedAbsentFinalNoReplace,
 ) -> FilesystemPublishedWaveformRestore {
@@ -278,7 +277,6 @@ pub(super) fn validate_publication_evidence(
 /// claim because that operation requires an existing target; this validator is for the later
 /// absent-final qualification seam only.  It requires the sealed target-parent capability scope
 /// and explicitly accepts only `NotClaimed` root-path continuity.
-#[allow(dead_code)]
 pub(super) fn validate_absent_final_no_replace_publication(
     prepared: &PreparedTargetContract,
     staged: &FilesystemStagedWaveformRestore,
@@ -309,9 +307,9 @@ pub(super) fn validate_absent_final_no_replace_publication(
             "absent-final publication visibility is not verified",
         ));
     }
-    if published.synchronization == PublicationSynchronization::PowerLossSynchronized {
+    if published.synchronization != PublicationSynchronization::SyncUnsupportedOrUnverified {
         return Err(String::from(
-            "absent-final publication cannot claim power-loss synchronization",
+            "absent-final publication requires unsupported-or-unverified synchronization",
         ));
     }
 
@@ -342,7 +340,10 @@ pub(super) fn validate_absent_final_no_replace_publication(
         target_parent_identity,
         root_path_continuity,
     } = capability_scope;
-    if target_parent_identity != &prepared.target_parent.identity {
+    // Directory metadata can legitimately change when the staged entry is renamed into the
+    // final namespace. The capability-bound guard fences the parent by stable filesystem
+    // identity; its current change marker and length are not a pathname-continuity claim.
+    if target_parent_identity.stable_id != prepared.target_parent.identity.stable_id {
         return Err(String::from(
             "absent-final capability scope does not match the prepared target parent",
         ));
@@ -434,7 +435,7 @@ pub(crate) enum TestPublicationDrift {
 }
 
 #[cfg(test)]
-pub(crate) fn test_publication_evidence(
+pub(super) fn test_publication_evidence(
     prepared: &PreparedWaveformRestore,
     staged: &FilesystemStagedWaveformRestore,
     drift: Option<TestPublicationDrift>,
@@ -501,7 +502,7 @@ pub(crate) fn test_publication_evidence(
 }
 
 #[cfg(test)]
-pub(crate) fn test_absent_final_publication_evidence(
+pub(super) fn test_absent_final_publication_evidence(
     target_parent_identity: &PreparedObjectIdentity,
     staged: &FilesystemStagedWaveformRestore,
 ) -> FilesystemPublishedWaveformRestore {
@@ -602,6 +603,13 @@ mod tests {
         invalid_sync.synchronization = PublicationSynchronization::PowerLossSynchronized;
         assert!(
             validate_absent_final_no_replace_publication(&prepared, &staged, &invalid_sync)
+                .is_err()
+        );
+
+        let mut best_effort_sync = published.clone();
+        best_effort_sync.synchronization = PublicationSynchronization::BestEffortSync;
+        assert!(
+            validate_absent_final_no_replace_publication(&prepared, &staged, &best_effort_sync)
                 .is_err()
         );
 

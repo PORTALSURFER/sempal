@@ -1,4 +1,7 @@
-//! Read-only recovery classification for schema-v2 absent-final staging records.
+//! Test-only read-only recovery classification for schema-v2 absent-final staging records.
+//!
+//! Production recovery has not yet acquired an owner-routed observation/proof/evidence path, so
+//! this module remains available only to the bounded schema-v2 unit-test seam.
 //!
 //! The classifier reacquires the prepared target-parent capability and observes both leaves
 //! relative to that descriptor. It never claims publication, ownership, or pathname continuity;
