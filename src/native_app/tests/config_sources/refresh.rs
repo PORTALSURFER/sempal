@@ -262,6 +262,7 @@ fn source_filesystem_change_queues_refresh_without_clearing_loaded_tree() {
             overflowed: true,
             source_root_available: true,
             journal_checkpoint_event_id: None,
+            watcher_continuity_proof: None,
         },
         &mut context,
     );
@@ -317,6 +318,7 @@ fn source_filesystem_change_syncs_removed_file_to_source_database() {
             overflowed: false,
             source_root_available: true,
             journal_checkpoint_event_id: None,
+            watcher_continuity_proof: None,
         },
         &mut context,
     );

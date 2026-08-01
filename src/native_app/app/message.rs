@@ -42,7 +42,9 @@ use crate::native_app::sample_library::folder_scan_actions::FolderScanMaintenanc
 use crate::native_app::sample_library::native_file_drop_actions::PreparedFileMutationChange;
 use crate::native_app::sample_library::native_file_open_actions::NativeAudioDocumentOpenValidation;
 use crate::native_app::sample_library::similarity_scores::SimilarityScoresResult;
-use crate::native_app::sample_library::source_watcher::RevisionBoundCheckpoint;
+use crate::native_app::sample_library::source_watcher::{
+    RevisionBoundCheckpoint, WatcherContinuityProof,
+};
 use crate::native_app::sample_library::trash_actions::movement::TrashMoveOutcome;
 use crate::native_app::transaction_history::{HistoryFileIoCommand, HistoryFileIoResult};
 use crate::native_app::waveform::{PlaymarkLabelMessage, WaveformInteraction};
@@ -90,6 +92,9 @@ pub(in crate::native_app) enum GuiMessage {
         source_root_available: bool,
         /// A durable FSEvents cursor that may advance only after this targeted sync commits.
         journal_checkpoint_event_id: Option<u64>,
+        /// Backend evidence for a targeted replay cursor. Legacy cursor-only messages remain
+        /// accepted but cannot advance the durable checkpoint owner.
+        watcher_continuity_proof: Option<WatcherContinuityProof>,
     },
     /// The initial watcher stream is live and journal recovery has completed. This boundary
     /// admits the durable lifecycle gate without assuming that every source needs a traversal.
@@ -464,6 +469,7 @@ pub(in crate::native_app) struct SourceFilesystemSyncResult {
     /// Stable root identity captured by the background sync worker before filesystem/DB work.
     pub(in crate::native_app) root_identity: Option<String>,
     pub(in crate::native_app) journal_checkpoint_event_id: Option<u64>,
+    pub(in crate::native_app) watcher_continuity_proof: Option<WatcherContinuityProof>,
     pub(in crate::native_app) cancelled: bool,
     pub(in crate::native_app) result: Result<SourceFilesystemSyncSuccess, String>,
 }
