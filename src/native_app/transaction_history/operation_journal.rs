@@ -31,9 +31,14 @@ pub(crate) use super::expected_identity_replacement::{
     ReplacementCandidatePrimitive, ReplacementMissingInvariant, ReplacementPlatformFamily,
     ReplacementQualificationDecision, ReplacementQualificationRetryCondition,
 };
-use super::publication::{validate_publication_evidence, FilesystemPublishedWaveformRestore};
+use super::publication::{
+    FilesystemPublishedWaveformRestore, is_absent_final_no_replace_publication,
+    validate_absent_final_no_replace_publication, validate_publication_evidence,
+};
 
-const CURRENT_SCHEMA_VERSION: u32 = 1;
+const SCHEMA_V1: u32 = 1;
+const SCHEMA_V2: u32 = 2;
+const CURRENT_SCHEMA_VERSION: u32 = SCHEMA_V1;
 const MAX_RECORD_BYTES: usize = 1024 * 1024;
 const RECORD_SUFFIX: &str = ".json";
 const LOCK_FILE_NAME: &str = "owner.lock";
@@ -237,6 +242,60 @@ pub(crate) struct PreparedWaveformRestore {
     pub(crate) evidence: PreparedRestoreEvidence,
 }
 
+/// The advisory observation captured before a no-replace final-name claim.
+///
+/// This is deliberately not an object identity.  An absent final target has no identity to
+/// preserve, and the observation is only a preparation hint; the qualified adapter must prove
+/// the final claim through the retained target-parent capability.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) enum AbsentFinalObservation {
+    ObservedAbsent,
+}
+
+/// Preparation evidence for a destination whose final name was observed absent.
+///
+/// Unlike `PreparedWaveformRestore`, this contract has no target leaf identity or replacement
+/// operand.  The final leaf and staging leaf are namespace locators only; the durable
+/// `CopyValidated` participant supplies the staged object identity and exact content evidence.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct PreparedAbsentFinalNoReplace {
+    pub(crate) direction: PreparedRestoreDirection,
+    pub(crate) source_id: String,
+    pub(crate) source_root: PreparedRootCapability,
+    pub(crate) target_parent: PreparedRootCapability,
+    pub(crate) final_leaf: PathBuf,
+    pub(crate) staging: PreparedStagingLocator,
+    pub(crate) final_observation: AbsentFinalObservation,
+    pub(crate) copy_validated_evidence: PreparedFileEvidence,
+}
+
+/// Tagged runtime preparation contract used to select the publication guard.
+///
+/// Schema-v1 records adapt only to `ExistingExpectedIdentity`.  The absent-final variant is
+/// schema-v2-only and is created only through the explicit test seam in this module; production
+/// waveform-restore admission continues to construct the v1 existing-target contract.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum PreparedTargetContract {
+    ExistingExpectedIdentity(PreparedWaveformRestore),
+    AbsentFinalNoReplace(PreparedAbsentFinalNoReplace),
+}
+
+impl PreparedTargetContract {
+    fn as_existing(&self) -> Option<&PreparedWaveformRestore> {
+        match self {
+            Self::ExistingExpectedIdentity(prepared) => Some(prepared),
+            Self::AbsentFinalNoReplace(_) => None,
+        }
+    }
+
+    fn as_existing_mut(&mut self) -> Option<&mut PreparedWaveformRestore> {
+        match self {
+            Self::ExistingExpectedIdentity(prepared) => Some(prepared),
+            Self::AbsentFinalNoReplace(_) => None,
+        }
+    }
+}
+
 /// The filesystem participant checkpoint recorded after a complete staged copy.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) enum FilesystemStagedParticipant {
@@ -331,8 +390,8 @@ pub(crate) struct OperationRecord {
     /// Optional physical-capacity claims.  `None` is retained for legacy records and blocks
     /// bounded capacity admission while the operation remains unresolved.
     pub(crate) capacity_plan: Option<DurableCapacityPlan>,
-    /// Typed preparation evidence. Legacy schema-v1 records deserialize with no evidence.
-    pub(crate) prepared: Option<PreparedWaveformRestore>,
+    /// Tagged typed preparation evidence. Schema-v1 records adapt to the existing-target variant.
+    pub(crate) prepared: Option<PreparedTargetContract>,
     /// Typed filesystem staging evidence. Legacy records do not contain this checkpoint.
     pub(crate) staged: Option<FilesystemStagedWaveformRestore>,
     /// Typed filesystem publication evidence. Legacy records do not contain this checkpoint.
@@ -344,6 +403,44 @@ pub(crate) struct OperationRecord {
     pub(crate) created_unix_ms: i64,
     /// Last update timestamp in Unix milliseconds.
     pub(crate) updated_unix_ms: i64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct SchemaV2EvidencePresence {
+    prepared: bool,
+    staged: bool,
+    published: bool,
+}
+
+impl SchemaV2EvidencePresence {
+    const NONE: Self = Self {
+        prepared: false,
+        staged: false,
+        published: false,
+    };
+    const PREPARED: Self = Self {
+        prepared: true,
+        staged: false,
+        published: false,
+    };
+    const PREPARED_STAGED: Self = Self {
+        prepared: true,
+        staged: true,
+        published: false,
+    };
+    const ALL: Self = Self {
+        prepared: true,
+        staged: true,
+        published: true,
+    };
+
+    fn from_record(record: &OperationRecord) -> Self {
+        Self {
+            prepared: record.prepared.is_some(),
+            staged: record.staged.is_some(),
+            published: record.published.is_some(),
+        }
+    }
 }
 
 /// The exact schema-v1 representation owned by this journal's decoder and writer.
@@ -383,7 +480,9 @@ impl From<PersistedOperationRecordV1> for OperationRecord {
             disposition: record.disposition,
             payload: record.payload,
             capacity_plan: record.capacity_plan,
-            prepared: record.prepared,
+            prepared: record
+                .prepared
+                .map(PreparedTargetContract::ExistingExpectedIdentity),
             staged: record.staged,
             published: record.published,
             replacement_qualification: record.replacement_qualification,
@@ -393,29 +492,155 @@ impl From<PersistedOperationRecordV1> for OperationRecord {
     }
 }
 
-impl From<&OperationRecord> for PersistedOperationRecordV1 {
-    fn from(record: &OperationRecord) -> Self {
+fn persisted_v1_from_record(
+    record: &OperationRecord,
+) -> Result<PersistedOperationRecordV1, io::Error> {
+    let prepared = match record.prepared.as_ref() {
+        None => None,
+        Some(PreparedTargetContract::ExistingExpectedIdentity(prepared)) => Some(prepared.clone()),
+        Some(PreparedTargetContract::AbsentFinalNoReplace(_)) => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "schema-v1 cannot encode absent-final preparation evidence",
+            ));
+        }
+    };
+    if record
+        .published
+        .as_ref()
+        .is_some_and(is_absent_final_no_replace_publication)
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "schema-v1 cannot encode absent-final publication evidence",
+        ));
+    }
+    Ok(PersistedOperationRecordV1 {
+        schema_version: record.schema_version,
+        operation_id: record.operation_id,
+        intent: record.intent.clone(),
+        phase: record.phase,
+        disposition: record.disposition,
+        payload: record.payload.clone(),
+        capacity_plan: record.capacity_plan.clone(),
+        prepared,
+        staged: record.staged.clone(),
+        published: record.published.clone(),
+        replacement_qualification: record.replacement_qualification.clone(),
+        created_unix_ms: record.created_unix_ms,
+        updated_unix_ms: record.updated_unix_ms,
+    })
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+struct PersistedOperationRecordV2 {
+    schema_version: u32,
+    operation_id: Uuid,
+    intent: OperationIntent,
+    phase: OperationPhase,
+    disposition: OperationDisposition,
+    payload: Value,
+    #[serde(default)]
+    capacity_plan: Option<DurableCapacityPlan>,
+    #[serde(default)]
+    prepared: Option<PersistedPreparedTargetContractV2>,
+    #[serde(default)]
+    staged: Option<FilesystemStagedWaveformRestore>,
+    #[serde(default)]
+    published: Option<FilesystemPublishedWaveformRestore>,
+    #[serde(default)]
+    replacement_qualification: Option<ReplacementQualificationAssessment>,
+    created_unix_ms: i64,
+    updated_unix_ms: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+enum PersistedPreparedTargetContractV2 {
+    ExistingExpectedIdentity(PreparedWaveformRestore),
+    AbsentFinalNoReplace(PreparedAbsentFinalNoReplace),
+}
+
+impl From<PersistedPreparedTargetContractV2> for PreparedTargetContract {
+    fn from(contract: PersistedPreparedTargetContractV2) -> Self {
+        match contract {
+            PersistedPreparedTargetContractV2::ExistingExpectedIdentity(prepared) => {
+                Self::ExistingExpectedIdentity(prepared)
+            }
+            PersistedPreparedTargetContractV2::AbsentFinalNoReplace(prepared) => {
+                Self::AbsentFinalNoReplace(prepared)
+            }
+        }
+    }
+}
+
+impl TryFrom<&PreparedTargetContract> for PersistedPreparedTargetContractV2 {
+    type Error = io::Error;
+
+    fn try_from(contract: &PreparedTargetContract) -> Result<Self, Self::Error> {
+        Ok(match contract {
+            PreparedTargetContract::ExistingExpectedIdentity(prepared) => {
+                Self::ExistingExpectedIdentity(prepared.clone())
+            }
+            PreparedTargetContract::AbsentFinalNoReplace(prepared) => {
+                Self::AbsentFinalNoReplace(prepared.clone())
+            }
+        })
+    }
+}
+
+impl From<PersistedOperationRecordV2> for OperationRecord {
+    fn from(record: PersistedOperationRecordV2) -> Self {
         Self {
             schema_version: record.schema_version,
             operation_id: record.operation_id,
-            intent: record.intent.clone(),
+            intent: record.intent,
             phase: record.phase,
             disposition: record.disposition,
-            payload: record.payload.clone(),
-            capacity_plan: record.capacity_plan.clone(),
-            prepared: record.prepared.clone(),
-            staged: record.staged.clone(),
-            published: record.published.clone(),
-            replacement_qualification: record.replacement_qualification.clone(),
+            payload: record.payload,
+            capacity_plan: record.capacity_plan,
+            prepared: record.prepared.map(Into::into),
+            staged: record.staged,
+            published: record.published,
+            replacement_qualification: record.replacement_qualification,
             created_unix_ms: record.created_unix_ms,
             updated_unix_ms: record.updated_unix_ms,
         }
     }
 }
 
+fn persisted_v2_from_record(
+    record: &OperationRecord,
+) -> Result<PersistedOperationRecordV2, io::Error> {
+    Ok(PersistedOperationRecordV2 {
+        schema_version: record.schema_version,
+        operation_id: record.operation_id,
+        intent: record.intent.clone(),
+        phase: record.phase,
+        disposition: record.disposition,
+        payload: record.payload.clone(),
+        capacity_plan: record.capacity_plan.clone(),
+        prepared: record
+            .prepared
+            .as_ref()
+            .map(PersistedPreparedTargetContractV2::try_from)
+            .transpose()?,
+        staged: record.staged.clone(),
+        published: record.published.clone(),
+        replacement_qualification: record.replacement_qualification.clone(),
+        created_unix_ms: record.created_unix_ms,
+        updated_unix_ms: record.updated_unix_ms,
+    })
+}
+
 enum DecodedPersistedRecord {
     V1(PersistedOperationRecordV1),
+    V2(PersistedOperationRecordV2),
     UnknownVersion(u32),
+}
+
+fn is_supported_schema_version(version: u32) -> bool {
+    matches!(version, SCHEMA_V1 | SCHEMA_V2)
 }
 
 fn strict_object<'a>(
@@ -587,6 +812,51 @@ fn validate_persisted_prepared_value(value: &Value) -> Result<(), &'static str> 
     Ok(())
 }
 
+fn validate_persisted_absent_final_observation_value(value: &Value) -> Result<(), &'static str> {
+    match value {
+        Value::String(observation) if observation == "ObservedAbsent" => Ok(()),
+        Value::String(_) => Err("persisted absent-final observation contains an unknown variant"),
+        _ => Err("persisted absent-final observation must be a string"),
+    }
+}
+
+fn validate_persisted_absent_final_prepared_value(value: &Value) -> Result<(), &'static str> {
+    let object = strict_object(
+        value,
+        &[
+            "direction",
+            "source_id",
+            "source_root",
+            "target_parent",
+            "final_leaf",
+            "staging",
+            "final_observation",
+            "copy_validated_evidence",
+        ],
+    )?;
+    validate_persisted_root_capability_value(required_field(object, "source_root")?)?;
+    validate_persisted_root_capability_value(required_field(object, "target_parent")?)?;
+    if !required_field(object, "final_leaf")?.is_string() {
+        return Err("persisted absent-final leaf must be a string");
+    }
+    validate_persisted_staging_locator_value(required_field(object, "staging")?)?;
+    validate_persisted_absent_final_observation_value(required_field(
+        object,
+        "final_observation",
+    )?)?;
+    validate_persisted_file_evidence_value(required_field(object, "copy_validated_evidence")?)?;
+    Ok(())
+}
+
+fn validate_persisted_prepared_contract_v2_value(value: &Value) -> Result<(), &'static str> {
+    let (variant, value) = tagged_object(value)?;
+    match variant {
+        "ExistingExpectedIdentity" => validate_persisted_prepared_value(value),
+        "AbsentFinalNoReplace" => validate_persisted_absent_final_prepared_value(value),
+        _ => Err("persisted preparation contract contains an unknown variant"),
+    }
+}
+
 fn validate_persisted_staged_value(value: &Value) -> Result<(), &'static str> {
     let object = strict_object(value, &["participant"])?;
     let (variant, value) = tagged_object(required_field(object, "participant")?)?;
@@ -720,6 +990,46 @@ fn validate_persisted_v1_object_boundaries(value: &Value) -> Result<(), &'static
     Ok(())
 }
 
+fn validate_persisted_v2_object_boundaries(value: &Value) -> Result<(), &'static str> {
+    let object = strict_object(
+        value,
+        &[
+            "schema_version",
+            "operation_id",
+            "intent",
+            "phase",
+            "disposition",
+            "payload",
+            "capacity_plan",
+            "prepared",
+            "staged",
+            "published",
+            "replacement_qualification",
+            "created_unix_ms",
+            "updated_unix_ms",
+        ],
+    )?;
+    validate_persisted_intent_value(required_field(object, "intent")?)?;
+    validate_optional_field(
+        object,
+        "capacity_plan",
+        validate_persisted_capacity_plan_value,
+    )?;
+    if let Some(prepared) = object.get("prepared") {
+        if !prepared.is_null() {
+            validate_persisted_prepared_contract_v2_value(prepared)?;
+        }
+    }
+    validate_optional_field(object, "staged", validate_persisted_staged_value)?;
+    validate_optional_field(object, "published", validate_persisted_published_value)?;
+    validate_optional_field(
+        object,
+        "replacement_qualification",
+        validate_persisted_replacement_qualification_value,
+    )?;
+    Ok(())
+}
+
 /// Dispatch a parsed JSON object to the exact persisted schema decoder.
 fn dispatch_persisted_record(value: Value) -> Result<DecodedPersistedRecord, ()> {
     let version = value
@@ -727,23 +1037,52 @@ fn dispatch_persisted_record(value: Value) -> Result<DecodedPersistedRecord, ()>
         .and_then(Value::as_u64)
         .and_then(|value| u32::try_from(value).ok())
         .ok_or(())?;
-    if version != CURRENT_SCHEMA_VERSION {
-        return Ok(DecodedPersistedRecord::UnknownVersion(version));
+    match version {
+        SCHEMA_V1 => {
+            validate_persisted_v1_object_boundaries(&value).map_err(|_| ())?;
+            serde_json::from_value::<PersistedOperationRecordV1>(value)
+                .map(DecodedPersistedRecord::V1)
+                .map_err(|_| ())
+        }
+        SCHEMA_V2 => {
+            validate_persisted_v2_object_boundaries(&value).map_err(|_| ())?;
+            serde_json::from_value::<PersistedOperationRecordV2>(value)
+                .map(DecodedPersistedRecord::V2)
+                .map_err(|_| ())
+        }
+        _ => Ok(DecodedPersistedRecord::UnknownVersion(version)),
     }
-    validate_persisted_v1_object_boundaries(&value).map_err(|_| ())?;
-    serde_json::from_value::<PersistedOperationRecordV1>(value)
-        .map(DecodedPersistedRecord::V1)
-        .map_err(|_| ())
 }
 
 fn encode_schema_v1(record: &OperationRecord) -> io::Result<Vec<u8>> {
-    if record.schema_version != CURRENT_SCHEMA_VERSION {
+    if record.schema_version != SCHEMA_V1 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "unsupported schema version",
         ));
     }
-    serde_json::to_vec_pretty(&PersistedOperationRecordV1::from(record)).map_err(io::Error::other)
+    serde_json::to_vec_pretty(&persisted_v1_from_record(record)?).map_err(io::Error::other)
+}
+
+fn encode_schema_v2(record: &OperationRecord) -> io::Result<Vec<u8>> {
+    if record.schema_version != SCHEMA_V2 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "unsupported schema version",
+        ));
+    }
+    serde_json::to_vec_pretty(&persisted_v2_from_record(record)?).map_err(io::Error::other)
+}
+
+fn encode_record(record: &OperationRecord) -> io::Result<Vec<u8>> {
+    match record.schema_version {
+        SCHEMA_V1 => encode_schema_v1(record),
+        SCHEMA_V2 => encode_schema_v2(record),
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "unsupported schema version",
+        )),
+    }
 }
 
 impl OperationRecord {
@@ -759,7 +1098,7 @@ impl OperationRecord {
     ) -> Self {
         let now = unix_millis();
         Self {
-            schema_version: CURRENT_SCHEMA_VERSION,
+            schema_version: SCHEMA_V1,
             operation_id: Uuid::new_v4(),
             intent,
             phase: OperationPhase::IntentDurable,
@@ -775,6 +1114,22 @@ impl OperationRecord {
         }
     }
 
+    #[cfg(test)]
+    fn new_v2_absent_final_with_capacity_plan(
+        intent: OperationIntent,
+        payload: Value,
+        prepared: PreparedAbsentFinalNoReplace,
+        staged: FilesystemStagedWaveformRestore,
+        capacity_plan: DurableCapacityPlan,
+    ) -> Self {
+        let mut record = Self::new_with_capacity_plan(intent, payload, Some(capacity_plan));
+        record.schema_version = SCHEMA_V2;
+        record.phase = OperationPhase::FilesystemStaged;
+        record.prepared = Some(PreparedTargetContract::AbsentFinalNoReplace(prepared));
+        record.staged = Some(staged);
+        record
+    }
+
     fn with_update(&self, phase: OperationPhase, disposition: OperationDisposition) -> Self {
         let mut updated = self.clone();
         updated.phase = phase;
@@ -783,7 +1138,7 @@ impl OperationRecord {
         updated
     }
 
-    fn with_prepared(&self, prepared: PreparedWaveformRestore) -> Self {
+    fn with_prepared(&self, prepared: PreparedTargetContract) -> Self {
         let mut updated = self.clone();
         updated.phase = OperationPhase::Prepared;
         updated.disposition = OperationDisposition::None;
@@ -828,7 +1183,99 @@ fn validate_record_publication(record: &OperationRecord) -> Result<(), String> {
         .published
         .as_ref()
         .ok_or_else(|| String::from("publication evidence is missing"))?;
-    validate_publication_evidence(prepared, staged, published)
+    match prepared {
+        PreparedTargetContract::ExistingExpectedIdentity(prepared) => {
+            validate_publication_evidence(prepared, staged, published)
+        }
+        PreparedTargetContract::AbsentFinalNoReplace(_) => {
+            validate_absent_final_no_replace_publication(
+                record.prepared.as_ref().expect("prepared evidence present"),
+                staged,
+                published,
+            )
+        }
+    }
+}
+
+fn validate_prepared_contract(prepared: &PreparedTargetContract) -> Result<(), String> {
+    let PreparedTargetContract::AbsentFinalNoReplace(prepared) = prepared else {
+        return Ok(());
+    };
+    if prepared.target_parent.identity.stable_id.is_empty() {
+        return Err(String::from(
+            "absent-final target-parent capability identity is empty",
+        ));
+    }
+    single_clean_normal_leaf("final", &prepared.final_leaf)?;
+    single_clean_normal_leaf("staging", &prepared.staging.relative_path)?;
+    if prepared.final_leaf == prepared.staging.relative_path {
+        return Err(String::from(
+            "absent-final final and staging leaves must be distinct",
+        ));
+    }
+    if !prepared.staging.absent {
+        return Err(String::from(
+            "absent-final staging locator must retain its absent preparation observation",
+        ));
+    }
+    if prepared.final_observation != AbsentFinalObservation::ObservedAbsent {
+        return Err(String::from(
+            "absent-final preparation observation is not qualified as absent",
+        ));
+    }
+    if !matches!(
+        prepared.copy_validated_evidence,
+        PreparedFileEvidence::ContentHash(_)
+    ) {
+        return Err(String::from(
+            "absent-final preparation requires exact CopyValidated content evidence",
+        ));
+    }
+    Ok(())
+}
+
+/// Schema-v2 retains a cumulative evidence prefix for every non-terminal phase.  A
+/// pre-publication cancellation may stop at any prefix, while every other terminal disposition
+/// requires the complete publication evidence boundary.
+fn schema_v2_phase_evidence_is_valid(
+    phase: OperationPhase,
+    disposition: OperationDisposition,
+    evidence: SchemaV2EvidencePresence,
+) -> bool {
+    match phase {
+        OperationPhase::IntentDurable => evidence == SchemaV2EvidencePresence::NONE,
+        OperationPhase::Prepared => evidence == SchemaV2EvidencePresence::PREPARED,
+        OperationPhase::FilesystemStaged => evidence == SchemaV2EvidencePresence::PREPARED_STAGED,
+        OperationPhase::FilesystemPublished
+        | OperationPhase::SourceReconciled
+        | OperationPhase::GlobalReconciled
+        | OperationPhase::ProjectionPublished
+        | OperationPhase::ReadinessScheduled => evidence == SchemaV2EvidencePresence::ALL,
+        OperationPhase::Terminal if disposition == OperationDisposition::CancelledBeforePublish => {
+            matches!(
+                evidence,
+                SchemaV2EvidencePresence::NONE
+                    | SchemaV2EvidencePresence::PREPARED
+                    | SchemaV2EvidencePresence::PREPARED_STAGED
+            )
+        }
+        OperationPhase::Terminal => evidence == SchemaV2EvidencePresence::ALL,
+    }
+}
+
+fn validate_schema_v2_phase_evidence_record(record: &OperationRecord) -> Result<(), String> {
+    if record.schema_version != SCHEMA_V2 {
+        return Ok(());
+    }
+    let evidence = SchemaV2EvidencePresence::from_record(record);
+    if schema_v2_phase_evidence_is_valid(record.phase, record.disposition, evidence) {
+        Ok(())
+    } else {
+        Err(format!(
+            "schema-v2 phase/evidence combination is invalid: phase={:?}, disposition={:?}, evidence={evidence:?}",
+            record.phase, record.disposition,
+        ))
+    }
 }
 
 /// Summary of a startup scan. Scanning never mutates or deletes records.
@@ -914,9 +1361,18 @@ pub(crate) enum FilesystemStageOutcome {
         operation_id: Uuid,
         assessment: ReplacementQualificationAssessment,
     },
-    RetryPending { operation_id: Uuid, reason: String },
-    AuditRequired { operation_id: Uuid, reason: String },
-    JournalWriteFailed { operation_id: Uuid, reason: String },
+    RetryPending {
+        operation_id: Uuid,
+        reason: String,
+    },
+    AuditRequired {
+        operation_id: Uuid,
+        reason: String,
+    },
+    JournalWriteFailed {
+        operation_id: Uuid,
+        reason: String,
+    },
 }
 
 #[derive(Debug)]
@@ -1013,7 +1469,7 @@ impl OperationJournalStore {
                 ),
             });
         }
-        if record.schema_version != CURRENT_SCHEMA_VERSION {
+        if !is_supported_schema_version(record.schema_version) {
             return Err(JournalError::Write {
                 path: self.record_path(record.operation_id),
                 source: io::Error::new(io::ErrorKind::InvalidInput, "unsupported schema version"),
@@ -1060,12 +1516,7 @@ impl OperationJournalStore {
         phase: OperationPhase,
         disposition: OperationDisposition,
     ) -> Result<(), JournalError> {
-        self.update_with_optional_replacement_qualification(
-            operation_id,
-            phase,
-            disposition,
-            None,
-        )
+        self.update_with_optional_replacement_qualification(operation_id, phase, disposition, None)
     }
 
     /// Durably replace one staged record with its latest platform qualification assessment.
@@ -1189,7 +1640,8 @@ impl OperationJournalStore {
         match current.phase {
             OperationPhase::IntentDurable => {
                 self.ensure_writable(operation_id)?;
-                let updated = current.with_prepared(prepared);
+                let updated = current
+                    .with_prepared(PreparedTargetContract::ExistingExpectedIdentity(prepared));
                 let path = self.record_path(operation_id);
                 atomic_durable_write(&path, &updated)?;
                 self.records.insert(operation_id, updated);
@@ -1288,11 +1740,24 @@ impl OperationJournalStore {
                         reason,
                     }
                 })?;
-                validate_publication_evidence(prepared, staged, &published).map_err(|reason| {
-                    JournalError::InvalidPublicationEvidence {
-                        operation_id,
-                        reason,
+                let publication_result = match prepared {
+                    PreparedTargetContract::ExistingExpectedIdentity(prepared) => {
+                        validate_publication_evidence(prepared, staged, &published)
                     }
+                    PreparedTargetContract::AbsentFinalNoReplace(_) => {
+                        validate_absent_final_no_replace_publication(
+                            current
+                                .prepared
+                                .as_ref()
+                                .expect("prepared evidence present"),
+                            staged,
+                            &published,
+                        )
+                    }
+                };
+                publication_result.map_err(|reason| JournalError::InvalidPublicationEvidence {
+                    operation_id,
+                    reason,
                 })?;
                 self.ensure_writable(operation_id)?;
                 let updated = current.with_published(published);
@@ -1417,7 +1882,7 @@ impl OperationJournalStore {
                     continue;
                 }
             };
-            let persisted = match decoded {
+            let record: OperationRecord = match decoded {
                 DecodedPersistedRecord::UnknownVersion(version) => {
                     self.recovery.unknown_version_count += 1;
                     self.recovery.attention_required = true;
@@ -1428,9 +1893,16 @@ impl OperationJournalStore {
                     });
                     continue;
                 }
-                DecodedPersistedRecord::V1(persisted) => persisted,
+                DecodedPersistedRecord::V1(persisted) => persisted.into(),
+                DecodedPersistedRecord::V2(persisted) => persisted.into(),
             };
-            let record: OperationRecord = persisted.into();
+            if validate_schema_v2_phase_evidence_record(&record).is_err() {
+                self.recovery.malformed_count += 1;
+                self.recovery.attention_required = true;
+                self.retained
+                    .push(RetainedRecord::Malformed { path, bytes });
+                continue;
+            }
             let filename_id = path
                 .file_stem()
                 .and_then(|stem| stem.to_str())
@@ -1445,6 +1917,31 @@ impl OperationJournalStore {
                 continue;
             }
             if validate_capacity_plan_option(record.capacity_plan.as_ref()).is_err() {
+                self.recovery.malformed_count += 1;
+                self.recovery.attention_required = true;
+                self.retained
+                    .push(RetainedRecord::Malformed { path, bytes });
+                continue;
+            }
+            if record
+                .prepared
+                .as_ref()
+                .is_some_and(|prepared| validate_prepared_contract(prepared).is_err())
+            {
+                self.recovery.malformed_count += 1;
+                self.recovery.attention_required = true;
+                self.retained
+                    .push(RetainedRecord::Malformed { path, bytes });
+                continue;
+            }
+            if record.schema_version == SCHEMA_V1
+                && record
+                    .published
+                    .as_ref()
+                    .is_some_and(is_absent_final_no_replace_publication)
+            {
+                // A v1 record containing an absent-final claim is not a v2 record in disguise.
+                // Retain its original bytes and refuse to expose a writable runtime projection.
                 self.recovery.malformed_count += 1;
                 self.recovery.attention_required = true;
                 self.retained
@@ -1478,7 +1975,8 @@ impl OperationJournalStore {
                     .push(RetainedRecord::Malformed { path, bytes });
                 continue;
             }
-            let legacy_post_publication_without_evidence = record.published.is_none()
+            let legacy_post_publication_without_evidence = record.schema_version == SCHEMA_V1
+                && record.published.is_none()
                 && (matches!(
                     record.phase,
                     OperationPhase::FilesystemPublished
@@ -1855,6 +2353,20 @@ fn validate_evidence(
 }
 
 fn validate_staged_checkpoint(
+    prepared: &PreparedTargetContract,
+    staged: &FilesystemStagedWaveformRestore,
+) -> Result<(), String> {
+    match prepared {
+        PreparedTargetContract::ExistingExpectedIdentity(prepared) => {
+            validate_existing_staged_checkpoint(prepared, staged)
+        }
+        PreparedTargetContract::AbsentFinalNoReplace(prepared) => {
+            validate_absent_final_staged_checkpoint(prepared, staged)
+        }
+    }
+}
+
+fn validate_existing_staged_checkpoint(
     prepared: &PreparedWaveformRestore,
     staged: &FilesystemStagedWaveformRestore,
 ) -> Result<(), String> {
@@ -1877,6 +2389,37 @@ fn validate_staged_checkpoint(
         ));
     }
     validate_staged_evidence(&prepared.evidence.backup, evidence)
+}
+
+fn validate_absent_final_staged_checkpoint(
+    prepared: &PreparedAbsentFinalNoReplace,
+    staged: &FilesystemStagedWaveformRestore,
+) -> Result<(), String> {
+    validate_prepared_contract(&PreparedTargetContract::AbsentFinalNoReplace(
+        prepared.clone(),
+    ))?;
+    let FilesystemStagedParticipant::CopyValidated { staging, evidence } = &staged.participant;
+    if staging.relative_path != prepared.staging.relative_path {
+        return Err(String::from(
+            "absent-final staged locator does not match prepared staging leaf",
+        ));
+    }
+    if staging.identity.stable_id.is_empty() {
+        return Err(String::from("absent-final staged identity is empty"));
+    }
+    let (PreparedFileEvidence::ContentHash(expected), PreparedFileEvidence::ContentHash(actual)) =
+        (&prepared.copy_validated_evidence, evidence)
+    else {
+        return Err(String::from(
+            "absent-final CopyValidated evidence must be an exact content hash",
+        ));
+    };
+    if expected != actual {
+        return Err(String::from(
+            "absent-final CopyValidated evidence does not match preparation",
+        ));
+    }
+    Ok(())
 }
 
 fn validate_staged_evidence(
@@ -1998,11 +2541,9 @@ fn reacquire_staged_restore(
         staging: expected_staging,
         evidence: expected_staging_content,
     } = &staged.participant;
-    validate_staged_checkpoint(prepared, staged)?;
-    let target_leaf =
-        single_clean_normal_leaf("target", &prepared.target.relative_path)?;
-    let staging_leaf =
-        single_clean_normal_leaf("staging", &prepared.staging.relative_path)?;
+    validate_existing_staged_checkpoint(prepared, staged)?;
+    let target_leaf = single_clean_normal_leaf("target", &prepared.target.relative_path)?;
+    let staging_leaf = single_clean_normal_leaf("staging", &prepared.staging.relative_path)?;
     let [volume] = capacity_plan.volumes.as_slice() else {
         return Err(String::from("capacity claim has unexpected volumes"));
     };
@@ -2016,15 +2557,9 @@ fn reacquire_staged_restore(
     let target_parent = target_root
         .try_clone()
         .map_err(|error| format!("could not retain target parent capability: {error}"))?;
-    let target_display = prepared
-        .target_root
-        .path
-        .join(target_leaf);
-    let (target, target_identity) = open_leaf_relative(
-        &target_parent,
-        target_leaf,
-        &target_display,
-    )?;
+    let target_display = prepared.target_root.path.join(target_leaf);
+    let (target, target_identity) =
+        open_leaf_relative(&target_parent, target_leaf, &target_display)?;
     validate_identity("target leaf", &prepared.target.identity, &target_identity)?;
     validate_evidence(
         "target leaf",
@@ -2036,15 +2571,9 @@ fn reacquire_staged_restore(
         .identity;
     validate_volume_identity("target", &volume.identity, &target_volume)?;
 
-    let staging_display = prepared
-        .target_root
-        .path
-        .join(staging_leaf);
-    let (staging, staging_identity) = open_staging_relative(
-        &target_parent,
-        staging_leaf,
-        &staging_display,
-    )?;
+    let staging_display = prepared.target_root.path.join(staging_leaf);
+    let (staging, staging_identity) =
+        open_staging_relative(&target_parent, staging_leaf, &staging_display)?;
     let staging_volume = super::capacity_gate::descriptor_capacity_facts(&staging)
         .map_err(|error| error.to_string())?
         .identity;
@@ -2301,6 +2830,45 @@ impl OperationJournalCoordinator {
         Ok(operation_id)
     }
 
+    /// Explicit test-only constructor for the schema-v2 absent-final contract. Production
+    /// waveform-restore admission remains on `OperationRecord::new`, which is schema-v1.
+    #[cfg(test)]
+    fn admit_schema_v2_absent_final_for_test(
+        &mut self,
+        intent: OperationIntent,
+        payload: Value,
+        prepared: PreparedAbsentFinalNoReplace,
+        staged: FilesystemStagedWaveformRestore,
+        capacity_plan: DurableCapacityPlan,
+    ) -> Result<Uuid, JournalError> {
+        let record = OperationRecord::new_v2_absent_final_with_capacity_plan(
+            intent,
+            payload,
+            prepared,
+            staged,
+            capacity_plan,
+        );
+        let operation_id = record.operation_id;
+        let prepared = record
+            .prepared
+            .as_ref()
+            .ok_or(JournalError::MissingPreparedEvidence(operation_id))?;
+        validate_prepared_contract(prepared).map_err(|reason| JournalError::Write {
+            path: self.store.record_path(operation_id),
+            source: io::Error::new(io::ErrorKind::InvalidData, reason),
+        })?;
+        let staged = record
+            .staged
+            .as_ref()
+            .ok_or(JournalError::MissingPreparedEvidence(operation_id))?;
+        validate_staged_checkpoint(prepared, staged).map_err(|reason| JournalError::Write {
+            path: self.store.record_path(operation_id),
+            source: io::Error::new(io::ErrorKind::InvalidData, reason),
+        })?;
+        self.store.admit_capacity(record)?;
+        Ok(operation_id)
+    }
+
     /// Admit exactly one bounded waveform restore after owner-thread capacity discovery.
     pub(crate) fn admit_bounded_waveform_restore(
         &mut self,
@@ -2421,6 +2989,18 @@ impl OperationJournalCoordinator {
             .prepared
             .clone()
             .ok_or(JournalError::MissingPreparedEvidence(operation_id))?;
+        let prepared = match prepared {
+            PreparedTargetContract::ExistingExpectedIdentity(prepared) => prepared,
+            PreparedTargetContract::AbsentFinalNoReplace(_) => {
+                return self.stage_retry_or_audit(
+                    operation_id,
+                    phase,
+                    String::from(
+                        "schema-v2 absent-final preparation requires its explicit publication seam",
+                    ),
+                );
+            }
+        };
 
         #[cfg(not(unix))]
         {
@@ -2660,6 +3240,19 @@ impl OperationJournalCoordinator {
             .clone()
             .ok_or(JournalError::MissingPreparedEvidence(operation_id))?;
 
+        let prepared = match prepared {
+            PreparedTargetContract::ExistingExpectedIdentity(prepared) => prepared,
+            PreparedTargetContract::AbsentFinalNoReplace(_) => {
+                return self.update_attempt_disposition(
+                    operation_id,
+                    OperationDisposition::AuditRequired,
+                    String::from(
+                        "schema-v2 absent-final publication requires its explicit qualified seam",
+                    ),
+                );
+            }
+        };
+
         let reacquired = match reacquire_staged_restore(&prepared, &staged, &capacity_plan) {
             Ok(reacquired) => reacquired,
             Err(reason) => return self.attempt_retry_or_audit(operation_id, reason),
@@ -2872,8 +3465,8 @@ impl OwnershipLock {
             use std::os::windows::fs::OpenOptionsExt;
             use std::os::windows::io::AsRawHandle;
             use windows::Win32::Storage::FileSystem::{
-                LockFileEx, FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_OPEN_REPARSE_POINT,
-                LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY,
+                FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_OPEN_REPARSE_POINT,
+                LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY, LockFileEx,
             };
             use windows::Win32::System::IO::OVERLAPPED;
 
@@ -2947,6 +3540,10 @@ impl Drop for OwnershipLock {
 }
 
 fn atomic_durable_write(path: &Path, record: &OperationRecord) -> Result<(), JournalError> {
+    validate_schema_v2_phase_evidence_record(record).map_err(|reason| JournalError::Write {
+        path: path.to_path_buf(),
+        source: io::Error::new(io::ErrorKind::InvalidInput, reason),
+    })?;
     let directory = path.parent().ok_or_else(|| JournalError::Write {
         path: path.to_path_buf(),
         source: io::Error::new(io::ErrorKind::InvalidInput, "record path has no parent"),
@@ -2955,7 +3552,7 @@ fn atomic_durable_write(path: &Path, record: &OperationRecord) -> Result<(), Jou
         ".{}.tmp",
         path.file_name().unwrap_or_default().to_string_lossy()
     ));
-    let bytes = encode_schema_v1(record).map_err(|source| JournalError::Write {
+    let bytes = encode_record(record).map_err(|source| JournalError::Write {
         path: path.to_path_buf(),
         source,
     })?;
@@ -3003,10 +3600,10 @@ fn atomic_durable_write(path: &Path, record: &OperationRecord) -> Result<(), Jou
 fn replace_file(temp_path: &Path, path: &Path) -> io::Result<()> {
     #[cfg(target_os = "windows")]
     {
-        use windows::core::PCWSTR;
         use windows::Win32::Storage::FileSystem::{
-            MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+            MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
         };
+        use windows::core::PCWSTR;
         fn wide(path: &Path) -> Vec<u16> {
             use std::os::windows::ffi::OsStrExt;
             path.as_os_str()
@@ -3091,7 +3688,7 @@ mod tests {
     }
 
     fn schema_v1_value(record: &OperationRecord) -> Value {
-        serde_json::to_value(PersistedOperationRecordV1::from(record))
+        serde_json::to_value(persisted_v1_from_record(record).expect("schema-v1 value"))
             .expect("encode schema-v1 value")
     }
 
@@ -3121,6 +3718,171 @@ mod tests {
                 protected_free_bytes: super::super::capacity_gate::PROTECTED_FREE_SPACE_FLOOR,
             }],
         }
+    }
+
+    fn absent_final_v2_fixture() -> (
+        PreparedAbsentFinalNoReplace,
+        FilesystemStagedWaveformRestore,
+        DurableCapacityPlan,
+    ) {
+        let target_parent_identity = PreparedObjectIdentity {
+            stable_id: String::from("v2-target-parent"),
+            change_marker: None,
+            len: 0,
+        };
+        let target_parent = PreparedRootCapability {
+            path: PathBuf::from("/v2-fixture"),
+            identity: target_parent_identity,
+        };
+        let staging_identity = PreparedObjectIdentity {
+            stable_id: String::from("v2-staging"),
+            change_marker: None,
+            len: 4,
+        };
+        let evidence = PreparedFileEvidence::ContentHash([7; 32]);
+        let prepared = PreparedAbsentFinalNoReplace {
+            direction: PreparedRestoreDirection::Undo,
+            source_id: String::from("v2-fixture-source"),
+            source_root: target_parent.clone(),
+            target_parent,
+            final_leaf: PathBuf::from("final.wav"),
+            staging: PreparedStagingLocator {
+                relative_path: PathBuf::from("staging.wav"),
+                absent: true,
+            },
+            final_observation: AbsentFinalObservation::ObservedAbsent,
+            copy_validated_evidence: evidence.clone(),
+        };
+        let staged = FilesystemStagedWaveformRestore {
+            participant: FilesystemStagedParticipant::CopyValidated {
+                staging: PreparedLeafLocator {
+                    relative_path: PathBuf::from("staging.wav"),
+                    identity: staging_identity,
+                },
+                evidence,
+            },
+        };
+        (prepared, staged, valid_capacity_plan())
+    }
+
+    fn admit_absent_final_v2_fixture(
+        journal: &mut OperationJournalCoordinator,
+    ) -> (
+        Uuid,
+        PreparedAbsentFinalNoReplace,
+        FilesystemStagedWaveformRestore,
+    ) {
+        let (prepared, staged, capacity_plan) = absent_final_v2_fixture();
+        let operation_id = journal
+            .admit_schema_v2_absent_final_for_test(
+                intent(),
+                serde_json::json!({"schema": 2}),
+                prepared.clone(),
+                staged.clone(),
+                capacity_plan,
+            )
+            .expect("admit schema-v2 absent-final fixture");
+        (operation_id, prepared, staged)
+    }
+
+    fn invalid_v2_admission_record() -> OperationRecord {
+        let (prepared, staged, capacity_plan) = absent_final_v2_fixture();
+        let mut record = OperationRecord::new_v2_absent_final_with_capacity_plan(
+            intent(),
+            serde_json::json!({"schema": 2}),
+            prepared,
+            staged,
+            capacity_plan,
+        );
+        record.phase = OperationPhase::IntentDurable;
+        record
+    }
+
+    fn assert_invalid_input_write(error: JournalError, path: &Path) {
+        match error {
+            JournalError::Write {
+                path: error_path,
+                source,
+            } => {
+                assert_eq!(error_path, path);
+                assert_eq!(source.kind(), io::ErrorKind::InvalidInput);
+            }
+            other => panic!("expected invalid-input journal write error, got {other:?}"),
+        }
+    }
+
+    fn v2_absent_record_on_disk() -> (tempfile::TempDir, Uuid, PathBuf, Value) {
+        let directory = tempfile::tempdir().unwrap();
+        let mut journal = OperationJournalCoordinator::open(directory.path().to_path_buf())
+            .expect("open v2 fixture journal");
+        let (operation_id, _, _) = admit_absent_final_v2_fixture(&mut journal);
+        let path = journal.store.record_path(operation_id);
+        let value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        drop(journal);
+        (directory, operation_id, path, value)
+    }
+
+    fn v2_phase_evidence_record_on_disk(
+        phase: OperationPhase,
+        disposition: OperationDisposition,
+        evidence: SchemaV2EvidencePresence,
+    ) -> (tempfile::TempDir, Uuid, PathBuf, Vec<u8>) {
+        let (directory, operation_id, path, mut value) = v2_absent_record_on_disk();
+        let prepared_value = value["prepared"].clone();
+        let staged_value = value["staged"].clone();
+        let (prepared, staged, _) = absent_final_v2_fixture();
+        let publication = super::super::publication::test_absent_final_publication_evidence(
+            &prepared.target_parent.identity,
+            &staged,
+        );
+        let published_value = serde_json::to_value(publication).unwrap();
+        value["phase"] = serde_json::to_value(phase).unwrap();
+        value["disposition"] = serde_json::to_value(disposition).unwrap();
+        value["prepared"] = if evidence.prepared {
+            prepared_value
+        } else {
+            Value::Null
+        };
+        value["staged"] = if evidence.staged {
+            staged_value
+        } else {
+            Value::Null
+        };
+        value["published"] = if evidence.published {
+            published_value
+        } else {
+            Value::Null
+        };
+        let bytes = serde_json::to_vec(&value).unwrap();
+        fs::write(&path, &bytes).unwrap();
+        (directory, operation_id, path, bytes)
+    }
+
+    fn assert_v2_malformed_record_retained<F>(mutate: F)
+    where
+        F: FnOnce(&mut Value),
+    {
+        let (directory, operation_id, path, mut value) = v2_absent_record_on_disk();
+        mutate(&mut value);
+        let bytes = serde_json::to_vec(&value).unwrap();
+        fs::write(&path, &bytes).unwrap();
+        assert_unknown_nested_record_is_retained_unchanged(
+            directory.path(),
+            &path,
+            operation_id,
+            &bytes,
+        );
+    }
+
+    fn publication_with_reopened_identity_mismatch(
+        publication: &FilesystemPublishedWaveformRestore,
+    ) -> FilesystemPublishedWaveformRestore {
+        let mut value = serde_json::to_value(publication).unwrap();
+        let len = value["reopened_final"]["identity"]["len"]
+            .as_u64()
+            .expect("reopened identity length");
+        value["reopened_final"]["identity"]["len"] = Value::from(len + 1);
+        serde_json::from_value(value).expect("decode drifted publication fixture")
     }
 
     fn assert_unknown_nested_record_is_retained_unchanged(
@@ -3164,6 +3926,26 @@ mod tests {
             }
             assert_eq!(fs::read(path).unwrap(), bytes);
         }
+    }
+
+    fn assert_v2_phase_evidence_record_is_retained_unchanged(
+        phase: OperationPhase,
+        disposition: OperationDisposition,
+        evidence: SchemaV2EvidencePresence,
+    ) {
+        let (directory, operation_id, path, bytes) =
+            v2_phase_evidence_record_on_disk(phase, disposition, evidence);
+        assert!(!schema_v2_phase_evidence_is_valid(
+            phase,
+            disposition,
+            evidence
+        ));
+        assert_unknown_nested_record_is_retained_unchanged(
+            directory.path(),
+            &path,
+            operation_id,
+            &bytes,
+        );
     }
 
     #[test]
@@ -3381,7 +4163,12 @@ mod tests {
         let reopened_record = reopened.record(id).unwrap();
         assert_eq!(reopened_record.phase, OperationPhase::Prepared);
         assert_eq!(reopened_record.disposition, OperationDisposition::None);
-        let prepared = reopened_record.prepared.as_ref().unwrap();
+        let prepared = reopened_record
+            .prepared
+            .as_ref()
+            .unwrap()
+            .as_existing()
+            .unwrap();
         assert_eq!(prepared.source_id, "test");
         assert_eq!(prepared.target.relative_path, PathBuf::from("target.wav"));
         assert_eq!(prepared.backup.relative_path, PathBuf::from("before.wav"));
@@ -3504,7 +4291,14 @@ mod tests {
             Some(FilesystemStagedParticipant::CopyValidated { .. })
         ));
         assert_eq!(
-            record.prepared.as_ref().unwrap().target.relative_path,
+            record
+                .prepared
+                .as_ref()
+                .unwrap()
+                .as_existing()
+                .unwrap()
+                .target
+                .relative_path,
             PathBuf::from("target.wav")
         );
         assert_eq!(journal.store.capacity_claims(), &claims_before);
@@ -3543,6 +4337,8 @@ mod tests {
                 .prepared
                 .as_ref()
                 .unwrap()
+                .as_existing()
+                .unwrap()
                 .target
                 .relative_path,
             PathBuf::from("target.wav")
@@ -3569,7 +4365,8 @@ mod tests {
     }
 
     #[test]
-    fn nested_target_locator_is_rejected_before_qualified_adapter_and_preserves_recoverable_stage() {
+    fn nested_target_locator_is_rejected_before_qualified_adapter_and_preserves_recoverable_stage()
+    {
         let (journal_dir, _files, mut journal, id, _backup, target, staging) =
             prepared_restore_fixture();
         journal
@@ -3579,8 +4376,14 @@ mod tests {
         let staging_before = fs::read(&staging).unwrap();
         let record = {
             let record = journal.store.records.get_mut(&id).unwrap();
-            record.prepared.as_mut().unwrap().target.relative_path =
-                PathBuf::from("nested/target.wav");
+            record
+                .prepared
+                .as_mut()
+                .unwrap()
+                .as_existing_mut()
+                .unwrap()
+                .target
+                .relative_path = PathBuf::from("nested/target.wav");
             record.clone()
         };
         let record_path = journal.store.record_path(id);
@@ -3606,12 +4409,17 @@ mod tests {
         let reopened = OperationJournalCoordinator::open(journal_dir.path().to_path_buf()).unwrap();
         let reopened_record = reopened.record(id).unwrap();
         assert_eq!(reopened_record.phase, OperationPhase::FilesystemStaged);
-        assert_eq!(reopened_record.disposition, OperationDisposition::AuditRequired);
+        assert_eq!(
+            reopened_record.disposition,
+            OperationDisposition::AuditRequired
+        );
         assert!(reopened_record.staged.is_some());
         assert_eq!(
             reopened_record
                 .prepared
                 .as_ref()
+                .unwrap()
+                .as_existing()
                 .unwrap()
                 .target
                 .relative_path,
@@ -3645,11 +4453,13 @@ mod tests {
             FilesystemStageOutcome::PlatformQualificationRequired { operation_id, .. }
                 if operation_id == id
         ));
-        assert!(journal
-            .record(id)
-            .unwrap()
-            .replacement_qualification
-            .is_some());
+        assert!(
+            journal
+                .record(id)
+                .unwrap()
+                .replacement_qualification
+                .is_some()
+        );
         let adapter = super::super::expected_identity_replacement::
             TestQualifiedExpectedIdentityReplacementAdapter { drift: None };
 
@@ -3705,7 +4515,15 @@ mod tests {
     fn guarded_publication_requires_copy_validated_staging() {
         let (_journal_dir, _files, mut journal, id, _backup, _target, _staging) =
             prepared_restore_fixture();
-        let prepared = journal.record(id).unwrap().prepared.clone().unwrap();
+        let prepared = journal
+            .record(id)
+            .unwrap()
+            .prepared
+            .as_ref()
+            .unwrap()
+            .as_existing()
+            .unwrap()
+            .clone();
         let error = journal
             .guarded_publish(
                 id,
@@ -3731,7 +4549,7 @@ mod tests {
             prepared_restore_fixture();
         journal.stage_admitted_bounded_waveform_restore(id).unwrap();
         let record = journal.record(id).unwrap().clone();
-        let prepared = record.prepared.as_ref().unwrap();
+        let prepared = record.prepared.as_ref().unwrap().as_existing().unwrap();
         let staged = record.staged.as_ref().unwrap();
         for drift in [
             super::super::publication::TestPublicationDrift::UnqualifiedReplacement,
@@ -3790,7 +4608,14 @@ mod tests {
                 }
                 _ => unreachable!(),
             };
-            record.prepared.as_mut().unwrap().evidence.backup = evidence.clone();
+            record
+                .prepared
+                .as_mut()
+                .unwrap()
+                .as_existing_mut()
+                .unwrap()
+                .evidence
+                .backup = evidence.clone();
             let FilesystemStagedParticipant::CopyValidated {
                 evidence: staged_evidence,
                 ..
@@ -3798,7 +4623,7 @@ mod tests {
             *staged_evidence = evidence;
             let record = journal.record(id).unwrap().clone();
             let publication = super::super::publication::test_publication_evidence(
-                record.prepared.as_ref().unwrap(),
+                record.prepared.as_ref().unwrap().as_existing().unwrap(),
                 record.staged.as_ref().unwrap(),
                 Some(drift),
             );
@@ -3822,7 +4647,7 @@ mod tests {
         journal.stage_admitted_bounded_waveform_restore(id).unwrap();
         let record = journal.record(id).unwrap().clone();
         let publication = super::super::publication::test_publication_evidence(
-            record.prepared.as_ref().unwrap(),
+            record.prepared.as_ref().unwrap().as_existing().unwrap(),
             record.staged.as_ref().unwrap(),
             None,
         );
@@ -3846,7 +4671,7 @@ mod tests {
         );
         let record = reopened.record(id).unwrap().clone();
         let conflicting = super::super::publication::test_publication_evidence(
-            record.prepared.as_ref().unwrap(),
+            record.prepared.as_ref().unwrap().as_existing().unwrap(),
             record.staged.as_ref().unwrap(),
             Some(super::super::publication::TestPublicationDrift::ReopenedIdentity),
         );
@@ -3879,7 +4704,7 @@ mod tests {
         );
         let record = journal.record(id).unwrap().clone();
         let publication = super::super::publication::test_publication_evidence(
-            record.prepared.as_ref().unwrap(),
+            record.prepared.as_ref().unwrap().as_existing().unwrap(),
             record.staged.as_ref().unwrap(),
             None,
         );
@@ -3901,7 +4726,7 @@ mod tests {
         journal.stage_admitted_bounded_waveform_restore(id).unwrap();
         let record = journal.record(id).unwrap().clone();
         let publication = super::super::publication::test_publication_evidence(
-            record.prepared.as_ref().unwrap(),
+            record.prepared.as_ref().unwrap().as_existing().unwrap(),
             record.staged.as_ref().unwrap(),
             None,
         );
@@ -3930,7 +4755,7 @@ mod tests {
         journal.stage_admitted_bounded_waveform_restore(id).unwrap();
         let record = journal.record(id).unwrap().clone();
         let publication = super::super::publication::test_publication_evidence(
-            record.prepared.as_ref().unwrap(),
+            record.prepared.as_ref().unwrap().as_existing().unwrap(),
             record.staged.as_ref().unwrap(),
             None,
         );
@@ -4173,6 +4998,8 @@ mod tests {
             .unwrap()
             .prepared
             .as_mut()
+            .unwrap()
+            .as_existing_mut()
             .unwrap();
         prepared.backup.identity = prepared_backup_identity;
         prepared.evidence.backup = prepared_backup_evidence;
@@ -4299,7 +5126,12 @@ mod tests {
             .unwrap();
         let before_publication = journal.record(operation_id).unwrap().clone();
         let publication = super::super::publication::test_publication_evidence(
-            before_publication.prepared.as_ref().unwrap(),
+            before_publication
+                .prepared
+                .as_ref()
+                .unwrap()
+                .as_existing()
+                .unwrap(),
             before_publication.staged.as_ref().unwrap(),
             None,
         );
@@ -4466,7 +5298,7 @@ mod tests {
         value
             .as_object_mut()
             .unwrap()
-            .insert(String::from("schema_version"), Value::from(2_u32));
+            .insert(String::from("schema_version"), Value::from(3_u32));
         let bytes = serde_json::to_vec(&value).unwrap();
         fs::write(&path, &bytes).unwrap();
 
@@ -4479,7 +5311,9 @@ mod tests {
         assert!(first.record(operation_id).is_none());
         assert_eq!(fs::read(&path).unwrap(), bytes);
         assert!(matches!(
-            first.store.admit(OperationRecord::new(intent(), Value::Null)),
+            first
+                .store
+                .admit(OperationRecord::new(intent(), Value::Null)),
             Err(JournalError::Write { .. })
         ));
         drop(first);
@@ -4863,8 +5697,780 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(before, after);
-        assert!(before
-            .iter()
-            .any(|(name, _)| name.to_string_lossy() == format!("{id}.json")));
+        assert!(
+            before
+                .iter()
+                .any(|(name, _)| name.to_string_lossy() == format!("{id}.json"))
+        );
+    }
+
+    #[test]
+    fn schema_v1_prepared_record_adapts_to_existing_identity_without_rewrite() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let (journal_dir, _files, journal, operation_id, _backup, _target, _staging) =
+            prepared_restore_fixture();
+        let record = journal.record(operation_id).unwrap().clone();
+        assert_eq!(record.schema_version, SCHEMA_V1);
+        assert!(matches!(
+            record.prepared,
+            Some(PreparedTargetContract::ExistingExpectedIdentity(_))
+        ));
+        let path = journal.store.record_path(operation_id);
+        let bytes = fs::read(&path).unwrap();
+        drop(journal);
+
+        let reopened = OperationJournalCoordinator::open(journal_dir.path().to_path_buf()).unwrap();
+        assert_eq!(reopened.record(operation_id), Some(&record));
+        assert!(matches!(
+            reopened.record(operation_id).unwrap().prepared,
+            Some(PreparedTargetContract::ExistingExpectedIdentity(_))
+        ));
+        assert_eq!(fs::read(path).unwrap(), bytes);
+    }
+
+    #[test]
+    fn schema_v1_absent_final_evidence_is_retained_raw_and_non_writable() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let (journal_dir, _files, mut journal, operation_id, _backup, _target, _staging) =
+            prepared_restore_fixture();
+        journal
+            .stage_admitted_bounded_waveform_restore(operation_id)
+            .unwrap();
+        let record = journal.record(operation_id).unwrap().clone();
+        let prepared = record.prepared.as_ref().unwrap().as_existing().unwrap();
+        let staged = record.staged.as_ref().unwrap();
+        let absent_publication = super::super::publication::test_absent_final_publication_evidence(
+            &prepared.target_root.identity,
+            staged,
+        );
+        let path = journal.store.record_path(operation_id);
+        let mut value = schema_v1_value(&record);
+        value["phase"] = serde_json::to_value(OperationPhase::FilesystemPublished).unwrap();
+        value["published"] = serde_json::to_value(absent_publication).unwrap();
+        let bytes = serde_json::to_vec(&value).unwrap();
+        fs::write(&path, &bytes).unwrap();
+        drop(journal);
+
+        let mut reopened =
+            OperationJournalCoordinator::open(journal_dir.path().to_path_buf()).unwrap();
+        let summary = reopened.recovery_summary();
+        assert_eq!(summary.malformed_count, 1);
+        assert!(summary.attention_required);
+        assert!(reopened.store.capacity_blocked());
+        assert!(reopened.record(operation_id).is_none());
+        assert!(matches!(
+            reopened.update(
+                operation_id,
+                OperationPhase::IntentDurable,
+                OperationDisposition::RetryPending,
+            ),
+            Err(JournalError::NotFound(id)) if id == operation_id
+        ));
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+    }
+
+    #[test]
+    fn schema_v2_absent_final_round_trips_staging_publication_and_remains_writable() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let mut journal =
+            OperationJournalCoordinator::open(directory.path().to_path_buf()).unwrap();
+        let (operation_id, prepared, staged) = admit_absent_final_v2_fixture(&mut journal);
+        let staged_record = journal.record(operation_id).unwrap().clone();
+        assert_eq!(staged_record.schema_version, SCHEMA_V2);
+        assert_eq!(staged_record.phase, OperationPhase::FilesystemStaged);
+        assert!(matches!(
+            staged_record.prepared,
+            Some(PreparedTargetContract::AbsentFinalNoReplace(_))
+        ));
+        let path = journal.store.record_path(operation_id);
+        let staged_bytes = fs::read(&path).unwrap();
+        assert_eq!(
+            journal
+                .store
+                .capacity_claims()
+                .get(&VolumeIdentity { device: 77 }),
+            Some(&4096)
+        );
+        drop(journal);
+
+        let mut reopened =
+            OperationJournalCoordinator::open(directory.path().to_path_buf()).unwrap();
+        assert_eq!(reopened.record(operation_id), Some(&staged_record));
+        assert_eq!(reopened.recovery_summary().unresolved_count, 1);
+        assert!(reopened.recovery_summary().attention_required);
+        assert!(!reopened.store.capacity_blocked());
+        assert_eq!(
+            reopened
+                .store
+                .capacity_claims()
+                .get(&VolumeIdentity { device: 77 }),
+            Some(&4096)
+        );
+        assert_eq!(fs::read(&path).unwrap(), staged_bytes);
+
+        let publication = super::super::publication::test_absent_final_publication_evidence(
+            &prepared.target_parent.identity,
+            &staged,
+        );
+        reopened
+            .guarded_publish(operation_id, publication.clone())
+            .unwrap();
+        assert_eq!(
+            reopened.record(operation_id).unwrap().phase,
+            OperationPhase::FilesystemPublished
+        );
+        assert_eq!(
+            reopened.record(operation_id).unwrap().published.as_ref(),
+            Some(&publication)
+        );
+        let published_bytes = fs::read(&path).unwrap();
+        drop(reopened);
+
+        let mut writable =
+            OperationJournalCoordinator::open(directory.path().to_path_buf()).unwrap();
+        assert_eq!(
+            writable.record(operation_id).unwrap().published.as_ref(),
+            Some(&publication)
+        );
+        assert_eq!(fs::read(&path).unwrap(), published_bytes);
+        writable
+            .update(
+                operation_id,
+                OperationPhase::SourceReconciled,
+                OperationDisposition::None,
+            )
+            .unwrap();
+        assert_eq!(
+            writable.record(operation_id).unwrap().phase,
+            OperationPhase::SourceReconciled
+        );
+    }
+
+    #[test]
+    fn schema_v2_generic_update_cannot_bypass_absent_final_publication_guard() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let mut journal =
+            OperationJournalCoordinator::open(directory.path().to_path_buf()).unwrap();
+        let (operation_id, prepared, staged) = admit_absent_final_v2_fixture(&mut journal);
+        assert!(matches!(
+            journal.update(
+                operation_id,
+                OperationPhase::SourceReconciled,
+                OperationDisposition::None,
+            ),
+            Err(JournalError::InvalidPublicationEvidence { .. })
+        ));
+        assert_eq!(
+            journal.record(operation_id).unwrap().phase,
+            OperationPhase::FilesystemStaged
+        );
+        let publication = super::super::publication::test_absent_final_publication_evidence(
+            &prepared.target_parent.identity,
+            &staged,
+        );
+        journal.guarded_publish(operation_id, publication).unwrap();
+        assert!(matches!(
+            journal.update(
+                operation_id,
+                OperationPhase::FilesystemPublished,
+                OperationDisposition::None,
+            ),
+            Err(JournalError::IllegalTransition { .. })
+        ));
+    }
+
+    #[test]
+    fn schema_v2_absent_final_rejects_expected_identity_publication_in_both_directions() {
+        let _lock = TEST_LOCK.lock().unwrap();
+
+        let (_journal_dir, _files, mut expected_journal, expected_id, _backup, _target, _staging) =
+            prepared_restore_fixture();
+        expected_journal
+            .stage_admitted_bounded_waveform_restore(expected_id)
+            .unwrap();
+        let expected_record = expected_journal.record(expected_id).unwrap().clone();
+        let absent_publication = super::super::publication::test_absent_final_publication_evidence(
+            &expected_record
+                .prepared
+                .as_ref()
+                .unwrap()
+                .as_existing()
+                .unwrap()
+                .target_root
+                .identity,
+            expected_record.staged.as_ref().unwrap(),
+        );
+        assert!(matches!(
+            expected_journal.guarded_publish(expected_id, absent_publication),
+            Err(JournalError::InvalidPublicationEvidence { .. })
+        ));
+        assert_eq!(
+            expected_journal.record(expected_id).unwrap().phase,
+            OperationPhase::FilesystemStaged
+        );
+        drop(expected_journal);
+
+        let (
+            _expected_dir,
+            _expected_files,
+            mut publication_source,
+            publication_id,
+            _backup,
+            _target,
+            _staging,
+        ) = prepared_restore_fixture();
+        publication_source
+            .stage_admitted_bounded_waveform_restore(publication_id)
+            .unwrap();
+        let publication_source_record = publication_source.record(publication_id).unwrap().clone();
+        let expected_publication = super::super::publication::test_publication_evidence(
+            publication_source_record
+                .prepared
+                .as_ref()
+                .unwrap()
+                .as_existing()
+                .unwrap(),
+            publication_source_record.staged.as_ref().unwrap(),
+            None,
+        );
+        drop(publication_source);
+
+        let directory = tempfile::tempdir().unwrap();
+        let mut absent_journal =
+            OperationJournalCoordinator::open(directory.path().to_path_buf()).unwrap();
+        let (operation_id, _, _) = admit_absent_final_v2_fixture(&mut absent_journal);
+        assert!(matches!(
+            absent_journal.guarded_publish(operation_id, expected_publication),
+            Err(JournalError::InvalidPublicationEvidence { .. })
+        ));
+        assert_eq!(
+            absent_journal.record(operation_id).unwrap().phase,
+            OperationPhase::FilesystemStaged
+        );
+    }
+
+    #[test]
+    fn schema_v2_absent_final_rejects_mismatched_reopened_evidence_without_mutation() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let mut journal =
+            OperationJournalCoordinator::open(directory.path().to_path_buf()).unwrap();
+        let (operation_id, prepared, staged) = admit_absent_final_v2_fixture(&mut journal);
+        let publication = super::super::publication::test_absent_final_publication_evidence(
+            &prepared.target_parent.identity,
+            &staged,
+        );
+        let mismatched = publication_with_reopened_identity_mismatch(&publication);
+        let path = journal.store.record_path(operation_id);
+        let bytes_before = fs::read(&path).unwrap();
+        assert!(matches!(
+            journal.guarded_publish(operation_id, mismatched),
+            Err(JournalError::InvalidPublicationEvidence { .. })
+        ));
+        assert_eq!(
+            journal.record(operation_id).unwrap().phase,
+            OperationPhase::FilesystemStaged
+        );
+        assert!(journal.record(operation_id).unwrap().published.is_none());
+        assert_eq!(fs::read(path).unwrap(), bytes_before);
+    }
+
+    #[test]
+    fn schema_v2_absent_final_publication_replay_is_idempotent_and_conflicts_fail_closed() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let mut journal =
+            OperationJournalCoordinator::open(directory.path().to_path_buf()).unwrap();
+        let (operation_id, prepared, staged) = admit_absent_final_v2_fixture(&mut journal);
+        let publication = super::super::publication::test_absent_final_publication_evidence(
+            &prepared.target_parent.identity,
+            &staged,
+        );
+        journal
+            .guarded_publish(operation_id, publication.clone())
+            .unwrap();
+        let path = journal.store.record_path(operation_id);
+        let bytes_after_publish = fs::read(&path).unwrap();
+        journal
+            .guarded_publish(operation_id, publication.clone())
+            .unwrap();
+        assert_eq!(fs::read(&path).unwrap(), bytes_after_publish);
+        drop(journal);
+
+        let mut reopened =
+            OperationJournalCoordinator::open(directory.path().to_path_buf()).unwrap();
+        reopened
+            .guarded_publish(operation_id, publication.clone())
+            .unwrap();
+        assert_eq!(fs::read(&path).unwrap(), bytes_after_publish);
+        let conflicting = publication_with_reopened_identity_mismatch(&publication);
+        assert!(matches!(
+            reopened.guarded_publish(operation_id, conflicting),
+            Err(JournalError::InvalidPublicationEvidence { .. })
+        ));
+        assert_eq!(fs::read(&path).unwrap(), bytes_after_publish);
+        assert_eq!(
+            reopened.record(operation_id).unwrap().published.as_ref(),
+            Some(&publication)
+        );
+    }
+
+    #[test]
+    fn schema_v2_unknown_and_malformed_nested_evidence_are_retained_fail_closed() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        assert_v2_malformed_record_retained(|value| {
+            value.as_object_mut().unwrap().insert(
+                String::from("future_v2_evidence"),
+                serde_json::json!({"retained": true}),
+            );
+        });
+        assert_v2_malformed_record_retained(|value| {
+            value["prepared"]["AbsentFinalNoReplace"]
+                .as_object_mut()
+                .unwrap()
+                .insert(String::from("future_nested_evidence"), Value::Bool(true));
+        });
+        assert_v2_malformed_record_retained(|value| {
+            value["prepared"]["AbsentFinalNoReplace"]["copy_validated_evidence"] =
+                Value::String(String::from("MalformedEvidence"));
+        });
+    }
+
+    #[test]
+    fn schema_v2_phase_evidence_matrix_rejects_inconsistent_records() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let invalid_cases = [
+            (
+                "intent with prepared evidence",
+                OperationPhase::IntentDurable,
+                OperationDisposition::None,
+                SchemaV2EvidencePresence::PREPARED,
+            ),
+            (
+                "intent with staged evidence",
+                OperationPhase::IntentDurable,
+                OperationDisposition::None,
+                SchemaV2EvidencePresence {
+                    prepared: false,
+                    staged: true,
+                    published: false,
+                },
+            ),
+            (
+                "intent with published evidence",
+                OperationPhase::IntentDurable,
+                OperationDisposition::None,
+                SchemaV2EvidencePresence {
+                    prepared: false,
+                    staged: false,
+                    published: true,
+                },
+            ),
+            (
+                "prepared without prepared evidence",
+                OperationPhase::Prepared,
+                OperationDisposition::None,
+                SchemaV2EvidencePresence::NONE,
+            ),
+            (
+                "prepared with staged evidence",
+                OperationPhase::Prepared,
+                OperationDisposition::None,
+                SchemaV2EvidencePresence::PREPARED_STAGED,
+            ),
+            (
+                "prepared with published evidence",
+                OperationPhase::Prepared,
+                OperationDisposition::None,
+                SchemaV2EvidencePresence {
+                    prepared: true,
+                    staged: false,
+                    published: true,
+                },
+            ),
+            (
+                "filesystem staged without prepared evidence",
+                OperationPhase::FilesystemStaged,
+                OperationDisposition::None,
+                SchemaV2EvidencePresence {
+                    prepared: false,
+                    staged: true,
+                    published: false,
+                },
+            ),
+            (
+                "filesystem staged without staged evidence",
+                OperationPhase::FilesystemStaged,
+                OperationDisposition::None,
+                SchemaV2EvidencePresence::PREPARED,
+            ),
+            (
+                "filesystem staged with published evidence",
+                OperationPhase::FilesystemStaged,
+                OperationDisposition::None,
+                SchemaV2EvidencePresence::ALL,
+            ),
+            (
+                "filesystem published without prepared evidence",
+                OperationPhase::FilesystemPublished,
+                OperationDisposition::None,
+                SchemaV2EvidencePresence {
+                    prepared: false,
+                    staged: true,
+                    published: true,
+                },
+            ),
+            (
+                "filesystem published without staged evidence",
+                OperationPhase::FilesystemPublished,
+                OperationDisposition::None,
+                SchemaV2EvidencePresence {
+                    prepared: true,
+                    staged: false,
+                    published: true,
+                },
+            ),
+            (
+                "filesystem published without published evidence",
+                OperationPhase::FilesystemPublished,
+                OperationDisposition::None,
+                SchemaV2EvidencePresence::PREPARED_STAGED,
+            ),
+            (
+                "pre-publication cancellation with published evidence",
+                OperationPhase::Terminal,
+                OperationDisposition::CancelledBeforePublish,
+                SchemaV2EvidencePresence::ALL,
+            ),
+            (
+                "successful terminal record without publication evidence",
+                OperationPhase::Terminal,
+                OperationDisposition::Succeeded,
+                SchemaV2EvidencePresence::PREPARED_STAGED,
+            ),
+            (
+                "post-publication cancellation without publication evidence",
+                OperationPhase::Terminal,
+                OperationDisposition::CancelledAfterPublish,
+                SchemaV2EvidencePresence::PREPARED_STAGED,
+            ),
+        ];
+        for (label, phase, disposition, evidence) in invalid_cases {
+            assert_v2_phase_evidence_record_is_retained_unchanged(phase, disposition, evidence);
+            assert!(
+                !schema_v2_phase_evidence_is_valid(phase, disposition, evidence),
+                "{label}"
+            );
+        }
+
+        let valid_cases = [
+            (
+                OperationPhase::IntentDurable,
+                OperationDisposition::None,
+                SchemaV2EvidencePresence::NONE,
+            ),
+            (
+                OperationPhase::Prepared,
+                OperationDisposition::None,
+                SchemaV2EvidencePresence::PREPARED,
+            ),
+            (
+                OperationPhase::FilesystemStaged,
+                OperationDisposition::None,
+                SchemaV2EvidencePresence::PREPARED_STAGED,
+            ),
+            (
+                OperationPhase::Terminal,
+                OperationDisposition::CancelledBeforePublish,
+                SchemaV2EvidencePresence::NONE,
+            ),
+            (
+                OperationPhase::Terminal,
+                OperationDisposition::CancelledBeforePublish,
+                SchemaV2EvidencePresence::PREPARED,
+            ),
+            (
+                OperationPhase::Terminal,
+                OperationDisposition::CancelledBeforePublish,
+                SchemaV2EvidencePresence::PREPARED_STAGED,
+            ),
+            (
+                OperationPhase::Terminal,
+                OperationDisposition::Succeeded,
+                SchemaV2EvidencePresence::ALL,
+            ),
+        ];
+        for (phase, disposition, evidence) in valid_cases {
+            assert!(
+                schema_v2_phase_evidence_is_valid(phase, disposition, evidence),
+                "valid phase/evidence combination rejected: {phase:?} {disposition:?} {evidence:?}"
+            );
+        }
+        for phase in [
+            OperationPhase::FilesystemPublished,
+            OperationPhase::SourceReconciled,
+            OperationPhase::GlobalReconciled,
+            OperationPhase::ProjectionPublished,
+            OperationPhase::ReadinessScheduled,
+        ] {
+            assert!(schema_v2_phase_evidence_is_valid(
+                phase,
+                OperationDisposition::None,
+                SchemaV2EvidencePresence::ALL,
+            ));
+            assert!(!schema_v2_phase_evidence_is_valid(
+                phase,
+                OperationDisposition::None,
+                SchemaV2EvidencePresence::PREPARED_STAGED,
+            ));
+        }
+    }
+
+    #[test]
+    fn schema_v2_invalid_direct_admission_leaves_journal_untouched() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        for use_capacity_admission in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let mut store = OperationJournalStore::open(directory.path().to_path_buf()).unwrap();
+            let record = invalid_v2_admission_record();
+            let operation_id = record.operation_id;
+            let path = store.record_path(operation_id);
+            let temp_path = directory.path().join(format!(".{operation_id}.json.tmp"));
+            let recovery_before = store.recovery_summary();
+
+            let result = if use_capacity_admission {
+                store.admit_capacity(record)
+            } else {
+                store.admit(record)
+            };
+            assert_invalid_input_write(result.unwrap_err(), &path);
+            assert!(!path.exists());
+            assert!(!temp_path.exists());
+            assert!(store.record(operation_id).is_none());
+            assert!(store.capacity_claims().is_empty());
+            assert!(!store.capacity_blocked());
+            assert_eq!(store.recovery_summary(), recovery_before);
+            drop(store);
+
+            let reopened = OperationJournalStore::open(directory.path().to_path_buf()).unwrap();
+            assert_eq!(reopened.recovery_summary(), recovery_before);
+            assert!(reopened.record(operation_id).is_none());
+            assert!(reopened.capacity_claims().is_empty());
+            assert!(!reopened.capacity_blocked());
+            assert!(!path.exists());
+            assert!(!temp_path.exists());
+        }
+    }
+
+    #[test]
+    fn schema_v2_invalid_backward_updates_leave_record_unchanged() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let mut journal =
+            OperationJournalCoordinator::open(directory.path().to_path_buf()).unwrap();
+        let (operation_id, _, _) = admit_absent_final_v2_fixture(&mut journal);
+        let path = journal.store.record_path(operation_id);
+        let temp_path = directory.path().join(format!(".{operation_id}.json.tmp"));
+        let record_before = journal.record(operation_id).unwrap().clone();
+        let bytes_before = fs::read(&path).unwrap();
+        let claims_before = journal.store.capacity_claims().clone();
+        let recovery_before = journal.recovery_summary();
+
+        for (phase, disposition) in [
+            (
+                OperationPhase::IntentDurable,
+                OperationDisposition::RetryPending,
+            ),
+            (OperationPhase::Prepared, OperationDisposition::None),
+        ] {
+            let error = journal
+                .store
+                .update(operation_id, phase, disposition)
+                .unwrap_err();
+            assert_invalid_input_write(error, &path);
+            assert_eq!(journal.record(operation_id), Some(&record_before));
+            assert_eq!(fs::read(&path).unwrap(), bytes_before);
+            assert!(!temp_path.exists());
+            assert_eq!(journal.store.capacity_claims(), &claims_before);
+            assert_eq!(journal.recovery_summary(), recovery_before);
+        }
+
+        drop(journal);
+        let reopened = OperationJournalCoordinator::open(directory.path().to_path_buf()).unwrap();
+        assert_eq!(reopened.record(operation_id), Some(&record_before));
+        assert_eq!(reopened.recovery_summary().record_count, 1);
+        assert_eq!(reopened.recovery_summary().unresolved_count, 1);
+        assert_eq!(reopened.recovery_summary().malformed_count, 0);
+        assert!(reopened.recovery_summary().attention_required);
+        assert_eq!(reopened.store.capacity_claims(), &claims_before);
+        assert_eq!(fs::read(&path).unwrap(), bytes_before);
+        assert!(!temp_path.exists());
+    }
+
+    #[test]
+    fn schema_v2_cancelled_before_publish_prefixes_cross_durable_boundary() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        for evidence in [
+            SchemaV2EvidencePresence::NONE,
+            SchemaV2EvidencePresence::PREPARED,
+            SchemaV2EvidencePresence::PREPARED_STAGED,
+        ] {
+            let directory = tempfile::tempdir().unwrap();
+            let mut journal =
+                OperationJournalCoordinator::open(directory.path().to_path_buf()).unwrap();
+            let (operation_id, _, _) = admit_absent_final_v2_fixture(&mut journal);
+            let mut record = journal.record(operation_id).unwrap().clone();
+            if !evidence.prepared {
+                record.prepared = None;
+            }
+            if !evidence.staged {
+                record.staged = None;
+            }
+            record.published = None;
+            record.phase = OperationPhase::Terminal;
+            record.disposition = OperationDisposition::CancelledBeforePublish;
+            let path = journal.store.record_path(operation_id);
+            atomic_durable_write(&path, &record).unwrap();
+            let bytes = fs::read(&path).unwrap();
+            let temp_path = directory.path().join(format!(".{operation_id}.json.tmp"));
+            drop(journal);
+
+            let reopened =
+                OperationJournalCoordinator::open(directory.path().to_path_buf()).unwrap();
+            assert_eq!(reopened.record(operation_id), Some(&record));
+            assert_eq!(reopened.recovery_summary().malformed_count, 0);
+            assert!(!reopened.recovery_summary().attention_required);
+            assert!(reopened.store.capacity_claims().is_empty());
+            assert_eq!(fs::read(&path).unwrap(), bytes);
+            assert!(!temp_path.exists());
+        }
+    }
+
+    #[test]
+    fn schema_v2_future_version_is_retained_blocking_and_byte_stable() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let (directory, operation_id, path, mut value) = v2_absent_record_on_disk();
+        value["schema_version"] = Value::from(3_u32);
+        let bytes = serde_json::to_vec(&value).unwrap();
+        fs::write(&path, &bytes).unwrap();
+
+        for _ in 0..2 {
+            let mut journal =
+                OperationJournalCoordinator::open(directory.path().to_path_buf()).unwrap();
+            let summary = journal.recovery_summary();
+            assert_eq!(summary.malformed_count, 0);
+            assert_eq!(summary.unknown_version_count, 1);
+            assert!(summary.attention_required);
+            assert!(journal.store.capacity_blocked());
+            assert!(journal.record(operation_id).is_none());
+            assert!(matches!(
+                journal.update(
+                    operation_id,
+                    OperationPhase::IntentDurable,
+                    OperationDisposition::RetryPending,
+                ),
+                Err(JournalError::NotFound(id)) if id == operation_id
+            ));
+            assert!(matches!(
+                journal.admit(intent(), Value::Null),
+                Err(JournalError::Write { .. })
+            ));
+            assert_eq!(fs::read(&path).unwrap(), bytes);
+        }
+    }
+
+    #[test]
+    fn schema_v2_prepublication_publication_evidence_is_retained_verbatim() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let mut journal =
+            OperationJournalCoordinator::open(directory.path().to_path_buf()).unwrap();
+        let (operation_id, prepared, staged) = admit_absent_final_v2_fixture(&mut journal);
+        let publication = super::super::publication::test_absent_final_publication_evidence(
+            &prepared.target_parent.identity,
+            &staged,
+        );
+        let mut invalid = journal.record(operation_id).unwrap().clone();
+        invalid.published = Some(publication);
+        let path = journal.store.record_path(operation_id);
+        let invalid_bytes = encode_record(&invalid).unwrap();
+        fs::write(&path, invalid_bytes).unwrap();
+        let bytes = fs::read(&path).unwrap();
+        drop(journal);
+
+        let reopened = OperationJournalCoordinator::open(directory.path().to_path_buf()).unwrap();
+        assert_eq!(reopened.recovery_summary().malformed_count, 1);
+        assert!(reopened.recovery_summary().attention_required);
+        assert!(reopened.store.capacity_blocked());
+        assert!(reopened.record(operation_id).is_none());
+        assert_eq!(fs::read(path).unwrap(), bytes);
+    }
+
+    #[test]
+    fn schema_v2_postpublication_missing_evidence_is_retained_raw_and_not_admitted() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let mut journal =
+            OperationJournalCoordinator::open(directory.path().to_path_buf()).unwrap();
+        let (operation_id, _, _) = admit_absent_final_v2_fixture(&mut journal);
+        let mut invalid = journal.record(operation_id).unwrap().clone();
+        invalid.phase = OperationPhase::FilesystemPublished;
+        invalid.published = None;
+        let path = journal.store.record_path(operation_id);
+        let invalid_bytes = encode_record(&invalid).unwrap();
+        fs::write(&path, invalid_bytes).unwrap();
+        let bytes = fs::read(&path).unwrap();
+        drop(journal);
+
+        let mut reopened =
+            OperationJournalCoordinator::open(directory.path().to_path_buf()).unwrap();
+        let summary = reopened.recovery_summary();
+        assert_eq!(summary.malformed_count, 1);
+        assert_eq!(summary.unresolved_count, 0);
+        assert!(summary.attention_required);
+        assert!(reopened.store.capacity_blocked());
+        assert!(reopened.record(operation_id).is_none());
+        assert!(matches!(
+            reopened.update(
+                operation_id,
+                OperationPhase::IntentDurable,
+                OperationDisposition::RetryPending,
+            ),
+            Err(JournalError::NotFound(id)) if id == operation_id
+        ));
+        assert_eq!(fs::read(path).unwrap(), bytes);
+    }
+
+    #[test]
+    fn schema_v2_absent_final_production_workflow_stays_staged_and_auditable() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let mut journal =
+            OperationJournalCoordinator::open(directory.path().to_path_buf()).unwrap();
+        let (operation_id, _, staged) = admit_absent_final_v2_fixture(&mut journal);
+
+        assert!(matches!(
+            journal
+                .stage_admitted_bounded_waveform_restore(operation_id)
+                .unwrap(),
+            FilesystemStageOutcome::AuditRequired { operation_id: id, .. } if id == operation_id
+        ));
+        let record = journal.record(operation_id).unwrap();
+        assert_eq!(record.phase, OperationPhase::FilesystemStaged);
+        assert_eq!(record.disposition, OperationDisposition::AuditRequired);
+        assert_eq!(record.staged.as_ref(), Some(&staged));
+        assert!(record.published.is_none());
+
+        assert!(matches!(
+            journal.attempt_publish_staged_waveform_restore(operation_id),
+            Ok(FilesystemStageOutcome::AuditRequired { operation_id: id, .. }) if id == operation_id
+        ));
+        let record = journal.record(operation_id).unwrap();
+        assert_eq!(record.phase, OperationPhase::FilesystemStaged);
+        assert_eq!(record.disposition, OperationDisposition::AuditRequired);
+        assert_eq!(record.staged.as_ref(), Some(&staged));
+        assert!(record.published.is_none());
     }
 }

@@ -9,13 +9,13 @@ use serde::{Deserialize, Serialize};
 use super::absent_final_no_replace::{QualifiedAbsentFinalNoReplace, RootPathContinuity};
 use super::expected_identity_replacement::QualifiedExpectedIdentityReplacement;
 use super::operation_journal::{
-    FilesystemStagedParticipant, FilesystemStagedWaveformRestore, PreparedFileEvidence,
-    PreparedObjectIdentity, PreparedWaveformRestore, ReplaceExpectedIdentity,
+    AbsentFinalObservation, FilesystemStagedParticipant, FilesystemStagedWaveformRestore,
+    PreparedFileEvidence, PreparedObjectIdentity, PreparedTargetContract, PreparedWaveformRestore,
+    ReplaceExpectedIdentity,
 };
 #[cfg(test)]
 use super::operation_journal::{
-    PreparedLeafLocator, PreparedRestoreDirection, PreparedRestoreEvidence, PreparedRootCapability,
-    PreparedStagingLocator,
+    PreparedLeafLocator, PreparedRestoreDirection, PreparedRootCapability, PreparedStagingLocator,
 };
 
 /// The transfer mode selected by the file owner from live filesystem evidence.
@@ -280,10 +280,15 @@ pub(super) fn validate_publication_evidence(
 /// and explicitly accepts only `NotClaimed` root-path continuity.
 #[allow(dead_code)]
 pub(super) fn validate_absent_final_no_replace_publication(
-    prepared: &PreparedWaveformRestore,
+    prepared: &PreparedTargetContract,
     staged: &FilesystemStagedWaveformRestore,
     published: &FilesystemPublishedWaveformRestore,
 ) -> Result<(), String> {
+    let PreparedTargetContract::AbsentFinalNoReplace(prepared) = prepared else {
+        return Err(String::from(
+            "absent-final publication requires the absent-final preparation contract",
+        ));
+    };
     let FilesystemStagedParticipant::CopyValidated {
         staging,
         evidence: staged_content,
@@ -337,7 +342,7 @@ pub(super) fn validate_absent_final_no_replace_publication(
         target_parent_identity,
         root_path_continuity,
     } = capability_scope;
-    if target_parent_identity != &prepared.target_root.identity {
+    if target_parent_identity != &prepared.target_parent.identity {
         return Err(String::from(
             "absent-final capability scope does not match the prepared target parent",
         ));
@@ -345,6 +350,33 @@ pub(super) fn validate_absent_final_no_replace_publication(
     if !matches!(root_path_continuity, RootPathContinuity::NotClaimed) {
         return Err(String::from(
             "absent-final evidence overclaims root pathname continuity",
+        ));
+    }
+    if prepared.final_observation != AbsentFinalObservation::ObservedAbsent {
+        return Err(String::from(
+            "absent-final preparation did not retain an absent observation",
+        ));
+    }
+    if prepared.staging.relative_path != staging.relative_path {
+        return Err(String::from(
+            "absent-final publication staging leaf does not match preparation",
+        ));
+    }
+    if prepared.final_leaf == prepared.staging.relative_path {
+        return Err(String::from(
+            "absent-final publication final and staging leaves must be distinct",
+        ));
+    }
+    let (PreparedFileEvidence::ContentHash(expected), PreparedFileEvidence::ContentHash(staged)) =
+        (&prepared.copy_validated_evidence, staged_content)
+    else {
+        return Err(String::from(
+            "absent-final publication requires exact CopyValidated content hashes",
+        ));
+    };
+    if expected != staged {
+        return Err(String::from(
+            "absent-final publication content does not match preparation",
         ));
     }
     if published.reopened_final.identity.stable_id != staging.identity.stable_id
@@ -355,6 +387,15 @@ pub(super) fn validate_absent_final_no_replace_publication(
         ));
     }
     validate_file_evidence(staged_content, &published.reopened_final.content)
+}
+
+pub(super) fn is_absent_final_no_replace_publication(
+    published: &FilesystemPublishedWaveformRestore,
+) -> bool {
+    matches!(
+        &published.final_claim,
+        FinalNamespaceClaim::AbsentFinalNoReplace { .. }
+    )
 }
 
 fn validate_file_evidence(
@@ -479,7 +520,7 @@ pub(crate) fn test_absent_final_publication_evidence(
 mod tests {
     use super::*;
 
-    fn absent_final_fixture() -> (PreparedWaveformRestore, FilesystemStagedWaveformRestore) {
+    fn absent_final_fixture() -> (PreparedTargetContract, FilesystemStagedWaveformRestore) {
         let staging_identity = PreparedObjectIdentity {
             stable_id: String::from("fixture-staging"),
             change_marker: None,
@@ -501,40 +542,25 @@ mod tests {
             change_marker: None,
             len: 0,
         };
-        let target_identity = PreparedObjectIdentity {
-            stable_id: String::from("fixture-target"),
-            change_marker: None,
-            len: 4,
-        };
         let root = PreparedRootCapability {
             path: std::path::PathBuf::from("/fixture"),
             identity: root_identity.clone(),
         };
-        let target = PreparedLeafLocator {
-            relative_path: std::path::PathBuf::from("target.wav"),
-            identity: target_identity.clone(),
-        };
-        let prepared = PreparedWaveformRestore {
-            direction: PreparedRestoreDirection::Undo,
-            source_id: String::from("fixture-source"),
-            source_root: root.clone(),
-            target_root: root.clone(),
-            target,
-            backup_root: root,
-            backup: PreparedLeafLocator {
-                relative_path: std::path::PathBuf::from("backup.wav"),
-                identity: target_identity.clone(),
+        let prepared = PreparedTargetContract::AbsentFinalNoReplace(
+            super::super::operation_journal::PreparedAbsentFinalNoReplace {
+                direction: PreparedRestoreDirection::Undo,
+                source_id: String::from("fixture-source"),
+                source_root: root.clone(),
+                target_parent: root,
+                final_leaf: std::path::PathBuf::from("target.wav"),
+                staging: PreparedStagingLocator {
+                    relative_path: std::path::PathBuf::from("staging.wav"),
+                    absent: true,
+                },
+                final_observation: AbsentFinalObservation::ObservedAbsent,
+                copy_validated_evidence: staging_content,
             },
-            replacement: ReplaceExpectedIdentity::Existing(target_identity),
-            staging: PreparedStagingLocator {
-                relative_path: std::path::PathBuf::from("staging.wav"),
-                absent: false,
-            },
-            evidence: PreparedRestoreEvidence {
-                target: PreparedFileEvidence::ContentHash([1; 32]),
-                backup: staging_content,
-            },
-        };
+        );
         (prepared, staged)
     }
 
@@ -553,15 +579,17 @@ mod tests {
     #[test]
     fn absent_final_evidence_has_a_distinct_validator_boundary() {
         let (prepared, staged) = absent_final_fixture();
-        let published =
-            test_absent_final_publication_evidence(&prepared.target_root.identity, &staged);
+        let PreparedTargetContract::AbsentFinalNoReplace(absent_prepared) = &prepared else {
+            panic!("test fixture must use absent-final preparation");
+        };
+        let published = test_absent_final_publication_evidence(
+            &absent_prepared.target_parent.identity,
+            &staged,
+        );
 
         assert!(
             validate_absent_final_no_replace_publication(&prepared, &staged, &published).is_ok()
         );
-        let waveform_error = validate_publication_evidence(&prepared, &staged, &published)
-            .expect_err("waveform restore validator must reject absent-final evidence");
-        assert!(waveform_error.contains("expected-identity replacement"));
 
         let mut invalid_content = published.clone();
         invalid_content.reopened_final.content = PreparedFileEvidence::Unverifiable;
