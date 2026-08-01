@@ -276,6 +276,30 @@ fn committed_projection_delta_applies_only_at_the_next_revision() {
         Rating::KEEP_1
     );
 
+    assert!(browser.apply_committed_projection_delta(
+        &source_id,
+        BrowserProjectionDelta {
+            manifest_revision: revision + 1,
+            snapshot_revision: revision + 1,
+            folders: Vec::new(),
+            removed_file_ids: Vec::new(),
+            upserted_files: Vec::new(),
+        },
+    ));
+    assert!(browser.tree.folders[0].find_file(&path_id(&new)).is_some());
+
+    assert!(!browser.apply_committed_projection_delta(
+        &source_id,
+        BrowserProjectionDelta {
+            manifest_revision: revision,
+            snapshot_revision: revision,
+            folders: Vec::new(),
+            removed_file_ids: vec![path_id(&new)],
+            upserted_files: Vec::new(),
+        },
+    ));
+    assert!(browser.tree.folders[0].find_file(&path_id(&new)).is_some());
+
     assert!(!browser.apply_committed_projection_delta(
         &source_id,
         BrowserProjectionDelta {

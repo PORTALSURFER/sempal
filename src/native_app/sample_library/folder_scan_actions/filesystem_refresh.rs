@@ -7,12 +7,14 @@ use crate::native_app::app::{
     SourceRefreshCause, SourceRefreshRequest, emit_gui_action,
 };
 use crate::native_app::sample_library::folder_scan_actions::filesystem_refresh_worker::{
-    recover_source_filesystem_sync, sync_source_database_paths_with_writer,
+    capture_source_root_identity, recover_source_filesystem_sync,
+    sync_source_database_paths_with_writer,
 };
 use crate::native_app::sample_library::source_prep::{
     CacheWarmIntent, MetadataRefreshIntent, ReadinessIntent, SourceFeedbackIntent,
     SourcePrepIntents, SourcePriorityIntent,
 };
+use crate::native_app::sample_library::source_watcher::{CheckpointCause, RevisionBoundCheckpoint};
 use crate::native_app::source_processing::{
     ExternalScanHandoff, manifest_delta_requires_browser_refresh,
 };
@@ -135,6 +137,7 @@ impl NativeAppState {
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
         let source_id = result.source_id;
+        let root_identity = result.root_identity;
         let journal_checkpoint_event_id = result.journal_checkpoint_event_id;
         self.library
             .mark_targeted_source_sync_finished(&source_id, result.lifecycle_generation);
@@ -162,6 +165,8 @@ impl NativeAppState {
             Ok(success) => {
                 let renames_reconciled = success.renames_reconciled;
                 let mut incomplete_error = success.incomplete_error;
+                let mut incomplete_reconciliation_reason =
+                    "filesystem_sync_incomplete_after_commit";
                 let delta = success.committed_delta;
                 let browser_delta_applied = if incomplete_error.is_none() {
                     match success.browser_projection_delta {
@@ -195,6 +200,39 @@ impl NativeAppState {
                         "Falling back to a full browser projection after committed projection completion failed"
                     );
                 }
+                if !result.cancelled && projection_accepted && incomplete_error.is_none() {
+                    match (root_identity, journal_checkpoint_event_id) {
+                        (Some(root_identity), Some(event_id)) => self
+                            .background
+                            .source_processing
+                            .budget_handle()
+                            .submit_watcher_checkpoint(RevisionBoundCheckpoint {
+                                source_id: source_id.clone(),
+                                lifecycle_generation: result.lifecycle_generation,
+                                source_revision: delta.revision,
+                                root_identity,
+                                event_id,
+                                cause: CheckpointCause::TargetedReplay,
+                            }),
+                        (None, _) => {
+                            incomplete_error = Some(String::from(
+                                "targeted filesystem sync completed without worker-captured source root identity",
+                            ));
+                            incomplete_reconciliation_reason =
+                                "targeted_sync_root_identity_missing";
+                            tracing::warn!(
+                                source_id = %source_id,
+                                revision = delta.revision,
+                                "Refusing targeted watcher checkpoint without worker-captured root identity"
+                            );
+                        }
+                        (Some(_), None) => tracing::debug!(
+                            source_id = %source_id,
+                            revision = delta.revision,
+                            "Skipping targeted watcher checkpoint because replay event identity is unavailable"
+                        ),
+                    }
+                }
                 self.reapply_desired_rating_overlay();
                 tracing::info!(
                     source_id = %source_id,
@@ -206,7 +244,11 @@ impl NativeAppState {
                     renames_reconciled,
                     "Committed filesystem source delta"
                 );
-                if !result.cancelled && !delta.is_empty() && projection_accepted {
+                if !result.cancelled
+                    && !delta.is_empty()
+                    && projection_accepted
+                    && incomplete_error.is_none()
+                {
                     self.ui.status.sample = format!("Synced {changed_count} filesystem change(s)");
                     self.queue_source_prep(
                         source_id.clone(),
@@ -220,17 +262,8 @@ impl NativeAppState {
                         .source_processing
                         .wake_source_for_full_reconciliation(
                             &source_id,
-                            "filesystem_sync_incomplete_after_commit",
+                            incomplete_reconciliation_reason,
                         );
-                }
-                if !result.cancelled
-                    && projection_accepted
-                    && let (Some(watcher), Some(event_id)) = (
-                        self.library.source_watcher.as_ref(),
-                        journal_checkpoint_event_id,
-                    )
-                {
-                    watcher.advance_journal_checkpoint(source_id.clone(), event_id);
                 }
                 if result.cancelled || incomplete_error.is_some() {
                     self.queue_filesystem_source_refresh(
@@ -554,6 +587,7 @@ impl NativeAppState {
                         source_id,
                         lifecycle_generation: expected_lifecycle_generation,
                         changed_count,
+                        root_identity: capture_source_root_identity(&root),
                         journal_checkpoint_event_id,
                         cancelled: true,
                         result: Err(String::from("Source filesystem sync canceled")),
@@ -562,6 +596,7 @@ impl NativeAppState {
                 let lifecycle_generation = permit.lifecycle_generation();
                 let cancel = permit.cancel_token();
                 let scan_writer = permit.scan_writer();
+                let root_identity = capture_source_root_identity(&root);
                 let recovery_source_id = source_id.clone();
                 let mut result = recover_source_filesystem_sync(
                     recovery_source_id,
@@ -579,6 +614,7 @@ impl NativeAppState {
                         )
                     },
                 );
+                result.root_identity = root_identity;
                 result.journal_checkpoint_event_id = journal_checkpoint_event_id;
                 let projection_ticket = match &mut result.result {
                     Ok(success)
@@ -651,16 +687,18 @@ fn manifest_audit_followup(
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     use super::{ManifestAuditFollowup, manifest_audit_followup};
     use crate::native_app::{
         app::{BrowserProjectionDelta, SourceFilesystemSyncResult, SourceFilesystemSyncSuccess},
         sample_library::folder_browser::{FolderBrowserState, scan::scan_source_with_progress},
+        sample_library::source_watcher::CheckpointCause,
         test_support::state::NativeAppStateFixture,
     };
     use wavecrate::sample_sources::scanner::{CommittedSourceDelta, ManifestIdentityDelta};
     use wavecrate::sample_sources::{SampleSource, SourceId};
+    use wavecrate_library::filesystem_identity::stable_filesystem_identity;
 
     #[test]
     fn content_generation_only_audit_reconciles_without_filesystem_rescan() {
@@ -743,6 +781,7 @@ mod tests {
             source_id,
             lifecycle_generation: generation,
             changed_count: 1,
+            root_identity: None,
             journal_checkpoint_event_id: Some(73),
             cancelled: false,
             result: Ok(SourceFilesystemSyncSuccess {
@@ -762,6 +801,240 @@ mod tests {
                 projection_handoff_ticket: None,
             }),
         }
+    }
+
+    fn stable_root_identity(root: &Path) -> String {
+        let metadata = std::fs::metadata(root).expect("source metadata");
+        stable_filesystem_identity(root, &metadata).expect("stable source root identity")
+    }
+
+    fn targeted_result_with_projection(
+        state: &crate::native_app::app::NativeAppState,
+        source_id: String,
+        generation: u64,
+        root_identity: Option<String>,
+        projection_revision: u64,
+    ) -> SourceFilesystemSyncResult {
+        let committed_delta = CommittedSourceDelta {
+            revision: projection_revision,
+            ..CommittedSourceDelta::default()
+        };
+        let ticket = state
+            .background
+            .source_processing
+            .budget_handle()
+            .acquire_scan_for_generation(&source_id, generation)
+            .expect("targeted replay scan permit")
+            .release_after_projection_handoff(committed_delta.clone());
+        SourceFilesystemSyncResult {
+            source_id,
+            lifecycle_generation: generation,
+            changed_count: 1,
+            root_identity,
+            journal_checkpoint_event_id: Some(73),
+            cancelled: false,
+            result: Ok(SourceFilesystemSyncSuccess {
+                renames_reconciled: 0,
+                incomplete_error: None,
+                committed_delta,
+                browser_projection_delta: Some(BrowserProjectionDelta {
+                    manifest_revision: projection_revision,
+                    snapshot_revision: projection_revision,
+                    folders: Vec::new(),
+                    removed_file_ids: Vec::new(),
+                    upserted_files: Vec::new(),
+                }),
+                projection_handoff_ticket: Some(ticket),
+            }),
+        }
+    }
+
+    #[test]
+    fn accepted_targeted_replay_submits_revision_bound_checkpoint_to_owner_queue() {
+        let (root, mut state, source_id, generation) = completion_test_state();
+        let current_revision = state
+            .library
+            .folder_browser
+            .source_projection_revision(&source_id)
+            .expect("current browser projection revision");
+        let result = targeted_result_with_projection(
+            &state,
+            source_id.clone(),
+            generation,
+            Some(stable_root_identity(root.path())),
+            current_revision.saturating_add(1),
+        );
+        let mut context = radiant::prelude::UiUpdateContext::default();
+
+        state.finish_source_filesystem_sync(result, &mut context);
+
+        let checkpoint = state
+            .background
+            .source_processing
+            .budget_handle()
+            .pending_watcher_checkpoint_for_tests()
+            .expect("accepted targeted replay checkpoint");
+        assert_eq!(checkpoint.source_id, source_id);
+        assert_eq!(checkpoint.lifecycle_generation, generation);
+        assert_eq!(checkpoint.source_revision, current_revision + 1);
+        assert_eq!(checkpoint.root_identity, stable_root_identity(root.path()));
+        assert_eq!(checkpoint.event_id, 73);
+        assert_eq!(checkpoint.cause, CheckpointCause::TargetedReplay);
+    }
+
+    #[test]
+    fn missing_worker_root_identity_requests_reconciliation_without_checkpoint() {
+        let (_root, mut state, source_id, generation) = completion_test_state();
+        let current_revision = state
+            .library
+            .folder_browser
+            .source_projection_revision(&source_id)
+            .expect("current browser projection revision");
+        let result = targeted_result_with_projection(
+            &state,
+            source_id.clone(),
+            generation,
+            None,
+            current_revision.saturating_add(1),
+        );
+        let mut context = radiant::prelude::UiUpdateContext::default();
+
+        state.finish_source_filesystem_sync(result, &mut context);
+
+        assert!(
+            state
+                .background
+                .source_processing
+                .budget_handle()
+                .pending_watcher_checkpoint_for_tests()
+                .is_none()
+        );
+        assert!(
+            state
+                .background
+                .source_processing
+                .source_dirty_for_tests(&source_id)
+        );
+    }
+
+    #[test]
+    fn stale_targeted_replay_completion_does_not_submit_checkpoint() {
+        let (root, mut state, source_id, generation) = completion_test_state();
+        let current_revision = state
+            .library
+            .folder_browser
+            .source_projection_revision(&source_id)
+            .expect("current browser projection revision");
+        let mut result = targeted_result_with_projection(
+            &state,
+            source_id.clone(),
+            generation,
+            Some(stable_root_identity(root.path())),
+            current_revision.saturating_add(1),
+        );
+        result.lifecycle_generation = generation.wrapping_sub(1);
+        let mut context = radiant::prelude::UiUpdateContext::default();
+
+        state.finish_source_filesystem_sync(result, &mut context);
+
+        assert!(
+            state
+                .background
+                .source_processing
+                .budget_handle()
+                .pending_watcher_checkpoint_for_tests()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn rejected_projection_ticket_does_not_submit_checkpoint() {
+        let (root, mut state, source_id, generation) = completion_test_state();
+        let current_revision = state
+            .library
+            .folder_browser
+            .source_projection_revision(&source_id)
+            .expect("current browser projection revision");
+        let result = targeted_result_with_projection(
+            &state,
+            source_id.clone(),
+            generation,
+            Some(stable_root_identity(root.path())),
+            current_revision.saturating_add(2),
+        );
+        let mut context = radiant::prelude::UiUpdateContext::default();
+
+        state.finish_source_filesystem_sync(result, &mut context);
+
+        assert!(
+            state
+                .background
+                .source_processing
+                .budget_handle()
+                .pending_watcher_checkpoint_for_tests()
+                .is_none()
+        );
+        assert!(
+            state
+                .background
+                .source_processing
+                .source_dirty_for_tests(&source_id)
+        );
+    }
+
+    #[test]
+    fn stale_already_surpassed_projection_requests_recovery_without_checkpoint() {
+        let (root, mut state, source_id, generation) = completion_test_state();
+        let current_revision = state
+            .library
+            .folder_browser
+            .source_projection_revision(&source_id)
+            .expect("current browser projection revision");
+        assert!(
+            state
+                .library
+                .folder_browser
+                .apply_committed_projection_delta(
+                    &source_id,
+                    BrowserProjectionDelta {
+                        manifest_revision: current_revision + 1,
+                        snapshot_revision: current_revision + 1,
+                        folders: Vec::new(),
+                        removed_file_ids: Vec::new(),
+                        upserted_files: Vec::new(),
+                    },
+                )
+        );
+
+        let result = targeted_result_with_projection(
+            &state,
+            source_id.clone(),
+            generation,
+            Some(stable_root_identity(root.path())),
+            current_revision,
+        );
+        let mut context = radiant::prelude::UiUpdateContext::default();
+
+        state.finish_source_filesystem_sync(result, &mut context);
+
+        assert!(
+            state
+                .background
+                .source_processing
+                .budget_handle()
+                .pending_watcher_checkpoint_for_tests()
+                .is_none(),
+            "a stale projection must not acknowledge the watcher cursor"
+        );
+        assert!(
+            state
+                .background
+                .source_processing
+                .source_dirty_for_tests(&source_id),
+            "a stale projection must request conservative source recovery"
+        );
+        assert!(state.library.folder_scan_active());
+        assert!(state.library.source_watcher.is_none());
     }
 
     #[test]

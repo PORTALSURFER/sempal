@@ -3,6 +3,8 @@ use super::{
     PendingProjectionFence, PendingReadinessDelta, PendingReadinessDeltaMerge,
     PendingSourceRetirement, PriorityContext, SampleSource, source_storage_identity_matches,
 };
+use crate::native_app::sample_library::source_watcher::RevisionBoundCheckpoint;
+use std::collections::VecDeque;
 
 pub(super) struct ControlState {
     pub(super) sources: BTreeMap<String, SampleSource>,
@@ -18,6 +20,7 @@ pub(super) struct ControlState {
     pub(super) deferred_lifecycle_audit_sources: BTreeSet<String>,
     pub(super) pending_readiness_deltas: BTreeMap<String, PendingReadinessDelta>,
     pub(super) pending_projection_fences: BTreeMap<String, PendingProjectionFence>,
+    pub(super) pending_watcher_checkpoints: VecDeque<RevisionBoundCheckpoint>,
     pub(super) accepted_manifest_revisions: BTreeMap<String, AcceptedManifestRevision>,
     pub(super) awaiting_foreground_refresh_sources: BTreeSet<String>,
     pub(super) force_manifest_audit_sources: BTreeSet<String>,

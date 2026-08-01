@@ -1,11 +1,12 @@
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::atomic::{AtomicBool, Ordering},
     thread,
     time::Duration,
 };
 
 use wavecrate::sample_sources::SourceDatabase;
+use wavecrate_library::filesystem_identity::stable_filesystem_identity;
 use wavecrate_library::sample_sources::is_supported_audio;
 use wavecrate_scan::sample_sources::scanner::{
     self, ScanWritePhase, ScanWriter, UncoordinatedScanWriter,
@@ -35,6 +36,7 @@ pub(in crate::native_app) fn recover_source_filesystem_sync(
             source_id,
             lifecycle_generation,
             changed_count,
+            root_identity: None,
             journal_checkpoint_event_id: None,
             cancelled: false,
             result: Err(String::from(
@@ -63,6 +65,12 @@ pub(in crate::native_app) fn sync_source_database_paths(
     )
 }
 
+pub(in crate::native_app) fn capture_source_root_identity(root: &Path) -> Option<String> {
+    std::fs::metadata(root)
+        .ok()
+        .and_then(|metadata| stable_filesystem_identity(root, &metadata))
+}
+
 pub(in crate::native_app) fn sync_source_database_paths_with_writer(
     source_id: String,
     root: PathBuf,
@@ -72,6 +80,7 @@ pub(in crate::native_app) fn sync_source_database_paths_with_writer(
     cancel: &AtomicBool,
     writer: &impl ScanWriter,
 ) -> SourceFilesystemSyncResult {
+    let root_identity = capture_source_root_identity(&root);
     let mut result = Err(String::from("Source filesystem sync did not run"));
     for attempt in 0..MAX_SYNC_ATTEMPTS {
         result = sync_source_database_paths_once(
@@ -104,6 +113,7 @@ pub(in crate::native_app) fn sync_source_database_paths_with_writer(
         source_id,
         lifecycle_generation: 0,
         changed_count,
+        root_identity,
         journal_checkpoint_event_id: None,
         cancelled: cancel.load(Ordering::Acquire),
         result,
@@ -392,6 +402,7 @@ mod tests {
         );
 
         let success = result.result.expect("sync result");
+        assert!(result.root_identity.is_some());
         assert_eq!(success.renames_reconciled, 1);
         assert_eq!(success.committed_delta.moved.len(), 1);
         let projection = success

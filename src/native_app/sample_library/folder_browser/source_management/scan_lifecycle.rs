@@ -38,8 +38,27 @@ impl FolderBrowserState {
         let Some(current_revision) = self.source.sources[source_index].projection_revision else {
             return false;
         };
-        if delta.manifest_revision <= current_revision {
+
+        if delta.manifest_revision != delta.snapshot_revision {
+            tracing::info!(
+                source_id,
+                manifest_revision = delta.manifest_revision,
+                snapshot_revision = delta.snapshot_revision,
+                "Browser projection delta has mismatched manifest and snapshot revisions"
+            );
+            return false;
+        }
+        if delta.manifest_revision == current_revision {
             return true;
+        }
+        if delta.manifest_revision < current_revision {
+            tracing::info!(
+                source_id,
+                current_revision,
+                incoming_revision = delta.manifest_revision,
+                "Stale browser projection delta requires a full snapshot refresh"
+            );
+            return false;
         }
         if delta.manifest_revision != current_revision.saturating_add(1) {
             tracing::info!(

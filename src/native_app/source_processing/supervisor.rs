@@ -89,6 +89,7 @@ mod state;
 #[cfg(test)]
 mod state_machine_observation;
 mod telemetry;
+mod watcher_checkpoint;
 
 use admission::install_worker_app_root;
 pub(in crate::native_app) use admission::{

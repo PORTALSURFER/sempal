@@ -3,6 +3,7 @@ use super::{
     ExternalScanRegistration, Ordering, PathBuf, ProcessingLane, SampleSource, Shared,
     SourceDeltaQueueResult, resolve_registered_source_for_scan_locked,
 };
+use crate::native_app::sample_library::source_watcher::RevisionBoundCheckpoint;
 
 /// The typed handoff an external scan must make before releasing its source-processing budget.
 ///
@@ -212,6 +213,33 @@ pub(in crate::native_app) enum SourceScanAdmissionState {
 }
 
 impl SourceProcessingBudgetHandle {
+    /// Enqueue a typed watcher checkpoint for the source-processing coordinator.
+    ///
+    /// Submission is deliberately limited to the in-memory queue and coordinator wakeup. The
+    /// caller never opens SQLite, inspects filesystem metadata, or waits on the database writer
+    /// gate.
+    pub(in crate::native_app) fn submit_watcher_checkpoint(
+        &self,
+        request: RevisionBoundCheckpoint,
+    ) {
+        let mut control = self.shared.control();
+        control.pending_watcher_checkpoints.push_back(request);
+        control.notify("watcher_checkpoint_submitted");
+        drop(control);
+        self.shared.wake.notify_one();
+    }
+
+    #[cfg(test)]
+    pub(in crate::native_app) fn pending_watcher_checkpoint_for_tests(
+        &self,
+    ) -> Option<RevisionBoundCheckpoint> {
+        self.shared
+            .control()
+            .pending_watcher_checkpoints
+            .front()
+            .cloned()
+    }
+
     #[cfg(test)]
     pub(in crate::native_app) fn lifecycle_generation(&self, source_id: &str) -> Option<u64> {
         self.shared

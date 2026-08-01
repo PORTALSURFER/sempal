@@ -456,6 +456,8 @@ pub(in crate::native_app) struct SourceFilesystemSyncResult {
     pub(in crate::native_app) source_id: String,
     pub(in crate::native_app) lifecycle_generation: u64,
     pub(in crate::native_app) changed_count: usize,
+    /// Stable root identity captured by the background sync worker before filesystem/DB work.
+    pub(in crate::native_app) root_identity: Option<String>,
     pub(in crate::native_app) journal_checkpoint_event_id: Option<u64>,
     pub(in crate::native_app) cancelled: bool,
     pub(in crate::native_app) result: Result<SourceFilesystemSyncSuccess, String>,
