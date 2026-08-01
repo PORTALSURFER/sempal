@@ -4,9 +4,10 @@
 //! fail-closed until a platform-specific implementation can prove the complete contract.
 
 use std::fs::File;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use super::capacity_gate::VolumeIdentity;
 use super::operation_journal::{PreparedFileEvidence, PreparedObjectIdentity};
@@ -135,7 +136,89 @@ fn classify_candidate(
         candidate_assessment,
         missing_invariant: ReplacementMissingInvariant::AtomicExpectedTargetIdentityComparison,
         decision: ReplacementQualificationDecision::PlatformQualificationRequired,
-        retry_condition: ReplacementQualificationRetryCondition::PlatformBuildOrQualificationPolicyChange,
+        retry_condition:
+            ReplacementQualificationRetryCondition::PlatformBuildOrQualificationPolicyChange,
+    }
+}
+
+/// Filesystem-free durable expectations handed from the journal owner to the physical file
+/// owner. The request contains no descriptor, store, or mutation authority.
+pub(in crate::native_app) struct ExpectedIdentityReplacementOwnerRequest {
+    operation_id: Uuid,
+    target_root_path: PathBuf,
+    target_leaf: PathBuf,
+    staging_leaf: PathBuf,
+    expected_target_root: PreparedObjectIdentity,
+    expected_target: PreparedObjectIdentity,
+    expected_staging: PreparedObjectIdentity,
+    expected_target_content: PreparedFileEvidence,
+    expected_staging_content: PreparedFileEvidence,
+    expected_volume: VolumeIdentity,
+}
+
+impl ExpectedIdentityReplacementOwnerRequest {
+    /// Construct an owned request only from a complete, already-validated durable snapshot.
+    pub(super) fn try_new(
+        operation_id: Uuid,
+        target_root_path: PathBuf,
+        target_leaf: PathBuf,
+        staging_leaf: PathBuf,
+        expected_target_root: PreparedObjectIdentity,
+        expected_target: PreparedObjectIdentity,
+        expected_staging: PreparedObjectIdentity,
+        expected_target_content: PreparedFileEvidence,
+        expected_staging_content: PreparedFileEvidence,
+        expected_volume: VolumeIdentity,
+    ) -> Result<Self, String> {
+        if !target_root_path.is_absolute() {
+            return Err(String::from("target root locator must be absolute"));
+        }
+        if !is_single_clean_normal_leaf(&target_leaf) {
+            return Err(String::from(
+                "target locator must be a single clean normal leaf",
+            ));
+        }
+        if !is_single_clean_normal_leaf(&staging_leaf) {
+            return Err(String::from(
+                "staging locator must be a single clean normal leaf",
+            ));
+        }
+        if target_leaf == staging_leaf {
+            return Err(String::from("target and staging locators must be distinct"));
+        }
+        if expected_target_root.stable_id.is_empty()
+            || expected_target.stable_id.is_empty()
+            || expected_staging.stable_id.is_empty()
+        {
+            return Err(String::from(
+                "expected filesystem identities must not be empty",
+            ));
+        }
+        Ok(Self {
+            operation_id,
+            target_root_path,
+            target_leaf,
+            staging_leaf,
+            expected_target_root,
+            expected_target,
+            expected_staging,
+            expected_target_content,
+            expected_staging_content,
+            expected_volume,
+        })
+    }
+
+    #[cfg(test)]
+    pub(super) fn replace_expected_volume_for_test(&mut self, volume: VolumeIdentity) {
+        self.expected_volume = volume;
+    }
+
+    #[cfg(test)]
+    pub(super) fn replace_expected_target_root_for_test(
+        &mut self,
+        identity: PreparedObjectIdentity,
+    ) {
+        self.expected_target_root = identity;
     }
 }
 
@@ -144,17 +227,17 @@ fn classify_candidate(
 /// The request intentionally has no absolute mutation-authoritative pathname.  The retained
 /// target-parent, target, and staging handles are the capabilities an implementation may use;
 /// relative names are included only to describe the already-validated namespace entries.
-pub(super) struct ExpectedIdentityReplacementRequest<'a> {
-    pub(super) target_parent: &'a File,
-    pub(super) target: &'a File,
-    pub(super) staging: &'a File,
-    pub(super) target_leaf: &'a Path,
-    pub(super) staging_leaf: &'a Path,
-    pub(super) target_parent_identity: &'a PreparedObjectIdentity,
-    pub(super) expected_target: &'a PreparedObjectIdentity,
-    pub(super) staging_identity: &'a PreparedObjectIdentity,
-    pub(super) staging_content: &'a PreparedFileEvidence,
-    pub(super) volume: &'a VolumeIdentity,
+struct ExpectedIdentityReplacementRequest<'a> {
+    target_parent: &'a File,
+    target: &'a File,
+    staging: &'a File,
+    target_leaf: &'a Path,
+    staging_leaf: &'a Path,
+    target_parent_identity: &'a PreparedObjectIdentity,
+    expected_target: &'a PreparedObjectIdentity,
+    staging_identity: &'a PreparedObjectIdentity,
+    staging_content: &'a PreparedFileEvidence,
+    volume: &'a VolumeIdentity,
 }
 
 /// A sealed result that contains all evidence needed to construct publication evidence.
@@ -203,12 +286,50 @@ pub(super) enum ExpectedIdentityReplacementOutcome {
     PlatformQualificationRequired {
         assessment: ReplacementQualificationAssessment,
     },
-    Drift { reason: String },
-    Ambiguous { reason: String },
+    Drift {
+        reason: String,
+    },
+    Ambiguous {
+        reason: String,
+    },
+}
+
+/// Opaque result returned by the physical file owner. It is deliberately neither cloneable nor
+/// serializable; only the operation-bound coordinator may consume it.
+pub(in crate::native_app) struct OperationBoundExpectedIdentityReplacementResult {
+    operation_id: Uuid,
+    outcome: ExpectedIdentityReplacementOutcome,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub(super) enum ExpectedIdentityReplacementResultError {
+    OperationIdDrift,
+}
+
+impl OperationBoundExpectedIdentityReplacementResult {
+    pub(super) fn operation_id(&self) -> Uuid {
+        self.operation_id
+    }
+
+    pub(super) fn into_outcome(
+        self,
+        expected_operation_id: Uuid,
+    ) -> Result<ExpectedIdentityReplacementOutcome, ExpectedIdentityReplacementResultError> {
+        if self.operation_id != expected_operation_id {
+            return Err(ExpectedIdentityReplacementResultError::OperationIdDrift);
+        }
+        Ok(self.outcome)
+    }
+
+    #[cfg(test)]
+    pub(super) fn replace_operation_id_for_test(mut self, operation_id: Uuid) -> Self {
+        self.operation_id = operation_id;
+        self
+    }
 }
 
 /// Sealed capability-bound adapter contract.
-pub(super) trait ExpectedIdentityReplacementAdapter: sealed::Sealed {
+trait ExpectedIdentityReplacementAdapter: sealed::Sealed {
     fn attempt(
         &self,
         request: ExpectedIdentityReplacementRequest<'_>,
@@ -253,6 +374,224 @@ impl ExpectedIdentityReplacementAdapter for ProductionExpectedIdentityReplacemen
     }
 }
 
+struct ReacquiredExpectedIdentityRestore {
+    target_root: File,
+    target_parent: File,
+    target: File,
+    staging: File,
+    target_parent_identity: PreparedObjectIdentity,
+    target_identity: PreparedObjectIdentity,
+    staging_identity: PreparedObjectIdentity,
+    staging_content: PreparedFileEvidence,
+    volume: VolumeIdentity,
+}
+
+/// Execute the expected-identity attempt at the physical file-owner boundary. All descriptor
+/// acquisition and live validation happen here, before the private borrowed adapter request is
+/// constructed. The current production adapter remains qualification-only and never mutates.
+pub(in crate::native_app) fn acquire_expected_identity_publication(
+    request: ExpectedIdentityReplacementOwnerRequest,
+) -> OperationBoundExpectedIdentityReplacementResult {
+    acquire_expected_identity_publication_with_adapter(
+        request,
+        &ProductionExpectedIdentityReplacementAdapter,
+    )
+}
+
+fn acquire_expected_identity_publication_with_adapter<A>(
+    request: ExpectedIdentityReplacementOwnerRequest,
+    adapter: &A,
+) -> OperationBoundExpectedIdentityReplacementResult
+where
+    A: ExpectedIdentityReplacementAdapter,
+{
+    let operation_id = request.operation_id;
+
+    #[cfg(not(unix))]
+    {
+        return OperationBoundExpectedIdentityReplacementResult {
+            operation_id,
+            outcome: ExpectedIdentityReplacementOutcome::PlatformQualificationRequired {
+                assessment: classify_candidate(
+                    ReplacementPlatformFamily::current(),
+                    ObservedFilesystemClassification::Unavailable,
+                    &request.expected_volume,
+                    ReplacementCandidatePrimitive::NoPublicCandidate,
+                ),
+            },
+        };
+    }
+
+    #[cfg(unix)]
+    let outcome = match reacquire_expected_identity_restore(&request) {
+        Ok(reacquired) => {
+            let borrowed_request = ExpectedIdentityReplacementRequest {
+                target_parent: &reacquired.target_parent,
+                target: &reacquired.target,
+                staging: &reacquired.staging,
+                target_leaf: &request.target_leaf,
+                staging_leaf: &request.staging_leaf,
+                target_parent_identity: &reacquired.target_parent_identity,
+                expected_target: &reacquired.target_identity,
+                staging_identity: &reacquired.staging_identity,
+                staging_content: &reacquired.staging_content,
+                volume: &reacquired.volume,
+            };
+            let _target_root = &reacquired.target_root;
+            adapter.attempt(borrowed_request)
+        }
+        Err(reason) => ExpectedIdentityReplacementOutcome::Drift { reason },
+    };
+
+    OperationBoundExpectedIdentityReplacementResult {
+        operation_id,
+        outcome,
+    }
+}
+
+#[cfg(test)]
+pub(super) fn acquire_expected_identity_publication_with_test_adapter(
+    request: ExpectedIdentityReplacementOwnerRequest,
+    adapter: &TestQualifiedExpectedIdentityReplacementAdapter,
+) -> OperationBoundExpectedIdentityReplacementResult {
+    acquire_expected_identity_publication_with_adapter(request, adapter)
+}
+
+#[cfg(unix)]
+fn reacquire_expected_identity_restore(
+    request: &ExpectedIdentityReplacementOwnerRequest,
+) -> Result<ReacquiredExpectedIdentityRestore, String> {
+    if !is_single_clean_normal_leaf(&request.target_leaf)
+        || !is_single_clean_normal_leaf(&request.staging_leaf)
+    {
+        return Err(String::from(
+            "expected-identity publication locator is not a clean leaf",
+        ));
+    }
+
+    // The root is opened without following the final path component. The two leaf opens below
+    // are descriptor-relative O_NOFOLLOW operations, so the absolute root pathname is never a
+    // mutation fallback and cannot escape the verified target directory.
+    let (target_root, target_root_capability) =
+        super::operation_journal::open_root(&request.target_root_path)?;
+    if target_root_capability.identity.stable_id != request.expected_target_root.stable_id {
+        return Err(String::from(
+            "target root identity changed since preparation",
+        ));
+    }
+    let target_parent = target_root
+        .try_clone()
+        .map_err(|error| format!("could not retain target parent capability: {error}"))?;
+
+    let target_display = request.target_root_path.join(&request.target_leaf);
+    let (target, target_identity) = super::operation_journal::open_leaf_relative(
+        &target_parent,
+        &request.target_leaf,
+        &target_display,
+    )?;
+    if target_identity != request.expected_target {
+        return Err(String::from(
+            "target leaf identity changed since preparation",
+        ));
+    }
+    validate_expected_evidence(
+        "target leaf",
+        &request.expected_target_content,
+        &super::operation_journal::prepared_file_evidence(&target),
+    )?;
+    let target_volume = super::capacity_gate::descriptor_capacity_facts(&target)
+        .map_err(|error| error.to_string())?
+        .identity;
+    if target_volume != request.expected_volume {
+        return Err(String::from("target volume identity changed since staging"));
+    }
+
+    let staging_display = request.target_root_path.join(&request.staging_leaf);
+    let (staging, staging_identity) = super::operation_journal::open_leaf_relative(
+        &target_parent,
+        &request.staging_leaf,
+        &staging_display,
+    )?;
+    let staging_volume = super::capacity_gate::descriptor_capacity_facts(&staging)
+        .map_err(|error| error.to_string())?
+        .identity;
+    if staging_volume != request.expected_volume {
+        return Err(String::from(
+            "staging volume identity changed since staging",
+        ));
+    }
+    if staging_identity != request.expected_staging {
+        return Err(String::from("staging identity changed since CopyValidated"));
+    }
+    let staging_content = super::operation_journal::prepared_file_evidence(&staging);
+    validate_expected_evidence(
+        "staging",
+        &request.expected_staging_content,
+        &staging_content,
+    )?;
+
+    Ok(ReacquiredExpectedIdentityRestore {
+        target_root,
+        target_parent,
+        target,
+        staging,
+        target_parent_identity: target_root_capability.identity,
+        target_identity,
+        staging_identity,
+        staging_content,
+        volume: request.expected_volume.clone(),
+    })
+}
+
+#[cfg(unix)]
+fn validate_expected_evidence(
+    label: &str,
+    expected: &PreparedFileEvidence,
+    actual: &PreparedFileEvidence,
+) -> Result<(), String> {
+    let valid = match (expected, actual) {
+        (PreparedFileEvidence::Missing, PreparedFileEvidence::Missing) => true,
+        (
+            PreparedFileEvidence::ContentHash(expected),
+            PreparedFileEvidence::ContentHash(actual),
+        ) => expected == actual,
+        (
+            PreparedFileEvidence::Metadata {
+                len: expected_len,
+                is_dir: expected_is_dir,
+                ..
+            },
+            PreparedFileEvidence::Metadata {
+                len: actual_len,
+                is_dir: actual_is_dir,
+                ..
+            },
+        ) => expected_len == actual_len && expected_is_dir == actual_is_dir,
+        (PreparedFileEvidence::Unverifiable, PreparedFileEvidence::Unverifiable) => true,
+        _ => false,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(format!(
+            "{label} content evidence changed since preparation"
+        ))
+    }
+}
+
+fn is_single_clean_normal_leaf(path: &Path) -> bool {
+    if path.as_os_str().is_empty() || path.is_absolute() {
+        return false;
+    }
+    let mut components = path.components();
+    let Some(std::path::Component::Normal(component)) = components.next() else {
+        return false;
+    };
+    components.next().is_none()
+        && Path::new(component) == path
+        && !component.as_encoded_bytes().contains(&0)
+}
+
 #[cfg(test)]
 fn production_assessment_for_test(
     filesystem: ObservedFilesystemClassification,
@@ -267,9 +606,7 @@ fn production_assessment_for_test(
 }
 
 #[cfg(test)]
-fn assert_unsupported_assessment(
-    assessment: &ReplacementQualificationAssessment,
-) {
+fn assert_unsupported_assessment(assessment: &ReplacementQualificationAssessment) {
     assert_eq!(
         assessment.missing_invariant,
         ReplacementMissingInvariant::AtomicExpectedTargetIdentityComparison
@@ -465,9 +802,8 @@ mod tests {
             ReplacementCandidatePrimitive::MacosRenameAtxNpRenameSwap,
         );
         assert_unsupported_assessment(&assessment);
-        let outcome = ExpectedIdentityReplacementOutcome::PlatformQualificationRequired {
-            assessment,
-        };
+        let outcome =
+            ExpectedIdentityReplacementOutcome::PlatformQualificationRequired { assessment };
         assert!(matches!(
             outcome,
             ExpectedIdentityReplacementOutcome::PlatformQualificationRequired { .. }

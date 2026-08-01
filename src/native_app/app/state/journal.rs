@@ -12,7 +12,6 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::native_app::transaction_history::acquire_absent_final_publication_guard;
 use crate::native_app::transaction_history::operation_journal::{
     BoundedAdmissionError, FilesystemStageOutcome, JournalError, OperationDisposition,
     OperationIntent, OperationJournalCoordinator, OperationPhase, PreparedOperationOutcome,
@@ -20,6 +19,9 @@ use crate::native_app::transaction_history::operation_journal::{
 };
 use crate::native_app::transaction_history::{
     HistoryFileAction, HistoryFileIoDirection, RejectedBeforeIntent,
+};
+use crate::native_app::transaction_history::{
+    acquire_absent_final_publication_guard, acquire_expected_identity_publication,
 };
 
 const JOURNAL_COMMAND_CAPACITY: usize = 32;
@@ -695,12 +697,32 @@ fn run_owner(
                                                     owner_result,
                                                 )
                                                 .map_err(JournalOperationError::Journal)
-                                        } else {
+                                        } else if let Some(mut context) = coordinator
+                                            .prepare_expected_identity_publication_attempt_if_needed(
+                                                operation_id,
+                                            )
+                                            .map_err(JournalOperationError::Journal)?
+                                        {
+                                            let request = context
+                                                .take_owner_request()
+                                                .map_err(JournalOperationError::Journal)?;
+                                            let owner_result =
+                                                acquire_expected_identity_publication(request);
                                             coordinator
-                                                .attempt_publish_staged_waveform_restore(
-                                                    operation_id,
+                                                .commit_expected_identity_publication_attempt(
+                                                    context,
+                                                    owner_result,
                                                 )
                                                 .map_err(JournalOperationError::Journal)
+                                        } else {
+                                            Err(JournalOperationError::Journal(
+                                                JournalError::InvalidPublicationEvidence {
+                                                    operation_id,
+                                                    reason: String::from(
+                                                        "filesystem-staged restore has no publication owner contract",
+                                                    ),
+                                                },
+                                            ))
                                         }
                                     }
                                     outcome => Ok(outcome),

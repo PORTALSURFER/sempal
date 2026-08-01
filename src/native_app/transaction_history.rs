@@ -19,6 +19,7 @@ pub(in crate::native_app) use absent_final_recovery::AbsentFinalRecoveryClassifi
 pub(in crate::native_app) use capacity_gate::RejectedBeforeIntent;
 pub(in crate::native_app) use capacity_gate::open_no_follow_path;
 pub(in crate::native_app) use context::TransactionContext;
+pub(in crate::native_app) use expected_identity_replacement::acquire_expected_identity_publication;
 #[cfg(test)]
 pub(in crate::native_app) use file_io::HistoryFileIoOutput;
 pub(in crate::native_app) use file_io::{
