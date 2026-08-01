@@ -80,6 +80,27 @@ fn is_single_clean_normal_leaf(path: &Path) -> bool {
     !component.as_encoded_bytes().contains(&0)
 }
 
+/// Compare an observed object with durable identity while allowing a namespace operation to
+/// refresh the change marker. Recovery uses this predicate before exact content matching.
+pub(super) fn stable_id_and_length_matches(
+    actual: &PreparedObjectIdentity,
+    expected: &PreparedObjectIdentity,
+) -> bool {
+    actual.stable_id == expected.stable_id && actual.len == expected.len
+}
+
+/// Compare only exact content evidence. Metadata-only and unverifiable evidence never qualifies.
+pub(super) fn exact_content_evidence_matches(
+    expected: &PreparedFileEvidence,
+    actual: &PreparedFileEvidence,
+) -> bool {
+    matches!(
+        (expected, actual),
+        (PreparedFileEvidence::ContentHash(expected), PreparedFileEvidence::ContentHash(actual))
+            if expected == actual
+    )
+}
+
 /// Collision observed while claiming the absent final name.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum AbsentFinalNoReplaceCollision {
@@ -310,13 +331,13 @@ pub(super) fn test_mutating_attempt(
             );
         }
     };
-    if !same_reopened_identity(&reopened_identity, request.expected_staging) {
+    if !stable_id_and_length_matches(&reopened_identity, request.expected_staging) {
         return AbsentFinalNoReplaceOutcome::DriftOrVerificationFailure(
             AbsentFinalNoReplaceFailure::ReopenedIdentityDrift,
         );
     }
     let reopened_content = prepared_file_evidence(&reopened_final);
-    if !content_evidence_matches(request.expected_content, &reopened_content) {
+    if !exact_content_evidence_matches(request.expected_content, &reopened_content) {
         return AbsentFinalNoReplaceOutcome::DriftOrVerificationFailure(
             AbsentFinalNoReplaceFailure::ReopenedContentDrift,
         );
@@ -329,16 +350,6 @@ pub(super) fn test_mutating_attempt(
         visibility: PublicationVisibility::VisibilityVerified,
         synchronization: PublicationSynchronization::SyncUnsupportedOrUnverified,
     })
-}
-
-#[cfg(all(target_os = "macos", test))]
-fn same_reopened_identity(
-    actual: &PreparedObjectIdentity,
-    expected: &PreparedObjectIdentity,
-) -> bool {
-    // A namespace claim can update ctime/change_marker while preserving the object.  Stable
-    // filesystem identity plus length, followed by content hashing below, is the ownership proof.
-    actual.stable_id == expected.stable_id && actual.len == expected.len
 }
 
 #[cfg(all(target_os = "macos", test))]
@@ -369,7 +380,7 @@ fn verify_staging(
         return Err(AbsentFinalNoReplaceFailure::StagingIdentityDrift);
     }
     let content = prepared_file_evidence(request.staging);
-    if !content_evidence_matches(request.expected_content, &content) {
+    if !exact_content_evidence_matches(request.expected_content, &content) {
         return Err(AbsentFinalNoReplaceFailure::StagingContentDrift);
     }
 
@@ -388,7 +399,7 @@ fn verify_staging(
         request.staging_leaf,
     )
     .map_err(|_| AbsentFinalNoReplaceFailure::StagingIdentityDrift)?;
-    if !content_evidence_matches(
+    if !exact_content_evidence_matches(
         request.expected_content,
         &prepared_file_evidence(&relative_staging),
     ) {
@@ -464,18 +475,6 @@ fn rename_directory_relative(parent: &File, source: &Path, destination: &Path) -
         )
     };
     if result == 0 { Ok(()) } else { Err(()) }
-}
-
-#[cfg(all(target_os = "macos", test))]
-fn content_evidence_matches(
-    expected: &PreparedFileEvidence,
-    actual: &PreparedFileEvidence,
-) -> bool {
-    matches!(
-        (expected, actual),
-        (PreparedFileEvidence::ContentHash(expected), PreparedFileEvidence::ContentHash(actual))
-            if expected == actual
-    )
 }
 
 #[cfg(test)]

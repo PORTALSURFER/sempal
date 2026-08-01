@@ -1,5 +1,6 @@
-mod app_state;
 mod absent_final_no_replace;
+mod absent_final_recovery;
+mod app_state;
 mod capacity_gate;
 mod context;
 mod expected_identity_replacement;
@@ -11,6 +12,7 @@ pub(in crate::native_app) mod operation_journal;
 pub(in crate::native_app) mod publication;
 mod summary;
 
+pub(in crate::native_app) use absent_final_recovery::AbsentFinalRecoveryClassification;
 pub(in crate::native_app) use capacity_gate::RejectedBeforeIntent;
 pub(in crate::native_app) use capacity_gate::open_no_follow_path;
 pub(in crate::native_app) use context::TransactionContext;
