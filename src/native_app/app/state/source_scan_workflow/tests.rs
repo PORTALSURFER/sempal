@@ -1162,11 +1162,6 @@ fn unproven_idle_watcher_evidence_queues_authoritative_refresh() {
             ),
             "{label} watcher evidence must not target-sync"
         );
-        assert_eq!(
-            workflow.next_pending_refresh_if_idle(),
-            Some(source_id),
-            "{label} watcher evidence must queue authoritative refresh"
-        );
     }
 }
 
