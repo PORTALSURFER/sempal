@@ -333,11 +333,12 @@ mod tests {
         PROTECTED_FREE_SPACE_FLOOR, VolumeIdentity,
     };
     use crate::native_app::transaction_history::operation_journal::{
-        AbsentFinalObservation, FilesystemStagedParticipant, FilesystemStagedWaveformRestore,
-        OperationActor, OperationIntent, OperationJournalCoordinator, OperationKind,
-        OperationPhase, PreparedAbsentFinalNoReplace, PreparedFileEvidence, PreparedLeafLocator,
-        PreparedRestoreDirection, PreparedRootCapability, PreparedStagingLocator,
-        descriptor_identity, prepared_file_evidence,
+        AbsentFinalObservation, AbsentFinalTransactionOwnedProof, FilesystemStagedParticipant,
+        FilesystemStagedWaveformRestore, OperationActor, OperationIntent,
+        OperationJournalCoordinator, OperationKind, OperationPhase, PreparedAbsentFinalNoReplace,
+        PreparedFileEvidence, PreparedLeafLocator, PreparedRestoreDirection,
+        PreparedRootCapability, PreparedStagingLocator, descriptor_identity,
+        prepared_file_evidence,
     };
     use std::ffi::CString;
     use std::fs::{self, File};
@@ -823,6 +824,262 @@ mod tests {
                 .absent_final_recovery_observation
                 .as_ref()
         );
+    }
+
+    #[test]
+    fn coordinator_records_transaction_owned_proof_idempotently_and_after_restart() {
+        let directory = tempfile::tempdir().expect("journal directory");
+        let fixture = Fixture::new();
+        let mut journal = OperationJournalCoordinator::open(directory.path().to_path_buf())
+            .expect("open journal");
+        let operation_id = journal
+            .admit_schema_v2_absent_final_for_test(
+                test_intent(),
+                serde_json::json!({"schema": 2}),
+                fixture.prepared.clone(),
+                fixture.staged.clone(),
+                valid_capacity_plan(),
+            )
+            .expect("admit absent-final record");
+        fs::rename(fixture.staging_path(), fixture.final_path()).expect("rename into final");
+        journal
+            .record_schema_v2_absent_final_recovery_observation(operation_id)
+            .expect("record matching observation");
+        let record_path = journal.record_path_for_test(operation_id);
+        let capacity_before = journal.capacity_claims_for_test();
+        let final_bytes_before = fs::read(fixture.final_path()).expect("final bytes before proof");
+        let record_before_proof = journal.record(operation_id).cloned().expect("record");
+
+        assert_eq!(
+            journal
+                .record_schema_v2_absent_final_transaction_owned_proof(operation_id)
+                .expect("record transaction-owned proof"),
+            AbsentFinalRecoveryClassification::StagingMissingFinalMatches
+        );
+        let record_after_first = journal.record(operation_id).cloned().expect("record");
+        let proof = record_after_first
+            .absent_final_transaction_owned_proof
+            .as_ref()
+            .expect("transaction-owned proof");
+        let observation = record_before_proof
+            .absent_final_recovery_observation
+            .as_ref()
+            .expect("recovery observation");
+        assert_eq!(
+            proof,
+            &AbsentFinalTransactionOwnedProof {
+                target_parent_stable_id: observation.target_parent_stable_id.clone(),
+                final_stable_id: observation.final_stable_id.clone(),
+                final_len: observation.final_len,
+                final_content: observation.final_content.clone(),
+            }
+        );
+        assert_eq!(record_after_first.phase, OperationPhase::FilesystemStaged);
+        assert_eq!(
+            record_after_first.created_unix_ms,
+            record_before_proof.created_unix_ms
+        );
+        assert_eq!(journal.capacity_claims_for_test(), capacity_before);
+        assert_eq!(fs::read(fixture.final_path()).unwrap(), final_bytes_before);
+        assert!(!fixture.staging_path().exists());
+        let bytes_after_first = fs::read(&record_path).expect("record bytes after proof");
+
+        journal
+            .record_schema_v2_absent_final_transaction_owned_proof(operation_id)
+            .expect("repeat transaction-owned proof");
+        assert_eq!(journal.record(operation_id), Some(&record_after_first));
+        assert_eq!(fs::read(&record_path).unwrap(), bytes_after_first);
+        assert_eq!(journal.capacity_claims_for_test(), capacity_before);
+        assert_eq!(fs::read(fixture.final_path()).unwrap(), final_bytes_before);
+        drop(journal);
+
+        let mut reopened = OperationJournalCoordinator::open(directory.path().to_path_buf())
+            .expect("reopen journal");
+        assert_eq!(reopened.record(operation_id), Some(&record_after_first));
+        reopened
+            .record_schema_v2_absent_final_transaction_owned_proof(operation_id)
+            .expect("repeat transaction-owned proof after restart");
+        assert_eq!(reopened.record(operation_id), Some(&record_after_first));
+        assert_eq!(fs::read(&record_path).unwrap(), bytes_after_first);
+        assert_eq!(reopened.capacity_claims_for_test(), capacity_before);
+        assert_eq!(fs::read(fixture.final_path()).unwrap(), final_bytes_before);
+        assert!(!fixture.staging_path().exists());
+    }
+
+    #[test]
+    fn coordinator_requires_existing_matching_observation_for_transaction_owned_proof() {
+        let directory = tempfile::tempdir().expect("journal directory");
+        let fixture = Fixture::new();
+        let mut journal = OperationJournalCoordinator::open(directory.path().to_path_buf())
+            .expect("open journal");
+        let operation_id = journal
+            .admit_schema_v2_absent_final_for_test(
+                test_intent(),
+                serde_json::json!({"schema": 2}),
+                fixture.prepared.clone(),
+                fixture.staged.clone(),
+                valid_capacity_plan(),
+            )
+            .expect("admit absent-final record");
+        fs::rename(fixture.staging_path(), fixture.final_path()).expect("rename into final");
+        let record_path = journal.record_path_for_test(operation_id);
+        let record_before = journal.record(operation_id).cloned().expect("record");
+        let bytes_before = fs::read(&record_path).expect("record bytes");
+        let capacity_before = journal.capacity_claims_for_test();
+        let final_bytes_before = fs::read(fixture.final_path()).expect("final bytes");
+
+        assert!(matches!(
+            journal.record_schema_v2_absent_final_transaction_owned_proof(operation_id),
+            Err(crate::native_app::transaction_history::operation_journal::JournalError::InvalidRecoveryObservation { .. })
+        ));
+        assert_eq!(journal.record(operation_id), Some(&record_before));
+        assert_eq!(fs::read(&record_path).unwrap(), bytes_before);
+        assert_eq!(journal.capacity_claims_for_test(), capacity_before);
+        assert_eq!(fs::read(fixture.final_path()).unwrap(), final_bytes_before);
+        assert!(!fixture.staging_path().exists());
+    }
+
+    #[test]
+    fn coordinator_rejects_stale_final_parent_and_identity_transaction_owned_proof() {
+        let directory = tempfile::tempdir().expect("journal directory");
+        let fixture = Fixture::new();
+        let mut journal = OperationJournalCoordinator::open(directory.path().to_path_buf())
+            .expect("open journal");
+        let operation_id = journal
+            .admit_schema_v2_absent_final_for_test(
+                test_intent(),
+                serde_json::json!({"schema": 2}),
+                fixture.prepared.clone(),
+                fixture.staged.clone(),
+                valid_capacity_plan(),
+            )
+            .expect("admit absent-final record");
+        fs::rename(fixture.staging_path(), fixture.final_path()).expect("rename into final");
+        journal
+            .record_schema_v2_absent_final_recovery_observation(operation_id)
+            .expect("record matching observation");
+        let record_path = journal.record_path_for_test(operation_id);
+        let record_before = journal.record(operation_id).cloned().expect("record");
+        let bytes_before = fs::read(&record_path).expect("record bytes");
+        let capacity_before = journal.capacity_claims_for_test();
+
+        fs::write(fixture.final_path(), vec![b'x'; STAGING_BYTES.len()])
+            .expect("drift final content");
+        let stale_final_bytes = fs::read(fixture.final_path()).expect("stale final bytes");
+        assert!(matches!(
+            journal.record_schema_v2_absent_final_transaction_owned_proof(operation_id),
+            Err(crate::native_app::transaction_history::operation_journal::JournalError::InvalidRecoveryObservation { .. })
+        ));
+        assert_eq!(journal.record(operation_id), Some(&record_before));
+        assert_eq!(fs::read(&record_path).unwrap(), bytes_before);
+        assert_eq!(journal.capacity_claims_for_test(), capacity_before);
+        assert_eq!(fs::read(fixture.final_path()).unwrap(), stale_final_bytes);
+
+        fs::remove_file(fixture.final_path()).expect("remove stale final");
+        fs::write(fixture.final_path(), STAGING_BYTES).expect("replace final identity");
+        let conflicting_final_bytes = fs::read(fixture.final_path()).expect("conflicting bytes");
+        assert!(matches!(
+            journal.record_schema_v2_absent_final_transaction_owned_proof(operation_id),
+            Err(crate::native_app::transaction_history::operation_journal::JournalError::InvalidRecoveryObservation { .. })
+        ));
+        assert_eq!(journal.record(operation_id), Some(&record_before));
+        assert_eq!(fs::read(&record_path).unwrap(), bytes_before);
+        assert_eq!(journal.capacity_claims_for_test(), capacity_before);
+        assert_eq!(
+            fs::read(fixture.final_path()).unwrap(),
+            conflicting_final_bytes
+        );
+
+        let moved_parent = fixture.replace_parent();
+        let moved_final_bytes = fs::read(moved_parent.join(FINAL_LEAF)).expect("moved final bytes");
+        assert!(matches!(
+            journal.record_schema_v2_absent_final_transaction_owned_proof(operation_id),
+            Err(crate::native_app::transaction_history::operation_journal::JournalError::InvalidRecoveryObservation { .. })
+        ));
+        assert_eq!(journal.record(operation_id), Some(&record_before));
+        assert_eq!(fs::read(&record_path).unwrap(), bytes_before);
+        assert_eq!(journal.capacity_claims_for_test(), capacity_before);
+        assert_eq!(
+            fs::read(moved_parent.join(FINAL_LEAF)).unwrap(),
+            moved_final_bytes
+        );
+        assert!(!fixture.final_path().exists());
+    }
+
+    #[test]
+    fn coordinator_rejects_nonmatching_transaction_owned_proof_classifications() {
+        let cases = [
+            AbsentFinalRecoveryClassification::StagingPresentFinalAbsent,
+            AbsentFinalRecoveryClassification::BothPresent,
+            AbsentFinalRecoveryClassification::NeitherPresent,
+            AbsentFinalRecoveryClassification::Collision {
+                staging: CollisionStagingState::Present,
+            },
+            AbsentFinalRecoveryClassification::Collision {
+                staging: CollisionStagingState::Missing,
+            },
+        ];
+        for expected in cases {
+            let directory = tempfile::tempdir().expect("journal directory");
+            let fixture = Fixture::new();
+            let mut journal = OperationJournalCoordinator::open(directory.path().to_path_buf())
+                .expect("open journal");
+            let operation_id = journal
+                .admit_schema_v2_absent_final_for_test(
+                    test_intent(),
+                    serde_json::json!({"schema": 2}),
+                    fixture.prepared.clone(),
+                    fixture.staged.clone(),
+                    valid_capacity_plan(),
+                )
+                .expect("admit absent-final record");
+            match expected {
+                AbsentFinalRecoveryClassification::StagingPresentFinalAbsent => {}
+                AbsentFinalRecoveryClassification::BothPresent => {
+                    fs::hard_link(fixture.staging_path(), fixture.final_path())
+                        .expect("hard-link final");
+                }
+                AbsentFinalRecoveryClassification::NeitherPresent => {
+                    fs::remove_file(fixture.staging_path()).expect("remove staging");
+                }
+                AbsentFinalRecoveryClassification::Collision {
+                    staging: CollisionStagingState::Present,
+                } => {
+                    fs::write(fixture.final_path(), b"foreign final").expect("foreign final");
+                }
+                AbsentFinalRecoveryClassification::Collision {
+                    staging: CollisionStagingState::Missing,
+                } => {
+                    fs::remove_file(fixture.staging_path()).expect("remove staging");
+                    fs::write(fixture.final_path(), b"foreign final").expect("foreign final");
+                }
+                other => panic!("unexpected nonmatching classification {other:?}"),
+            }
+            let path = journal.record_path_for_test(operation_id);
+            let bytes_before = fs::read(&path).expect("record bytes before proof");
+            let record_before = journal.record(operation_id).cloned().expect("record");
+            let capacity_before = journal.capacity_claims_for_test();
+            assert_eq!(
+                journal
+                    .classify_schema_v2_absent_final_recovery(operation_id)
+                    .expect("classify live state"),
+                expected
+            );
+            assert!(matches!(
+                journal.record_schema_v2_absent_final_transaction_owned_proof(operation_id),
+                Err(crate::native_app::transaction_history::operation_journal::JournalError::InvalidRecoveryObservation { .. })
+            ));
+            assert_eq!(journal.record(operation_id), Some(&record_before));
+            assert_eq!(fs::read(&path).unwrap(), bytes_before);
+            assert_eq!(journal.capacity_claims_for_test(), capacity_before);
+            assert!(
+                journal
+                    .record(operation_id)
+                    .unwrap()
+                    .absent_final_transaction_owned_proof
+                    .is_none()
+            );
+        }
     }
 
     #[test]
