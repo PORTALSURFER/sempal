@@ -38,8 +38,8 @@ pub(crate) use super::capacity_gate::VolumeIdentity;
 use super::capacity_gate::{DurableCapacityPlan, RejectedBeforeIntent};
 pub(crate) use super::expected_identity_replacement::ReplacementQualificationAssessment;
 use super::expected_identity_replacement::{
-    ExpectedIdentityReplacementAdapter, ExpectedIdentityReplacementOutcome,
-    ExpectedIdentityReplacementRequest, ProductionExpectedIdentityReplacementAdapter,
+    ExpectedIdentityReplacementOwnerRequest, ExpectedIdentityReplacementResultError,
+    OperationBoundExpectedIdentityReplacementResult,
 };
 #[cfg(test)]
 pub(crate) use super::expected_identity_replacement::{
@@ -1541,6 +1541,50 @@ fn validate_record_publication(record: &OperationRecord) -> Result<(), String> {
     }
 }
 
+fn validate_existing_prepared_contract(prepared: &PreparedWaveformRestore) -> Result<(), String> {
+    for (label, root) in [
+        ("source root", &prepared.source_root),
+        ("target root", &prepared.target_root),
+        ("backup root", &prepared.backup_root),
+    ] {
+        if !root.path.is_absolute() || root.identity.stable_id.is_empty() {
+            return Err(format!(
+                "{label} capability is not an absolute, identified root"
+            ));
+        }
+    }
+    if prepared.source_id.is_empty() {
+        return Err(String::from("existing-target source identity is empty"));
+    }
+    single_clean_normal_leaf("target", &prepared.target.relative_path)?;
+    single_clean_normal_leaf("backup", &prepared.backup.relative_path)?;
+    single_clean_normal_leaf("staging", &prepared.staging.relative_path)?;
+    if prepared.target.relative_path == prepared.staging.relative_path {
+        return Err(String::from(
+            "existing-target target and staging leaves must be distinct",
+        ));
+    }
+    if !prepared.staging.absent {
+        return Err(String::from(
+            "existing-target staging locator must retain its absent preparation observation",
+        ));
+    }
+    if prepared.target.identity.stable_id.is_empty()
+        || prepared.backup.identity.stable_id.is_empty()
+    {
+        return Err(String::from(
+            "existing-target leaf identities must not be empty",
+        ));
+    }
+    let ReplaceExpectedIdentity::Existing(expected_target) = &prepared.replacement;
+    if expected_target != &prepared.target.identity {
+        return Err(String::from(
+            "existing-target replacement identity does not match target preparation",
+        ));
+    }
+    Ok(())
+}
+
 fn validate_prepared_contract(prepared: &PreparedTargetContract) -> Result<(), String> {
     let PreparedTargetContract::AbsentFinalNoReplace(prepared) = prepared else {
         return Ok(());
@@ -2801,6 +2845,28 @@ impl AbsentFinalPublicationAttemptContext {
     }
 }
 
+/// Exact authorizing snapshot and a filesystem-free owned handoff for an existing-target
+/// expected-identity publication attempt.
+pub(crate) struct ExpectedIdentityPublicationAttemptContext {
+    authorizing_record: OperationRecord,
+    owner_request: Option<ExpectedIdentityReplacementOwnerRequest>,
+}
+
+impl ExpectedIdentityPublicationAttemptContext {
+    pub(crate) fn take_owner_request(
+        &mut self,
+    ) -> Result<ExpectedIdentityReplacementOwnerRequest, JournalError> {
+        self.owner_request
+            .take()
+            .ok_or(JournalError::InvalidPublicationEvidence {
+                operation_id: self.authorizing_record.operation_id,
+                reason: String::from(
+                    "expected-identity publication owner request was already consumed",
+                ),
+            })
+    }
+}
+
 #[cfg(test)]
 fn validate_absent_final_recovery_result_operation_id(
     operation_id: Uuid,
@@ -3062,18 +3128,6 @@ fn validate_identity(
     }
 }
 
-fn validate_root_identity(
-    label: &str,
-    expected: &PreparedObjectIdentity,
-    actual: &PreparedObjectIdentity,
-) -> Result<(), String> {
-    if expected.stable_id == actual.stable_id {
-        Ok(())
-    } else {
-        Err(format!("{label} identity changed since preparation"))
-    }
-}
-
 fn validate_volume_identity(
     label: &str,
     expected: &VolumeIdentity,
@@ -3230,17 +3284,6 @@ struct ReacquiredPreparedRestore {
     backup: File,
 }
 
-struct ReacquiredStagedRestore {
-    target_parent: File,
-    target: File,
-    staging: File,
-    target_parent_identity: PreparedObjectIdentity,
-    target_identity: PreparedObjectIdentity,
-    staging_identity: PreparedObjectIdentity,
-    staging_content: PreparedFileEvidence,
-    volume: VolumeIdentity,
-}
-
 fn reacquire_prepared_restore(
     prepared: &PreparedWaveformRestore,
 ) -> Result<ReacquiredPreparedRestore, String> {
@@ -3298,69 +3341,6 @@ fn reacquire_prepared_restore(
         backup_root,
         target,
         backup,
-    })
-}
-
-fn reacquire_staged_restore(
-    prepared: &PreparedWaveformRestore,
-    staged: &FilesystemStagedWaveformRestore,
-    capacity_plan: &DurableCapacityPlan,
-) -> Result<ReacquiredStagedRestore, String> {
-    let FilesystemStagedParticipant::CopyValidated {
-        staging: expected_staging,
-        evidence: expected_staging_content,
-    } = &staged.participant;
-    validate_existing_staged_checkpoint(prepared, staged)?;
-    let target_leaf = single_clean_normal_leaf("target", &prepared.target.relative_path)?;
-    let staging_leaf = single_clean_normal_leaf("staging", &prepared.staging.relative_path)?;
-    let [volume] = capacity_plan.volumes.as_slice() else {
-        return Err(String::from("capacity claim has unexpected volumes"));
-    };
-
-    let (target_root, target_root_capability) = open_root(&prepared.target_root.path)?;
-    validate_root_identity(
-        "target root",
-        &prepared.target_root.identity,
-        &target_root_capability.identity,
-    )?;
-    let target_parent = target_root
-        .try_clone()
-        .map_err(|error| format!("could not retain target parent capability: {error}"))?;
-    let target_display = prepared.target_root.path.join(target_leaf);
-    let (target, target_identity) =
-        open_leaf_relative(&target_parent, target_leaf, &target_display)?;
-    validate_identity("target leaf", &prepared.target.identity, &target_identity)?;
-    validate_evidence(
-        "target leaf",
-        &prepared.evidence.target,
-        &prepared_file_evidence(&target),
-    )?;
-    let target_volume = super::capacity_gate::descriptor_capacity_facts(&target)
-        .map_err(|error| error.to_string())?
-        .identity;
-    validate_volume_identity("target", &volume.identity, &target_volume)?;
-
-    let staging_display = prepared.target_root.path.join(staging_leaf);
-    let (staging, staging_identity) =
-        open_staging_relative(&target_parent, staging_leaf, &staging_display)?;
-    let staging_volume = super::capacity_gate::descriptor_capacity_facts(&staging)
-        .map_err(|error| error.to_string())?
-        .identity;
-    validate_volume_identity("staging", &volume.identity, &staging_volume)?;
-    validate_identity("staging", &expected_staging.identity, &staging_identity)?;
-    let staging_content = prepared_file_evidence(&staging);
-    validate_evidence("staging", expected_staging_content, &staging_content)?;
-    validate_staged_evidence(&prepared.evidence.backup, &staging_content)?;
-
-    Ok(ReacquiredStagedRestore {
-        target_parent,
-        target,
-        staging,
-        target_parent_identity: target_root_capability.identity,
-        target_identity,
-        staging_identity,
-        staging_content,
-        volume: volume.identity.clone(),
     })
 }
 
@@ -4674,25 +4654,214 @@ impl OperationJournalCoordinator {
         }
     }
 
-    /// Attempt publication of one already-staged restore through the sealed adapter seam.
-    pub(crate) fn attempt_publish_staged_waveform_restore(
+    fn prepare_expected_identity_publication_attempt(
+        &self,
+        operation_id: Uuid,
+    ) -> Result<ExpectedIdentityPublicationAttemptContext, JournalError> {
+        let authorizing_record = self
+            .store
+            .record(operation_id)
+            .cloned()
+            .ok_or(JournalError::NotFound(operation_id))?;
+        if authorizing_record.operation_id != operation_id {
+            return Err(JournalError::InvalidPublicationEvidence {
+                operation_id,
+                reason: String::from(
+                    "expected-identity publication operation identity does not match record",
+                ),
+            });
+        }
+        if authorizing_record.schema_version != SCHEMA_V1 {
+            return Err(JournalError::InvalidPublicationEvidence {
+                operation_id,
+                reason: String::from("expected-identity publication requires schema-v1"),
+            });
+        }
+        if authorizing_record.phase != OperationPhase::FilesystemStaged {
+            return Err(JournalError::IllegalTransition {
+                operation_id,
+                from: authorizing_record.phase,
+                to: OperationPhase::FilesystemPublished,
+            });
+        }
+        let Some(PreparedTargetContract::ExistingExpectedIdentity(prepared)) =
+            authorizing_record.prepared.as_ref()
+        else {
+            return Err(JournalError::InvalidPublicationEvidence {
+                operation_id,
+                reason: String::from(
+                    "expected-identity publication requires existing-target preparation",
+                ),
+            });
+        };
+        let staged = authorizing_record
+            .staged
+            .as_ref()
+            .ok_or(JournalError::MissingPreparedEvidence(operation_id))?;
+        let capacity_plan = authorizing_record
+            .capacity_plan
+            .as_ref()
+            .ok_or(JournalError::MissingPreparedEvidence(operation_id))?;
+        if capacity_plan.volumes.len() != 1 {
+            return Err(JournalError::InvalidPublicationEvidence {
+                operation_id,
+                reason: String::from("expected-identity publication requires one capacity volume"),
+            });
+        }
+        validate_capacity_plan(capacity_plan).map_err(|reason| {
+            JournalError::InvalidPublicationEvidence {
+                operation_id,
+                reason: format!("invalid expected-identity capacity claim: {reason}"),
+            }
+        })?;
+        validate_existing_prepared_contract(prepared).map_err(|reason| {
+            JournalError::InvalidPublicationEvidence {
+                operation_id,
+                reason,
+            }
+        })?;
+        validate_existing_staged_checkpoint(prepared, staged).map_err(|reason| {
+            JournalError::InvalidPublicationEvidence {
+                operation_id,
+                reason,
+            }
+        })?;
+        let FilesystemStagedParticipant::CopyValidated { staging, evidence } = &staged.participant;
+        let volume = &capacity_plan.volumes[0];
+        let owner_request = ExpectedIdentityReplacementOwnerRequest::try_new(
+            operation_id,
+            prepared.target_root.path.clone(),
+            prepared.target.relative_path.clone(),
+            prepared.staging.relative_path.clone(),
+            prepared.target_root.identity.clone(),
+            prepared.target.identity.clone(),
+            staging.identity.clone(),
+            prepared.evidence.target.clone(),
+            evidence.clone(),
+            volume.identity.clone(),
+        )
+        .map_err(|reason| JournalError::InvalidPublicationEvidence {
+            operation_id,
+            reason,
+        })?;
+        Ok(ExpectedIdentityPublicationAttemptContext {
+            authorizing_record,
+            owner_request: Some(owner_request),
+        })
+    }
+
+    /// Prepare the existing-target owner handoff without filesystem I/O. Absent-final records
+    /// intentionally return `None` so the two publication owner paths cannot cross-dispatch.
+    pub(crate) fn prepare_expected_identity_publication_attempt_if_needed(
+        &self,
+        operation_id: Uuid,
+    ) -> Result<Option<ExpectedIdentityPublicationAttemptContext>, JournalError> {
+        let record = self
+            .store
+            .record(operation_id)
+            .ok_or(JournalError::NotFound(operation_id))?;
+        if !matches!(
+            record.prepared.as_ref(),
+            Some(PreparedTargetContract::ExistingExpectedIdentity(_))
+        ) {
+            return Ok(None);
+        }
+        self.prepare_expected_identity_publication_attempt(operation_id)
+            .map(Some)
+    }
+
+    /// Commit one physical-owner result only when both its operation identity and the complete
+    /// authorizing record snapshot still match. This fence applies equally to success and every
+    /// failure disposition.
+    pub(crate) fn commit_expected_identity_publication_attempt(
+        &mut self,
+        context: ExpectedIdentityPublicationAttemptContext,
+        owner_result: OperationBoundExpectedIdentityReplacementResult,
+    ) -> Result<FilesystemStageOutcome, JournalError> {
+        let authorizing_record = context.authorizing_record;
+        let operation_id = authorizing_record.operation_id;
+        if owner_result.operation_id() != operation_id {
+            return Err(JournalError::InvalidPublicationEvidence {
+                operation_id,
+                reason: String::from(
+                    "expected-identity publication evidence returned for another operation",
+                ),
+            });
+        }
+        let current = self
+            .store
+            .record(operation_id)
+            .ok_or(JournalError::NotFound(operation_id))?;
+        if current != &authorizing_record {
+            return Err(JournalError::InvalidPublicationEvidence {
+                operation_id,
+                reason: String::from(
+                    "expected-identity publication authorizing record changed before commit",
+                ),
+            });
+        }
+        let outcome = owner_result.into_outcome(operation_id).map_err(|error| {
+            let reason = match error {
+                ExpectedIdentityReplacementResultError::OperationIdDrift => {
+                    "expected-identity publication operation fence failed"
+                }
+            };
+            JournalError::InvalidPublicationEvidence {
+                operation_id,
+                reason: String::from(reason),
+            }
+        })?;
+        match outcome {
+            super::expected_identity_replacement::ExpectedIdentityReplacementOutcome::PlatformQualificationRequired {
+                assessment,
+            } => self.update_platform_qualification(operation_id, assessment),
+            super::expected_identity_replacement::ExpectedIdentityReplacementOutcome::Drift {
+                reason,
+            }
+            | super::expected_identity_replacement::ExpectedIdentityReplacementOutcome::Ambiguous {
+                reason,
+            } => self.update_attempt_disposition(
+                operation_id,
+                OperationDisposition::AuditRequired,
+                reason,
+            ),
+            super::expected_identity_replacement::ExpectedIdentityReplacementOutcome::QualifiedSuccess(
+                qualified,
+            ) => {
+                let published = super::publication::from_qualified_adapter_result(qualified);
+                let prepared = authorizing_record
+                    .prepared
+                    .as_ref()
+                    .and_then(PreparedTargetContract::as_existing)
+                    .ok_or(JournalError::MissingPreparedEvidence(operation_id))?;
+                let staged = authorizing_record
+                    .staged
+                    .as_ref()
+                    .ok_or(JournalError::MissingPreparedEvidence(operation_id))?;
+                if let Err(reason) = validate_publication_evidence(prepared, staged, &published) {
+                    return self.update_attempt_disposition(
+                        operation_id,
+                        OperationDisposition::AuditRequired,
+                        reason,
+                    );
+                }
+                match self.store.guarded_publish(operation_id, published) {
+                    Ok(()) => Ok(FilesystemStageOutcome::FilesystemPublished(operation_id)),
+                    Err(error) => Ok(FilesystemStageOutcome::JournalWriteFailed {
+                        operation_id,
+                        reason: error.to_string(),
+                    }),
+                }
+            }
+        }
+    }
+
+    /// Test-only compatibility wrapper. Production callers must use the owner handoff above.
+    #[cfg(test)]
+    fn attempt_publish_staged_waveform_restore(
         &mut self,
         operation_id: Uuid,
     ) -> Result<FilesystemStageOutcome, JournalError> {
-        self.attempt_publish_staged_waveform_restore_with_adapter(
-            operation_id,
-            &ProductionExpectedIdentityReplacementAdapter,
-        )
-    }
-
-    fn attempt_publish_staged_waveform_restore_with_adapter<A>(
-        &mut self,
-        operation_id: Uuid,
-        adapter: &A,
-    ) -> Result<FilesystemStageOutcome, JournalError>
-    where
-        A: ExpectedIdentityReplacementAdapter,
-    {
         let (phase, is_absent_final) = {
             let record = self
                 .store
@@ -4718,87 +4887,41 @@ impl OperationJournalCoordinator {
                 ),
             });
         }
-        let record = self
-            .store
-            .record(operation_id)
-            .ok_or(JournalError::NotFound(operation_id))?;
-        if phase != OperationPhase::FilesystemStaged {
-            return Err(JournalError::IllegalTransition {
+        let mut context = self
+            .prepare_expected_identity_publication_attempt_if_needed(operation_id)?
+            .ok_or(JournalError::InvalidPublicationEvidence {
                 operation_id,
-                from: record.phase,
-                to: OperationPhase::FilesystemPublished,
-            });
-        }
-        let prepared = record
-            .prepared
-            .clone()
-            .ok_or(JournalError::MissingPreparedEvidence(operation_id))?;
-        let staged = record
-            .staged
-            .clone()
-            .ok_or(JournalError::MissingPreparedEvidence(operation_id))?;
-        let capacity_plan = record
-            .capacity_plan
-            .clone()
-            .ok_or(JournalError::MissingPreparedEvidence(operation_id))?;
-
-        let prepared = match prepared {
-            PreparedTargetContract::ExistingExpectedIdentity(prepared) => prepared,
-            PreparedTargetContract::AbsentFinalNoReplace(_) => {
-                return Err(JournalError::InvalidPublicationEvidence {
-                    operation_id,
-                    reason: String::from(
-                        "absent-final publication requires the physical file-owner handoff",
-                    ),
-                });
-            }
-        };
-
-        let reacquired = match reacquire_staged_restore(&prepared, &staged, &capacity_plan) {
-            Ok(reacquired) => reacquired,
-            Err(reason) => return self.attempt_retry_or_audit(operation_id, reason),
-        };
-        let request = ExpectedIdentityReplacementRequest {
-            target_parent: &reacquired.target_parent,
-            target: &reacquired.target,
-            staging: &reacquired.staging,
-            target_leaf: &prepared.target.relative_path,
-            staging_leaf: &prepared.staging.relative_path,
-            target_parent_identity: &reacquired.target_parent_identity,
-            expected_target: &reacquired.target_identity,
-            staging_identity: &reacquired.staging_identity,
-            staging_content: &reacquired.staging_content,
-            volume: &reacquired.volume,
-        };
-        match adapter.attempt(request) {
-            ExpectedIdentityReplacementOutcome::PlatformQualificationRequired { assessment } => {
-                self.update_platform_qualification(operation_id, assessment)
-            }
-            ExpectedIdentityReplacementOutcome::Drift { reason }
-            | ExpectedIdentityReplacementOutcome::Ambiguous { reason } => self
-                .update_attempt_disposition(
-                    operation_id,
-                    OperationDisposition::AuditRequired,
-                    reason,
+                reason: String::from(
+                    "expected-identity publication cannot dispatch an absent-final contract",
                 ),
-            ExpectedIdentityReplacementOutcome::QualifiedSuccess(qualified) => {
-                let published = super::publication::from_qualified_adapter_result(qualified);
-                if let Err(reason) = validate_publication_evidence(&prepared, &staged, &published) {
-                    return self.update_attempt_disposition(
-                        operation_id,
-                        OperationDisposition::AuditRequired,
-                        reason,
-                    );
-                }
-                match self.store.guarded_publish(operation_id, published) {
-                    Ok(()) => Ok(FilesystemStageOutcome::FilesystemPublished(operation_id)),
-                    Err(error) => Ok(FilesystemStageOutcome::JournalWriteFailed {
-                        operation_id,
-                        reason: error.to_string(),
-                    }),
-                }
-            }
-        }
+            })?;
+        let request = context.take_owner_request()?;
+        let owner_result =
+            super::expected_identity_replacement::acquire_expected_identity_publication(request);
+        self.commit_expected_identity_publication_attempt(context, owner_result)
+    }
+
+    /// Test-only adapter injection retained for qualified-success and drift regressions.
+    #[cfg(test)]
+    fn attempt_publish_staged_waveform_restore_with_adapter(
+        &mut self,
+        operation_id: Uuid,
+        adapter: &super::expected_identity_replacement::TestQualifiedExpectedIdentityReplacementAdapter,
+    ) -> Result<FilesystemStageOutcome, JournalError> {
+        let mut context = self
+            .prepare_expected_identity_publication_attempt_if_needed(operation_id)?
+            .ok_or(JournalError::InvalidPublicationEvidence {
+                operation_id,
+                reason: String::from(
+                    "expected-identity publication cannot dispatch an absent-final contract",
+                ),
+            })?;
+        let request = context.take_owner_request()?;
+        let owner_result =
+            super::expected_identity_replacement::acquire_expected_identity_publication_with_test_adapter(
+                request, adapter,
+            );
+        self.commit_expected_identity_publication_attempt(context, owner_result)
     }
 
     fn update_platform_qualification(
@@ -4849,14 +4972,6 @@ impl OperationJournalCoordinator {
                 reason: error.to_string(),
             }),
         }
-    }
-
-    fn attempt_retry_or_audit(
-        &mut self,
-        operation_id: Uuid,
-        reason: String,
-    ) -> Result<FilesystemStageOutcome, JournalError> {
-        self.update_attempt_disposition(operation_id, OperationDisposition::AuditRequired, reason)
     }
 
     /// Test-only compatibility helper for exercising the existing publication validator.
@@ -6131,6 +6246,315 @@ mod tests {
     }
 
     #[test]
+    fn expected_identity_owner_request_is_filesystem_free_and_one_shot() {
+        let (journal_dir, files, mut journal, id, _backup, target, staging) =
+            prepared_restore_fixture();
+        journal
+            .stage_admitted_bounded_waveform_restore(id)
+            .expect("stage restore");
+        let record_path = journal.store.record_path(id);
+        let record_bytes_before = fs::read(&record_path).expect("record bytes before request");
+        let names_before = fs::read_dir(files.path())
+            .expect("directory before request")
+            .map(|entry| entry.expect("directory entry").file_name())
+            .collect::<Vec<_>>();
+        let target_before = fs::read(&target).expect("target before request");
+        let staging_before = fs::read(&staging).expect("staging before request");
+
+        let mut context = journal
+            .prepare_expected_identity_publication_attempt_if_needed(id)
+            .expect("prepare expected-identity request")
+            .expect("existing-target owner context");
+        let request = context
+            .take_owner_request()
+            .expect("take expected-identity request");
+        assert!(matches!(
+            context.take_owner_request(),
+            Err(JournalError::InvalidPublicationEvidence { operation_id, .. })
+                if operation_id == id
+        ));
+        drop(request);
+
+        assert_eq!(fs::read(&record_path).unwrap(), record_bytes_before);
+        assert_eq!(fs::read(&target).unwrap(), target_before);
+        assert_eq!(fs::read(&staging).unwrap(), staging_before);
+        assert_eq!(
+            fs::read_dir(files.path())
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .collect::<Vec<_>>(),
+            names_before
+        );
+        drop(journal);
+        assert!(OperationJournalCoordinator::open(journal_dir.path().to_path_buf()).is_ok());
+    }
+
+    #[test]
+    fn expected_identity_owner_result_rejects_wrong_operation_id_without_disposition() {
+        let (_journal_dir, _files, mut journal, id, _backup, target, staging) =
+            prepared_restore_fixture();
+        journal
+            .stage_admitted_bounded_waveform_restore(id)
+            .expect("stage restore");
+        let mut context = journal
+            .prepare_expected_identity_publication_attempt_if_needed(id)
+            .expect("prepare owner context")
+            .expect("existing-target owner context");
+        let request = context.take_owner_request().expect("take owner request");
+        let owner_result =
+            super::super::expected_identity_replacement::acquire_expected_identity_publication_with_test_adapter(
+                request,
+                &super::super::expected_identity_replacement::TestQualifiedExpectedIdentityReplacementAdapter {
+                    drift: None,
+                },
+            )
+            .replace_operation_id_for_test(Uuid::new_v4());
+        let record_before = journal.record(id).unwrap().clone();
+        let claims_before = journal.store.capacity_claims().clone();
+        let target_before = fs::read(&target).unwrap();
+        let staging_before = fs::read(&staging).unwrap();
+
+        assert!(matches!(
+            journal.commit_expected_identity_publication_attempt(context, owner_result),
+            Err(JournalError::InvalidPublicationEvidence { operation_id, .. })
+                if operation_id == id
+        ));
+        assert_eq!(journal.record(id), Some(&record_before));
+        assert_eq!(journal.store.capacity_claims(), &claims_before);
+        assert_eq!(fs::read(&target).unwrap(), target_before);
+        assert_eq!(fs::read(&staging).unwrap(), staging_before);
+    }
+
+    #[test]
+    fn expected_identity_success_snapshot_mismatch_preserves_newer_record_and_bytes() {
+        let (journal_dir, _files, mut journal, id, _backup, target, staging) =
+            prepared_restore_fixture();
+        journal
+            .stage_admitted_bounded_waveform_restore(id)
+            .expect("stage restore");
+        let mut context = journal
+            .prepare_expected_identity_publication_attempt_if_needed(id)
+            .expect("prepare owner context")
+            .expect("existing-target owner context");
+        let request = context.take_owner_request().expect("take owner request");
+        let owner_result =
+            super::super::expected_identity_replacement::acquire_expected_identity_publication_with_test_adapter(
+                request,
+                &super::super::expected_identity_replacement::TestQualifiedExpectedIdentityReplacementAdapter {
+                    drift: None,
+                },
+            );
+        journal
+            .update(
+                id,
+                OperationPhase::FilesystemStaged,
+                OperationDisposition::RetryPending,
+            )
+            .expect("write newer record");
+        let newer_record = journal.record(id).unwrap().clone();
+        let record_path = journal.store.record_path(id);
+        let newer_bytes = fs::read(&record_path).unwrap();
+        let target_before = fs::read(&target).unwrap();
+        let staging_before = fs::read(&staging).unwrap();
+
+        assert!(matches!(
+            journal.commit_expected_identity_publication_attempt(context, owner_result),
+            Err(JournalError::InvalidPublicationEvidence { operation_id, .. })
+                if operation_id == id
+        ));
+        assert_eq!(journal.record(id), Some(&newer_record));
+        assert_eq!(fs::read(&record_path).unwrap(), newer_bytes);
+        assert_eq!(fs::read(&target).unwrap(), target_before);
+        assert_eq!(fs::read(&staging).unwrap(), staging_before);
+        drop(journal);
+        assert!(OperationJournalCoordinator::open(journal_dir.path().to_path_buf()).is_ok());
+    }
+
+    #[test]
+    fn expected_identity_failure_snapshot_mismatch_does_not_audit_newer_record() {
+        let (_journal_dir, _files, mut journal, id, _backup, target, staging) =
+            prepared_restore_fixture();
+        journal
+            .stage_admitted_bounded_waveform_restore(id)
+            .expect("stage restore");
+        let mut context = journal
+            .prepare_expected_identity_publication_attempt_if_needed(id)
+            .expect("prepare owner context")
+            .expect("existing-target owner context");
+        let request = context.take_owner_request().expect("take owner request");
+        fs::write(&target, vec![9_u8; 4097]).expect("drift target");
+        let owner_result =
+            super::super::expected_identity_replacement::acquire_expected_identity_publication(
+                request,
+            );
+        journal
+            .update(
+                id,
+                OperationPhase::FilesystemStaged,
+                OperationDisposition::RetryPending,
+            )
+            .expect("write newer record");
+        let newer_record = journal.record(id).unwrap().clone();
+        let claims_before = journal.store.capacity_claims().clone();
+        let target_after_drift = fs::read(&target).unwrap();
+        let staging_before = fs::read(&staging).unwrap();
+
+        assert!(matches!(
+            journal.commit_expected_identity_publication_attempt(context, owner_result),
+            Err(JournalError::InvalidPublicationEvidence { operation_id, .. })
+                if operation_id == id
+        ));
+        assert_eq!(journal.record(id), Some(&newer_record));
+        assert_eq!(journal.store.capacity_claims(), &claims_before);
+        assert_eq!(fs::read(&target).unwrap(), target_after_drift);
+        assert_eq!(fs::read(&staging).unwrap(), staging_before);
+    }
+
+    #[test]
+    fn expected_identity_owner_root_drift_is_audited_without_mutation() {
+        let (_journal_dir, _files, mut journal, id, _backup, target, staging) =
+            prepared_restore_fixture();
+        journal
+            .stage_admitted_bounded_waveform_restore(id)
+            .expect("stage restore");
+        let mut context = journal
+            .prepare_expected_identity_publication_attempt_if_needed(id)
+            .expect("prepare owner context")
+            .expect("existing-target owner context");
+        let mut request = context.take_owner_request().expect("take owner request");
+        request.replace_expected_target_root_for_test(PreparedObjectIdentity {
+            stable_id: String::from("root-drift"),
+            change_marker: None,
+            len: 0,
+        });
+        let owner_result =
+            super::super::expected_identity_replacement::acquire_expected_identity_publication_with_test_adapter(
+                request,
+                &super::super::expected_identity_replacement::TestQualifiedExpectedIdentityReplacementAdapter {
+                    drift: None,
+                },
+            );
+        let target_before = fs::read(&target).unwrap();
+        let staging_before = fs::read(&staging).unwrap();
+        let claims_before = journal.store.capacity_claims().clone();
+        assert!(matches!(
+            journal.commit_expected_identity_publication_attempt(context, owner_result),
+            Ok(FilesystemStageOutcome::AuditRequired { operation_id, .. })
+                if operation_id == id
+        ));
+        assert_eq!(journal.store.capacity_claims(), &claims_before);
+        assert_eq!(fs::read(&target).unwrap(), target_before);
+        assert_eq!(fs::read(&staging).unwrap(), staging_before);
+    }
+
+    #[test]
+    fn expected_identity_owner_staging_identity_drift_is_audited_without_mutation() {
+        let (_journal_dir, _files, mut journal, id, backup, target, staging) =
+            prepared_restore_fixture();
+        journal
+            .stage_admitted_bounded_waveform_restore(id)
+            .expect("stage restore");
+        fs::remove_file(&staging).expect("remove staged entry");
+        fs::copy(&backup, &staging).expect("replace staged entry");
+        let mut context = journal
+            .prepare_expected_identity_publication_attempt_if_needed(id)
+            .expect("prepare owner context")
+            .expect("existing-target owner context");
+        let request = context.take_owner_request().expect("take owner request");
+        let owner_result =
+            super::super::expected_identity_replacement::acquire_expected_identity_publication_with_test_adapter(
+                request,
+                &super::super::expected_identity_replacement::TestQualifiedExpectedIdentityReplacementAdapter {
+                    drift: None,
+                },
+            );
+        let target_before = fs::read(&target).unwrap();
+        let staging_before = fs::read(&staging).unwrap();
+        assert!(matches!(
+            journal.commit_expected_identity_publication_attempt(context, owner_result),
+            Ok(FilesystemStageOutcome::AuditRequired { operation_id, .. })
+                if operation_id == id
+        ));
+        assert_eq!(fs::read(&target).unwrap(), target_before);
+        assert_eq!(fs::read(&staging).unwrap(), staging_before);
+    }
+
+    #[test]
+    fn expected_identity_owner_staging_content_drift_is_audited_without_mutation() {
+        let (_journal_dir, _files, mut journal, id, _backup, target, staging) =
+            prepared_restore_fixture();
+        journal
+            .stage_admitted_bounded_waveform_restore(id)
+            .expect("stage restore");
+        fs::write(&staging, vec![8_u8; 4097]).expect("drift staged content");
+        let mut context = journal
+            .prepare_expected_identity_publication_attempt_if_needed(id)
+            .expect("prepare owner context")
+            .expect("existing-target owner context");
+        let request = context.take_owner_request().expect("take owner request");
+        let owner_result =
+            super::super::expected_identity_replacement::acquire_expected_identity_publication_with_test_adapter(
+                request,
+                &super::super::expected_identity_replacement::TestQualifiedExpectedIdentityReplacementAdapter {
+                    drift: None,
+                },
+            );
+        let target_before = fs::read(&target).unwrap();
+        let staging_before = fs::read(&staging).unwrap();
+        assert!(matches!(
+            journal.commit_expected_identity_publication_attempt(context, owner_result),
+            Ok(FilesystemStageOutcome::AuditRequired { operation_id, .. })
+                if operation_id == id
+        ));
+        assert_eq!(fs::read(&target).unwrap(), target_before);
+        assert_eq!(fs::read(&staging).unwrap(), staging_before);
+    }
+
+    #[test]
+    fn expected_identity_owner_volume_drift_is_audited_without_mutation() {
+        let (_journal_dir, _files, mut journal, id, _backup, target, staging) =
+            prepared_restore_fixture();
+        journal
+            .stage_admitted_bounded_waveform_restore(id)
+            .expect("stage restore");
+        let expected_volume = journal
+            .record(id)
+            .unwrap()
+            .capacity_plan
+            .as_ref()
+            .unwrap()
+            .volumes[0]
+            .identity
+            .clone();
+        let mut context = journal
+            .prepare_expected_identity_publication_attempt_if_needed(id)
+            .expect("prepare owner context")
+            .expect("existing-target owner context");
+        let mut request = context.take_owner_request().expect("take owner request");
+        request.replace_expected_volume_for_test(VolumeIdentity {
+            device: expected_volume.device.saturating_add(1),
+        });
+        let owner_result =
+            super::super::expected_identity_replacement::acquire_expected_identity_publication_with_test_adapter(
+                request,
+                &super::super::expected_identity_replacement::TestQualifiedExpectedIdentityReplacementAdapter {
+                    drift: None,
+                },
+            );
+        let target_before = fs::read(&target).unwrap();
+        let staging_before = fs::read(&staging).unwrap();
+        let claims_before = journal.store.capacity_claims().clone();
+        assert!(matches!(
+            journal.commit_expected_identity_publication_attempt(context, owner_result),
+            Ok(FilesystemStageOutcome::AuditRequired { operation_id, .. })
+                if operation_id == id
+        ));
+        assert_eq!(journal.store.capacity_claims(), &claims_before);
+        assert_eq!(fs::read(&target).unwrap(), target_before);
+        assert_eq!(fs::read(&staging).unwrap(), staging_before);
+    }
+
+    #[test]
     fn nested_target_locator_is_rejected_before_qualified_adapter_and_preserves_recoverable_stage()
     {
         let (journal_dir, _files, mut journal, id, _backup, target, staging) =
@@ -6155,19 +6579,23 @@ mod tests {
         let record_path = journal.store.record_path(id);
         atomic_durable_write(&record_path, &record).unwrap();
 
-        let adapter = super::super::expected_identity_replacement::
-            TestQualifiedExpectedIdentityReplacementAdapter { drift: None };
+        let record_before_attempt = journal.record(id).unwrap().clone();
         assert!(matches!(
-            journal
-                .attempt_publish_staged_waveform_restore_with_adapter(id, &adapter)
-                .expect("nested target attempt"),
-            FilesystemStageOutcome::AuditRequired { operation_id, .. } if operation_id == id
+            journal.attempt_publish_staged_waveform_restore_with_adapter(
+                id,
+                &super::super::expected_identity_replacement::TestQualifiedExpectedIdentityReplacementAdapter {
+                    drift: None,
+                },
+            ),
+            Err(JournalError::InvalidPublicationEvidence { operation_id, .. })
+                if operation_id == id
         ));
 
         let record = journal.record(id).unwrap();
         assert_eq!(record.phase, OperationPhase::FilesystemStaged);
-        assert_eq!(record.disposition, OperationDisposition::AuditRequired);
+        assert_eq!(record, &record_before_attempt);
         assert!(record.staged.is_some());
+        let record_after_attempt = record.clone();
         assert_eq!(fs::read(&target).unwrap(), target_before);
         assert_eq!(fs::read(&staging).unwrap(), staging_before);
 
@@ -6175,10 +6603,7 @@ mod tests {
         let reopened = OperationJournalCoordinator::open(journal_dir.path().to_path_buf()).unwrap();
         let reopened_record = reopened.record(id).unwrap();
         assert_eq!(reopened_record.phase, OperationPhase::FilesystemStaged);
-        assert_eq!(
-            reopened_record.disposition,
-            OperationDisposition::AuditRequired
-        );
+        assert_eq!(reopened_record, &record_after_attempt);
         assert!(reopened_record.staged.is_some());
         assert_eq!(
             reopened_record
