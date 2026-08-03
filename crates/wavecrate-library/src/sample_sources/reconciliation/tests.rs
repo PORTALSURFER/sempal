@@ -960,6 +960,113 @@ fn live_adapter_correlation_is_none_for_duplicate_admission() {
 }
 
 #[test]
+fn live_audit_handoff_retires_applied_ticket_without_authority_or_marker_loss() {
+    let source = SourceId::from_string("source-a");
+    let root = RootIdentity::from_bytes(b"root-a".to_vec());
+    let mut supervisor = ReconciliationAdmissionSupervisor::new(adapter_admission_limits(1, 8));
+    let (_lane, generation) = adapter_registered(&mut supervisor, &source, &root);
+    let batch = adapter_batch(
+        adapter_capture_provenance(
+            "source-a",
+            Some(b"root-a".to_vec()),
+            Some(b"stream-a".to_vec()),
+            generation.get(),
+            Some(10),
+            Some(10),
+        ),
+        vec![adapter_observation(RawEventKind::Create, "sample.wav")],
+    );
+
+    let admission = {
+        let mut adapter = ReconciliationAdapter::new(&mut supervisor);
+        adapter
+            .admit_live_with_correlation(batch.clone())
+            .expect("live admission")
+    };
+    let ticket = match admission.admission().outcome() {
+        AdmissionOutcome::Accepted(ticket) => *ticket,
+        outcome => panic!("unexpected live outcome: {outcome:?}"),
+    };
+    let correlation = admission.correlation().expect("live audit correlation");
+    let marker_before = supervisor.uncertainties()[0].clone();
+    assert_eq!(marker_before.source_id(), Some(&source));
+    assert_eq!(marker_before.root_identity(), Some(&root));
+    assert_eq!(marker_before.generation(), Some(generation));
+    assert_eq!(marker_before.scope(), ReconciliationScopeKind::SourceAudit);
+    assert_eq!(marker_before.reasons(), &[UncertaintyReason::LiveUnproven]);
+    assert_eq!(correlation.identity().source_id(), &source);
+    assert_eq!(correlation.identity().root_identity(), &root);
+    assert_eq!(correlation.identity().generation(), generation);
+    assert_eq!(correlation.boundary(), marker_before.boundary());
+    assert_eq!(supervisor.in_flight(), 1);
+
+    let duplicate = {
+        let mut adapter = ReconciliationAdapter::new(&mut supervisor);
+        adapter
+            .admit_live_with_correlation(batch)
+            .expect("duplicate live admission")
+    };
+    assert!(duplicate.correlation().is_none());
+    assert_eq!(
+        duplicate.admission().outcome(),
+        &AdmissionOutcome::DuplicateSuppressed(CaptureSequenceRange::new(10, 10))
+    );
+    assert_eq!(supervisor.in_flight(), 1);
+    assert_eq!(supervisor.uncertainties(), &[marker_before.clone()]);
+
+    assert_eq!(
+        supervisor.mark_unproven_audit_handed_off(ticket),
+        Err(AdmissionError::InvalidLifecycleTransition)
+    );
+    assert_eq!(supervisor.in_flight(), 1);
+    assert_eq!(supervisor.uncertainties(), &[marker_before.clone()]);
+
+    let dispatched = supervisor.dispatch_next().expect("live dispatch");
+    assert_eq!(dispatched.ticket(), ticket);
+    assert_eq!(
+        supervisor.mark_unproven_audit_handed_off(ticket),
+        Err(AdmissionError::InvalidLifecycleTransition)
+    );
+    assert_eq!(supervisor.in_flight(), 1);
+    supervisor
+        .mark_dispatched(ticket)
+        .expect("dispatch handoff");
+    supervisor.mark_applied(ticket).expect("worker completion");
+
+    supervisor
+        .mark_unproven_audit_handed_off(ticket)
+        .expect("source-audit scheduler handoff");
+    assert_eq!(supervisor.in_flight(), 0);
+    assert_eq!(supervisor.uncertainties(), &[marker_before.clone()]);
+
+    assert_eq!(
+        supervisor.mark_unproven_audit_handed_off(ticket),
+        Err(AdmissionError::UnknownTicket)
+    );
+    assert_eq!(supervisor.in_flight(), 0);
+    assert_eq!(supervisor.uncertainties(), &[marker_before]);
+
+    let next = {
+        let mut adapter = ReconciliationAdapter::new(&mut supervisor);
+        adapter
+            .admit_live(adapter_batch(
+                adapter_capture_provenance(
+                    "source-a",
+                    Some(b"root-a".to_vec()),
+                    Some(b"stream-a".to_vec()),
+                    generation.get(),
+                    Some(11),
+                    Some(11),
+                ),
+                vec![adapter_observation(RawEventKind::Modify, "next.wav")],
+            ))
+            .expect("capacity released after audit handoff")
+    };
+    assert!(matches!(next.outcome(), AdmissionOutcome::Accepted(_)));
+    assert_eq!(supervisor.in_flight(), 1);
+}
+
+#[test]
 fn live_adapter_correlation_is_none_for_rejection_and_capacity() {
     let rejected_batch = adapter_batch(
         adapter_capture_provenance(
@@ -1092,6 +1199,92 @@ fn valid_replay_adapter_attaches_exact_continuity_fields_without_adapter_uncerta
         dispatched.normalized().envelope().observations(),
         expected_observations.as_slice()
     );
+}
+
+#[test]
+fn continuity_proven_replay_cannot_use_unproven_audit_handoff() {
+    let source = SourceId::from_string("source-a");
+    let root = RootIdentity::from_bytes(b"root-a".to_vec());
+    let mut supervisor = ReconciliationAdmissionSupervisor::new(adapter_admission_limits(1, 8));
+    let (_lane, generation) = adapter_registered(&mut supervisor, &source, &root);
+    let prior = replay_prior("source-a", b"root-a", b"stream-a", generation.get(), 10);
+
+    let admission = {
+        let mut adapter = ReconciliationAdapter::new(&mut supervisor);
+        adapter
+            .admit_replay(
+                adapter_batch(
+                    adapter_capture_provenance(
+                        "source-a",
+                        Some(b"root-a".to_vec()),
+                        Some(b"stream-a".to_vec()),
+                        generation.get(),
+                        Some(11),
+                        Some(11),
+                    ),
+                    vec![adapter_observation(RawEventKind::Create, "replayed.wav")],
+                ),
+                Some(&prior),
+                true,
+            )
+            .expect("valid replay admission")
+    };
+    assert_eq!(
+        admission.disposition(),
+        AdapterDisposition::AdmittedWithContinuity
+    );
+    let ticket = match admission.outcome() {
+        AdmissionOutcome::Accepted(ticket) => *ticket,
+        outcome => panic!("unexpected replay outcome: {outcome:?}"),
+    };
+    assert!(supervisor.uncertainties().is_empty());
+
+    let dispatched = supervisor.dispatch_next().expect("replay dispatch");
+    assert_eq!(dispatched.ticket(), ticket);
+    assert!(
+        dispatched
+            .normalized()
+            .proof()
+            .watcher_continuity()
+            .is_some()
+    );
+    supervisor
+        .mark_dispatched(ticket)
+        .expect("replay dispatch handoff");
+    supervisor.mark_applied(ticket).expect("replay applied");
+
+    assert_eq!(
+        supervisor.mark_unproven_audit_handed_off(ticket),
+        Err(AdmissionError::UnprovenAuditHandoffRequiresUnprovenEnvelope)
+    );
+    assert_eq!(supervisor.in_flight(), 1);
+
+    let capacity = {
+        let mut adapter = ReconciliationAdapter::new(&mut supervisor);
+        adapter
+            .admit_live(adapter_batch(
+                adapter_capture_provenance(
+                    "source-a",
+                    Some(b"root-a".to_vec()),
+                    Some(b"stream-a".to_vec()),
+                    generation.get(),
+                    Some(12),
+                    Some(12),
+                ),
+                vec![adapter_observation(RawEventKind::Modify, "next.wav")],
+            ))
+            .expect("capacity admission result")
+    };
+    assert_eq!(
+        capacity.outcome(),
+        &AdmissionOutcome::Rejected(AdmissionRejectReason::QueueSaturated)
+    );
+    assert_eq!(supervisor.in_flight(), 1);
+
+    supervisor
+        .mark_checkpointed(ticket)
+        .expect("normal replay checkpoint");
+    assert_eq!(supervisor.in_flight(), 0);
 }
 
 #[test]
