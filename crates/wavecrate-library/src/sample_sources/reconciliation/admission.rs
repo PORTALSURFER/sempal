@@ -760,6 +760,23 @@ impl ReconciliationAdmissionSupervisor {
         Ok(())
     }
 
+    /// Remove a lane after it has been stopped successfully.
+    ///
+    /// Call [`Self::stop_lane`] first. Removal only releases the registered-lane capacity; it
+    /// does not stop or invalidate work and does not acknowledge or clear retained uncertainty.
+    pub fn remove_stopped_lane(&mut self, lane: &AdmissionLaneKey) -> Result<(), AdmissionError> {
+        if !self.lanes.contains_key(lane) || self.sources.get(lane.source_id()) != Some(lane) {
+            return Err(AdmissionError::UnknownLane);
+        }
+        if self.lanes[lane].lifecycle != ReconciliationLifecycle::Stopped {
+            return Err(AdmissionError::InvalidLifecycleTransition);
+        }
+
+        self.lanes.remove(lane);
+        self.sources.remove(lane.source_id());
+        Ok(())
+    }
+
     /// Restart a stopped lane with a strictly newer generation.
     pub fn restart_lane(
         &mut self,
@@ -2914,6 +2931,23 @@ mod tests {
             supervisor.lifecycle(&lane).expect("lifecycle"),
             ReconciliationLifecycle::Capturing
         );
+        assert_eq!(
+            supervisor.remove_stopped_lane(&lane),
+            Err(AdmissionError::InvalidLifecycleTransition)
+        );
+        assert_eq!(
+            supervisor
+                .lifecycle(&lane)
+                .expect("lane remains registered"),
+            ReconciliationLifecycle::Capturing
+        );
+        assert_eq!(
+            supervisor.register_lane(
+                SourceId::from_string("source-b"),
+                RootIdentity::from_bytes(b"root-b".to_vec()),
+            ),
+            Err(AdmissionError::LaneLimitReached)
+        );
         assert_eq!(supervisor.dispatch_next().expect("ticket").ticket(), ticket);
         supervisor
             .mark_dispatched(ticket)
@@ -2949,6 +2983,203 @@ mod tests {
             outcome => panic!("unexpected outcome: {outcome:?}"),
         };
         assert_eq!(next_ticket.id(), ticket.id() + 1);
+    }
+
+    #[test]
+    fn stopped_lane_removal_reclaims_capacity_without_touching_global_state_or_markers() {
+        let source = SourceId::from_string("source-a");
+        let root = RootIdentity::from_bytes(b"root-a".to_vec());
+        let replacement_source = SourceId::from_string("source-b");
+        let replacement_root = RootIdentity::from_bytes(b"root-b".to_vec());
+        let mut supervisor = ReconciliationAdmissionSupervisor::new(limits(1, 8, 2));
+        let (lane, generation) = registered(&mut supervisor, &source, &root);
+        let old_ticket = match supervisor.admit_with_required_uncertainty(
+            envelope(&source, Some(&root), generation, 1, RawEventKind::Create),
+            UncertaintyReason::LiveUnproven,
+        ) {
+            AdmissionOutcome::Accepted(ticket) => ticket,
+            outcome => panic!("unexpected live outcome: {outcome:?}"),
+        };
+
+        supervisor
+            .stop_lane(&lane, generation)
+            .expect("stop lane before removal");
+        let markers_before = supervisor.retained_uncertainties().to_vec();
+        let next_generation_before = supervisor.next_generation;
+        let next_ticket_before = supervisor.next_ticket;
+        let next_boundary_before = supervisor.next_retained_uncertainty_boundary;
+
+        assert_eq!(
+            supervisor.remove_stopped_lane(&lane),
+            Ok(()),
+            "a stopped lane releases one registry slot"
+        );
+        assert_eq!(
+            supervisor.retained_uncertainties(),
+            markers_before.as_slice()
+        );
+        assert_eq!(supervisor.next_generation, next_generation_before);
+        assert_eq!(supervisor.next_ticket, next_ticket_before);
+        assert_eq!(
+            supervisor.next_retained_uncertainty_boundary,
+            next_boundary_before
+        );
+        assert_eq!(
+            supervisor.lifecycle(&lane),
+            Err(AdmissionError::UnknownLane),
+            "removal drops the lane registry entry"
+        );
+
+        let (replacement_lane, replacement_generation) = supervisor
+            .register_lane(replacement_source.clone(), replacement_root.clone())
+            .expect("reclaim the lane capacity");
+        assert!(replacement_generation > generation);
+        supervisor
+            .begin_capture(&replacement_lane, replacement_generation)
+            .expect("begin replacement capture");
+        let replacement_ticket = match supervisor.admit(envelope(
+            &replacement_source,
+            Some(&replacement_root),
+            replacement_generation,
+            2,
+            RawEventKind::Create,
+        )) {
+            AdmissionOutcome::Accepted(ticket) => ticket,
+            outcome => panic!("unexpected replacement outcome: {outcome:?}"),
+        };
+        assert_eq!(replacement_ticket.id(), old_ticket.id() + 1);
+    }
+
+    #[test]
+    fn stopped_lane_removal_requires_a_known_stopped_lane_and_rejects_repeated_removal() {
+        let source = SourceId::from_string("source-a");
+        let root = RootIdentity::from_bytes(b"root-a".to_vec());
+        let unknown_lane = AdmissionLaneKey::new(
+            SourceId::from_string("source-b"),
+            RootIdentity::from_bytes(b"root-b".to_vec()),
+        );
+        let mut supervisor = ReconciliationAdmissionSupervisor::new(limits(1, 8, 2));
+        let (lane, generation) = supervisor
+            .register_lane(source, root)
+            .expect("register lane");
+
+        assert_eq!(
+            supervisor.remove_stopped_lane(&unknown_lane),
+            Err(AdmissionError::UnknownLane)
+        );
+        assert_eq!(
+            supervisor.remove_stopped_lane(&lane),
+            Err(AdmissionError::InvalidLifecycleTransition)
+        );
+        assert_eq!(
+            supervisor.lifecycle(&lane),
+            Ok(ReconciliationLifecycle::Starting)
+        );
+
+        supervisor
+            .begin_capture(&lane, generation)
+            .expect("begin capture");
+        assert_eq!(
+            supervisor.remove_stopped_lane(&lane),
+            Err(AdmissionError::InvalidLifecycleTransition)
+        );
+        supervisor.stop_lane(&lane, generation).expect("stop lane");
+        supervisor
+            .remove_stopped_lane(&lane)
+            .expect("remove stopped lane");
+        assert_eq!(
+            supervisor.remove_stopped_lane(&lane),
+            Err(AdmissionError::UnknownLane)
+        );
+    }
+
+    #[test]
+    fn removed_source_can_re_register_with_new_generations_and_retired_lane_is_fenced() {
+        let source = SourceId::from_string("source-a");
+        let old_root = RootIdentity::from_bytes(b"root-a".to_vec());
+        let replacement_root = RootIdentity::from_bytes(b"root-b".to_vec());
+        let mut supervisor = ReconciliationAdmissionSupervisor::new(limits(1, 8, 2));
+        let (old_lane, old_generation) = registered(&mut supervisor, &source, &old_root);
+
+        supervisor
+            .stop_lane(&old_lane, old_generation)
+            .expect("stop original lane");
+        supervisor
+            .remove_stopped_lane(&old_lane)
+            .expect("remove original lane");
+
+        let (same_lane, same_generation) = supervisor
+            .register_lane(source.clone(), old_root.clone())
+            .expect("re-register same source and root");
+        assert_eq!(same_lane, old_lane);
+        assert!(same_generation > old_generation);
+        supervisor
+            .begin_capture(&same_lane, same_generation)
+            .expect("begin same-root capture");
+        supervisor
+            .stop_lane(&same_lane, same_generation)
+            .expect("stop same-root lane");
+        supervisor
+            .remove_stopped_lane(&same_lane)
+            .expect("remove same-root lane");
+
+        let (replacement_lane, replacement_generation) = supervisor
+            .register_lane(source.clone(), replacement_root.clone())
+            .expect("register replacement root");
+        assert!(replacement_generation > same_generation);
+        supervisor
+            .begin_capture(&replacement_lane, replacement_generation)
+            .expect("begin replacement capture");
+
+        assert_eq!(
+            supervisor.stop_lane(&old_lane, old_generation),
+            Err(AdmissionError::UnknownLane)
+        );
+        assert_eq!(
+            supervisor.restart_lane(&old_lane),
+            Err(AdmissionError::UnknownLane)
+        );
+        assert_eq!(
+            supervisor.rebind_lane(
+                &old_lane,
+                old_generation,
+                RootIdentity::from_bytes(b"root-c".to_vec()),
+            ),
+            Err(AdmissionError::UnknownLane)
+        );
+        assert_eq!(
+            supervisor.remove_stopped_lane(&old_lane),
+            Err(AdmissionError::UnknownLane)
+        );
+
+        assert_eq!(
+            supervisor.admit(envelope(
+                &source,
+                Some(&old_root),
+                old_generation,
+                1,
+                RawEventKind::Create,
+            )),
+            AdmissionOutcome::Rejected(AdmissionRejectReason::WrongRoot)
+        );
+        assert_eq!(
+            supervisor.lifecycle(&replacement_lane),
+            Ok(ReconciliationLifecycle::Capturing)
+        );
+        assert_eq!(
+            supervisor.generation(&replacement_lane),
+            Ok(replacement_generation)
+        );
+        assert!(matches!(
+            supervisor.admit(envelope(
+                &source,
+                Some(&replacement_root),
+                replacement_generation,
+                2,
+                RawEventKind::Create,
+            )),
+            AdmissionOutcome::Accepted(_)
+        ));
     }
 
     #[test]
