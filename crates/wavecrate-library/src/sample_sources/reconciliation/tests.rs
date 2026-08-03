@@ -61,6 +61,26 @@ fn scope_path(scope: &ReconciliationScope) -> Option<&Path> {
 }
 
 #[test]
+fn capture_sequence_evidence_distinguishes_missing_ambiguous_and_exact() {
+    assert_eq!(
+        capture_boundary(None, None).sequence_evidence(),
+        CaptureSequenceEvidence::Missing
+    );
+    assert_eq!(
+        capture_boundary(Some(11), None).sequence_evidence(),
+        CaptureSequenceEvidence::Ambiguous
+    );
+    assert_eq!(
+        capture_boundary(None, Some(12)).sequence_evidence(),
+        CaptureSequenceEvidence::Ambiguous
+    );
+    assert_eq!(
+        capture_boundary(Some(11), Some(12)).sequence_evidence(),
+        CaptureSequenceEvidence::Exact(CaptureSequenceRange::new(11, 12))
+    );
+}
+
+#[test]
 fn limits_are_checked_and_accounting_is_exact_without_truncation() {
     assert_eq!(
         RawObservationLimits::new(0, 1, 1),
