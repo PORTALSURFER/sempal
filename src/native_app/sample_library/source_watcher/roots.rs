@@ -190,12 +190,25 @@ pub(super) fn root_identity_is_current(
     watched_roots: &WatchedRootIdentities,
     root: &Path,
 ) -> Option<bool> {
-    let watched = watched_roots.get(root)?.as_ref()?;
+    let watched = registered_root_identity(watched_roots, root)?;
     match observed_available_root_identity(root) {
-        RootObservation::Available(Some(observed)) => Some(watched == &observed),
+        RootObservation::Available(Some(observed)) => {
+            Some(watched.as_bytes() == observed.as_bytes())
+        }
         RootObservation::Available(None) => None,
         RootObservation::Unavailable => Some(false),
     }
+}
+
+pub(super) fn registered_root_identity(
+    watched_roots: &WatchedRootIdentities,
+    root: &Path,
+) -> Option<wavecrate_library::sample_sources::reconciliation::RootIdentity> {
+    watched_roots.get(root)?.as_ref().map(|identity| {
+        wavecrate_library::sample_sources::reconciliation::RootIdentity::from_bytes(
+            identity.as_bytes().to_vec(),
+        )
+    })
 }
 
 fn observed_available_roots(sources: &[SampleSource]) -> (WatchedRootIdentities, bool) {
