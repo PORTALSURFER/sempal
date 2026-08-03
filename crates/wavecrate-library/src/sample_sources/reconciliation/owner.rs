@@ -140,7 +140,7 @@ impl ReconciliationAdmissionOwner {
                 .supervisor
                 .restart_lane(&existing_lane)
                 .map_err(AdmissionOwnerError::Supervisor)?,
-            ReconciliationLifecycle::Capturing => generation,
+            ReconciliationLifecycle::Capturing => return self.snapshot(&existing_lane),
         };
 
         self.supervisor
@@ -345,6 +345,23 @@ mod tests {
                 AdmissionError::LaneLimitReached
             ))
         );
+    }
+
+    #[test]
+    fn begin_source_is_idempotent_for_capturing_same_root() {
+        let source = SourceId::from_string("source-a");
+        let root_identity = root(b"root-a");
+        let mut owner = owner(1, 2, 8);
+
+        let first = owner
+            .begin_source(source.clone(), root_identity.clone())
+            .expect("begin source");
+        let second = owner
+            .begin_source(source.clone(), root_identity)
+            .expect("repeat begin source");
+
+        assert_eq!(second, first);
+        assert_eq!(owner.supervisor().in_flight(), 0);
     }
 
     #[test]
