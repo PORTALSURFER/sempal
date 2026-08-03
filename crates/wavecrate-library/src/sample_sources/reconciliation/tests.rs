@@ -173,7 +173,9 @@ fn limits_are_checked_and_accounting_is_exact_without_truncation() {
         .with_flags(1)
         .with_event_id(9)
         .with_cursor(vec![8, 7])
-        .with_detail(OsString::from("err"));
+        .with_detail(OsString::from("err"))
+        .with_source(OsString::from("source"))
+        .with_process_id(42);
     let observations = vec![
         RawObservation::new(
             RawEventKind::Create,
@@ -194,9 +196,17 @@ fn limits_are_checked_and_accounting_is_exact_without_truncation() {
 
     assert_eq!(raw.accounting().event_count(), 2);
     assert_eq!(raw.accounting().path_bytes(), 3);
-    assert_eq!(raw.accounting().metadata_bytes(), 26);
-    assert_eq!(raw.accounting().total_bytes(), Ok(29));
+    assert_eq!(raw.accounting().metadata_bytes(), 36);
+    assert_eq!(raw.accounting().total_bytes(), Ok(39));
     assert_eq!(raw.observations(), observations.as_slice());
+    assert_eq!(
+        raw.observations()[0]
+            .metadata()
+            .source()
+            .and_then(|source| source.to_str()),
+        Some("source")
+    );
+    assert_eq!(raw.observations()[0].metadata().process_id(), Some(42));
     assert_eq!(
         raw.observations()[0]
             .paths()
@@ -245,7 +255,7 @@ fn limits_are_checked_and_accounting_is_exact_without_truncation() {
         ),
         Err(RawEnvelopeError::LimitExceeded {
             limit: RawEnvelopeLimit::MetadataBytes,
-            actual: 26,
+            actual: 36,
             maximum: 25,
         })
     ));

@@ -14,6 +14,7 @@ const WATCHER_POLL_INTERVAL: Duration = Duration::from_millis(200);
 const SOURCE_CHANGE_DEBOUNCE: Duration = Duration::from_millis(400);
 const MAX_PENDING_PATHS_PER_SOURCE: usize = 512;
 const WATCHER_EVENT_QUEUE_CAPACITY: usize = 256;
+const MAX_PENDING_CAPTURE_CONTEXTS: usize = WATCHER_EVENT_QUEUE_CAPACITY;
 const WATCHER_RESTART_MIN: Duration = Duration::from_secs(1);
 const WATCHER_RESTART_MAX: Duration = Duration::from_secs(60);
 const WATCHER_START_TIMEOUT: Duration = Duration::from_secs(5);

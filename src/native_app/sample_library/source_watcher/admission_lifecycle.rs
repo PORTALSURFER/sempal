@@ -4,13 +4,11 @@ use std::collections::HashSet;
 
 use wavecrate::sample_sources::{SampleSource, SourceId};
 use wavecrate_library::sample_sources::reconciliation::{
-    AdmissionOwnerError, RawObservationLimits, ReconciliationAdmissionLimits,
+    AdapterError, AdmissionOwnerError, DispatchTicket, DispatchedObservation, LiveAuditAdmission,
+    OwnedAdmissionLane, RawObservationLimits, ReconciliationAdmissionLimits,
     ReconciliationAdmissionOwner, ReconciliationAdmissionSupervisor, ReconciliationLifecycle,
-    RootIdentity,
+    RootIdentity, SyntheticObservationBatch,
 };
-
-#[cfg(test)]
-use wavecrate_library::sample_sources::reconciliation::OwnedAdmissionLane;
 
 use super::roots::{WatchedRootIdentities, registered_root_identity};
 
@@ -47,7 +45,7 @@ impl AdmissionLifecycle {
     }
 
     #[cfg(test)]
-    fn with_limits(limits: ReconciliationAdmissionLimits) -> Self {
+    pub(super) fn with_limits(limits: ReconciliationAdmissionLimits) -> Self {
         Self::from_limits(limits)
     }
 
@@ -153,9 +151,70 @@ impl AdmissionLifecycle {
         Ok(())
     }
 
+    /// Return the owner-authoritative lane snapshot used to bind a live capture.
+    pub(super) fn lane_for_capture(&self, source_id: &SourceId) -> Option<OwnedAdmissionLane> {
+        if self.admission_closed {
+            return None;
+        }
+        self.owner.lane(source_id)
+    }
+
+    /// Admit live evidence through the existing owner-held adapter.
+    pub(super) fn admit_live_with_correlation(
+        &mut self,
+        batch: SyntheticObservationBatch,
+    ) -> Result<LiveAuditAdmission, AdapterError> {
+        self.owner.admit_live_with_correlation(batch)
+    }
+
+    /// Select the next owner-scheduled live envelope.
+    pub(super) fn dispatch_next(&mut self) -> Option<DispatchedObservation> {
+        if self.admission_closed {
+            return None;
+        }
+        self.owner.dispatch_next()
+    }
+
+    /// Advance an owner-scheduled envelope through its handoff phases.
+    pub(super) fn mark_dispatched(
+        &mut self,
+        ticket: DispatchTicket,
+    ) -> Result<(), wavecrate_library::sample_sources::reconciliation::AdmissionError> {
+        self.owner.mark_dispatched(ticket)
+    }
+
+    pub(super) fn mark_applied(
+        &mut self,
+        ticket: DispatchTicket,
+    ) -> Result<(), wavecrate_library::sample_sources::reconciliation::AdmissionError> {
+        self.owner.mark_applied(ticket)
+    }
+
+    pub(super) fn mark_unproven_audit_handed_off(
+        &mut self,
+        ticket: DispatchTicket,
+    ) -> Result<(), wavecrate_library::sample_sources::reconciliation::AdmissionError> {
+        self.owner.mark_unproven_audit_handed_off(ticket)
+    }
+
+    pub(super) fn max_in_flight(&self) -> usize {
+        self.owner.max_in_flight()
+    }
+
+    pub(super) fn in_flight(&self) -> usize {
+        self.owner.supervisor().in_flight()
+    }
+
+    #[cfg(test)]
+    pub(super) fn retained_uncertainties(
+        &self,
+    ) -> &[wavecrate_library::sample_sources::reconciliation::RetainedUncertainty] {
+        self.owner.supervisor().retained_uncertainties()
+    }
+
     #[cfg(test)]
     fn lane(&self, source_id: &SourceId) -> Option<OwnedAdmissionLane> {
-        self.owner.lane(source_id)
+        self.lane_for_capture(source_id)
     }
 }
 

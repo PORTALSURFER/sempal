@@ -1,7 +1,11 @@
 //! Source-scoped ownership over the pure reconciliation admission supervisor.
 
+use super::adapter::{
+    AdapterError, LiveAuditAdmission, ReconciliationAdapter, SyntheticObservationBatch,
+};
 use super::admission::{
-    AdmissionError, AdmissionLaneKey, ReconciliationAdmissionSupervisor, ReconciliationLifecycle,
+    AdmissionError, AdmissionLaneKey, DispatchTicket, DispatchedObservation,
+    ReconciliationAdmissionSupervisor, ReconciliationLifecycle,
 };
 use super::model::{RootIdentity, WatcherGeneration};
 use crate::sample_sources::SourceId;
@@ -105,6 +109,42 @@ impl ReconciliationAdmissionOwner {
     /// Iterate over source identifiers registered in the owned supervisor.
     pub fn source_ids(&self) -> impl Iterator<Item = &SourceId> {
         self.supervisor.source_ids()
+    }
+
+    /// Admit one live batch through the owner-held adapter without replacing the supervisor.
+    pub fn admit_live_with_correlation(
+        &mut self,
+        batch: SyntheticObservationBatch,
+    ) -> Result<LiveAuditAdmission, AdapterError> {
+        ReconciliationAdapter::new(&mut self.supervisor).admit_live_with_correlation(batch)
+    }
+
+    /// Select the next admitted envelope using the supervisor's fair lane scheduler.
+    pub fn dispatch_next(&mut self) -> Option<DispatchedObservation> {
+        self.supervisor.dispatch_next()
+    }
+
+    /// Advance one dispatched envelope to the downstream handoff phase.
+    pub fn mark_dispatched(&mut self, ticket: DispatchTicket) -> Result<(), AdmissionError> {
+        self.supervisor.mark_dispatched(ticket)
+    }
+
+    /// Advance one handed-off envelope to the applied phase.
+    pub fn mark_applied(&mut self, ticket: DispatchTicket) -> Result<(), AdmissionError> {
+        self.supervisor.mark_applied(ticket)
+    }
+
+    /// Retire one proofless live envelope after its conservative audit handoff.
+    pub fn mark_unproven_audit_handed_off(
+        &mut self,
+        ticket: DispatchTicket,
+    ) -> Result<(), AdmissionError> {
+        self.supervisor.mark_unproven_audit_handed_off(ticket)
+    }
+
+    /// Return the bounded number of live envelopes the owner can retain.
+    pub fn max_in_flight(&self) -> usize {
+        self.supervisor.limits().max_in_flight()
     }
 
     /// Register and begin a source, or begin/restart its existing same-root lane.
@@ -224,7 +264,7 @@ mod tests {
     use crate::sample_sources::reconciliation::{
         AdmissionOutcome, BackendStreamIdentity, CaptureBoundary, RawEventKind, RawObservation,
         RawObservationEnvelope, RawObservationLimits, RawObservationProvenance, RawObservedPath,
-        RawPathRole, ReconciliationAdmissionLimits,
+        RawPathRole, ReconciliationAdmissionLimits, SyntheticObservationBatch, UncertaintyReason,
     };
 
     fn root(value: &[u8]) -> RootIdentity {
@@ -309,6 +349,66 @@ mod tests {
 
         let supervisor = owner.into_supervisor();
         assert_eq!(supervisor.lane_for_source(&source), Some(&lane));
+    }
+
+    #[test]
+    fn live_dispatch_seam_preserves_correlation_and_releases_only_proofless_work() {
+        let source = SourceId::from_string("live-seam");
+        let root_identity = root(b"live-root");
+        let mut owner = owner(1, 1, 8);
+        let lane = owner
+            .begin_source(source.clone(), root_identity.clone())
+            .expect("capturing lane");
+        let boundary = CaptureBoundary::try_new(4, None, None).expect("capture boundary");
+        let batch = SyntheticObservationBatch::new(
+            RawObservationProvenance::new(
+                source.clone(),
+                Some(root_identity.clone()),
+                Some(BackendStreamIdentity::from_bytes(b"live-stream".to_vec())),
+                lane.generation(),
+                boundary,
+            ),
+            vec![RawObservation::new(
+                RawEventKind::Create,
+                vec![RawObservedPath::new(
+                    "sample.wav".into(),
+                    RawPathRole::Subject,
+                )],
+            )],
+            RawObservationLimits::new(8, usize::MAX, usize::MAX).expect("batch limits"),
+        );
+
+        let live = owner
+            .admit_live_with_correlation(batch)
+            .expect("live admission");
+        let ticket = match live.admission().outcome() {
+            AdmissionOutcome::Accepted(ticket) => *ticket,
+            outcome => panic!("expected accepted live admission, got {outcome:?}"),
+        };
+        assert_eq!(
+            live.correlation().map(|correlation| correlation.ticket()),
+            Some(ticket)
+        );
+        let dispatched = owner.dispatch_next().expect("fair dispatch");
+        assert_eq!(dispatched.ticket(), ticket);
+        assert!(dispatched.normalized().proof().is_unproven());
+        owner.mark_dispatched(ticket).expect("mark dispatched");
+        owner.mark_applied(ticket).expect("mark applied");
+        owner
+            .mark_unproven_audit_handed_off(ticket)
+            .expect("retire proofless handoff");
+
+        assert_eq!(owner.supervisor().in_flight(), 0);
+        let marker = owner
+            .supervisor()
+            .retained_uncertainties()
+            .iter()
+            .find(|marker| marker.source_id() == Some(&source))
+            .expect("retained live uncertainty");
+        assert_eq!(marker.root_identity(), Some(&root_identity));
+        assert_eq!(marker.generation(), Some(lane.generation()));
+        assert_eq!(marker.capture_boundary(), Some(boundary));
+        assert!(marker.reasons().contains(&UncertaintyReason::LiveUnproven));
     }
 
     #[test]
