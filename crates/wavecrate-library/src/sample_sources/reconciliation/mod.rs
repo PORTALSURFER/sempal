@@ -1,5 +1,6 @@
 //! Pure, backend-neutral Finder observation modeling and normalization.
 
+mod adapter;
 mod admission;
 mod model;
 mod normalize;
@@ -7,6 +8,10 @@ mod normalize;
 #[cfg(test)]
 mod tests;
 
+pub use adapter::{
+    AdapterAdmission, AdapterDisposition, AdapterError, ReconciliationAdapter, ReplayPriorToken,
+    SyntheticObservationBatch,
+};
 pub use admission::{
     AdmissionError, AdmissionLaneKey, AdmissionOutcome, AdmissionRejectReason,
     CommittedAuthoritativeReconciliationAcknowledgement, DispatchPhase, DispatchTicket,
