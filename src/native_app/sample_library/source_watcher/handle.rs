@@ -14,6 +14,7 @@ use std::{
 };
 use wavecrate::sample_sources::{SampleSource, SourceId};
 
+use super::admission_lifecycle::AdmissionLifecycle;
 use super::capture::{SourceWatcherCapture, capture_event};
 use super::classification::retain_source_refresh_candidates;
 use super::journal::{self, JournalRecovery};
@@ -438,6 +439,7 @@ fn run_source_watcher(
     };
     let mut state = GuiSourceWatchState::default();
     state.set_sources(initial_sources);
+    let mut admission_lifecycle = AdmissionLifecycle::new();
     let mut next_restart = Instant::now();
     let mut restart_delay = WATCHER_RESTART_MIN;
     let mut next_root_refresh = Instant::now();
@@ -452,17 +454,34 @@ fn run_source_watcher(
     loop {
         match command_rx.recv_timeout(WATCHER_POLL_INTERVAL) {
             Ok(GuiSourceWatchCommand::ReplaceSources(sources)) => {
+                let now = Instant::now();
                 let roots_changed =
                     desired_watched_roots(&sources) != desired_watched_roots(&state.sources);
                 state.set_sources(sources);
-                if roots_changed {
+                if !reconcile_watcher_admission(
+                    &mut admission_lifecycle,
+                    &state.sources,
+                    &state.watched_roots,
+                    "source-list replacement",
+                ) {
                     retire_source_watcher(&mut watcher, &mut teardown);
                     cancel_pending_source_watcher(&mut pending_watcher, &mut retired_initializers);
-                    state.reset_watches(Instant::now());
-                    next_restart = Instant::now();
+                    if watcher_has_been_ready {
+                        state.reset_watches(now);
+                    } else {
+                        state.clear_watches();
+                    }
+                    next_restart = now + restart_delay;
+                    restart_delay = doubled_backoff(restart_delay);
+                } else if roots_changed {
+                    fence_watcher_admission(&mut admission_lifecycle, "source-list watcher reset");
+                    retire_source_watcher(&mut watcher, &mut teardown);
+                    cancel_pending_source_watcher(&mut pending_watcher, &mut retired_initializers);
+                    state.reset_watches(now);
+                    next_restart = now;
                     restart_delay = WATCHER_RESTART_MIN;
                 }
-                next_root_refresh = Instant::now();
+                next_root_refresh = now;
             }
             Ok(GuiSourceWatchCommand::AcknowledgeCommittedPaths {
                 source_id,
@@ -499,6 +518,7 @@ fn run_source_watcher(
             }
             #[cfg(test)]
             Ok(GuiSourceWatchCommand::ForceRestart) => {
+                fence_watcher_admission(&mut admission_lifecycle, "forced watcher restart");
                 retire_source_watcher(&mut watcher, &mut teardown);
                 cancel_pending_source_watcher(&mut pending_watcher, &mut retired_initializers);
                 state.reset_watches(Instant::now());
@@ -555,12 +575,14 @@ fn run_source_watcher(
                 let _ = status_tx.send(is_live);
             }
             Ok(GuiSourceWatchCommand::Shutdown) => {
+                fence_watcher_admission(&mut admission_lifecycle, "watcher shutdown");
                 cancel_pending_source_watcher(&mut pending_watcher, &mut retired_initializers);
                 retire_source_watcher_on_shutdown(&mut watcher, &mut teardown);
                 break;
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                fence_watcher_admission(&mut admission_lifecycle, "watcher command disconnect");
                 cancel_pending_source_watcher(&mut pending_watcher, &mut retired_initializers);
                 retire_source_watcher_on_shutdown(&mut watcher, &mut teardown);
                 break;
@@ -624,6 +646,10 @@ fn run_source_watcher(
                     let (unavailable, watch_failed) =
                         state.apply_root_watch_update(update, now, false);
                     if watch_failed {
+                        fence_watcher_admission(
+                            &mut admission_lifecycle,
+                            "partial watcher installation",
+                        );
                         if let Err(restarted) =
                             retire_source_watcher_value(restarted, &mut teardown)
                         {
@@ -653,6 +679,34 @@ fn run_source_watcher(
                             restart_delay = doubled_backoff(restart_delay);
                         }
                     } else {
+                        let lifecycle_ready = reconcile_watcher_admission(
+                            &mut admission_lifecycle,
+                            &state.sources,
+                            &state.watched_roots,
+                            "successful watcher installation",
+                        );
+                        if !lifecycle_ready {
+                            if let Err(restarted) =
+                                retire_source_watcher_value(restarted, &mut teardown)
+                            {
+                                watcher = Some(restarted);
+                            }
+                            if watcher_has_been_ready {
+                                state.reset_watches(now);
+                            } else {
+                                state.clear_watches();
+                            }
+                            if !watcher_has_been_ready {
+                                publish_watcher_unavailable_fallback(
+                                    &message_tx,
+                                    &state.sources,
+                                    &mut watcher_unavailable_reported,
+                                );
+                            }
+                            next_restart = now + restart_delay;
+                            restart_delay = doubled_backoff(restart_delay);
+                            continue;
+                        }
                         restarted.ingress_enabled.store(true, Ordering::Release);
                         let first_ready = !watcher_has_been_ready;
                         let recovered_after_unavailability = watcher_unavailable_reported;
@@ -690,6 +744,10 @@ fn run_source_watcher(
                 }
                 Ok(Err(error)) => {
                     let _ = pending.join_handle.join();
+                    fence_watcher_admission(
+                        &mut admission_lifecycle,
+                        "watcher initialization failure",
+                    );
                     tracing::warn!(
                         ?backend,
                         retry_ms = restart_delay.as_millis(),
@@ -729,6 +787,10 @@ fn run_source_watcher(
                     pending_watcher = Some(pending);
                 }
                 Err(TryRecvError::Empty) => {
+                    fence_watcher_admission(
+                        &mut admission_lifecycle,
+                        "watcher initialization timeout",
+                    );
                     pending.ingress_enabled.store(false, Ordering::Release);
                     debug_assert!(
                         retired_initializers
@@ -777,6 +839,10 @@ fn run_source_watcher(
                 }
                 Err(TryRecvError::Disconnected) => {
                     let _ = pending.join_handle.join();
+                    fence_watcher_admission(
+                        &mut admission_lifecycle,
+                        "watcher initializer disconnect",
+                    );
                     tracing::warn!(
                         ?backend,
                         retry_ms = restart_delay.as_millis(),
@@ -831,6 +897,7 @@ fn run_source_watcher(
                     "Source root availability or filesystem identity changed; restarting watcher"
                 );
                 state.mark_roots_overflowed(&invalidated_roots, now);
+                fence_watcher_admission(&mut admission_lifecycle, "root identity refresh");
                 retire_source_watcher(&mut watcher, &mut teardown);
                 cancel_pending_source_watcher(&mut pending_watcher, &mut retired_initializers);
                 state.clear_watches();
@@ -854,6 +921,7 @@ fn run_source_watcher(
             drain_watcher_captures(&mut state, watcher.as_ref(), &event_rx, now);
 
         if watcher_failed || root_invalidated {
+            fence_watcher_admission(&mut admission_lifecycle, "watcher capture retirement");
             retire_source_watcher(&mut watcher, &mut teardown);
             cancel_pending_source_watcher(&mut pending_watcher, &mut retired_initializers);
             if watcher_failed {
@@ -904,6 +972,36 @@ fn run_source_watcher(
         lifecycle_tx
             .send(lifecycle)
             .expect("source watcher lifecycle service must outlive its coordinator");
+    }
+}
+
+fn fence_watcher_admission(admission: &mut AdmissionLifecycle, boundary: &'static str) {
+    if let Err(error) = admission.fence_all() {
+        tracing::error!(
+            boundary,
+            ?error,
+            "Could not fully fence native watcher admission; keeping backend ingress closed"
+        );
+    }
+}
+
+fn reconcile_watcher_admission(
+    admission: &mut AdmissionLifecycle,
+    sources: &[SampleSource],
+    watched_roots: &WatchedRootIdentities,
+    boundary: &'static str,
+) -> bool {
+    match admission.reconcile(sources, watched_roots) {
+        Ok(()) => true,
+        Err(error) => {
+            tracing::error!(
+                boundary,
+                ?error,
+                "Native watcher admission lifecycle failed closed"
+            );
+            fence_watcher_admission(admission, boundary);
+            false
+        }
     }
 }
 
