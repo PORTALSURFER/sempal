@@ -1,3 +1,4 @@
+use super::capture::SourceWatcherCapture;
 use super::classification::{path_is_source_refresh_candidate, retain_source_refresh_candidates};
 use super::handle::{GuiSourceWatcherHandle, doubled_backoff};
 use super::roots::{
@@ -760,6 +761,75 @@ fn filesystem_event_after_initial_watcher_ready_is_not_suppressed() {
     assert_eq!(refresh.1, vec![PathBuf::from("recording.wav")]);
     assert!(!refresh.2);
     assert!(refresh.3);
+}
+
+#[test]
+fn stale_error_and_overflow_widen_without_retiring_current_watcher() {
+    let root = tempfile::tempdir().expect("watched source root");
+    let source = SampleSource::new_with_id(
+        SourceId::from_string("source_id::stale-capture"),
+        root.path().to_path_buf(),
+    );
+    let source_id = source.id.as_str().to_string();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let watcher = GuiSourceWatcherHandle::spawn(vec![source], sender);
+    watcher.wait_until_ready_for_tests();
+    while !matches!(
+        receiver
+            .recv_timeout(super::WATCHER_START_TIMEOUT)
+            .expect("initial watcher-ready message"),
+        GuiMessage::SourceWatcherReady { .. }
+    ) {}
+    assert!(
+        watcher.watcher_is_live_for_tests(),
+        "initial watcher should be live before stale capture injection"
+    );
+
+    watcher.force_restart_for_tests();
+    watcher.wait_until_ready_for_tests();
+    while receiver.try_recv().is_ok() {}
+    assert!(
+        watcher.watcher_is_live_for_tests(),
+        "replacement watcher should be live before stale capture injection"
+    );
+
+    for (capture, label) in [
+        (SourceWatcherCapture::Error { stream_id: 0 }, "stale error"),
+        (
+            SourceWatcherCapture::Overflow { stream_id: 0 },
+            "stale overflow",
+        ),
+    ] {
+        watcher.inject_capture_for_tests(capture);
+
+        let deadline = Instant::now()
+            + super::SOURCE_CHANGE_DEBOUNCE
+            + super::WATCHER_POLL_INTERVAL.saturating_mul(4);
+        loop {
+            let message = receiver
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                .unwrap_or_else(|error| panic!("{label} source refresh: {error}"));
+            if let GuiMessage::SourceFilesystemChanged {
+                source_id: observed_source_id,
+                paths,
+                overflowed,
+                ..
+            } = message
+                && observed_source_id == source_id
+            {
+                assert!(
+                    paths.is_empty(),
+                    "{label} must widen rather than target paths"
+                );
+                assert!(overflowed, "{label} must conservatively widen sources");
+                break;
+            }
+        }
+        assert!(
+            watcher.watcher_is_live_for_tests(),
+            "{label} must not retire the replacement watcher"
+        );
+    }
 }
 
 #[test]

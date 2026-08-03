@@ -222,7 +222,12 @@ impl EventHandler for SourceWatcherIngress {
                 stream_id: self.stream_id,
                 event,
             },
-            capture => capture,
+            SourceWatcherCapture::Error { .. } => SourceWatcherCapture::Error {
+                stream_id: self.stream_id,
+            },
+            SourceWatcherCapture::Overflow { .. } => SourceWatcherCapture::Overflow {
+                stream_id: self.stream_id,
+            },
         };
         if !self.enabled.load(Ordering::Acquire) {
             return;
@@ -340,6 +345,24 @@ impl GuiSourceWatcherHandle {
             .send(GuiSourceWatchCommand::InjectPaths(paths));
     }
 
+    #[cfg(test)]
+    pub(super) fn inject_capture_for_tests(&self, capture: SourceWatcherCapture) {
+        let _ = self
+            .command_tx
+            .send(GuiSourceWatchCommand::InjectCapture(capture));
+    }
+
+    #[cfg(test)]
+    pub(super) fn watcher_is_live_for_tests(&self) -> bool {
+        let (status_tx, status_rx) = std::sync::mpsc::channel();
+        self.command_tx
+            .send(GuiSourceWatchCommand::ReportWatcherLive(status_tx))
+            .expect("source watcher should accept a status query");
+        status_rx
+            .recv_timeout(WATCHER_START_TIMEOUT)
+            .expect("source watcher should report its live status")
+    }
+
     #[cfg(any(test, feature = "legacy-controller"))]
     pub(in crate::native_app) fn wait_until_ready(&self, timeout: Duration) -> Result<(), String> {
         let (ready_tx, ready_rx) = std::sync::mpsc::channel();
@@ -392,6 +415,10 @@ enum GuiSourceWatchCommand {
     AwaitReady(Sender<()>),
     #[cfg(test)]
     InjectPaths(Vec<std::path::PathBuf>),
+    #[cfg(test)]
+    InjectCapture(SourceWatcherCapture),
+    #[cfg(test)]
+    ReportWatcherLive(Sender<bool>),
     Shutdown,
 }
 
@@ -491,15 +518,18 @@ fn run_source_watcher(
                 let event = paths
                     .into_iter()
                     .fold(Event::new(EventKind::Any), Event::add_path);
+                let stream_id = watcher
+                    .as_ref()
+                    .map(|watcher| watcher.stream_id)
+                    .unwrap_or(0);
                 let capture = match capture_event(Ok(event)) {
-                    SourceWatcherCapture::Notify { event, .. } => SourceWatcherCapture::Notify {
-                        stream_id: watcher
-                            .as_ref()
-                            .map(|watcher| watcher.stream_id)
-                            .unwrap_or(0),
-                        event,
-                    },
-                    capture => capture,
+                    SourceWatcherCapture::Notify { event, .. } => {
+                        SourceWatcherCapture::Notify { stream_id, event }
+                    }
+                    SourceWatcherCapture::Error { .. } => SourceWatcherCapture::Error { stream_id },
+                    SourceWatcherCapture::Overflow { .. } => {
+                        SourceWatcherCapture::Overflow { stream_id }
+                    }
                 };
                 match event_tx.try_send(capture) {
                     Ok(()) => {}
@@ -508,6 +538,21 @@ fn run_source_watcher(
                     }
                     Err(TrySendError::Disconnected(_)) => {}
                 }
+            }
+            #[cfg(test)]
+            Ok(GuiSourceWatchCommand::InjectCapture(capture)) => match event_tx.try_send(capture) {
+                Ok(()) => {}
+                Err(TrySendError::Full(_)) => {
+                    ingress_overflowed.store(true, Ordering::Release);
+                }
+                Err(TrySendError::Disconnected(_)) => {}
+            },
+            #[cfg(test)]
+            Ok(GuiSourceWatchCommand::ReportWatcherLive(status_tx)) => {
+                let is_live = watcher
+                    .as_ref()
+                    .is_some_and(|watcher| watcher.ingress_enabled.load(Ordering::Acquire));
+                let _ = status_tx.send(is_live);
             }
             Ok(GuiSourceWatchCommand::Shutdown) => {
                 cancel_pending_source_watcher(&mut pending_watcher, &mut retired_initializers);
@@ -808,25 +853,27 @@ fn run_source_watcher(
         let mut watcher_failed = false;
         let mut root_invalidated = false;
         while let Ok(event) = event_rx.try_recv() {
+            let stream_id = match &event {
+                SourceWatcherCapture::Notify { stream_id, .. }
+                | SourceWatcherCapture::Error { stream_id }
+                | SourceWatcherCapture::Overflow { stream_id } => *stream_id,
+            };
+            if watcher.as_ref().map(|watcher| watcher.stream_id) != Some(stream_id) {
+                state.mark_all_overflowed(now);
+                continue;
+            }
             match event {
-                SourceWatcherCapture::Notify {
-                    stream_id,
-                    mut event,
-                } => {
-                    if watcher.as_ref().map(|watcher| watcher.stream_id) != Some(stream_id) {
-                        state.mark_all_overflowed(now);
-                        continue;
-                    }
+                SourceWatcherCapture::Notify { mut event, .. } => {
                     if !retain_source_refresh_candidates(&mut event) {
                         continue;
                     }
                     root_invalidated |= state.collect_event(&event, Instant::now());
                 }
-                SourceWatcherCapture::Error => {
+                SourceWatcherCapture::Error { .. } => {
                     tracing::warn!("GUI source watcher error");
                     watcher_failed = true;
                 }
-                SourceWatcherCapture::Overflow => {
+                SourceWatcherCapture::Overflow { .. } => {
                     state.mark_all_overflowed(now);
                 }
             }
@@ -1283,6 +1330,7 @@ pub(super) fn doubled_backoff(current: Duration) -> Duration {
 
 #[cfg(test)]
 mod lifecycle_tests {
+    use super::super::capture::MAX_CAPTURE_PATHS;
     use super::*;
     use notify::{Event, EventKind, RecursiveMode, WatcherKind};
     use std::{
@@ -1605,8 +1653,8 @@ mod lifecycle_tests {
     }
 
     #[test]
-    fn ingress_attaches_its_stream_id_to_captured_notifications() {
-        let (event_tx, event_rx) = std::sync::mpsc::sync_channel(1);
+    fn ingress_attaches_its_stream_id_to_all_captured_variants() {
+        let (event_tx, event_rx) = std::sync::mpsc::sync_channel(3);
         let mut ingress = SourceWatcherIngress {
             event_tx,
             overflowed: Arc::new(AtomicBool::new(false)),
@@ -1619,13 +1667,27 @@ mod lifecycle_tests {
             paths: Vec::new(),
             attrs: notify::event::EventAttributes::default(),
         }));
+        ingress.handle_event(Err(notify::Error::generic("capture-test")));
+        ingress.handle_event(Ok(Event {
+            kind: EventKind::Any,
+            paths: (0..=MAX_CAPTURE_PATHS)
+                .map(|index| PathBuf::from(format!("{index}.wav")))
+                .collect(),
+            attrs: notify::event::EventAttributes::default(),
+        }));
 
-        let SourceWatcherCapture::Notify { stream_id, .. } =
-            event_rx.recv().expect("captured notification")
-        else {
-            panic!("expected captured notification");
-        };
-        assert_eq!(stream_id, 41);
+        assert!(matches!(
+            event_rx.recv().expect("captured notification"),
+            SourceWatcherCapture::Notify { stream_id: 41, .. }
+        ));
+        assert!(matches!(
+            event_rx.recv().expect("captured error"),
+            SourceWatcherCapture::Error { stream_id: 41 }
+        ));
+        assert!(matches!(
+            event_rx.recv().expect("captured overflow"),
+            SourceWatcherCapture::Overflow { stream_id: 41 }
+        ));
     }
 
     struct BlockingDropWatcher {
