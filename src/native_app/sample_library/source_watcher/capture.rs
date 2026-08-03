@@ -4,19 +4,20 @@ pub(super) const MAX_CAPTURE_PATHS: usize = 4_096;
 pub(super) const MAX_CAPTURE_PATH_BYTES: usize = 256 * 1_024;
 pub(super) const MAX_CAPTURE_METADATA_BYTES: usize = 256 * 1_024;
 
+#[derive(Debug)]
 pub(super) enum SourceWatcherCapture {
-    Notify(Event),
-    Error,
-    Overflow,
+    Notify { stream_id: u64, event: Event },
+    Error { stream_id: u64 },
+    Overflow { stream_id: u64 },
 }
 
 pub(super) fn capture_event(event: notify::Result<Event>) -> SourceWatcherCapture {
     let Ok(captured_event) = event else {
-        return SourceWatcherCapture::Error;
+        return SourceWatcherCapture::Error { stream_id: 0 };
     };
 
     if captured_event.paths.len() > MAX_CAPTURE_PATHS {
-        return SourceWatcherCapture::Overflow;
+        return SourceWatcherCapture::Overflow { stream_id: 0 };
     }
 
     let path_bytes = captured_event.paths.iter().try_fold(0usize, |total, path| {
@@ -34,9 +35,12 @@ pub(super) fn capture_event(event: notify::Result<Event>) -> SourceWatcherCaptur
     if path_bytes.is_none()
         || metadata_bytes.map_or(true, |bytes| bytes > MAX_CAPTURE_METADATA_BYTES)
     {
-        SourceWatcherCapture::Overflow
+        SourceWatcherCapture::Overflow { stream_id: 0 }
     } else {
-        SourceWatcherCapture::Notify(captured_event)
+        SourceWatcherCapture::Notify {
+            stream_id: 0,
+            event: captured_event,
+        }
     }
 }
 
@@ -63,7 +67,7 @@ mod tests {
             attrs,
         };
 
-        let SourceWatcherCapture::Notify(event) = capture_event(Ok(event)) else {
+        let SourceWatcherCapture::Notify { event, .. } = capture_event(Ok(event)) else {
             panic!("event should be accepted");
         };
         assert_eq!(event.kind, EventKind::Any);
@@ -89,7 +93,7 @@ mod tests {
             attrs: EventAttributes::default(),
         };
 
-        let SourceWatcherCapture::Notify(event) = capture_event(Ok(event)) else {
+        let SourceWatcherCapture::Notify { event, .. } = capture_event(Ok(event)) else {
             panic!("event should be accepted");
         };
         assert_eq!(event.paths, paths);
@@ -112,7 +116,7 @@ mod tests {
 
         assert!(matches!(
             capture_event(Ok(event)),
-            SourceWatcherCapture::Overflow
+            SourceWatcherCapture::Overflow { .. }
         ));
     }
 
@@ -127,7 +131,7 @@ mod tests {
 
         assert!(matches!(
             capture_event(Ok(event)),
-            SourceWatcherCapture::Overflow
+            SourceWatcherCapture::Overflow { .. }
         ));
     }
 
@@ -143,7 +147,7 @@ mod tests {
 
         assert!(matches!(
             capture_event(Ok(event)),
-            SourceWatcherCapture::Overflow
+            SourceWatcherCapture::Overflow { .. }
         ));
     }
 
@@ -154,7 +158,7 @@ mod tests {
 
         assert!(matches!(
             capture_event(Err(error)),
-            SourceWatcherCapture::Error
+            SourceWatcherCapture::Error { .. }
         ));
     }
 }
