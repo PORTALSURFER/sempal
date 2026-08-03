@@ -226,6 +226,43 @@ impl WatcherGeneration {
     }
 }
 
+/// An exact inclusive range of backend capture sequences.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct CaptureSequenceRange {
+    /// The first sequence included in the capture.
+    pub first: u64,
+    /// The last sequence included in the capture.
+    pub last: u64,
+}
+
+impl CaptureSequenceRange {
+    /// Construct an exact inclusive capture range.
+    pub const fn new(first: u64, last: u64) -> Self {
+        Self { first, last }
+    }
+
+    /// Return the first sequence in the range.
+    pub const fn first(self) -> u64 {
+        self.first
+    }
+
+    /// Return the last sequence in the range.
+    pub const fn last(self) -> u64 {
+        self.last
+    }
+}
+
+/// The amount of exact sequence evidence supplied by a capture boundary.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CaptureSequenceEvidence {
+    /// Neither sequence endpoint was supplied.
+    Missing,
+    /// Exactly one sequence endpoint was supplied.
+    Ambiguous,
+    /// Both sequence endpoints were supplied and form an exact range.
+    Exact(CaptureSequenceRange),
+}
+
 /// Capture-time and optional sequence boundaries supplied by the observing process.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CaptureBoundary {
@@ -266,6 +303,17 @@ impl CaptureBoundary {
     /// Return the last optional sequence admitted by this capture.
     pub const fn last_sequence(self) -> Option<u64> {
         self.last_sequence
+    }
+
+    /// Classify whether this capture has no, partial, or exact sequence evidence.
+    pub const fn sequence_evidence(self) -> CaptureSequenceEvidence {
+        match (self.first_sequence, self.last_sequence) {
+            (None, None) => CaptureSequenceEvidence::Missing,
+            (Some(first), Some(last)) => {
+                CaptureSequenceEvidence::Exact(CaptureSequenceRange::new(first, last))
+            }
+            _ => CaptureSequenceEvidence::Ambiguous,
+        }
     }
 }
 

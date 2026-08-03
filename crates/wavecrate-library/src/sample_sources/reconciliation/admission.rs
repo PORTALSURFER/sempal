@@ -5,8 +5,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use crate::sample_sources::SourceId;
 
 use super::model::{
-    CaptureBoundary, RawEventKind, RawObservationAccounting, RawObservationEnvelope,
-    RawObservationLimits, RootIdentity, WatcherGeneration,
+    BackendStreamIdentity, CaptureBoundary, CaptureSequenceEvidence, CaptureSequenceRange,
+    RawEventKind, RawObservationAccounting, RawObservationEnvelope, RawObservationLimits,
+    RootIdentity, WatcherGeneration,
 };
 use super::normalize::{NormalizedObservation, ReconciliationScopeKind, normalize_observation};
 
@@ -55,6 +56,8 @@ pub struct ReconciliationAdmissionLimits {
     per_lane: RawObservationLimits,
     global: RawObservationLimits,
     max_in_flight: usize,
+    max_recent_sequences_per_lane: usize,
+    max_retained_uncertainties: usize,
 }
 
 impl ReconciliationAdmissionLimits {
@@ -68,6 +71,8 @@ impl ReconciliationAdmissionLimits {
         per_lane: RawObservationLimits,
         global: RawObservationLimits,
         max_in_flight: usize,
+        max_recent_sequences_per_lane: usize,
+        max_retained_uncertainties: usize,
     ) -> Result<Self, AdmissionError> {
         if max_lanes == 0 {
             return Err(AdmissionError::ZeroLaneLimit);
@@ -75,11 +80,19 @@ impl ReconciliationAdmissionLimits {
         if max_in_flight == 0 || max_in_flight < max_lanes {
             return Err(AdmissionError::InsufficientEnvelopeCapacity);
         }
+        if max_recent_sequences_per_lane == 0 {
+            return Err(AdmissionError::ZeroRecentSequenceLimit);
+        }
+        if max_retained_uncertainties == 0 {
+            return Err(AdmissionError::ZeroRetainedUncertaintyLimit);
+        }
         Ok(Self {
             max_lanes,
             per_lane,
             global,
             max_in_flight,
+            max_recent_sequences_per_lane,
+            max_retained_uncertainties,
         })
     }
 
@@ -102,6 +115,16 @@ impl ReconciliationAdmissionLimits {
     pub const fn max_in_flight(self) -> usize {
         self.max_in_flight
     }
+
+    /// Return the bounded recent exact-sequence window for each lane.
+    pub const fn max_recent_sequences_per_lane(self) -> usize {
+        self.max_recent_sequences_per_lane
+    }
+
+    /// Return the global retained-uncertainty capacity.
+    pub const fn max_retained_uncertainties(self) -> usize {
+        self.max_retained_uncertainties
+    }
 }
 
 /// Configuration or lifecycle errors returned by supervisor control methods.
@@ -111,6 +134,14 @@ pub enum AdmissionError {
     ZeroLaneLimit,
     /// The envelope budget cannot reserve one ordinary slot per possible lane.
     InsufficientEnvelopeCapacity,
+    /// The recent exact-sequence window must be nonzero.
+    ZeroRecentSequenceLimit,
+    /// The retained-uncertainty capacity must be nonzero.
+    ZeroRetainedUncertaintyLimit,
+    /// Retained uncertainty cannot be inserted without exceeding its bounded capacity.
+    UncertaintyCapacityExhausted,
+    /// The supervisor's retained-uncertainty watermark cannot advance.
+    UncertaintyBoundaryExhausted,
     /// The configured lane registry is full.
     LaneLimitReached,
     /// The source already has a registered lane.
@@ -177,6 +208,136 @@ pub enum UncertaintyReason {
     Unsupported,
     /// An accounting operation could not be represented.
     AccountingOverflow,
+    /// Exact sequence identity was reused with different evidence.
+    SequenceConflict,
+}
+
+/// A supervisor-assigned watermark range for one retained uncertainty marker.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
+pub struct RetainedUncertaintyBoundary {
+    /// The first supervisor watermark included by the marker.
+    first: u64,
+    /// The last supervisor watermark included by the marker.
+    through: u64,
+}
+
+impl RetainedUncertaintyBoundary {
+    /// Construct a retained-uncertainty watermark for crate-owned deterministic tests.
+    pub(crate) const fn new(first: u64, through: u64) -> Self {
+        Self { first, through }
+    }
+
+    /// Return the first supervisor watermark included by the marker.
+    pub const fn first(self) -> u64 {
+        self.first
+    }
+
+    /// Return the last supervisor watermark included by the marker.
+    pub const fn through(self) -> u64 {
+        self.through
+    }
+
+    /// Return whether this acknowledgement range fully covers another marker range.
+    pub const fn covers(self, other: Self) -> bool {
+        self.first <= other.first && self.through >= other.through
+    }
+}
+
+/// Exact source/root/generation identity used by an authoritative acknowledgement.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct ReconciliationAcknowledgementIdentity {
+    source_id: SourceId,
+    root_identity: RootIdentity,
+    generation: WatcherGeneration,
+}
+
+impl ReconciliationAcknowledgementIdentity {
+    /// Construct an acknowledgement identity for crate-owned deterministic tests.
+    #[allow(dead_code)]
+    pub(crate) fn new(
+        source_id: SourceId,
+        root_identity: RootIdentity,
+        generation: WatcherGeneration,
+    ) -> Self {
+        Self {
+            source_id,
+            root_identity,
+            generation,
+        }
+    }
+
+    /// Borrow the acknowledged source identifier.
+    pub fn source_id(&self) -> &SourceId {
+        &self.source_id
+    }
+
+    /// Borrow the acknowledged physical root identity.
+    pub fn root_identity(&self) -> &RootIdentity {
+        &self.root_identity
+    }
+
+    /// Return the acknowledged watcher generation.
+    pub const fn generation(&self) -> WatcherGeneration {
+        self.generation
+    }
+}
+
+/// A committed authoritative reconciliation acknowledgement.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CommittedAuthoritativeReconciliationAcknowledgement {
+    identity: ReconciliationAcknowledgementIdentity,
+    scope: ReconciliationScopeKind,
+    boundary: RetainedUncertaintyBoundary,
+}
+
+impl CommittedAuthoritativeReconciliationAcknowledgement {
+    /// Construct an acknowledgement for crate-owned deterministic tests.
+    #[allow(dead_code)]
+    pub(crate) const fn new(
+        identity: ReconciliationAcknowledgementIdentity,
+        scope: ReconciliationScopeKind,
+        boundary: RetainedUncertaintyBoundary,
+    ) -> Self {
+        Self {
+            identity,
+            scope,
+            boundary,
+        }
+    }
+
+    /// Borrow the exact acknowledgement identity.
+    pub const fn identity(&self) -> &ReconciliationAcknowledgementIdentity {
+        &self.identity
+    }
+
+    /// Return the authoritative reconciliation scope.
+    pub const fn scope(&self) -> ReconciliationScopeKind {
+        self.scope
+    }
+
+    /// Return the supervisor watermark covered by the acknowledgement.
+    pub const fn boundary(&self) -> RetainedUncertaintyBoundary {
+        self.boundary
+    }
+}
+
+/// Counts returned after selectively clearing retained uncertainty markers.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ReconciliationAcknowledgementOutcome {
+    cleared_markers: usize,
+    remaining_markers: usize,
+}
+
+impl ReconciliationAcknowledgementOutcome {
+    /// Return the number of markers cleared by the acknowledgement.
+    pub const fn cleared_markers(self) -> usize {
+        self.cleared_markers
+    }
+
+    /// Return the number of retained markers left after acknowledgement.
+    pub const fn remaining_markers(self) -> usize {
+        self.remaining_markers
+    }
 }
 
 /// A conservative retained uncertainty marker.
@@ -185,7 +346,8 @@ pub struct RetainedUncertainty {
     source_id: Option<SourceId>,
     root_identity: Option<RootIdentity>,
     generation: Option<WatcherGeneration>,
-    boundary: Option<CaptureBoundary>,
+    capture_boundary: Option<CaptureBoundary>,
+    retained_boundary: RetainedUncertaintyBoundary,
     scope: ReconciliationScopeKind,
     reasons: Vec<UncertaintyReason>,
 }
@@ -206,9 +368,19 @@ impl RetainedUncertainty {
         self.generation
     }
 
-    /// Return the merged capture boundary, if it is still known.
+    /// Return the original capture boundary, if it is known.
     pub const fn capture_boundary(&self) -> Option<CaptureBoundary> {
-        self.boundary
+        self.capture_boundary
+    }
+
+    /// Return the supervisor-assigned retained-uncertainty watermark.
+    pub const fn retained_boundary(&self) -> RetainedUncertaintyBoundary {
+        self.retained_boundary
+    }
+
+    /// Return the supervisor-assigned watermark through the boundary alias.
+    pub const fn boundary(&self) -> RetainedUncertaintyBoundary {
+        self.retained_boundary
     }
 
     /// Return the conservative scope required to clear this marker.
@@ -247,12 +419,16 @@ pub enum DispatchPhase {
 }
 
 /// The result of trying to admit one envelope.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AdmissionOutcome {
     /// The envelope was admitted under this ticket.
     Accepted(DispatchTicket),
+    /// An exact recent envelope was suppressed without consuming a ticket or accounting.
+    DuplicateSuppressed(CaptureSequenceRange),
     /// The envelope was rejected and a bounded uncertainty marker was retained.
     Rejected(AdmissionRejectReason),
+    /// The envelope could not be retained as uncertainty and is returned untouched.
+    UncertaintyCapacityExhausted(Box<RawObservationEnvelope>),
 }
 
 /// One normalized envelope and its opaque lifecycle ticket.
@@ -349,10 +525,11 @@ fn marker_reasons(envelope: &RawObservationEnvelope) -> Vec<UncertaintyReason> {
 }
 
 fn marker_only(envelope: &RawObservationEnvelope) -> bool {
-    envelope
-        .observations()
-        .iter()
-        .all(|observation| marker_reason(observation.kind()).is_some())
+    !envelope.observations().is_empty()
+        && envelope
+            .observations()
+            .iter()
+            .all(|observation| marker_reason(observation.kind()).is_some())
 }
 
 fn marker_rejection_reason(reasons: &[UncertaintyReason]) -> AdmissionRejectReason {
@@ -372,6 +549,53 @@ fn rejection_reasons(
     reasons
 }
 
+fn recent_sequence_status(
+    state: &LaneState,
+    envelope: &RawObservationEnvelope,
+) -> (Option<CaptureSequenceRange>, bool) {
+    let CaptureSequenceEvidence::Exact(range) =
+        envelope.provenance().capture_boundary().sequence_evidence()
+    else {
+        return (None, false);
+    };
+
+    let Some(stream) = envelope.provenance().backend_stream_identity() else {
+        let conflict = state
+            .recent_sequences
+            .iter()
+            .any(|record| record.range == range);
+        return (None, conflict);
+    };
+
+    let mut conflict = false;
+    for record in &state.recent_sequences {
+        if record.range != range {
+            continue;
+        }
+        if record.backend_stream_identity == *stream && record.envelope == *envelope {
+            return (Some(range), false);
+        }
+        conflict = true;
+    }
+    (None, conflict)
+}
+
+fn recent_exact_sequence_record(
+    envelope: &RawObservationEnvelope,
+) -> Option<RecentExactSequenceRecord> {
+    let CaptureSequenceEvidence::Exact(range) =
+        envelope.provenance().capture_boundary().sequence_evidence()
+    else {
+        return None;
+    };
+    let backend_stream_identity = envelope.provenance().backend_stream_identity()?.clone();
+    Some(RecentExactSequenceRecord {
+        backend_stream_identity,
+        range,
+        envelope: envelope.clone(),
+    })
+}
+
 struct PendingObservation {
     lane: AdmissionLaneKey,
     generation: WatcherGeneration,
@@ -380,13 +604,19 @@ struct PendingObservation {
     phase: DispatchPhase,
 }
 
+struct RecentExactSequenceRecord {
+    backend_stream_identity: BackendStreamIdentity,
+    range: CaptureSequenceRange,
+    envelope: RawObservationEnvelope,
+}
+
 struct LaneState {
     generation: WatcherGeneration,
     lifecycle: ReconciliationLifecycle,
     queue: VecDeque<DispatchTicket>,
     live_tickets: usize,
     usage: Usage,
-    uncertainty: Option<RetainedUncertainty>,
+    recent_sequences: VecDeque<RecentExactSequenceRecord>,
 }
 
 /// Owns registered lanes, bounded admission, lifecycle fences, and retained uncertainty.
@@ -400,7 +630,8 @@ pub struct ReconciliationAdmissionSupervisor {
     global_usage: Usage,
     next_generation: u64,
     next_ticket: u64,
-    global_uncertainty: Option<RetainedUncertainty>,
+    retained_uncertainties: Vec<RetainedUncertainty>,
+    next_retained_uncertainty_boundary: u64,
 }
 
 impl ReconciliationAdmissionSupervisor {
@@ -416,7 +647,8 @@ impl ReconciliationAdmissionSupervisor {
             global_usage: Usage::default(),
             next_generation: 0,
             next_ticket: 0,
-            global_uncertainty: None,
+            retained_uncertainties: Vec::new(),
+            next_retained_uncertainty_boundary: 0,
         }
     }
 
@@ -448,7 +680,7 @@ impl ReconciliationAdmissionSupervisor {
                 queue: VecDeque::new(),
                 live_tickets: 0,
                 usage: Usage::default(),
-                uncertainty: None,
+                recent_sequences: VecDeque::new(),
             },
         );
         Ok((lane, generation))
@@ -498,17 +730,20 @@ impl ReconciliationAdmissionSupervisor {
         if self.lane(lane)?.lifecycle == ReconciliationLifecycle::Stopped {
             return Err(AdmissionError::InvalidLifecycleTransition);
         }
+        let invalidated = self.pending_count_for_lane(lane, generation);
+        self.ensure_uncertainty_capacity(
+            invalidated
+                .checked_add(1)
+                .ok_or(AdmissionError::UncertaintyCapacityExhausted)?,
+        )?;
         self.invalidate_lane_work(lane, generation, UncertaintyReason::Cancellation);
-        self.retain_lane(
-            lane,
-            RetainedUncertainty::new(
-                Some(lane.source_id.clone()),
-                Some(lane.root_identity.clone()),
-                Some(generation),
-                None,
-                UncertaintyReason::Cancellation,
-            ),
-        );
+        self.retain_marker(RetainedUncertainty::new(
+            Some(lane.source_id.clone()),
+            Some(lane.root_identity.clone()),
+            Some(generation),
+            None,
+            UncertaintyReason::Cancellation,
+        ));
         self.lane_mut(lane)?.lifecycle = ReconciliationLifecycle::Stopped;
         Ok(())
     }
@@ -525,6 +760,7 @@ impl ReconciliationAdmissionSupervisor {
         let state = self.lane_mut(lane)?;
         state.generation = generation;
         state.lifecycle = ReconciliationLifecycle::Starting;
+        state.recent_sequences.clear();
         Ok(generation)
     }
 
@@ -538,27 +774,36 @@ impl ReconciliationAdmissionSupervisor {
         if self.lane(lane)?.generation != generation {
             return Err(AdmissionError::GenerationMismatch);
         }
+        let invalidated = self.pending_count_for_lane(lane, generation);
+        self.ensure_uncertainty_capacity(
+            invalidated
+                .checked_add(1)
+                .and_then(|count| count.checked_add(usize::from(invalidated == 0)))
+                .ok_or(AdmissionError::UncertaintyCapacityExhausted)?,
+        )?;
         // Allocate before invalidating the old lane so a failed generation advance leaves the
         // old lane, its tickets, and its source registration intact.
         let new_generation = self.allocate_generation()?;
         self.invalidate_lane_work(lane, generation, UncertaintyReason::Rebind);
         let source_id = lane.source_id.clone();
-        let old_uncertainty = self
-            .lanes
-            .get(lane)
-            .and_then(|state| state.uncertainty.clone());
+        if invalidated == 0 {
+            self.retain_marker(RetainedUncertainty::new(
+                Some(source_id.clone()),
+                Some(lane.root_identity.clone()),
+                Some(generation),
+                None,
+                UncertaintyReason::Rebind,
+            ));
+        }
         self.lanes.remove(lane);
         let new_lane = AdmissionLaneKey::new(source_id.clone(), root_identity);
-        let mut marker = RetainedUncertainty::new(
+        self.retain_marker(RetainedUncertainty::new(
             Some(source_id.clone()),
             Some(new_lane.root_identity.clone()),
             Some(new_generation),
             None,
             UncertaintyReason::Rebind,
-        );
-        if let Some(old_uncertainty) = old_uncertainty {
-            marker = marker.merge(old_uncertainty);
-        }
+        ));
         self.sources.insert(source_id, new_lane.clone());
         self.lanes.insert(
             new_lane.clone(),
@@ -568,7 +813,7 @@ impl ReconciliationAdmissionSupervisor {
                 queue: VecDeque::new(),
                 live_tickets: 0,
                 usage: Usage::default(),
-                uncertainty: Some(marker),
+                recent_sequences: VecDeque::new(),
             },
         );
         Ok((new_lane, new_generation))
@@ -579,106 +824,91 @@ impl ReconciliationAdmissionSupervisor {
         let envelope_marker_reasons = marker_reasons(&envelope);
         let source_id = envelope.provenance().source_id().clone();
         let Some(lane) = self.sources.get(&source_id).cloned() else {
-            self.retain_global(
-                RetainedUncertainty::from_envelope_with_generation_and_reasons(
-                    &envelope,
-                    Some(envelope.provenance().watcher_generation()),
-                    rejection_reasons(&envelope_marker_reasons, UncertaintyReason::UnknownLane),
-                ),
+            return self.reject_with_marker(
+                envelope,
+                AdmissionRejectReason::UnknownLane,
+                UncertaintyReason::UnknownLane,
+                envelope_marker_reasons,
             );
-            return AdmissionOutcome::Rejected(AdmissionRejectReason::UnknownLane);
         };
         let current_generation = self.lanes[&lane].generation;
         let Some(root_identity) = envelope.provenance().root_identity() else {
-            self.retain_lane(
+            return self.reject_with_marker_for_lane(
+                envelope,
                 &lane,
-                RetainedUncertainty::from_envelope_with_generation_and_reasons(
-                    &envelope,
-                    Some(current_generation),
-                    rejection_reasons(&envelope_marker_reasons, UncertaintyReason::MissingRoot),
-                ),
+                current_generation,
+                AdmissionRejectReason::MissingRoot,
+                UncertaintyReason::MissingRoot,
+                envelope_marker_reasons,
             );
-            return AdmissionOutcome::Rejected(AdmissionRejectReason::MissingRoot);
         };
         if root_identity != lane.root_identity() {
-            self.retain_lane(
+            return self.reject_with_marker_for_lane(
+                envelope,
                 &lane,
-                RetainedUncertainty::from_envelope_with_generation_and_reasons(
-                    &envelope,
-                    Some(current_generation),
-                    rejection_reasons(&envelope_marker_reasons, UncertaintyReason::WrongRoot),
-                ),
+                current_generation,
+                AdmissionRejectReason::WrongRoot,
+                UncertaintyReason::WrongRoot,
+                envelope_marker_reasons,
             );
-            return AdmissionOutcome::Rejected(AdmissionRejectReason::WrongRoot);
         }
         if envelope.provenance().watcher_generation() != current_generation {
-            self.retain_lane(
+            return self.reject_with_marker_for_lane(
+                envelope,
                 &lane,
-                RetainedUncertainty::from_envelope_with_generation_and_reasons(
-                    &envelope,
-                    Some(current_generation),
-                    rejection_reasons(&envelope_marker_reasons, UncertaintyReason::StaleGeneration),
-                ),
+                current_generation,
+                AdmissionRejectReason::StaleGeneration,
+                UncertaintyReason::StaleGeneration,
+                envelope_marker_reasons,
             );
-            return AdmissionOutcome::Rejected(AdmissionRejectReason::StaleGeneration);
         }
         if self.lanes[&lane].lifecycle != ReconciliationLifecycle::Capturing {
-            self.retain_lane(
+            return self.reject_with_marker_for_lane(
+                envelope,
                 &lane,
-                RetainedUncertainty::from_envelope_with_generation_and_reasons(
-                    &envelope,
-                    Some(current_generation),
-                    rejection_reasons(&envelope_marker_reasons, UncertaintyReason::NotCapturing),
-                ),
+                current_generation,
+                AdmissionRejectReason::NotCapturing,
+                UncertaintyReason::NotCapturing,
+                envelope_marker_reasons,
             );
-            return AdmissionOutcome::Rejected(AdmissionRejectReason::NotCapturing);
         }
 
-        if !envelope_marker_reasons.is_empty() {
-            self.retain_lane(
-                &lane,
-                RetainedUncertainty::from_envelope_with_generation_and_reasons(
-                    &envelope,
-                    Some(current_generation),
-                    envelope_marker_reasons.clone(),
-                ),
+        let (duplicate, sequence_conflict) = recent_sequence_status(&self.lanes[&lane], &envelope);
+        if let Some(range) = duplicate {
+            return AdmissionOutcome::DuplicateSuppressed(range);
+        }
+
+        let mut evidence_reasons = envelope_marker_reasons;
+        if sequence_conflict {
+            evidence_reasons.push(UncertaintyReason::SequenceConflict);
+            evidence_reasons.sort_unstable();
+            evidence_reasons.dedup();
+        }
+        if marker_only(&envelope) {
+            return self.reject_with_reasons(
+                envelope,
+                marker_rejection_reason(&evidence_reasons),
+                evidence_reasons,
             );
-            if marker_only(&envelope) {
-                return AdmissionOutcome::Rejected(marker_rejection_reason(
-                    &envelope_marker_reasons,
-                ));
-            }
         }
 
         let usage = Usage::from(envelope.accounting());
         let lane_usage = self.lanes[&lane].usage;
         let Some(next_lane_usage) = lane_usage.add(usage) else {
-            self.retain_lane(
-                &lane,
-                RetainedUncertainty::from_envelope_with_generation_and_reasons(
-                    &envelope,
-                    Some(current_generation),
-                    rejection_reasons(
-                        &envelope_marker_reasons,
-                        UncertaintyReason::AccountingOverflow,
-                    ),
-                ),
+            return self.reject_with_marker(
+                envelope,
+                AdmissionRejectReason::AccountingOverflow,
+                UncertaintyReason::AccountingOverflow,
+                evidence_reasons,
             );
-            return AdmissionOutcome::Rejected(AdmissionRejectReason::AccountingOverflow);
         };
         let Some(next_global_usage) = self.global_usage.add(usage) else {
-            self.retain_lane(
-                &lane,
-                RetainedUncertainty::from_envelope_with_generation_and_reasons(
-                    &envelope,
-                    Some(current_generation),
-                    rejection_reasons(
-                        &envelope_marker_reasons,
-                        UncertaintyReason::AccountingOverflow,
-                    ),
-                ),
+            return self.reject_with_marker(
+                envelope,
+                AdmissionRejectReason::AccountingOverflow,
+                UncertaintyReason::AccountingOverflow,
+                evidence_reasons,
             );
-            return AdmissionOutcome::Rejected(AdmissionRejectReason::AccountingOverflow);
         };
         let lane_live_tickets = self.lanes[&lane].live_tickets;
         let shared_capacity = self.limits.max_in_flight - self.limits.max_lanes;
@@ -689,42 +919,48 @@ impl ReconciliationAdmissionSupervisor {
             || !next_lane_usage.within(self.limits.per_lane)
             || !next_global_usage.within(self.limits.global)
         {
-            self.retain_lane(
-                &lane,
-                RetainedUncertainty::from_envelope_with_generation_and_reasons(
-                    &envelope,
-                    Some(current_generation),
-                    rejection_reasons(&envelope_marker_reasons, UncertaintyReason::QueueSaturated),
-                ),
+            return self.reject_with_marker(
+                envelope,
+                AdmissionRejectReason::QueueSaturated,
+                UncertaintyReason::QueueSaturated,
+                evidence_reasons,
             );
-            return AdmissionOutcome::Rejected(AdmissionRejectReason::QueueSaturated);
         }
 
         let ticket = match self.next_ticket.checked_add(1) {
-            Some(value) => {
-                self.next_ticket = value;
-                DispatchTicket(value)
-            }
+            Some(value) => DispatchTicket(value),
             None => {
-                self.retain_lane(
-                    &lane,
-                    RetainedUncertainty::from_envelope_with_generation_and_reasons(
-                        &envelope,
-                        Some(current_generation),
-                        rejection_reasons(
-                            &envelope_marker_reasons,
-                            UncertaintyReason::AccountingOverflow,
-                        ),
-                    ),
+                return self.reject_with_marker(
+                    envelope,
+                    AdmissionRejectReason::AccountingOverflow,
+                    UncertaintyReason::AccountingOverflow,
+                    evidence_reasons,
                 );
-                return AdmissionOutcome::Rejected(AdmissionRejectReason::AccountingOverflow);
             }
         };
+        let has_uncertainty = !evidence_reasons.is_empty();
+        if has_uncertainty && let Err(error) = self.ensure_uncertainty_capacity(1) {
+            debug_assert!(matches!(
+                error,
+                AdmissionError::UncertaintyCapacityExhausted
+                    | AdmissionError::UncertaintyBoundaryExhausted
+            ));
+            return AdmissionOutcome::UncertaintyCapacityExhausted(Box::new(envelope));
+        }
+        let recent_record = recent_exact_sequence_record(&envelope);
+        let pending_envelope = envelope.clone();
+        self.next_ticket = ticket.id();
         let was_empty = self.lanes[&lane].queue.is_empty();
         let state = self.lanes.get_mut(&lane).expect("lane checked above");
         state.queue.push_back(ticket);
         state.live_tickets += 1;
         state.usage = next_lane_usage;
+        if let Some(record) = recent_record {
+            state.recent_sequences.push_back(record);
+            while state.recent_sequences.len() > self.limits.max_recent_sequences_per_lane {
+                state.recent_sequences.pop_front();
+            }
+        }
         self.global_usage = next_global_usage;
         self.pending.insert(
             ticket,
@@ -732,12 +968,21 @@ impl ReconciliationAdmissionSupervisor {
                 lane: lane.clone(),
                 generation: current_generation,
                 usage,
-                envelope,
+                envelope: pending_envelope,
                 phase: DispatchPhase::Queued,
             },
         );
         if was_empty && self.runnable_set.insert(lane.clone()) {
             self.runnable.push_back(lane);
+        }
+        if has_uncertainty {
+            self.retain_marker(
+                RetainedUncertainty::from_envelope_with_generation_and_reasons(
+                    &envelope,
+                    Some(current_generation),
+                    evidence_reasons,
+                ),
+            );
         }
         AdmissionOutcome::Accepted(ticket)
     }
@@ -792,17 +1037,45 @@ impl ReconciliationAdmissionSupervisor {
         Ok(())
     }
 
-    /// Borrow the retained uncertainty for a registered lane, if any.
-    pub fn uncertainty(
-        &self,
-        lane: &AdmissionLaneKey,
-    ) -> Result<Option<&RetainedUncertainty>, AdmissionError> {
-        Ok(self.lane(lane)?.uncertainty.as_ref())
+    /// Borrow all retained uncertainty markers in supervisor insertion order.
+    pub fn uncertainties(&self) -> &[RetainedUncertainty] {
+        &self.retained_uncertainties
     }
 
-    /// Borrow the bounded global marker for unknown or unregistered evidence.
-    pub const fn global_uncertainty(&self) -> Option<&RetainedUncertainty> {
-        self.global_uncertainty.as_ref()
+    /// Borrow all retained uncertainty markers in supervisor insertion order.
+    pub fn retained_uncertainties(&self) -> &[RetainedUncertainty] {
+        self.uncertainties()
+    }
+
+    /// Borrow retained markers that belong to a registered lane's exact identity.
+    pub fn uncertainties_for_lane(
+        &self,
+        lane: &AdmissionLaneKey,
+    ) -> Result<Vec<&RetainedUncertainty>, AdmissionError> {
+        let state = self.lane(lane)?;
+        Ok(self
+            .retained_uncertainties
+            .iter()
+            .filter(|marker| {
+                marker.source_id() == Some(lane.source_id())
+                    && marker.root_identity() == Some(lane.root_identity())
+                    && marker.generation() == Some(state.generation)
+            })
+            .collect())
+    }
+
+    /// Selectively clear markers covered by one committed authoritative reconciliation.
+    pub fn acknowledge_committed_authoritative_reconciliation(
+        &mut self,
+        acknowledgement: &CommittedAuthoritativeReconciliationAcknowledgement,
+    ) -> ReconciliationAcknowledgementOutcome {
+        let before = self.retained_uncertainties.len();
+        self.retained_uncertainties
+            .retain(|marker| !marker.is_covered_by(acknowledgement));
+        ReconciliationAcknowledgementOutcome {
+            cleared_markers: before - self.retained_uncertainties.len(),
+            remaining_markers: self.retained_uncertainties.len(),
+        }
     }
 
     /// Return the number of live envelopes in queued or in-flight dispatch phases.
@@ -840,17 +1113,16 @@ impl ReconciliationAdmissionSupervisor {
                 (pending.lane == *lane && pending.generation == generation).then_some(*ticket)
             })
             .collect();
+        let mut tickets = tickets;
+        tickets.sort_unstable_by_key(|ticket| ticket.id());
         for ticket in tickets {
             if let Some(pending) = self.pending.remove(&ticket) {
                 self.release_usage(&pending.lane, pending.usage);
-                self.retain_lane(
-                    lane,
-                    RetainedUncertainty::from_envelope_with_generation(
-                        &pending.envelope,
-                        Some(generation),
-                        reason,
-                    ),
-                );
+                self.retain_marker(RetainedUncertainty::from_envelope_with_generation(
+                    &pending.envelope,
+                    Some(generation),
+                    reason,
+                ));
             }
         }
         if let Some(state) = self.lanes.get_mut(lane) {
@@ -858,6 +1130,34 @@ impl ReconciliationAdmissionSupervisor {
         }
         self.runnable_set.remove(lane);
         self.runnable.retain(|candidate| candidate != lane);
+    }
+
+    fn pending_count_for_lane(
+        &self,
+        lane: &AdmissionLaneKey,
+        generation: WatcherGeneration,
+    ) -> usize {
+        self.pending
+            .values()
+            .filter(|pending| pending.lane == *lane && pending.generation == generation)
+            .count()
+    }
+
+    fn ensure_uncertainty_capacity(&self, additional: usize) -> Result<(), AdmissionError> {
+        let next_len = self
+            .retained_uncertainties
+            .len()
+            .checked_add(additional)
+            .ok_or(AdmissionError::UncertaintyCapacityExhausted)?;
+        if next_len > self.limits.max_retained_uncertainties {
+            return Err(AdmissionError::UncertaintyCapacityExhausted);
+        }
+        let additional =
+            u64::try_from(additional).map_err(|_| AdmissionError::UncertaintyBoundaryExhausted)?;
+        self.next_retained_uncertainty_boundary
+            .checked_add(additional)
+            .ok_or(AdmissionError::UncertaintyBoundaryExhausted)
+            .map(|_| ())
     }
 
     fn release_usage(&mut self, lane: &AdmissionLaneKey, usage: Usage) {
@@ -877,20 +1177,89 @@ impl ReconciliationAdmissionSupervisor {
         })
     }
 
-    fn retain_lane(&mut self, lane: &AdmissionLaneKey, marker: RetainedUncertainty) {
-        if let Some(state) = self.lanes.get_mut(lane) {
-            state.uncertainty = Some(match state.uncertainty.take() {
-                Some(existing) => existing.merge(marker),
-                None => marker,
-            });
-        }
+    fn retain_marker(&mut self, mut marker: RetainedUncertainty) {
+        let next = self
+            .next_retained_uncertainty_boundary
+            .checked_add(1)
+            .expect("retained uncertainty capacity was preflighted");
+        self.next_retained_uncertainty_boundary = next;
+        marker.retained_boundary = RetainedUncertaintyBoundary::new(next, next);
+        self.retained_uncertainties.push(marker);
     }
 
-    fn retain_global(&mut self, marker: RetainedUncertainty) {
-        self.global_uncertainty = Some(match self.global_uncertainty.take() {
-            Some(existing) => existing.merge(marker),
-            None => marker,
-        });
+    fn reject_with_marker(
+        &mut self,
+        envelope: RawObservationEnvelope,
+        reject_reason: AdmissionRejectReason,
+        uncertainty_reason: UncertaintyReason,
+        marker_reasons: Vec<UncertaintyReason>,
+    ) -> AdmissionOutcome {
+        let reasons = rejection_reasons(&marker_reasons, uncertainty_reason);
+        self.reject_with_reasons(envelope, reject_reason, reasons)
+    }
+
+    fn reject_with_marker_for_lane(
+        &mut self,
+        envelope: RawObservationEnvelope,
+        lane: &AdmissionLaneKey,
+        generation: WatcherGeneration,
+        reject_reason: AdmissionRejectReason,
+        uncertainty_reason: UncertaintyReason,
+        marker_reasons: Vec<UncertaintyReason>,
+    ) -> AdmissionOutcome {
+        let reasons = rejection_reasons(&marker_reasons, uncertainty_reason);
+        self.reject_with_reasons_for_identity(
+            envelope,
+            Some(lane.source_id.clone()),
+            Some(lane.root_identity.clone()),
+            Some(generation),
+            reject_reason,
+            reasons,
+        )
+    }
+
+    fn reject_with_reasons(
+        &mut self,
+        envelope: RawObservationEnvelope,
+        reject_reason: AdmissionRejectReason,
+        reasons: Vec<UncertaintyReason>,
+    ) -> AdmissionOutcome {
+        self.reject_with_reasons_for_identity(
+            envelope.clone(),
+            Some(envelope.provenance().source_id().clone()),
+            envelope.provenance().root_identity().cloned(),
+            Some(envelope.provenance().watcher_generation()),
+            reject_reason,
+            reasons,
+        )
+    }
+
+    fn reject_with_reasons_for_identity(
+        &mut self,
+        envelope: RawObservationEnvelope,
+        source_id: Option<SourceId>,
+        root_identity: Option<RootIdentity>,
+        generation: Option<WatcherGeneration>,
+        reject_reason: AdmissionRejectReason,
+        reasons: Vec<UncertaintyReason>,
+    ) -> AdmissionOutcome {
+        let marker = RetainedUncertainty::with_identity_and_reasons(
+            &envelope,
+            generation,
+            source_id,
+            root_identity,
+            reasons,
+        );
+        if let Err(error) = self.ensure_uncertainty_capacity(1) {
+            debug_assert!(matches!(
+                error,
+                AdmissionError::UncertaintyCapacityExhausted
+                    | AdmissionError::UncertaintyBoundaryExhausted
+            ));
+            return AdmissionOutcome::UncertaintyCapacityExhausted(Box::new(envelope));
+        }
+        self.retain_marker(marker);
+        AdmissionOutcome::Rejected(reject_reason)
     }
 
     fn allocate_generation(&mut self) -> Result<WatcherGeneration, AdmissionError> {
@@ -935,7 +1304,8 @@ impl RetainedUncertainty {
             source_id,
             root_identity,
             generation,
-            boundary,
+            capture_boundary: boundary,
+            retained_boundary: RetainedUncertaintyBoundary::new(0, 0),
             scope: ReconciliationScopeKind::SourceAudit,
             reasons,
         }
@@ -960,67 +1330,52 @@ impl RetainedUncertainty {
         generation: Option<WatcherGeneration>,
         reasons: Vec<UncertaintyReason>,
     ) -> Self {
-        Self::with_reasons(
+        Self::with_identity_and_reasons(
+            envelope,
+            generation,
             Some(envelope.provenance().source_id().clone()),
             envelope.provenance().root_identity().cloned(),
+            reasons,
+        )
+    }
+
+    fn with_identity_and_reasons(
+        envelope: &RawObservationEnvelope,
+        generation: Option<WatcherGeneration>,
+        source_id: Option<SourceId>,
+        root_identity: Option<RootIdentity>,
+        reasons: Vec<UncertaintyReason>,
+    ) -> Self {
+        Self::with_reasons(
+            source_id,
+            root_identity,
             generation,
             Some(envelope.provenance().capture_boundary()),
             reasons,
         )
     }
 
-    fn merge(mut self, other: Self) -> Self {
-        self.scope = self.scope.widen(other.scope);
-        if self.source_id != other.source_id {
-            self.source_id = None;
-        }
-        if self.root_identity != other.root_identity {
-            self.root_identity = None;
-        }
-        if self.generation != other.generation {
-            self.generation = None;
-        }
-        self.boundary = merge_boundaries(self.boundary, other.boundary);
-        for reason in other.reasons {
-            if !self.reasons.contains(&reason) {
-                self.reasons.push(reason);
-                self.reasons.sort_unstable();
-            }
-        }
-        self
+    fn is_covered_by(
+        &self,
+        acknowledgement: &CommittedAuthoritativeReconciliationAcknowledgement,
+    ) -> bool {
+        let identity = acknowledgement.identity();
+        self.scope == ReconciliationScopeKind::SourceAudit
+            && acknowledgement.scope() == ReconciliationScopeKind::SourceAudit
+            && self.source_id.as_ref() == Some(identity.source_id())
+            && self.root_identity.as_ref() == Some(identity.root_identity())
+            && self.generation == Some(identity.generation())
+            && acknowledgement.boundary().covers(self.retained_boundary)
     }
-}
-
-fn merge_boundaries(
-    left: Option<CaptureBoundary>,
-    right: Option<CaptureBoundary>,
-) -> Option<CaptureBoundary> {
-    let (Some(left), Some(right)) = (left, right) else {
-        return None;
-    };
-    let first_sequence = match (left.first_sequence(), right.first_sequence()) {
-        (Some(left), Some(right)) => Some(left.min(right)),
-        _ => None,
-    };
-    let last_sequence = match (left.last_sequence(), right.last_sequence()) {
-        (Some(left), Some(right)) => Some(left.max(right)),
-        _ => None,
-    };
-    CaptureBoundary::try_new(
-        left.captured_at().max(right.captured_at()),
-        first_sequence,
-        last_sequence,
-    )
-    .ok()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::sample_sources::reconciliation::{
-        BackendStreamIdentity, CaptureBoundary, NormalizationReason, Proof, RawEventKind,
-        RawObservation, RawObservationEnvelope, RawObservationProvenance, RawObservedPath,
-        RawPathRole, ReconciliationScopeKind,
+        BackendStreamIdentity, CaptureBoundary, DurablePriorAcknowledgement, NormalizationReason,
+        Proof, RawEventKind, RawObservation, RawObservationEnvelope, RawObservationProvenance,
+        RawObservedPath, RawPathRole, ReconciliationScopeKind,
     };
 
     fn limits(
@@ -1028,12 +1383,24 @@ mod tests {
         max_events: usize,
         max_in_flight: usize,
     ) -> ReconciliationAdmissionLimits {
+        limits_with(max_lanes, max_events, max_in_flight, 8, 64)
+    }
+
+    fn limits_with(
+        max_lanes: usize,
+        max_events: usize,
+        max_in_flight: usize,
+        max_recent_sequences_per_lane: usize,
+        max_retained_uncertainties: usize,
+    ) -> ReconciliationAdmissionLimits {
         ReconciliationAdmissionLimits::new(
             max_lanes,
             RawObservationLimits::new(max_events, usize::MAX, usize::MAX).expect("lane limits"),
             RawObservationLimits::new(max_events * 4, usize::MAX, usize::MAX)
                 .expect("global limits"),
             max_in_flight,
+            max_recent_sequences_per_lane,
+            max_retained_uncertainties,
         )
         .expect("admission limits")
     }
@@ -1113,6 +1480,57 @@ mod tests {
         .expect("envelope")
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn sequence_envelope(
+        source_id: &SourceId,
+        root: &RootIdentity,
+        stream: Option<&[u8]>,
+        generation: WatcherGeneration,
+        captured_at: u64,
+        first_sequence: Option<u64>,
+        last_sequence: Option<u64>,
+        kind: RawEventKind,
+    ) -> RawObservationEnvelope {
+        RawObservationEnvelope::try_new(
+            RawObservationProvenance::new(
+                source_id.clone(),
+                Some(root.clone()),
+                stream.map(|bytes| BackendStreamIdentity::from_bytes(bytes.to_vec())),
+                generation,
+                CaptureBoundary::try_new(captured_at, first_sequence, last_sequence)
+                    .expect("boundary"),
+            ),
+            vec![RawObservation::new(
+                kind,
+                vec![RawObservedPath::new(
+                    "folder/sample.wav".into(),
+                    RawPathRole::Subject,
+                )],
+            )],
+            RawObservationLimits::new(8, usize::MAX, usize::MAX).expect("envelope limits"),
+        )
+        .expect("sequence envelope")
+    }
+
+    fn acknowledgement(
+        source_id: &SourceId,
+        root_identity: &RootIdentity,
+        generation: WatcherGeneration,
+        scope: ReconciliationScopeKind,
+        first: u64,
+        through: u64,
+    ) -> CommittedAuthoritativeReconciliationAcknowledgement {
+        CommittedAuthoritativeReconciliationAcknowledgement::new(
+            ReconciliationAcknowledgementIdentity::new(
+                source_id.clone(),
+                root_identity.clone(),
+                generation,
+            ),
+            scope,
+            RetainedUncertaintyBoundary::new(first, through),
+        )
+    }
+
     fn marker_bearing_envelope(
         source_id: &SourceId,
         root: Option<&RootIdentity>,
@@ -1147,6 +1565,10 @@ mod tests {
         (lane, generation)
     }
 
+    fn last_marker(supervisor: &ReconciliationAdmissionSupervisor) -> &RetainedUncertainty {
+        supervisor.uncertainties().last().expect("retained marker")
+    }
+
     fn assert_marker_and_fence(marker: &RetainedUncertainty, fence: UncertaintyReason) {
         let mut expected = vec![
             UncertaintyReason::Overflow,
@@ -1167,7 +1589,7 @@ mod tests {
         let source = SourceId::from_string("source-a");
         let root = RootIdentity::from_bytes(b"root-a".to_vec());
         let mut supervisor = ReconciliationAdmissionSupervisor::new(limits(1, 8, 2));
-        let (lane, generation) = registered(&mut supervisor, &source, &root);
+        let (_lane, generation) = registered(&mut supervisor, &source, &root);
         let raw = envelope_with_kinds(&source, &root, generation, 1, kinds);
 
         let ticket = match supervisor.admit(raw.clone()) {
@@ -1175,14 +1597,7 @@ mod tests {
             outcome => panic!("unexpected outcome: {outcome:?}"),
         };
         assert_eq!(supervisor.in_flight(), 1);
-        assert_eq!(
-            supervisor
-                .uncertainty(&lane)
-                .expect("lane")
-                .expect("marker")
-                .reasons(),
-            expected_reasons
-        );
+        assert_eq!(last_marker(&supervisor).reasons(), expected_reasons);
 
         let dispatched = supervisor.dispatch_next().expect("dispatch");
         assert_eq!(dispatched.ticket(), ticket);
@@ -1226,6 +1641,251 @@ mod tests {
             .mark_checkpointed(ticket)
             .expect("checkpointed phase");
         assert_eq!(supervisor.in_flight(), 0);
+    }
+
+    #[test]
+    fn exact_duplicate_is_suppressed_without_a_second_ticket_or_marker() {
+        let source = SourceId::from_string("source-a");
+        let root = RootIdentity::from_bytes(b"root-a".to_vec());
+        let mut supervisor = ReconciliationAdmissionSupervisor::new(limits(1, 8, 2));
+        let (_lane, generation) = registered(&mut supervisor, &source, &root);
+        let raw = sequence_envelope(
+            &source,
+            &root,
+            Some(b"stream-a"),
+            generation,
+            1,
+            Some(10),
+            Some(12),
+            RawEventKind::Create,
+        );
+
+        let ticket = match supervisor.admit(raw.clone()) {
+            AdmissionOutcome::Accepted(ticket) => ticket,
+            outcome => panic!("unexpected outcome: {outcome:?}"),
+        };
+        assert_eq!(
+            supervisor.admit(raw),
+            AdmissionOutcome::DuplicateSuppressed(CaptureSequenceRange::new(10, 12))
+        );
+        assert_eq!(supervisor.in_flight(), 1);
+        assert!(supervisor.uncertainties().is_empty());
+        assert_eq!(supervisor.dispatch_next().expect("ticket").ticket(), ticket);
+    }
+
+    #[test]
+    fn missing_and_one_sided_sequence_evidence_is_admitted_repeatedly() {
+        let source = SourceId::from_string("source-a");
+        let root = RootIdentity::from_bytes(b"root-a".to_vec());
+        let mut supervisor = ReconciliationAdmissionSupervisor::new(limits(1, 8, 4));
+        let (_lane, generation) = registered(&mut supervisor, &source, &root);
+
+        let missing = sequence_envelope(
+            &source,
+            &root,
+            Some(b"stream-a"),
+            generation,
+            1,
+            None,
+            None,
+            RawEventKind::Create,
+        );
+        assert!(matches!(
+            supervisor.admit(missing.clone()),
+            AdmissionOutcome::Accepted(_)
+        ));
+        assert!(matches!(
+            supervisor.admit(missing),
+            AdmissionOutcome::Accepted(_)
+        ));
+
+        let one_sided = sequence_envelope(
+            &source,
+            &root,
+            Some(b"stream-a"),
+            generation,
+            2,
+            Some(20),
+            None,
+            RawEventKind::Modify,
+        );
+        assert!(matches!(
+            supervisor.admit(one_sided.clone()),
+            AdmissionOutcome::Accepted(_)
+        ));
+        assert!(matches!(
+            supervisor.admit(one_sided),
+            AdmissionOutcome::Accepted(_)
+        ));
+        assert_eq!(supervisor.in_flight(), 4);
+    }
+
+    #[test]
+    fn conflicting_exact_sequence_evidence_is_admitted_and_retained() {
+        let source = SourceId::from_string("source-a");
+        let root = RootIdentity::from_bytes(b"root-a".to_vec());
+        let mut supervisor = ReconciliationAdmissionSupervisor::new(limits(1, 8, 4));
+        let (_lane, generation) = registered(&mut supervisor, &source, &root);
+        let first = sequence_envelope(
+            &source,
+            &root,
+            Some(b"stream-a"),
+            generation,
+            1,
+            Some(10),
+            Some(12),
+            RawEventKind::Create,
+        );
+        assert!(matches!(
+            supervisor.admit(first),
+            AdmissionOutcome::Accepted(_)
+        ));
+
+        let same_identity_different_evidence = sequence_envelope(
+            &source,
+            &root,
+            Some(b"stream-a"),
+            generation,
+            2,
+            Some(10),
+            Some(12),
+            RawEventKind::Modify,
+        );
+        assert!(matches!(
+            supervisor.admit(same_identity_different_evidence),
+            AdmissionOutcome::Accepted(_)
+        ));
+        assert!(
+            last_marker(&supervisor)
+                .reasons()
+                .contains(&UncertaintyReason::SequenceConflict)
+        );
+
+        let different_stream = sequence_envelope(
+            &source,
+            &root,
+            Some(b"stream-b"),
+            generation,
+            3,
+            Some(10),
+            Some(12),
+            RawEventKind::Create,
+        );
+        assert!(matches!(
+            supervisor.admit(different_stream),
+            AdmissionOutcome::Accepted(_)
+        ));
+        assert!(
+            last_marker(&supervisor)
+                .reasons()
+                .contains(&UncertaintyReason::SequenceConflict)
+        );
+
+        let overlapping = sequence_envelope(
+            &source,
+            &root,
+            Some(b"stream-a"),
+            generation,
+            4,
+            Some(11),
+            Some(13),
+            RawEventKind::Create,
+        );
+        assert!(matches!(
+            supervisor.admit(overlapping),
+            AdmissionOutcome::Accepted(_)
+        ));
+        assert_eq!(supervisor.in_flight(), 4);
+    }
+
+    #[test]
+    fn stale_restart_rebind_and_evicted_sequence_history_are_never_suppressed() {
+        let source = SourceId::from_string("source-a");
+        let root = RootIdentity::from_bytes(b"root-a".to_vec());
+        let new_root = RootIdentity::from_bytes(b"root-b".to_vec());
+        let mut supervisor = ReconciliationAdmissionSupervisor::new(limits_with(1, 8, 8, 1, 64));
+        let (lane, generation) = registered(&mut supervisor, &source, &root);
+        let first = sequence_envelope(
+            &source,
+            &root,
+            Some(b"stream-a"),
+            generation,
+            1,
+            Some(30),
+            Some(30),
+            RawEventKind::Create,
+        );
+        assert!(matches!(
+            supervisor.admit(first.clone()),
+            AdmissionOutcome::Accepted(_)
+        ));
+        let second = sequence_envelope(
+            &source,
+            &root,
+            Some(b"stream-a"),
+            generation,
+            2,
+            Some(31),
+            Some(31),
+            RawEventKind::Modify,
+        );
+        assert!(matches!(
+            supervisor.admit(second),
+            AdmissionOutcome::Accepted(_)
+        ));
+        assert!(matches!(
+            supervisor.admit(first.clone()),
+            AdmissionOutcome::Accepted(_)
+        ));
+
+        supervisor.stop_lane(&lane, generation).expect("stop lane");
+        let restarted_generation = supervisor.restart_lane(&lane).expect("restart lane");
+        supervisor
+            .begin_capture(&lane, restarted_generation)
+            .expect("restart capture");
+        assert_eq!(
+            supervisor.admit(first.clone()),
+            AdmissionOutcome::Rejected(AdmissionRejectReason::StaleGeneration)
+        );
+        let after_restart = sequence_envelope(
+            &source,
+            &root,
+            Some(b"stream-a"),
+            restarted_generation,
+            5,
+            Some(30),
+            Some(30),
+            RawEventKind::Create,
+        );
+        assert!(matches!(
+            supervisor.admit(after_restart),
+            AdmissionOutcome::Accepted(_)
+        ));
+
+        let (new_lane, rebound_generation) = supervisor
+            .rebind_lane(&lane, restarted_generation, new_root.clone())
+            .expect("rebind lane");
+        assert_eq!(
+            supervisor.admit(first),
+            AdmissionOutcome::Rejected(AdmissionRejectReason::WrongRoot)
+        );
+        supervisor
+            .begin_capture(&new_lane, rebound_generation)
+            .expect("rebind capture");
+        let after_rebind = sequence_envelope(
+            &source,
+            &new_root,
+            Some(b"stream-a"),
+            rebound_generation,
+            6,
+            Some(30),
+            Some(30),
+            RawEventKind::Create,
+        );
+        assert!(matches!(
+            supervisor.admit(after_rebind),
+            AdmissionOutcome::Accepted(_)
+        ));
     }
 
     #[test]
@@ -1282,7 +1942,7 @@ mod tests {
         let source = SourceId::from_string("source-a");
         let root = RootIdentity::from_bytes(b"root-a".to_vec());
         let mut supervisor = ReconciliationAdmissionSupervisor::new(limits(1, 8, 2));
-        let (lane, generation) = registered(&mut supervisor, &source, &root);
+        let (_lane, generation) = registered(&mut supervisor, &source, &root);
         let raw = envelope_with_kinds(
             &source,
             &root,
@@ -1302,11 +1962,7 @@ mod tests {
         assert_eq!(supervisor.in_flight(), 0);
         assert!(supervisor.dispatch_next().is_none());
         assert_eq!(
-            supervisor
-                .uncertainty(&lane)
-                .expect("lane")
-                .expect("marker")
-                .reasons(),
+            last_marker(&supervisor).reasons(),
             &[
                 UncertaintyReason::Overflow,
                 UncertaintyReason::BackendError,
@@ -1322,7 +1978,7 @@ mod tests {
         let other_source = SourceId::from_string("source-b");
         let other_root = RootIdentity::from_bytes(b"root-b".to_vec());
         let mut supervisor = ReconciliationAdmissionSupervisor::new(limits(1, 8, 2));
-        let (lane, generation) = registered(&mut supervisor, &source, &root);
+        let (_lane, generation) = registered(&mut supervisor, &source, &root);
 
         assert_eq!(
             supervisor.admit(envelope(
@@ -1334,7 +1990,7 @@ mod tests {
             )),
             AdmissionOutcome::Rejected(AdmissionRejectReason::UnknownLane)
         );
-        assert!(supervisor.global_uncertainty().is_some());
+        assert_eq!(supervisor.uncertainties().len(), 1);
         assert_eq!(
             supervisor.admit(envelope(&source, None, generation, 2, RawEventKind::Create,)),
             AdmissionOutcome::Rejected(AdmissionRejectReason::MissingRoot)
@@ -1359,14 +2015,24 @@ mod tests {
             )),
             AdmissionOutcome::Rejected(AdmissionRejectReason::StaleGeneration)
         );
-        let reasons = supervisor
-            .uncertainty(&lane)
-            .expect("lane")
-            .expect("marker")
-            .reasons();
-        assert!(reasons.contains(&UncertaintyReason::MissingRoot));
-        assert!(reasons.contains(&UncertaintyReason::WrongRoot));
-        assert!(reasons.contains(&UncertaintyReason::StaleGeneration));
+        assert_eq!(supervisor.uncertainties().len(), 4);
+        assert!(
+            supervisor
+                .uncertainties()
+                .iter()
+                .any(|marker| marker.reasons().contains(&UncertaintyReason::MissingRoot))
+        );
+        assert!(
+            supervisor
+                .uncertainties()
+                .iter()
+                .any(|marker| marker.reasons().contains(&UncertaintyReason::WrongRoot))
+        );
+        assert!(supervisor.uncertainties().iter().any(|marker| {
+            marker
+                .reasons()
+                .contains(&UncertaintyReason::StaleGeneration)
+        }));
     }
 
     #[test]
@@ -1387,30 +2053,26 @@ mod tests {
             )),
             AdmissionOutcome::Rejected(AdmissionRejectReason::UnknownLane)
         );
+        assert_eq!(unknown_supervisor.uncertainties().len(), 1);
         assert_marker_and_fence(
-            unknown_supervisor
-                .global_uncertainty()
-                .expect("unknown-lane marker"),
+            last_marker(&unknown_supervisor),
             UncertaintyReason::UnknownLane,
         );
         assert!(
             unknown_supervisor
-                .uncertainty(&lane)
+                .uncertainties_for_lane(&lane)
                 .expect("known lane")
-                .is_none()
+                .is_empty()
         );
 
         let mut known_supervisor = ReconciliationAdmissionSupervisor::new(limits(1, 16, 2));
-        let (lane, generation) = registered(&mut known_supervisor, &source, &root);
+        let (known_lane, generation) = registered(&mut known_supervisor, &source, &root);
         assert_eq!(
             known_supervisor.admit(marker_bearing_envelope(&source, None, generation, 2)),
             AdmissionOutcome::Rejected(AdmissionRejectReason::MissingRoot)
         );
         assert_marker_and_fence(
-            known_supervisor
-                .uncertainty(&lane)
-                .expect("lane")
-                .expect("missing-root marker"),
+            last_marker(&known_supervisor),
             UncertaintyReason::MissingRoot,
         );
 
@@ -1423,15 +2085,7 @@ mod tests {
             )),
             AdmissionOutcome::Rejected(AdmissionRejectReason::WrongRoot)
         );
-        let marker = known_supervisor
-            .uncertainty(&lane)
-            .expect("lane")
-            .expect("wrong-root marker");
-        assert!(marker.reasons().contains(&UncertaintyReason::MissingRoot));
-        assert!(marker.reasons().contains(&UncertaintyReason::WrongRoot));
-        assert!(marker.reasons().contains(&UncertaintyReason::Overflow));
-        assert!(marker.reasons().contains(&UncertaintyReason::BackendError));
-        assert!(marker.reasons().contains(&UncertaintyReason::Unsupported));
+        assert_marker_and_fence(last_marker(&known_supervisor), UncertaintyReason::WrongRoot);
 
         assert_eq!(
             known_supervisor.admit(marker_bearing_envelope(
@@ -1442,24 +2096,19 @@ mod tests {
             )),
             AdmissionOutcome::Rejected(AdmissionRejectReason::StaleGeneration)
         );
-        let marker = known_supervisor
-            .uncertainty(&lane)
-            .expect("lane")
-            .expect("stale-generation marker");
-        assert!(marker.reasons().contains(&UncertaintyReason::MissingRoot));
-        assert!(marker.reasons().contains(&UncertaintyReason::WrongRoot));
-        assert!(
-            marker
-                .reasons()
-                .contains(&UncertaintyReason::StaleGeneration)
+        assert_marker_and_fence(
+            last_marker(&known_supervisor),
+            UncertaintyReason::StaleGeneration,
         );
-        assert!(marker.reasons().contains(&UncertaintyReason::Overflow));
-        assert!(marker.reasons().contains(&UncertaintyReason::BackendError));
-        assert!(marker.reasons().contains(&UncertaintyReason::Unsupported));
-        assert!(known_supervisor.global_uncertainty().is_none());
+        assert_eq!(known_supervisor.uncertainties().len(), 3);
+        assert!(known_supervisor.uncertainties().iter().all(|marker| {
+            marker.source_id() == Some(known_lane.source_id())
+                && marker.root_identity() == Some(known_lane.root_identity())
+                && marker.generation() == Some(generation)
+        }));
 
         let mut starting_supervisor = ReconciliationAdmissionSupervisor::new(limits(1, 16, 2));
-        let (starting_lane, starting_generation) = starting_supervisor
+        let (_starting_lane, starting_generation) = starting_supervisor
             .register_lane(source.clone(), root.clone())
             .expect("starting lane");
         assert_eq!(
@@ -1472,10 +2121,7 @@ mod tests {
             AdmissionOutcome::Rejected(AdmissionRejectReason::NotCapturing)
         );
         assert_marker_and_fence(
-            starting_supervisor
-                .uncertainty(&starting_lane)
-                .expect("lane")
-                .expect("starting marker"),
+            last_marker(&starting_supervisor),
             UncertaintyReason::NotCapturing,
         );
 
@@ -1486,6 +2132,10 @@ mod tests {
             .stop_lane(&stopped_lane, stopped_generation)
             .expect("stop lane");
         assert_eq!(
+            last_marker(&stopped_supervisor).reasons(),
+            &[UncertaintyReason::Cancellation]
+        );
+        assert_eq!(
             stopped_supervisor.admit(marker_bearing_envelope(
                 &source,
                 Some(&root),
@@ -1494,18 +2144,13 @@ mod tests {
             )),
             AdmissionOutcome::Rejected(AdmissionRejectReason::NotCapturing)
         );
-        let marker = stopped_supervisor
-            .uncertainty(&stopped_lane)
-            .expect("lane")
-            .expect("stopped marker");
-        assert!(marker.reasons().contains(&UncertaintyReason::NotCapturing));
-        assert!(marker.reasons().contains(&UncertaintyReason::Overflow));
-        assert!(marker.reasons().contains(&UncertaintyReason::BackendError));
-        assert!(marker.reasons().contains(&UncertaintyReason::Unsupported));
-        assert!(marker.reasons().contains(&UncertaintyReason::Cancellation));
+        assert_marker_and_fence(
+            last_marker(&stopped_supervisor),
+            UncertaintyReason::NotCapturing,
+        );
 
         let mut saturated_supervisor = ReconciliationAdmissionSupervisor::new(limits(1, 16, 1));
-        let (saturated_lane, saturated_generation) =
+        let (_saturated_lane, saturated_generation) =
             registered(&mut saturated_supervisor, &source, &root);
         assert!(matches!(
             saturated_supervisor.admit(envelope(
@@ -1527,10 +2172,7 @@ mod tests {
             AdmissionOutcome::Rejected(AdmissionRejectReason::QueueSaturated)
         );
         assert_marker_and_fence(
-            saturated_supervisor
-                .uncertainty(&saturated_lane)
-                .expect("lane")
-                .expect("queue marker"),
+            last_marker(&saturated_supervisor),
             UncertaintyReason::QueueSaturated,
         );
     }
@@ -1614,8 +2256,16 @@ mod tests {
         let per_lane = RawObservationLimits::new(8, usize::MAX, usize::MAX).expect("limits");
         let global = RawObservationLimits::new(16, usize::MAX, usize::MAX).expect("limits");
         assert_eq!(
-            ReconciliationAdmissionLimits::new(2, per_lane, global, 1),
+            ReconciliationAdmissionLimits::new(2, per_lane, global, 1, 8, 64),
             Err(AdmissionError::InsufficientEnvelopeCapacity)
+        );
+        assert_eq!(
+            ReconciliationAdmissionLimits::new(1, per_lane, global, 1, 0, 64),
+            Err(AdmissionError::ZeroRecentSequenceLimit)
+        );
+        assert_eq!(
+            ReconciliationAdmissionLimits::new(1, per_lane, global, 1, 8, 0),
+            Err(AdmissionError::ZeroRetainedUncertaintyLimit)
         );
     }
 
@@ -1782,7 +2432,7 @@ mod tests {
         let source = SourceId::from_string("source-a");
         let root = RootIdentity::from_bytes(b"root-a".to_vec());
         let mut supervisor = ReconciliationAdmissionSupervisor::new(limits(1, 8, 2));
-        let (lane, generation) = registered(&mut supervisor, &source, &root);
+        let (_lane, generation) = registered(&mut supervisor, &source, &root);
         let first = envelope(&source, Some(&root), generation, 1, RawEventKind::Create);
         assert!(matches!(
             supervisor.admit(first),
@@ -1814,16 +2464,349 @@ mod tests {
             supervisor.admit(marker_bearing_envelope(&source, Some(&root), generation, 4,)),
             AdmissionOutcome::Rejected(AdmissionRejectReason::QueueSaturated)
         );
-        let marker = supervisor
-            .uncertainty(&lane)
-            .expect("lane")
-            .expect("marker");
-        assert!(
-            marker
-                .reasons()
-                .contains(&UncertaintyReason::QueueSaturated)
+        assert_marker_and_fence(last_marker(&supervisor), UncertaintyReason::QueueSaturated);
+    }
+
+    #[test]
+    fn retained_markers_keep_independent_identities_boundaries_and_rebind_history() {
+        let source = SourceId::from_string("source-a");
+        let root = RootIdentity::from_bytes(b"root-a".to_vec());
+        let new_root = RootIdentity::from_bytes(b"root-b".to_vec());
+        let unknown_source = SourceId::from_string("source-b");
+        let unknown_root = RootIdentity::from_bytes(b"root-unknown".to_vec());
+        let mut supervisor = ReconciliationAdmissionSupervisor::new(limits(1, 8, 4));
+        let (lane, generation) = registered(&mut supervisor, &source, &root);
+
+        assert_eq!(
+            supervisor.admit(envelope_with_kinds(
+                &source,
+                &root,
+                generation,
+                1,
+                &[RawEventKind::Overflow],
+            )),
+            AdmissionOutcome::Rejected(AdmissionRejectReason::UncertaintyMarkerRetained)
         );
-        assert!(marker.reasons().contains(&UncertaintyReason::Overflow));
+        assert_eq!(
+            supervisor.admit(envelope_with_optional_root_and_kinds(
+                &unknown_source,
+                Some(&unknown_root),
+                WatcherGeneration::new(99),
+                2,
+                &[RawEventKind::Overflow],
+            )),
+            AdmissionOutcome::Rejected(AdmissionRejectReason::UnknownLane)
+        );
+        let (new_lane, new_generation) = supervisor
+            .rebind_lane(&lane, generation, new_root.clone())
+            .expect("rebind lane");
+
+        assert_eq!(supervisor.uncertainties().len(), 4);
+        assert_eq!(
+            supervisor
+                .uncertainties()
+                .iter()
+                .map(RetainedUncertainty::retained_boundary)
+                .collect::<Vec<_>>(),
+            vec![
+                RetainedUncertaintyBoundary::new(1, 1),
+                RetainedUncertaintyBoundary::new(2, 2),
+                RetainedUncertaintyBoundary::new(3, 3),
+                RetainedUncertaintyBoundary::new(4, 4),
+            ]
+        );
+        assert_eq!(supervisor.uncertainties()[0].source_id(), Some(&source));
+        assert_eq!(supervisor.uncertainties()[0].root_identity(), Some(&root));
+        assert_eq!(supervisor.uncertainties()[0].generation(), Some(generation));
+        assert_eq!(
+            supervisor.uncertainties()[1].source_id(),
+            Some(&unknown_source)
+        );
+        assert_eq!(
+            supervisor.uncertainties()[1].root_identity(),
+            Some(&unknown_root)
+        );
+        assert_eq!(
+            supervisor.uncertainties()[1].generation(),
+            Some(WatcherGeneration::new(99))
+        );
+        assert_eq!(supervisor.uncertainties()[2].source_id(), Some(&source));
+        assert_eq!(supervisor.uncertainties()[2].root_identity(), Some(&root));
+        assert_eq!(supervisor.uncertainties()[2].generation(), Some(generation));
+        assert_eq!(supervisor.uncertainties()[3].source_id(), Some(&source));
+        assert_eq!(
+            supervisor.uncertainties()[3].root_identity(),
+            Some(&new_root)
+        );
+        assert_eq!(
+            supervisor.uncertainties()[3].generation(),
+            Some(new_generation)
+        );
+        assert_eq!(
+            supervisor
+                .uncertainties_for_lane(&new_lane)
+                .expect("lane")
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn authoritative_acknowledgement_is_selective_exact_and_idempotent() {
+        let source = SourceId::from_string("source-a");
+        let root = RootIdentity::from_bytes(b"root-a".to_vec());
+        let unknown_source = SourceId::from_string("source-b");
+        let unknown_root = RootIdentity::from_bytes(b"root-b".to_vec());
+        let mut supervisor = ReconciliationAdmissionSupervisor::new(limits(1, 8, 4));
+        let (_lane, generation) = registered(&mut supervisor, &source, &root);
+        for captured_at in [1, 2] {
+            assert_eq!(
+                supervisor.admit(envelope_with_kinds(
+                    &source,
+                    &root,
+                    generation,
+                    captured_at,
+                    &[RawEventKind::Overflow],
+                )),
+                AdmissionOutcome::Rejected(AdmissionRejectReason::UncertaintyMarkerRetained)
+            );
+        }
+        assert_eq!(
+            supervisor.admit(envelope_with_optional_root_and_kinds(
+                &unknown_source,
+                Some(&unknown_root),
+                WatcherGeneration::new(9),
+                3,
+                &[RawEventKind::Overflow],
+            )),
+            AdmissionOutcome::Rejected(AdmissionRejectReason::UnknownLane)
+        );
+        assert_eq!(supervisor.uncertainties().len(), 3);
+
+        let wrong_source = acknowledgement(
+            &unknown_source,
+            &root,
+            generation,
+            ReconciliationScopeKind::SourceAudit,
+            1,
+            3,
+        );
+        assert_eq!(
+            supervisor.acknowledge_committed_authoritative_reconciliation(&wrong_source),
+            ReconciliationAcknowledgementOutcome {
+                cleared_markers: 0,
+                remaining_markers: 3,
+            }
+        );
+        let wrong_root = acknowledgement(
+            &source,
+            &unknown_root,
+            generation,
+            ReconciliationScopeKind::SourceAudit,
+            1,
+            3,
+        );
+        assert_eq!(
+            supervisor.acknowledge_committed_authoritative_reconciliation(&wrong_root),
+            ReconciliationAcknowledgementOutcome {
+                cleared_markers: 0,
+                remaining_markers: 3,
+            }
+        );
+        let wrong_generation = acknowledgement(
+            &source,
+            &root,
+            WatcherGeneration::new(generation.get() + 1),
+            ReconciliationScopeKind::SourceAudit,
+            1,
+            3,
+        );
+        assert_eq!(
+            supervisor.acknowledge_committed_authoritative_reconciliation(&wrong_generation),
+            ReconciliationAcknowledgementOutcome {
+                cleared_markers: 0,
+                remaining_markers: 3,
+            }
+        );
+        let partial = CommittedAuthoritativeReconciliationAcknowledgement::new(
+            ReconciliationAcknowledgementIdentity::new(source.clone(), root.clone(), generation),
+            ReconciliationScopeKind::SourceAudit,
+            RetainedUncertaintyBoundary::new(1, 0),
+        );
+        assert_eq!(
+            supervisor.acknowledge_committed_authoritative_reconciliation(&partial),
+            ReconciliationAcknowledgementOutcome {
+                cleared_markers: 0,
+                remaining_markers: 3,
+            }
+        );
+        let narrow_scope = acknowledgement(
+            &source,
+            &root,
+            generation,
+            ReconciliationScopeKind::ExactEntry,
+            1,
+            2,
+        );
+        assert_eq!(
+            supervisor.acknowledge_committed_authoritative_reconciliation(&narrow_scope),
+            ReconciliationAcknowledgementOutcome {
+                cleared_markers: 0,
+                remaining_markers: 3,
+            }
+        );
+
+        let matching = acknowledgement(
+            &source,
+            &root,
+            generation,
+            ReconciliationScopeKind::SourceAudit,
+            1,
+            2,
+        );
+        assert_eq!(
+            supervisor.acknowledge_committed_authoritative_reconciliation(&matching),
+            ReconciliationAcknowledgementOutcome {
+                cleared_markers: 2,
+                remaining_markers: 1,
+            }
+        );
+        assert_eq!(
+            supervisor.acknowledge_committed_authoritative_reconciliation(&matching),
+            ReconciliationAcknowledgementOutcome {
+                cleared_markers: 0,
+                remaining_markers: 1,
+            }
+        );
+        assert_eq!(
+            supervisor.uncertainties()[0].source_id(),
+            Some(&unknown_source)
+        );
+    }
+
+    #[test]
+    fn dispatch_checkpoint_prior_ack_and_audit_signals_do_not_clear_markers() {
+        let source = SourceId::from_string("source-a");
+        let root = RootIdentity::from_bytes(b"root-a".to_vec());
+        let mut supervisor = ReconciliationAdmissionSupervisor::new(limits(1, 8, 2));
+        let (_lane, generation) = registered(&mut supervisor, &source, &root);
+        let ticket = match supervisor.admit(envelope_with_kinds(
+            &source,
+            &root,
+            generation,
+            1,
+            &[RawEventKind::Create, RawEventKind::Overflow],
+        )) {
+            AdmissionOutcome::Accepted(ticket) => ticket,
+            outcome => panic!("unexpected outcome: {outcome:?}"),
+        };
+        assert_eq!(supervisor.uncertainties().len(), 1);
+        supervisor.dispatch_next().expect("dispatch");
+        supervisor.mark_dispatched(ticket).expect("dispatched");
+        supervisor.mark_applied(ticket).expect("applied");
+        supervisor.mark_checkpointed(ticket).expect("checkpointed");
+        assert_eq!(supervisor.uncertainties().len(), 1);
+        let _prior = DurablePriorAcknowledgement::new(10);
+        assert_eq!(supervisor.uncertainties().len(), 1);
+        assert_eq!(
+            supervisor.admit(envelope_with_kinds(
+                &source,
+                &root,
+                generation,
+                2,
+                &[RawEventKind::Overflow],
+            )),
+            AdmissionOutcome::Rejected(AdmissionRejectReason::UncertaintyMarkerRetained)
+        );
+        assert_eq!(supervisor.uncertainties().len(), 2);
+    }
+
+    #[test]
+    fn uncertainty_capacity_returns_envelope_and_control_error_without_mutation() {
+        let source = SourceId::from_string("source-a");
+        let root = RootIdentity::from_bytes(b"root-a".to_vec());
+        let mut supervisor = ReconciliationAdmissionSupervisor::new(limits_with(1, 8, 2, 8, 1));
+        let (lane, generation) = registered(&mut supervisor, &source, &root);
+        let first_marker =
+            envelope_with_kinds(&source, &root, generation, 1, &[RawEventKind::Overflow]);
+        assert_eq!(
+            supervisor.admit(first_marker.clone()),
+            AdmissionOutcome::Rejected(AdmissionRejectReason::UncertaintyMarkerRetained)
+        );
+        let ordinary = envelope(&source, Some(&root), generation, 2, RawEventKind::Create);
+        let ticket = match supervisor.admit(ordinary) {
+            AdmissionOutcome::Accepted(ticket) => ticket,
+            outcome => panic!("unexpected outcome: {outcome:?}"),
+        };
+        let markers_before = supervisor.uncertainties().to_vec();
+        assert_eq!(
+            supervisor.admit(first_marker.clone()),
+            AdmissionOutcome::UncertaintyCapacityExhausted(Box::new(first_marker))
+        );
+        assert_eq!(supervisor.uncertainties(), markers_before.as_slice());
+        assert_eq!(supervisor.in_flight(), 1);
+        let mixed = envelope_with_kinds(
+            &source,
+            &root,
+            generation,
+            3,
+            &[RawEventKind::Create, RawEventKind::Overflow],
+        );
+        assert_eq!(
+            supervisor.admit(mixed.clone()),
+            AdmissionOutcome::UncertaintyCapacityExhausted(Box::new(mixed))
+        );
+        assert_eq!(supervisor.uncertainties(), markers_before.as_slice());
+        assert_eq!(supervisor.in_flight(), 1);
+        assert_eq!(
+            supervisor.lifecycle(&lane).expect("lifecycle"),
+            ReconciliationLifecycle::Capturing
+        );
+        assert_eq!(
+            supervisor.stop_lane(&lane, generation),
+            Err(AdmissionError::UncertaintyCapacityExhausted)
+        );
+        assert_eq!(supervisor.uncertainties(), markers_before.as_slice());
+        assert_eq!(supervisor.in_flight(), 1);
+        assert_eq!(
+            supervisor.lifecycle(&lane).expect("lifecycle"),
+            ReconciliationLifecycle::Capturing
+        );
+        assert_eq!(supervisor.dispatch_next().expect("ticket").ticket(), ticket);
+        supervisor
+            .mark_dispatched(ticket)
+            .expect("dispatched phase");
+        supervisor.mark_applied(ticket).expect("applied phase");
+        supervisor
+            .mark_checkpointed(ticket)
+            .expect("checkpointed phase");
+        let boundary = markers_before[0].boundary();
+        let acknowledgement = acknowledgement(
+            &source,
+            &root,
+            generation,
+            ReconciliationScopeKind::SourceAudit,
+            boundary.first(),
+            boundary.through(),
+        );
+        assert_eq!(
+            supervisor.acknowledge_committed_authoritative_reconciliation(&acknowledgement),
+            ReconciliationAcknowledgementOutcome {
+                cleared_markers: 1,
+                remaining_markers: 0,
+            }
+        );
+        let next_ticket = match supervisor.admit(envelope(
+            &source,
+            Some(&root),
+            generation,
+            4,
+            RawEventKind::Create,
+        )) {
+            AdmissionOutcome::Accepted(ticket) => ticket,
+            outcome => panic!("unexpected outcome: {outcome:?}"),
+        };
+        assert_eq!(next_ticket.id(), ticket.id() + 1);
     }
 
     #[test]
@@ -1853,10 +2836,7 @@ mod tests {
             Err(AdmissionError::UnknownTicket)
         );
         assert!(
-            supervisor
-                .uncertainty(&new_lane)
-                .expect("new lane")
-                .expect("rebind marker")
+            last_marker(&supervisor)
                 .reasons()
                 .contains(&UncertaintyReason::Rebind)
         );
@@ -1900,7 +2880,7 @@ mod tests {
             supervisor.lifecycle(&lane).expect("lifecycle"),
             ReconciliationLifecycle::Stopped
         );
-        assert!(supervisor.uncertainty(&lane).expect("lane").is_some());
+        assert_eq!(supervisor.uncertainties().len(), 1);
         let restarted_generation = supervisor.restart_lane(&lane).expect("restart");
         assert!(restarted_generation > generation);
         assert_eq!(
@@ -1934,10 +2914,7 @@ mod tests {
             Err(AdmissionError::UnknownTicket)
         );
         assert!(
-            supervisor
-                .uncertainty(&lane)
-                .expect("lane")
-                .expect("cancellation marker")
+            last_marker(&supervisor)
                 .reasons()
                 .contains(&UncertaintyReason::Cancellation)
         );
@@ -1978,10 +2955,7 @@ mod tests {
             .stop_lane(&lane, generation)
             .expect("stop capture");
         assert!(
-            supervisor
-                .uncertainty(&lane)
-                .expect("lane")
-                .expect("idle stop marker")
+            last_marker(&supervisor)
                 .reasons()
                 .contains(&UncertaintyReason::Cancellation)
         );
@@ -1989,7 +2963,7 @@ mod tests {
         supervisor
             .begin_capture(&lane, restarted_generation)
             .expect("resume capture");
-        assert!(supervisor.uncertainty(&lane).expect("lane").is_some());
+        assert_eq!(supervisor.uncertainties().len(), 1);
     }
 
     #[test]
