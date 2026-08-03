@@ -5,7 +5,7 @@ pub(super) const MAX_CAPTURE_PATH_BYTES: usize = 256 * 1_024;
 pub(super) const MAX_CAPTURE_METADATA_BYTES: usize = 256 * 1_024;
 
 pub(super) enum SourceWatcherCapture {
-    Notify(Event),
+    Notify { stream_id: u64, event: Event },
     Error,
     Overflow,
 }
@@ -36,7 +36,10 @@ pub(super) fn capture_event(event: notify::Result<Event>) -> SourceWatcherCaptur
     {
         SourceWatcherCapture::Overflow
     } else {
-        SourceWatcherCapture::Notify(captured_event)
+        SourceWatcherCapture::Notify {
+            stream_id: 0,
+            event: captured_event,
+        }
     }
 }
 
@@ -63,7 +66,7 @@ mod tests {
             attrs,
         };
 
-        let SourceWatcherCapture::Notify(event) = capture_event(Ok(event)) else {
+        let SourceWatcherCapture::Notify { event, .. } = capture_event(Ok(event)) else {
             panic!("event should be accepted");
         };
         assert_eq!(event.kind, EventKind::Any);
@@ -89,7 +92,7 @@ mod tests {
             attrs: EventAttributes::default(),
         };
 
-        let SourceWatcherCapture::Notify(event) = capture_event(Ok(event)) else {
+        let SourceWatcherCapture::Notify { event, .. } = capture_event(Ok(event)) else {
             panic!("event should be accepted");
         };
         assert_eq!(event.paths, paths);

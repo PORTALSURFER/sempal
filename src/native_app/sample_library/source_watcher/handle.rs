@@ -6,7 +6,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc, Mutex, OnceLock,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc::{Receiver, Sender, SyncSender, TryRecvError, TrySendError},
     },
     thread,
@@ -35,6 +35,13 @@ use crate::native_app::sample_library::committed_file_mutations::{
 struct ActiveSourceWatcher {
     _watcher: Box<dyn Watcher + Send>,
     ingress_enabled: Arc<AtomicBool>,
+    stream_id: u64,
+}
+
+static NEXT_STREAM_ID: AtomicU64 = AtomicU64::new(1);
+
+fn next_stream_id() -> u64 {
+    NEXT_STREAM_ID.fetch_add(1, Ordering::Relaxed)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -205,14 +212,22 @@ struct SourceWatcherIngress {
     event_tx: SyncSender<SourceWatcherCapture>,
     overflowed: Arc<AtomicBool>,
     enabled: Arc<AtomicBool>,
+    stream_id: u64,
 }
 
 impl EventHandler for SourceWatcherIngress {
     fn handle_event(&mut self, event: notify::Result<Event>) {
+        let capture = match capture_event(event) {
+            SourceWatcherCapture::Notify { event, .. } => SourceWatcherCapture::Notify {
+                stream_id: self.stream_id,
+                event,
+            },
+            capture => capture,
+        };
         if !self.enabled.load(Ordering::Acquire) {
             return;
         }
-        match self.event_tx.try_send(capture_event(event)) {
+        match self.event_tx.try_send(capture) {
             Ok(()) => {}
             Err(TrySendError::Full(_)) => {
                 self.overflowed.store(true, Ordering::Release);
@@ -476,7 +491,17 @@ fn run_source_watcher(
                 let event = paths
                     .into_iter()
                     .fold(Event::new(EventKind::Any), Event::add_path);
-                match event_tx.try_send(capture_event(Ok(event))) {
+                let capture = match capture_event(Ok(event)) {
+                    SourceWatcherCapture::Notify { event, .. } => SourceWatcherCapture::Notify {
+                        stream_id: watcher
+                            .as_ref()
+                            .map(|watcher| watcher.stream_id)
+                            .unwrap_or(0),
+                        event,
+                    },
+                    capture => capture,
+                };
+                match event_tx.try_send(capture) {
                     Ok(()) => {}
                     Err(TrySendError::Full(_)) => {
                         ingress_overflowed.store(true, Ordering::Release);
@@ -784,7 +809,14 @@ fn run_source_watcher(
         let mut root_invalidated = false;
         while let Ok(event) = event_rx.try_recv() {
             match event {
-                SourceWatcherCapture::Notify(mut event) => {
+                SourceWatcherCapture::Notify {
+                    stream_id,
+                    mut event,
+                } => {
+                    if watcher.as_ref().map(|watcher| watcher.stream_id) != Some(stream_id) {
+                        state.mark_all_overflowed(now);
+                        continue;
+                    }
                     if !retain_source_refresh_candidates(&mut event) {
                         continue;
                     }
@@ -1014,6 +1046,7 @@ fn spawn_source_watcher(
     ingress_overflowed: Arc<AtomicBool>,
     backend: SourceWatcherBackend,
 ) -> Result<PendingSourceWatcher, String> {
+    let stream_id = next_stream_id();
     let (result_tx, result_rx) = std::sync::mpsc::channel();
     // Native backends can emit callbacks while roots are being registered.
     // Fence those callbacks and open ingress only once the complete watcher is
@@ -1027,6 +1060,7 @@ fn spawn_source_watcher(
                 event_tx,
                 overflowed: ingress_overflowed,
                 enabled: Arc::clone(&watcher_enabled),
+                stream_id,
             };
             let watcher: Result<Box<dyn Watcher + Send>, String> = match backend {
                 SourceWatcherBackend::Native => notify::recommended_watcher(ingress)
@@ -1046,6 +1080,7 @@ fn spawn_source_watcher(
                     ActiveSourceWatcher {
                         _watcher: watcher,
                         ingress_enabled: watcher_enabled,
+                        stream_id,
                     },
                     update,
                     watched_roots,
@@ -1249,7 +1284,7 @@ pub(super) fn doubled_backoff(current: Duration) -> Duration {
 #[cfg(test)]
 mod lifecycle_tests {
     use super::*;
-    use notify::{RecursiveMode, WatcherKind};
+    use notify::{Event, EventKind, RecursiveMode, WatcherKind};
     use std::{
         collections::{HashMap, HashSet},
         path::Path,
@@ -1569,6 +1604,30 @@ mod lifecycle_tests {
         assert!(retired.is_empty());
     }
 
+    #[test]
+    fn ingress_attaches_its_stream_id_to_captured_notifications() {
+        let (event_tx, event_rx) = std::sync::mpsc::sync_channel(1);
+        let mut ingress = SourceWatcherIngress {
+            event_tx,
+            overflowed: Arc::new(AtomicBool::new(false)),
+            enabled: Arc::new(AtomicBool::new(true)),
+            stream_id: 41,
+        };
+
+        ingress.handle_event(Ok(Event {
+            kind: EventKind::Any,
+            paths: Vec::new(),
+            attrs: notify::event::EventAttributes::default(),
+        }));
+
+        let SourceWatcherCapture::Notify { stream_id, .. } =
+            event_rx.recv().expect("captured notification")
+        else {
+            panic!("expected captured notification");
+        };
+        assert_eq!(stream_id, 41);
+    }
+
     struct BlockingDropWatcher {
         release_rx: Receiver<()>,
     }
@@ -1609,6 +1668,7 @@ mod lifecycle_tests {
         ActiveSourceWatcher {
             _watcher: Box::new(BlockingDropWatcher { release_rx }),
             ingress_enabled: Arc::new(AtomicBool::new(true)),
+            stream_id: next_stream_id(),
         }
     }
 
