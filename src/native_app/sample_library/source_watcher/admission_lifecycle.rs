@@ -17,9 +17,10 @@ use super::roots::{WatchedRootIdentities, registered_root_identity};
 /// Bounded owner capacity for the native watcher lifecycle.
 ///
 /// This is a resource bound, not a source-count policy. If the owner reaches it, lifecycle
-/// reconciliation fails closed and the owner is retained for a later retry.
-const NATIVE_ADMISSION_MAX_LANES: usize = 256;
-const NATIVE_ADMISSION_MAX_IN_FLIGHT: usize = NATIVE_ADMISSION_MAX_LANES;
+/// reconciliation fails closed and the owner is retained for a later retry. Admission stays
+/// closed until a later fence proves every registered lane stopped.
+const NATIVE_ADMISSION_MAX_IN_FLIGHT: usize = 256;
+const NATIVE_ADMISSION_MAX_IN_FLIGHT_PER_LANE: usize = 1;
 const NATIVE_ADMISSION_MAX_RECENT_SEQUENCES_PER_LANE: usize = 64;
 const NATIVE_ADMISSION_MAX_RETAINED_UNCERTAINTIES: usize = 4096;
 const NATIVE_ADMISSION_MAX_EVENTS_PER_LANE: usize = 512;
@@ -27,6 +28,7 @@ const NATIVE_ADMISSION_MAX_EVENTS_PER_LANE: usize = 512;
 /// Owns the one admission owner used by a native source-watcher coordinator.
 pub(super) struct AdmissionLifecycle {
     owner: ReconciliationAdmissionOwner,
+    admission_closed: bool,
 }
 
 impl AdmissionLifecycle {
@@ -40,6 +42,7 @@ impl AdmissionLifecycle {
             owner: ReconciliationAdmissionOwner::new(ReconciliationAdmissionSupervisor::new(
                 limits,
             )),
+            admission_closed: false,
         }
     }
 
@@ -49,12 +52,23 @@ impl AdmissionLifecycle {
     }
 
     /// Stop every registered lane while retaining the owner's uncertainty markers.
+    ///
+    /// A failed stop latches admission closed. Later lifecycle boundaries retry the fence, and
+    /// admission only reopens after every registered lane is proven stopped.
     pub(super) fn fence_all(&mut self) -> Result<(), AdmissionOwnerError> {
+        self.admission_closed = true;
         let mut source_ids = self.owner.source_ids().cloned().collect::<Vec<_>>();
         source_ids.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+        let mut first_error = None;
         for source_id in source_ids {
-            self.stop_if_capturing(&source_id)?;
+            if let Err(error) = self.stop_if_capturing(&source_id) {
+                first_error.get_or_insert(error);
+            }
         }
+        if let Some(error) = first_error {
+            return Err(error);
+        }
+        self.admission_closed = false;
         Ok(())
     }
 
@@ -68,6 +82,10 @@ impl AdmissionLifecycle {
         sources: &[SampleSource],
         watched_roots: &WatchedRootIdentities,
     ) -> Result<(), AdmissionOwnerError> {
+        if self.admission_closed {
+            self.fence_all()?;
+        }
+
         let desired_source_ids = sources
             .iter()
             .map(|source| source.id.clone())
@@ -146,15 +164,16 @@ fn native_admission_limits() -> ReconciliationAdmissionLimits {
         RawObservationLimits::new(NATIVE_ADMISSION_MAX_EVENTS_PER_LANE, usize::MAX, usize::MAX)
             .expect("native per-lane admission limits");
     let global_events = NATIVE_ADMISSION_MAX_EVENTS_PER_LANE
-        .checked_mul(NATIVE_ADMISSION_MAX_LANES)
+        .checked_mul(NATIVE_ADMISSION_MAX_IN_FLIGHT)
         .expect("native global event limit");
     let global = RawObservationLimits::new(global_events, usize::MAX, usize::MAX)
         .expect("native global admission limits");
-    ReconciliationAdmissionLimits::new(
-        NATIVE_ADMISSION_MAX_LANES,
+    ReconciliationAdmissionLimits::new_with_per_lane_capacity(
+        usize::MAX,
         per_lane,
         global,
         NATIVE_ADMISSION_MAX_IN_FLIGHT,
+        NATIVE_ADMISSION_MAX_IN_FLIGHT_PER_LANE,
         NATIVE_ADMISSION_MAX_RECENT_SEQUENCES_PER_LANE,
         NATIVE_ADMISSION_MAX_RETAINED_UNCERTAINTIES,
     )
@@ -219,6 +238,34 @@ mod tests {
         let lane = lifecycle.lane(&source.id).expect("startup lane");
         assert_eq!(lane.root_identity(), &root(b"identity-a"));
         assert_eq!(lane.generation().get(), 1);
+        assert_eq!(lifecycle.owner.supervisor().in_flight(), 0);
+    }
+
+    #[test]
+    fn native_limits_allow_more_than_256_identity_qualified_sources() {
+        let limits = native_admission_limits();
+        assert_eq!(limits.max_lanes(), usize::MAX);
+        assert_eq!(limits.max_in_flight(), NATIVE_ADMISSION_MAX_IN_FLIGHT);
+
+        let mut sources = Vec::with_capacity(257);
+        let mut watched_roots = HashMap::with_capacity(257);
+        for index in 0..257 {
+            let source = source(&format!("native-{index}"), &format!("root-{index}"));
+            watched_roots.insert(source.root.clone(), Some(format!("identity-{index}")));
+            sources.push(source);
+        }
+
+        let mut lifecycle = AdmissionLifecycle::with_limits(limits);
+        lifecycle
+            .reconcile(&sources, &watched_roots)
+            .expect("native lifecycle lane registry");
+
+        assert_eq!(lifecycle.owner.source_ids().count(), 257);
+        assert!(sources.iter().all(|source| {
+            lifecycle
+                .lane(&source.id)
+                .is_some_and(|lane| lane.lifecycle() == ReconciliationLifecycle::Capturing)
+        }));
         assert_eq!(lifecycle.owner.supervisor().in_flight(), 0);
     }
 
@@ -465,6 +512,58 @@ mod tests {
         assert!(lifecycle.lane(&second.id).is_none());
         lifecycle.fence_all().expect("failed lifecycle cleanup");
         assert_eq!(lifecycle.owner.supervisor().in_flight(), 0);
+    }
+
+    #[test]
+    fn retained_uncertainty_fence_failure_blocks_later_reconcile() {
+        let initial = source("fence-capacity", "root-a");
+        let replacement = source("fence-capacity", "root-b");
+        let mut lifecycle = AdmissionLifecycle::with_limits(limits(1, 1, 2));
+
+        lifecycle
+            .reconcile(
+                std::slice::from_ref(&initial),
+                &watched(&[("root-a", Some(b"identity-a"))]),
+            )
+            .expect("initial binding");
+        lifecycle
+            .reconcile(
+                std::slice::from_ref(&replacement),
+                &watched(&[("root-b", Some(b"identity-b"))]),
+            )
+            .expect("root retirement and replacement binding");
+
+        let retained_uncertainties = lifecycle
+            .owner
+            .supervisor()
+            .retained_uncertainties()
+            .to_vec();
+        assert_eq!(retained_uncertainties.len(), 2);
+        let generation = lifecycle
+            .lane(&replacement.id)
+            .expect("replacement lane")
+            .generation();
+        let expected_error = AdmissionOwnerError::Supervisor(
+            wavecrate_library::sample_sources::reconciliation::AdmissionError::UncertaintyCapacityExhausted,
+        );
+        assert_eq!(lifecycle.fence_all(), Err(expected_error));
+
+        assert_eq!(
+            lifecycle.reconcile(
+                std::slice::from_ref(&replacement),
+                &watched(&[("root-b", Some(b"identity-b"))]),
+            ),
+            Err(expected_error)
+        );
+        let lane = lifecycle
+            .lane(&replacement.id)
+            .expect("capturing lane remains authoritative");
+        assert_eq!(lane.generation(), generation);
+        assert_eq!(lane.lifecycle(), ReconciliationLifecycle::Capturing);
+        assert_eq!(
+            lifecycle.owner.supervisor().retained_uncertainties(),
+            retained_uncertainties.as_slice()
+        );
     }
 
     #[test]

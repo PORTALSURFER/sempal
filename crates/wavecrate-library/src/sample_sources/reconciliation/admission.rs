@@ -49,6 +49,14 @@ pub enum ReconciliationLifecycle {
     Stopped,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum InFlightCapacityMode {
+    /// Reserve one in-flight envelope slot for every possible registered lane.
+    ReservedPerLane,
+    /// Bound each registered lane independently without reserving capacity for the registry.
+    ExplicitPerLane { max_in_flight_per_lane: usize },
+}
+
 /// A bounded admission configuration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ReconciliationAdmissionLimits {
@@ -56,6 +64,7 @@ pub struct ReconciliationAdmissionLimits {
     per_lane: RawObservationLimits,
     global: RawObservationLimits,
     max_in_flight: usize,
+    capacity_mode: InFlightCapacityMode,
     max_recent_sequences_per_lane: usize,
     max_retained_uncertainties: usize,
 }
@@ -74,10 +83,70 @@ impl ReconciliationAdmissionLimits {
         max_recent_sequences_per_lane: usize,
         max_retained_uncertainties: usize,
     ) -> Result<Self, AdmissionError> {
+        Self::new_with_capacity_mode(
+            max_lanes,
+            per_lane,
+            global,
+            max_in_flight,
+            InFlightCapacityMode::ReservedPerLane,
+            max_recent_sequences_per_lane,
+            max_retained_uncertainties,
+        )
+    }
+
+    /// Construct limits with an explicit per-lane in-flight envelope capacity.
+    ///
+    /// Unlike [`Self::new`], this mode does not reserve one global envelope slot for every
+    /// possible registered lane. The global `max_in_flight` bound and the explicit
+    /// `max_in_flight_per_lane` bound are enforced independently, so a large lifecycle lane
+    /// registry can share a fixed raw-work budget.
+    pub fn new_with_per_lane_capacity(
+        max_lanes: usize,
+        per_lane: RawObservationLimits,
+        global: RawObservationLimits,
+        max_in_flight: usize,
+        max_in_flight_per_lane: usize,
+        max_recent_sequences_per_lane: usize,
+        max_retained_uncertainties: usize,
+    ) -> Result<Self, AdmissionError> {
+        Self::new_with_capacity_mode(
+            max_lanes,
+            per_lane,
+            global,
+            max_in_flight,
+            InFlightCapacityMode::ExplicitPerLane {
+                max_in_flight_per_lane,
+            },
+            max_recent_sequences_per_lane,
+            max_retained_uncertainties,
+        )
+    }
+
+    fn new_with_capacity_mode(
+        max_lanes: usize,
+        per_lane: RawObservationLimits,
+        global: RawObservationLimits,
+        max_in_flight: usize,
+        capacity_mode: InFlightCapacityMode,
+        max_recent_sequences_per_lane: usize,
+        max_retained_uncertainties: usize,
+    ) -> Result<Self, AdmissionError> {
         if max_lanes == 0 {
             return Err(AdmissionError::ZeroLaneLimit);
         }
-        if max_in_flight == 0 || max_in_flight < max_lanes {
+        if max_in_flight == 0
+            || matches!(
+                capacity_mode,
+                InFlightCapacityMode::ExplicitPerLane {
+                    max_in_flight_per_lane: 0
+                }
+            )
+            || matches!(capacity_mode, InFlightCapacityMode::ExplicitPerLane {
+                max_in_flight_per_lane
+            } if max_in_flight_per_lane > max_in_flight)
+            || (matches!(capacity_mode, InFlightCapacityMode::ReservedPerLane)
+                && max_in_flight < max_lanes)
+        {
             return Err(AdmissionError::InsufficientEnvelopeCapacity);
         }
         if max_recent_sequences_per_lane == 0 {
@@ -91,6 +160,7 @@ impl ReconciliationAdmissionLimits {
             per_lane,
             global,
             max_in_flight,
+            capacity_mode,
             max_recent_sequences_per_lane,
             max_retained_uncertainties,
         })
@@ -986,9 +1056,7 @@ impl ReconciliationAdmissionSupervisor {
             );
         };
         let lane_live_tickets = self.lanes[&lane].live_tickets;
-        let shared_capacity = self.limits.max_in_flight - self.limits.max_lanes;
-        let lane_capacity_available =
-            lane_live_tickets == 0 || self.shared_used() < shared_capacity;
+        let lane_capacity_available = self.lane_capacity_available(lane_live_tickets);
         if self.pending.len() >= self.limits.max_in_flight
             || !lane_capacity_available
             || !next_lane_usage.within(self.limits.per_lane)
@@ -1284,6 +1352,18 @@ impl ReconciliationAdmissionSupervisor {
         self.lanes.values().fold(0, |used, state| {
             used.saturating_add(state.live_tickets.saturating_sub(1))
         })
+    }
+
+    fn lane_capacity_available(&self, lane_live_tickets: usize) -> bool {
+        match self.limits.capacity_mode {
+            InFlightCapacityMode::ReservedPerLane => {
+                let shared_capacity = self.limits.max_in_flight - self.limits.max_lanes;
+                lane_live_tickets == 0 || self.shared_used() < shared_capacity
+            }
+            InFlightCapacityMode::ExplicitPerLane {
+                max_in_flight_per_lane,
+            } => lane_live_tickets < max_in_flight_per_lane,
+        }
     }
 
     fn retain_marker(&mut self, mut marker: RetainedUncertainty) {
@@ -2376,6 +2456,94 @@ mod tests {
             ReconciliationAdmissionLimits::new(1, per_lane, global, 1, 8, 0),
             Err(AdmissionError::ZeroRetainedUncertaintyLimit)
         );
+        assert_eq!(
+            ReconciliationAdmissionLimits::new_with_per_lane_capacity(
+                usize::MAX,
+                per_lane,
+                global,
+                8,
+                9,
+                8,
+                64,
+            ),
+            Err(AdmissionError::InsufficientEnvelopeCapacity)
+        );
+    }
+
+    #[test]
+    fn explicit_per_lane_capacity_allows_large_registry_with_bounded_in_flight_work() {
+        let per_lane = RawObservationLimits::new(8, usize::MAX, usize::MAX).expect("limits");
+        let global = RawObservationLimits::new(256, usize::MAX, usize::MAX).expect("limits");
+        let limits = ReconciliationAdmissionLimits::new_with_per_lane_capacity(
+            usize::MAX,
+            per_lane,
+            global,
+            256,
+            1,
+            8,
+            512,
+        )
+        .expect("explicit per-lane limits");
+        let mut supervisor = ReconciliationAdmissionSupervisor::new(limits);
+        let mut identities = Vec::with_capacity(257);
+        for index in 0..257 {
+            let source = SourceId::from_string(format!("source-{index}"));
+            let root = RootIdentity::from_bytes(format!("root-{index}").into_bytes());
+            let (_, generation) = registered(&mut supervisor, &source, &root);
+            identities.push((source, root, generation));
+        }
+        assert_eq!(supervisor.source_ids().count(), 257);
+
+        let (source, root, generation) = &identities[0];
+        assert!(matches!(
+            supervisor.admit(envelope(
+                source,
+                Some(root),
+                *generation,
+                0,
+                RawEventKind::Create
+            )),
+            AdmissionOutcome::Accepted(_)
+        ));
+        assert_eq!(
+            supervisor.admit(envelope(
+                source,
+                Some(root),
+                *generation,
+                1,
+                RawEventKind::Modify,
+            )),
+            AdmissionOutcome::Rejected(AdmissionRejectReason::QueueSaturated)
+        );
+
+        for (captured_at, (source, root, generation)) in
+            identities.iter().skip(1).take(255).enumerate()
+        {
+            assert!(matches!(
+                supervisor.admit(envelope(
+                    source,
+                    Some(root),
+                    *generation,
+                    captured_at as u64 + 2,
+                    RawEventKind::Create,
+                )),
+                AdmissionOutcome::Accepted(_)
+            ));
+        }
+        assert_eq!(supervisor.in_flight(), 256);
+
+        let (source, root, generation) = &identities[256];
+        assert_eq!(
+            supervisor.admit(envelope(
+                source,
+                Some(root),
+                *generation,
+                257,
+                RawEventKind::Create,
+            )),
+            AdmissionOutcome::Rejected(AdmissionRejectReason::QueueSaturated)
+        );
+        assert_eq!(supervisor.in_flight(), 256);
     }
 
     #[test]
