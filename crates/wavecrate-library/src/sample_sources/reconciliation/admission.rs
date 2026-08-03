@@ -669,6 +669,11 @@ impl ReconciliationAdmissionSupervisor {
         self.limits
     }
 
+    /// Return the exact registered source-index key for a source, if present.
+    pub fn lane_for_source(&self, source_id: &SourceId) -> Option<&AdmissionLaneKey> {
+        self.sources.get(source_id)
+    }
+
     /// Register a source/root lane in `Starting` state.
     pub fn register_lane(
         &mut self,
