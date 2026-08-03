@@ -4,6 +4,7 @@ mod adapter;
 mod admission;
 mod model;
 mod normalize;
+mod owner;
 
 #[cfg(test)]
 mod tests;
@@ -32,3 +33,4 @@ pub use normalize::{
     NormalizationReason, NormalizedObservation, ReconciliationScope, ReconciliationScopeKind,
     normalize_observation,
 };
+pub use owner::{AdmissionOwnerError, OwnedAdmissionLane, ReconciliationAdmissionOwner};
