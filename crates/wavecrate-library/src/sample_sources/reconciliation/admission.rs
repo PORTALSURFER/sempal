@@ -1080,6 +1080,28 @@ impl ReconciliationAdmissionSupervisor {
         Ok(())
     }
 
+    /// Retire an applied live envelope after the proofless audit has been handed off.
+    ///
+    /// This releases bounded admission usage without clearing retained uncertainty, creating
+    /// authority, or advancing a watcher checkpoint. The ticket must have reached `Applied`,
+    /// which is the supervisor's handoff phase for this proofless path. A later committed
+    /// authoritative acknowledgement is still required to clear the retained marker.
+    pub fn mark_unproven_audit_handed_off(
+        &mut self,
+        ticket: DispatchTicket,
+    ) -> Result<(), AdmissionError> {
+        let pending = self
+            .pending
+            .get(&ticket)
+            .ok_or(AdmissionError::UnknownTicket)?;
+        if pending.phase != DispatchPhase::Applied {
+            return Err(AdmissionError::InvalidLifecycleTransition);
+        }
+        let pending = self.pending.remove(&ticket).expect("ticket checked above");
+        self.release_usage(&pending.lane, pending.usage);
+        Ok(())
+    }
+
     /// Borrow all retained uncertainty markers in supervisor insertion order.
     pub fn uncertainties(&self) -> &[RetainedUncertainty] {
         &self.retained_uncertainties
@@ -2477,6 +2499,66 @@ mod tests {
                 restarted_generation,
                 7,
                 RawEventKind::Create,
+            )),
+            AdmissionOutcome::Accepted(_)
+        ));
+    }
+
+    #[test]
+    fn unproven_audit_handoff_releases_usage_and_retains_live_uncertainty() {
+        let source = SourceId::from_string("source-a");
+        let root = RootIdentity::from_bytes(b"root-a".to_vec());
+        let mut supervisor = ReconciliationAdmissionSupervisor::new(limits_with(1, 8, 1, 8, 2));
+        let (_lane, generation) = registered(&mut supervisor, &source, &root);
+        let ticket = match supervisor.admit_with_required_uncertainty(
+            envelope(&source, Some(&root), generation, 1, RawEventKind::Create),
+            UncertaintyReason::LiveUnproven,
+        ) {
+            AdmissionOutcome::Accepted(ticket) => ticket,
+            outcome => panic!("unexpected live outcome: {outcome:?}"),
+        };
+        assert_eq!(
+            last_marker(&supervisor).reasons(),
+            &[UncertaintyReason::LiveUnproven]
+        );
+        let live_marker = last_marker(&supervisor).clone();
+
+        let dispatched = supervisor.dispatch_next().expect("dispatch live envelope");
+        assert_eq!(dispatched.ticket(), ticket);
+        supervisor
+            .mark_dispatched(ticket)
+            .expect("dispatch handoff");
+        supervisor.mark_applied(ticket).expect("audit handoff");
+        assert!(matches!(
+            supervisor.admit(envelope(
+                &source,
+                Some(&root),
+                generation,
+                2,
+                RawEventKind::Modify,
+            )),
+            AdmissionOutcome::Rejected(AdmissionRejectReason::QueueSaturated)
+        ));
+        assert_eq!(supervisor.uncertainties().len(), 2);
+        assert_eq!(supervisor.uncertainties()[0], live_marker);
+        assert!(
+            supervisor.uncertainties()[1]
+                .reasons()
+                .contains(&UncertaintyReason::QueueSaturated)
+        );
+
+        supervisor
+            .mark_unproven_audit_handed_off(ticket)
+            .expect("retire proofless audit handoff");
+        assert_eq!(supervisor.in_flight(), 0);
+        assert_eq!(supervisor.uncertainties()[0], live_marker,);
+        assert!(matches!(
+            supervisor.admit(envelope(
+                &source,
+                Some(&root),
+                generation,
+                3,
+                RawEventKind::Modify,
             )),
             AdmissionOutcome::Accepted(_)
         ));
