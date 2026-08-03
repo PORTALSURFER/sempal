@@ -57,7 +57,7 @@ fn wavecrate_metadata_files_do_not_trigger_source_refresh() {
 }
 
 #[test]
-fn metadata_event_storm_is_filtered_before_the_bounded_watcher_queue() {
+fn metadata_event_storm_is_filtered_before_state_admission() {
     let root = PathBuf::from(r"C:\samples");
     let mut event = Event {
         kind: EventKind::Modify(notify::event::ModifyKind::Data(

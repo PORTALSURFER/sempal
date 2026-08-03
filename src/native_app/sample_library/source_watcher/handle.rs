@@ -14,6 +14,7 @@ use std::{
 };
 use wavecrate::sample_sources::{SampleSource, SourceId};
 
+use super::capture::{SourceWatcherCapture, capture_event};
 use super::classification::retain_source_refresh_candidates;
 use super::journal::{self, JournalRecovery};
 use super::roots::{
@@ -201,7 +202,7 @@ impl SourceWatcherTeardown {
 }
 
 struct SourceWatcherIngress {
-    event_tx: SyncSender<notify::Result<Event>>,
+    event_tx: SyncSender<SourceWatcherCapture>,
     overflowed: Arc<AtomicBool>,
     enabled: Arc<AtomicBool>,
 }
@@ -211,16 +212,7 @@ impl EventHandler for SourceWatcherIngress {
         if !self.enabled.load(Ordering::Acquire) {
             return;
         }
-        let event = match event {
-            Ok(mut event) => {
-                if !retain_source_refresh_candidates(&mut event) {
-                    return;
-                }
-                Ok(event)
-            }
-            Err(error) => Err(error),
-        };
-        match self.event_tx.try_send(event) {
+        match self.event_tx.try_send(capture_event(event)) {
             Ok(()) => {}
             Err(TrySendError::Full(_)) => {
                 self.overflowed.store(true, Ordering::Release);
@@ -484,7 +476,7 @@ fn run_source_watcher(
                 let event = paths
                     .into_iter()
                     .fold(Event::new(EventKind::Any), Event::add_path);
-                match event_tx.try_send(Ok(event)) {
+                match event_tx.try_send(capture_event(Ok(event))) {
                     Ok(()) => {}
                     Err(TrySendError::Full(_)) => {
                         ingress_overflowed.store(true, Ordering::Release);
@@ -791,14 +783,19 @@ fn run_source_watcher(
         let mut watcher_failed = false;
         let mut root_invalidated = false;
         while let Ok(event) = event_rx.try_recv() {
-            let event: notify::Result<Event> = event;
             match event {
-                Ok(event) => {
+                SourceWatcherCapture::Notify(mut event) => {
+                    if !retain_source_refresh_candidates(&mut event) {
+                        continue;
+                    }
                     root_invalidated |= state.collect_event(&event, Instant::now());
                 }
-                Err(error) => {
-                    tracing::warn!("GUI source watcher error: {error}");
+                SourceWatcherCapture::Error => {
+                    tracing::warn!("GUI source watcher error");
                     watcher_failed = true;
+                }
+                SourceWatcherCapture::Overflow => {
+                    state.mark_all_overflowed(now);
                 }
             }
         }
@@ -1013,7 +1010,7 @@ fn run_source_watcher_without_lifecycle(command_rx: Receiver<GuiSourceWatchComma
 
 fn spawn_source_watcher(
     sources: Vec<SampleSource>,
-    event_tx: SyncSender<notify::Result<Event>>,
+    event_tx: SyncSender<SourceWatcherCapture>,
     ingress_overflowed: Arc<AtomicBool>,
     backend: SourceWatcherBackend,
 ) -> Result<PendingSourceWatcher, String> {
@@ -1093,7 +1090,7 @@ fn start_pending_source_watcher(
     pending: &mut Option<PendingSourceWatcher>,
     retired_initializers: &[PendingSourceWatcher],
     sources: Vec<SampleSource>,
-    event_tx: SyncSender<notify::Result<Event>>,
+    event_tx: SyncSender<SourceWatcherCapture>,
     ingress_overflowed: Arc<AtomicBool>,
     backend: SourceWatcherBackend,
 ) -> bool {
