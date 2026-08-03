@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+mod capture;
 mod classification;
 mod debounce;
 mod handle;
