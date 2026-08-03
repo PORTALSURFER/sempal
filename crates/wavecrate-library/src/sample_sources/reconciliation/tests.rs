@@ -1202,6 +1202,92 @@ fn valid_replay_adapter_attaches_exact_continuity_fields_without_adapter_uncerta
 }
 
 #[test]
+fn continuity_proven_replay_cannot_use_unproven_audit_handoff() {
+    let source = SourceId::from_string("source-a");
+    let root = RootIdentity::from_bytes(b"root-a".to_vec());
+    let mut supervisor = ReconciliationAdmissionSupervisor::new(adapter_admission_limits(1, 8));
+    let (_lane, generation) = adapter_registered(&mut supervisor, &source, &root);
+    let prior = replay_prior("source-a", b"root-a", b"stream-a", generation.get(), 10);
+
+    let admission = {
+        let mut adapter = ReconciliationAdapter::new(&mut supervisor);
+        adapter
+            .admit_replay(
+                adapter_batch(
+                    adapter_capture_provenance(
+                        "source-a",
+                        Some(b"root-a".to_vec()),
+                        Some(b"stream-a".to_vec()),
+                        generation.get(),
+                        Some(11),
+                        Some(11),
+                    ),
+                    vec![adapter_observation(RawEventKind::Create, "replayed.wav")],
+                ),
+                Some(&prior),
+                true,
+            )
+            .expect("valid replay admission")
+    };
+    assert_eq!(
+        admission.disposition(),
+        AdapterDisposition::AdmittedWithContinuity
+    );
+    let ticket = match admission.outcome() {
+        AdmissionOutcome::Accepted(ticket) => *ticket,
+        outcome => panic!("unexpected replay outcome: {outcome:?}"),
+    };
+    assert!(supervisor.uncertainties().is_empty());
+
+    let dispatched = supervisor.dispatch_next().expect("replay dispatch");
+    assert_eq!(dispatched.ticket(), ticket);
+    assert!(
+        dispatched
+            .normalized()
+            .proof()
+            .watcher_continuity()
+            .is_some()
+    );
+    supervisor
+        .mark_dispatched(ticket)
+        .expect("replay dispatch handoff");
+    supervisor.mark_applied(ticket).expect("replay applied");
+
+    assert_eq!(
+        supervisor.mark_unproven_audit_handed_off(ticket),
+        Err(AdmissionError::UnprovenAuditHandoffRequiresUnprovenEnvelope)
+    );
+    assert_eq!(supervisor.in_flight(), 1);
+
+    let capacity = {
+        let mut adapter = ReconciliationAdapter::new(&mut supervisor);
+        adapter
+            .admit_live(adapter_batch(
+                adapter_capture_provenance(
+                    "source-a",
+                    Some(b"root-a".to_vec()),
+                    Some(b"stream-a".to_vec()),
+                    generation.get(),
+                    Some(12),
+                    Some(12),
+                ),
+                vec![adapter_observation(RawEventKind::Modify, "next.wav")],
+            ))
+            .expect("capacity admission result")
+    };
+    assert_eq!(
+        capacity.outcome(),
+        &AdmissionOutcome::Rejected(AdmissionRejectReason::QueueSaturated)
+    );
+    assert_eq!(supervisor.in_flight(), 1);
+
+    supervisor
+        .mark_checkpointed(ticket)
+        .expect("normal replay checkpoint");
+    assert_eq!(supervisor.in_flight(), 0);
+}
+
+#[test]
 fn invalid_replay_claims_remain_unproven_and_retain_typed_source_audit_evidence() {
     let valid_prior = replay_prior("source-a", b"root-a", b"stream-a", 1, 10);
     let valid_observations = || vec![adapter_observation(RawEventKind::Create, "sample.wav")];

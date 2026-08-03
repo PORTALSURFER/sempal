@@ -150,6 +150,8 @@ pub enum AdmissionError {
     UnknownLane,
     /// The requested lifecycle transition is not valid.
     InvalidLifecycleTransition,
+    /// A proof-carrying envelope cannot use the proofless audit handoff.
+    UnprovenAuditHandoffRequiresUnprovenEnvelope,
     /// The supplied generation is not the lane's current generation.
     GenerationMismatch,
     /// The monotonic generation counter cannot advance.
@@ -1096,6 +1098,9 @@ impl ReconciliationAdmissionSupervisor {
             .ok_or(AdmissionError::UnknownTicket)?;
         if pending.phase != DispatchPhase::Applied {
             return Err(AdmissionError::InvalidLifecycleTransition);
+        }
+        if !pending.envelope.proof().is_unproven() {
+            return Err(AdmissionError::UnprovenAuditHandoffRequiresUnprovenEnvelope);
         }
         let pending = self.pending.remove(&ticket).expect("ticket checked above");
         self.release_usage(&pending.lane, pending.usage);
