@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+mod admission_lifecycle;
 mod capture;
 mod classification;
 mod debounce;

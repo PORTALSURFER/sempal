@@ -674,6 +674,11 @@ impl ReconciliationAdmissionSupervisor {
         self.sources.get(source_id)
     }
 
+    /// Iterate over the source identifiers in the authoritative lane index.
+    pub fn source_ids(&self) -> impl Iterator<Item = &SourceId> {
+        self.sources.keys()
+    }
+
     /// Register a source/root lane in `Starting` state.
     pub fn register_lane(
         &mut self,

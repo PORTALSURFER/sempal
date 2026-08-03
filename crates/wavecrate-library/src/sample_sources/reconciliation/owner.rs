@@ -102,6 +102,11 @@ impl ReconciliationAdmissionOwner {
         self.snapshot(lane).ok()
     }
 
+    /// Iterate over source identifiers registered in the owned supervisor.
+    pub fn source_ids(&self) -> impl Iterator<Item = &SourceId> {
+        self.supervisor.source_ids()
+    }
+
     /// Register and begin a source, or begin/restart its existing same-root lane.
     ///
     /// A newly registered lane is left in `Starting` if the final `begin_capture` call fails;
