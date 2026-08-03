@@ -9,7 +9,10 @@ use std::fmt;
 
 use crate::sample_sources::SourceId;
 
-use super::admission::{AdmissionOutcome, ReconciliationAdmissionSupervisor, UncertaintyReason};
+use super::admission::{
+    AdmissionOutcome, DispatchTicket, ReconciliationAcknowledgementIdentity,
+    ReconciliationAdmissionSupervisor, RetainedUncertaintyBoundary, UncertaintyReason,
+};
 use super::model::{
     BackendStreamIdentity, CaptureSequenceEvidence, CaptureSequenceRange,
     DurablePriorAcknowledgement, Proof, RawEnvelopeError, RawEventKind, RawObservation,
@@ -164,6 +167,79 @@ impl AdapterAdmission {
     }
 }
 
+/// An opaque correlation for one accepted live batch and its retained source-audit marker.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LiveAuditCorrelation {
+    ticket: DispatchTicket,
+    identity: ReconciliationAcknowledgementIdentity,
+    boundary: RetainedUncertaintyBoundary,
+}
+
+impl LiveAuditCorrelation {
+    pub(crate) fn new(
+        ticket: DispatchTicket,
+        identity: ReconciliationAcknowledgementIdentity,
+        boundary: RetainedUncertaintyBoundary,
+    ) -> Self {
+        Self {
+            ticket,
+            identity,
+            boundary,
+        }
+    }
+
+    /// Return the ticket assigned to the accepted live batch.
+    pub const fn ticket(&self) -> DispatchTicket {
+        self.ticket
+    }
+
+    /// Borrow the exact identity bound to the retained source-audit marker.
+    pub const fn identity(&self) -> &ReconciliationAcknowledgementIdentity {
+        &self.identity
+    }
+
+    /// Return the retained source-audit watermark boundary.
+    pub const fn boundary(&self) -> RetainedUncertaintyBoundary {
+        self.boundary
+    }
+}
+
+/// A live adapter admission together with its optional retained source-audit correlation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LiveAuditAdmission {
+    admission: AdapterAdmission,
+    correlation: Option<LiveAuditCorrelation>,
+}
+
+impl LiveAuditAdmission {
+    fn new(admission: AdapterAdmission, correlation: Option<LiveAuditCorrelation>) -> Self {
+        Self {
+            admission,
+            correlation,
+        }
+    }
+
+    /// Borrow the existing adapter admission.
+    pub const fn admission(&self) -> &AdapterAdmission {
+        &self.admission
+    }
+
+    /// Borrow the optional opaque live-audit correlation.
+    pub const fn correlation(&self) -> Option<&LiveAuditCorrelation> {
+        self.correlation.as_ref()
+    }
+
+    /// Consume the wrapper and return the existing adapter admission.
+    pub fn into_admission(self) -> AdapterAdmission {
+        self.admission
+    }
+
+    /// Consume the wrapper and return the optional live-audit correlation.
+    pub fn into_correlation(self) -> Option<LiveAuditCorrelation> {
+        self.correlation
+    }
+}
+
 /// An opaque identity-bound prior used by the replay adapter.
 ///
 /// The constructor is crate-restricted because the acknowledgement sequence is
@@ -258,6 +334,48 @@ impl<'a> ReconciliationAdapter<'a> {
             disposition(AdmissionKind::Live, &outcome),
             outcome,
         ))
+    }
+
+    /// Admit a live batch and correlate an accepted result with its new audit marker.
+    ///
+    /// The correlation carries no authority and is absent when admission is not accepted or
+    /// when the required newly retained marker cannot be matched exactly.
+    pub fn admit_live_with_correlation(
+        &mut self,
+        batch: SyntheticObservationBatch,
+    ) -> Result<LiveAuditAdmission, AdapterError> {
+        let provenance = batch.provenance().clone();
+        let uncertainty_start = self.supervisor.uncertainties().len();
+        let admission = self.admit_live(batch)?;
+        let correlation = match admission.outcome() {
+            AdmissionOutcome::Accepted(ticket) => self
+                .supervisor
+                .uncertainties()
+                .get(uncertainty_start..)
+                .and_then(|markers| {
+                    markers.iter().find(|marker| {
+                        marker.source_id() == Some(provenance.source_id())
+                            && marker.root_identity() == provenance.root_identity()
+                            && marker.generation() == Some(provenance.watcher_generation())
+                            && marker.reasons().contains(&UncertaintyReason::LiveUnproven)
+                    })
+                })
+                .and_then(|marker| {
+                    provenance.root_identity().map(|root_identity| {
+                        LiveAuditCorrelation::new(
+                            *ticket,
+                            ReconciliationAcknowledgementIdentity::new(
+                                provenance.source_id().clone(),
+                                root_identity.clone(),
+                                provenance.watcher_generation(),
+                            ),
+                            marker.boundary(),
+                        )
+                    })
+                }),
+            _ => None,
+        };
+        Ok(LiveAuditAdmission::new(admission, correlation))
     }
 
     /// Admit replay after validating its identity and contiguous capture claim.

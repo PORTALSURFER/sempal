@@ -9,8 +9,8 @@ mod normalize;
 mod tests;
 
 pub use adapter::{
-    AdapterAdmission, AdapterDisposition, AdapterError, ReconciliationAdapter, ReplayPriorToken,
-    SyntheticObservationBatch,
+    AdapterAdmission, AdapterDisposition, AdapterError, LiveAuditAdmission, LiveAuditCorrelation,
+    ReconciliationAdapter, ReplayPriorToken, SyntheticObservationBatch,
 };
 pub use admission::{
     AdmissionError, AdmissionLaneKey, AdmissionOutcome, AdmissionRejectReason,

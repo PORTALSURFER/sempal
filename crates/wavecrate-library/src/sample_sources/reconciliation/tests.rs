@@ -859,6 +859,178 @@ fn live_adapter_is_unproven_ordered_and_retains_one_audit_marker() {
 }
 
 #[test]
+fn live_adapter_correlation_binds_ticket_identity_and_new_marker_boundary() {
+    let source = SourceId::from_string("source-a");
+    let root = RootIdentity::from_bytes(b"root-a".to_vec());
+    let mut supervisor = ReconciliationAdmissionSupervisor::new(adapter_admission_limits(2, 8));
+    let (_lane, generation) = adapter_registered(&mut supervisor, &source, &root);
+
+    {
+        let mut adapter = ReconciliationAdapter::new(&mut supervisor);
+        adapter
+            .admit_live(adapter_batch(
+                adapter_capture_provenance(
+                    "source-a",
+                    Some(b"root-a".to_vec()),
+                    Some(b"stream-a".to_vec()),
+                    generation.get(),
+                    Some(10),
+                    Some(10),
+                ),
+                vec![adapter_observation(RawEventKind::Create, "first.wav")],
+            ))
+            .expect("first live admission");
+    }
+
+    let markers_before = supervisor.uncertainties().len();
+    let provenance = adapter_capture_provenance(
+        "source-a",
+        Some(b"root-a".to_vec()),
+        Some(b"stream-a".to_vec()),
+        generation.get(),
+        Some(11),
+        Some(11),
+    );
+    let admission = {
+        let mut adapter = ReconciliationAdapter::new(&mut supervisor);
+        adapter
+            .admit_live_with_correlation(adapter_batch(
+                provenance.clone(),
+                vec![adapter_observation(RawEventKind::Modify, "second.wav")],
+            ))
+            .expect("correlated live admission")
+    };
+
+    let ticket = match admission.admission().outcome() {
+        AdmissionOutcome::Accepted(ticket) => *ticket,
+        outcome => panic!("unexpected live outcome: {outcome:?}"),
+    };
+    let correlation = admission.correlation().expect("live correlation");
+    assert_eq!(correlation.ticket(), ticket);
+    assert_eq!(correlation.identity().source_id(), provenance.source_id());
+    assert_eq!(
+        correlation.identity().root_identity(),
+        provenance.root_identity().expect("root identity")
+    );
+    assert_eq!(
+        correlation.identity().generation(),
+        provenance.watcher_generation()
+    );
+    let marker = &supervisor.uncertainties()[markers_before];
+    assert_eq!(marker.scope(), ReconciliationScopeKind::SourceAudit);
+    assert!(marker.reasons().contains(&UncertaintyReason::LiveUnproven));
+    assert_eq!(correlation.boundary(), marker.boundary());
+}
+
+#[test]
+fn live_adapter_correlation_is_none_for_duplicate_admission() {
+    let source = SourceId::from_string("source-a");
+    let root = RootIdentity::from_bytes(b"root-a".to_vec());
+    let mut supervisor = ReconciliationAdmissionSupervisor::new(adapter_admission_limits(2, 8));
+    let (_lane, generation) = adapter_registered(&mut supervisor, &source, &root);
+    let batch = adapter_batch(
+        adapter_capture_provenance(
+            "source-a",
+            Some(b"root-a".to_vec()),
+            Some(b"stream-a".to_vec()),
+            generation.get(),
+            Some(10),
+            Some(10),
+        ),
+        vec![adapter_observation(RawEventKind::Create, "sample.wav")],
+    );
+
+    let (first, duplicate) = {
+        let mut adapter = ReconciliationAdapter::new(&mut supervisor);
+        (
+            adapter
+                .admit_live_with_correlation(batch.clone())
+                .expect("first live admission"),
+            adapter
+                .admit_live_with_correlation(batch)
+                .expect("duplicate live admission"),
+        )
+    };
+    assert!(first.correlation().is_some());
+    assert!(duplicate.correlation().is_none());
+    assert!(matches!(
+        duplicate.admission().outcome(),
+        AdmissionOutcome::DuplicateSuppressed(_)
+    ));
+}
+
+#[test]
+fn live_adapter_correlation_is_none_for_rejection_and_capacity() {
+    let rejected_batch = adapter_batch(
+        adapter_capture_provenance(
+            "unregistered-source",
+            Some(b"root-a".to_vec()),
+            Some(b"stream-a".to_vec()),
+            1,
+            Some(1),
+            Some(1),
+        ),
+        vec![adapter_observation(RawEventKind::Create, "rejected.wav")],
+    );
+    let mut rejected_supervisor =
+        ReconciliationAdmissionSupervisor::new(adapter_admission_limits(2, 8));
+    let rejected = {
+        let mut adapter = ReconciliationAdapter::new(&mut rejected_supervisor);
+        adapter
+            .admit_live_with_correlation(rejected_batch)
+            .expect("rejected live admission result")
+    };
+    assert!(rejected.correlation().is_none());
+    assert!(matches!(
+        rejected.admission().outcome(),
+        AdmissionOutcome::Rejected(_)
+    ));
+
+    let source = SourceId::from_string("source-a");
+    let root = RootIdentity::from_bytes(b"root-a".to_vec());
+    let mut capacity_supervisor =
+        ReconciliationAdmissionSupervisor::new(adapter_admission_limits(2, 1));
+    let (_lane, generation) = adapter_registered(&mut capacity_supervisor, &source, &root);
+    {
+        let mut adapter = ReconciliationAdapter::new(&mut capacity_supervisor);
+        adapter
+            .admit_live(adapter_batch(
+                adapter_capture_provenance(
+                    "source-a",
+                    Some(b"root-a".to_vec()),
+                    Some(b"stream-a".to_vec()),
+                    generation.get(),
+                    Some(1),
+                    Some(1),
+                ),
+                vec![adapter_observation(RawEventKind::Create, "first.wav")],
+            ))
+            .expect("first live admission");
+    }
+    let capacity = {
+        let mut adapter = ReconciliationAdapter::new(&mut capacity_supervisor);
+        adapter
+            .admit_live_with_correlation(adapter_batch(
+                adapter_capture_provenance(
+                    "source-a",
+                    Some(b"root-a".to_vec()),
+                    Some(b"stream-a".to_vec()),
+                    generation.get(),
+                    Some(2),
+                    Some(2),
+                ),
+                vec![adapter_observation(RawEventKind::Create, "second.wav")],
+            ))
+            .expect("capacity live admission result")
+    };
+    assert!(capacity.correlation().is_none());
+    assert!(matches!(
+        capacity.admission().outcome(),
+        AdmissionOutcome::UncertaintyCapacityExhausted(_)
+    ));
+}
+
+#[test]
 fn valid_replay_adapter_attaches_exact_continuity_fields_without_adapter_uncertainty() {
     let source = SourceId::from_string("source-a");
     let root = RootIdentity::from_bytes(b"root-a".to_vec());
