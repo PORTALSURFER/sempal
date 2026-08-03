@@ -210,6 +210,16 @@ pub enum UncertaintyReason {
     AccountingOverflow,
     /// Exact sequence identity was reused with different evidence.
     SequenceConflict,
+    /// A live adapter batch remains deliberately unproven.
+    LiveUnproven,
+    /// Replay continuity could not be established because required prior or identity evidence was missing.
+    ReplayContinuityMissing,
+    /// Replay continuity evidence supplied only one side of its capture sequence range.
+    ReplayContinuityAmbiguous,
+    /// Replay continuity evidence was gapped, non-contiguous, or did not advance the prior.
+    ReplayContinuityGap,
+    /// Replay continuity evidence did not match its identity or contained disqualifying evidence.
+    ReplayContinuityMismatch,
 }
 
 /// A supervisor-assigned watermark range for one retained uncertainty marker.
@@ -821,7 +831,35 @@ impl ReconciliationAdmissionSupervisor {
 
     /// Admit an envelope into the bounded lane queue.
     pub fn admit(&mut self, envelope: RawObservationEnvelope) -> AdmissionOutcome {
-        let envelope_marker_reasons = marker_reasons(&envelope);
+        self.admit_inner(envelope, None)
+    }
+
+    /// Admit an envelope while atomically requiring one adapter-owned uncertainty reason.
+    ///
+    /// This crate-visible path shares every lifecycle, duplicate, queue, accounting,
+    /// and retained-marker fence with [`Self::admit`]. The required reason is
+    /// included before any ticket or usage mutation, while exact duplicate
+    /// suppression remains marker-free.
+    pub(crate) fn admit_with_required_uncertainty(
+        &mut self,
+        envelope: RawObservationEnvelope,
+        reason: UncertaintyReason,
+    ) -> AdmissionOutcome {
+        self.admit_inner(envelope, Some(reason))
+    }
+
+    fn admit_inner(
+        &mut self,
+        envelope: RawObservationEnvelope,
+        required_uncertainty: Option<UncertaintyReason>,
+    ) -> AdmissionOutcome {
+        let remember_marker_only_sequence = required_uncertainty.is_some();
+        let mut envelope_marker_reasons = marker_reasons(&envelope);
+        if let Some(reason) = required_uncertainty {
+            envelope_marker_reasons.push(reason);
+            envelope_marker_reasons.sort_unstable();
+            envelope_marker_reasons.dedup();
+        }
         let source_id = envelope.provenance().source_id().clone();
         let Some(lane) = self.sources.get(&source_id).cloned() else {
             return self.reject_with_marker(
@@ -885,11 +923,19 @@ impl ReconciliationAdmissionSupervisor {
             evidence_reasons.dedup();
         }
         if marker_only(&envelope) {
-            return self.reject_with_reasons(
+            let recent_record =
+                remember_marker_only_sequence.then(|| recent_exact_sequence_record(&envelope));
+            let outcome = self.reject_with_reasons(
                 envelope,
                 marker_rejection_reason(&evidence_reasons),
                 evidence_reasons,
             );
+            if matches!(outcome, AdmissionOutcome::Rejected(_))
+                && let Some(Some(record)) = recent_record
+            {
+                self.remember_recent_sequence(&lane, record);
+            }
+            return outcome;
         }
 
         let usage = Usage::from(envelope.accounting());
@@ -955,12 +1001,6 @@ impl ReconciliationAdmissionSupervisor {
         state.queue.push_back(ticket);
         state.live_tickets += 1;
         state.usage = next_lane_usage;
-        if let Some(record) = recent_record {
-            state.recent_sequences.push_back(record);
-            while state.recent_sequences.len() > self.limits.max_recent_sequences_per_lane {
-                state.recent_sequences.pop_front();
-            }
-        }
         self.global_usage = next_global_usage;
         self.pending.insert(
             ticket,
@@ -972,6 +1012,9 @@ impl ReconciliationAdmissionSupervisor {
                 phase: DispatchPhase::Queued,
             },
         );
+        if let Some(record) = recent_record {
+            self.remember_recent_sequence(&lane, record);
+        }
         if was_empty && self.runnable_set.insert(lane.clone()) {
             self.runnable.push_back(lane);
         }
@@ -1169,6 +1212,18 @@ impl ReconciliationAdmissionSupervisor {
             state.usage = state.usage.subtract(usage);
         }
         self.global_usage = self.global_usage.subtract(usage);
+    }
+
+    fn remember_recent_sequence(
+        &mut self,
+        lane: &AdmissionLaneKey,
+        record: RecentExactSequenceRecord,
+    ) {
+        let state = self.lanes.get_mut(lane).expect("lane checked above");
+        state.recent_sequences.push_back(record);
+        while state.recent_sequences.len() > self.limits.max_recent_sequences_per_lane {
+            state.recent_sequences.pop_front();
+        }
     }
 
     fn shared_used(&self) -> usize {

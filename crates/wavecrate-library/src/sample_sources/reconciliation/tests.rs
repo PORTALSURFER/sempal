@@ -60,6 +60,80 @@ fn scope_path(scope: &ReconciliationScope) -> Option<&Path> {
     scope.path().map(RootRelativePath::as_path)
 }
 
+fn adapter_admission_limits(
+    max_in_flight: usize,
+    max_retained_uncertainties: usize,
+) -> ReconciliationAdmissionLimits {
+    ReconciliationAdmissionLimits::new(
+        1,
+        limits(),
+        limits(),
+        max_in_flight,
+        64,
+        max_retained_uncertainties,
+    )
+    .expect("valid adapter admission limits")
+}
+
+fn adapter_batch(
+    provenance: RawObservationProvenance,
+    observations: Vec<RawObservation>,
+) -> SyntheticObservationBatch {
+    SyntheticObservationBatch::new(provenance, observations, limits())
+}
+
+fn adapter_observation(kind: RawEventKind, name: &str) -> RawObservation {
+    RawObservation::new(kind, vec![path(name, RawPathRole::Subject)])
+}
+
+fn replay_prior(
+    source: &str,
+    root: &[u8],
+    stream: &[u8],
+    generation: u64,
+    acknowledged_sequence: u64,
+) -> ReplayPriorToken {
+    ReplayPriorToken::new(
+        SourceId::from_string(source),
+        RootIdentity::from_bytes(root.to_vec()),
+        BackendStreamIdentity::from_bytes(stream.to_vec()),
+        WatcherGeneration::new(generation),
+        acknowledged_sequence,
+    )
+}
+
+fn adapter_registered(
+    supervisor: &mut ReconciliationAdmissionSupervisor,
+    source: &SourceId,
+    root: &RootIdentity,
+) -> (AdmissionLaneKey, WatcherGeneration) {
+    let (lane, generation) = supervisor
+        .register_lane(source.clone(), root.clone())
+        .expect("register adapter lane");
+    supervisor
+        .begin_capture(&lane, generation)
+        .expect("begin adapter capture");
+    (lane, generation)
+}
+
+fn adapter_capture_provenance(
+    source: &str,
+    root: Option<Vec<u8>>,
+    stream: Option<Vec<u8>>,
+    generation: u64,
+    first_sequence: Option<u64>,
+    last_sequence: Option<u64>,
+) -> RawObservationProvenance {
+    provenance_at_generation(
+        source,
+        root,
+        stream,
+        first_sequence,
+        last_sequence,
+        generation,
+    )
+}
+
 #[test]
 fn capture_sequence_evidence_distinguishes_missing_ambiguous_and_exact() {
     assert_eq!(
@@ -671,4 +745,874 @@ fn continuity_proof_rejects_missing_identity_gaps_and_mismatches() {
             Err(RawEnvelopeError::ProofMismatch)
         );
     }
+}
+
+fn assert_invalid_replay_case(
+    batch: SyntheticObservationBatch,
+    prior: Option<&ReplayPriorToken>,
+    contiguous: bool,
+    expected_reason: UncertaintyReason,
+    expect_dispatch: bool,
+) {
+    let expected_observations = batch.observations().to_vec();
+    let source = SourceId::from_string("source-a");
+    let root = RootIdentity::from_bytes(b"root-a".to_vec());
+    let mut supervisor = ReconciliationAdmissionSupervisor::new(adapter_admission_limits(2, 4));
+    adapter_registered(&mut supervisor, &source, &root);
+
+    let admission = {
+        let mut adapter = ReconciliationAdapter::new(&mut supervisor);
+        adapter
+            .admit_replay(batch, prior, contiguous)
+            .expect("invalid replay envelope remains constructible")
+    };
+    assert_eq!(
+        admission.disposition(),
+        AdapterDisposition::SourceAuditRequired
+    );
+    assert_eq!(supervisor.uncertainties().len(), 1);
+    assert_eq!(
+        supervisor.uncertainties()[0].scope(),
+        ReconciliationScopeKind::SourceAudit
+    );
+    assert!(
+        supervisor.uncertainties()[0]
+            .reasons()
+            .contains(&expected_reason)
+    );
+
+    match admission.outcome() {
+        AdmissionOutcome::Accepted(ticket) => {
+            assert!(
+                expect_dispatch,
+                "expected the invalid replay to be rejected"
+            );
+            let dispatched = supervisor
+                .dispatch_next()
+                .expect("accepted replay dispatch");
+            assert_eq!(dispatched.ticket(), *ticket);
+            assert_eq!(dispatched.normalized().proof(), &Proof::Unproven);
+            assert_eq!(
+                dispatched.normalized().envelope().observations(),
+                expected_observations.as_slice()
+            );
+        }
+        AdmissionOutcome::Rejected(_) => {
+            assert!(!expect_dispatch, "expected the invalid replay to dispatch");
+        }
+        outcome => panic!("unexpected invalid replay outcome: {outcome:?}"),
+    }
+}
+
+#[test]
+fn live_adapter_is_unproven_ordered_and_retains_one_audit_marker() {
+    let source = SourceId::from_string("source-a");
+    let root = RootIdentity::from_bytes(b"root-a".to_vec());
+    let mut supervisor = ReconciliationAdmissionSupervisor::new(adapter_admission_limits(2, 8));
+    let (_lane, generation) = adapter_registered(&mut supervisor, &source, &root);
+    let observations = vec![
+        adapter_observation(RawEventKind::Create, "first.wav"),
+        adapter_observation(RawEventKind::Modify, "second.wav"),
+    ];
+    let expected_observations = observations.clone();
+    let batch = adapter_batch(
+        adapter_capture_provenance(
+            "source-a",
+            Some(b"root-a".to_vec()),
+            Some(b"stream-a".to_vec()),
+            generation.get(),
+            Some(10),
+            Some(11),
+        ),
+        observations,
+    );
+
+    let admission = {
+        let mut adapter = ReconciliationAdapter::new(&mut supervisor);
+        adapter.admit_live(batch).expect("live admission")
+    };
+    assert_eq!(
+        admission.disposition(),
+        AdapterDisposition::AdmittedUnproven
+    );
+    let ticket = match admission.outcome() {
+        AdmissionOutcome::Accepted(ticket) => *ticket,
+        outcome => panic!("unexpected live outcome: {outcome:?}"),
+    };
+    assert_eq!(supervisor.uncertainties().len(), 1);
+    assert_eq!(
+        supervisor.uncertainties()[0].scope(),
+        ReconciliationScopeKind::SourceAudit
+    );
+    assert_eq!(
+        supervisor.uncertainties()[0].reasons(),
+        &[UncertaintyReason::LiveUnproven]
+    );
+
+    let dispatched = supervisor.dispatch_next().expect("live dispatch");
+    assert_eq!(dispatched.ticket(), ticket);
+    assert_eq!(dispatched.normalized().proof(), &Proof::Unproven);
+    assert_eq!(
+        dispatched.normalized().envelope().observations(),
+        expected_observations.as_slice()
+    );
+}
+
+#[test]
+fn valid_replay_adapter_attaches_exact_continuity_fields_without_adapter_uncertainty() {
+    let source = SourceId::from_string("source-a");
+    let root = RootIdentity::from_bytes(b"root-a".to_vec());
+    let stream = BackendStreamIdentity::from_bytes(b"stream-a".to_vec());
+    let mut supervisor = ReconciliationAdmissionSupervisor::new(adapter_admission_limits(2, 8));
+    let (_lane, generation) = adapter_registered(&mut supervisor, &source, &root);
+    let prior = ReplayPriorToken::new(source.clone(), root.clone(), stream.clone(), generation, 10);
+    let observations = vec![
+        adapter_observation(RawEventKind::Create, "first.wav"),
+        adapter_observation(RawEventKind::Delete, "second.wav"),
+    ];
+    let expected_observations = observations.clone();
+    let admission = {
+        let mut adapter = ReconciliationAdapter::new(&mut supervisor);
+        adapter
+            .admit_replay(
+                adapter_batch(
+                    adapter_capture_provenance(
+                        "source-a",
+                        Some(b"root-a".to_vec()),
+                        Some(b"stream-a".to_vec()),
+                        generation.get(),
+                        Some(11),
+                        Some(12),
+                    ),
+                    observations,
+                ),
+                Some(&prior),
+                true,
+            )
+            .expect("valid replay admission")
+    };
+    assert_eq!(
+        admission.disposition(),
+        AdapterDisposition::AdmittedWithContinuity
+    );
+    let ticket = match admission.outcome() {
+        AdmissionOutcome::Accepted(ticket) => *ticket,
+        outcome => panic!("unexpected replay outcome: {outcome:?}"),
+    };
+    assert!(supervisor.uncertainties().is_empty());
+
+    let dispatched = supervisor.dispatch_next().expect("replay dispatch");
+    assert_eq!(dispatched.ticket(), ticket);
+    let proof = dispatched
+        .normalized()
+        .proof()
+        .watcher_continuity()
+        .expect("continuity proof");
+    assert_eq!(proof.source_id(), &source);
+    assert_eq!(proof.root_identity(), &root);
+    assert_eq!(proof.backend_stream_identity(), &stream);
+    assert_eq!(proof.watcher_generation(), generation);
+    assert_eq!(proof.prior_acknowledgement().sequence(), 10);
+    assert_eq!(proof.replay_coverage().after_sequence(), 10);
+    assert_eq!(proof.replay_coverage().through_sequence(), 12);
+    assert!(proof.replay_coverage().is_contiguous());
+    assert_eq!(
+        dispatched.normalized().envelope().observations(),
+        expected_observations.as_slice()
+    );
+}
+
+#[test]
+fn invalid_replay_claims_remain_unproven_and_retain_typed_source_audit_evidence() {
+    let valid_prior = replay_prior("source-a", b"root-a", b"stream-a", 1, 10);
+    let valid_observations = || vec![adapter_observation(RawEventKind::Create, "sample.wav")];
+
+    assert_invalid_replay_case(
+        adapter_batch(
+            adapter_capture_provenance(
+                "source-a",
+                Some(b"root-a".to_vec()),
+                Some(b"stream-a".to_vec()),
+                1,
+                Some(11),
+                Some(12),
+            ),
+            valid_observations(),
+        ),
+        None,
+        true,
+        UncertaintyReason::ReplayContinuityMissing,
+        true,
+    );
+    assert_invalid_replay_case(
+        adapter_batch(
+            adapter_capture_provenance(
+                "source-a",
+                None,
+                Some(b"stream-a".to_vec()),
+                1,
+                Some(11),
+                Some(12),
+            ),
+            valid_observations(),
+        ),
+        Some(&valid_prior),
+        true,
+        UncertaintyReason::ReplayContinuityMissing,
+        false,
+    );
+    assert_invalid_replay_case(
+        adapter_batch(
+            adapter_capture_provenance(
+                "source-a",
+                Some(b"root-a".to_vec()),
+                None,
+                1,
+                Some(11),
+                Some(12),
+            ),
+            valid_observations(),
+        ),
+        Some(&valid_prior),
+        true,
+        UncertaintyReason::ReplayContinuityMissing,
+        true,
+    );
+    for (first_sequence, last_sequence) in [(None, None), (Some(11), None), (None, Some(12))] {
+        let expected_reason = if first_sequence.is_none() && last_sequence.is_none() {
+            UncertaintyReason::ReplayContinuityMissing
+        } else {
+            UncertaintyReason::ReplayContinuityAmbiguous
+        };
+        assert_invalid_replay_case(
+            adapter_batch(
+                adapter_capture_provenance(
+                    "source-a",
+                    Some(b"root-a".to_vec()),
+                    Some(b"stream-a".to_vec()),
+                    1,
+                    first_sequence,
+                    last_sequence,
+                ),
+                valid_observations(),
+            ),
+            Some(&valid_prior),
+            true,
+            expected_reason,
+            true,
+        );
+    }
+    for (first_sequence, last_sequence, acknowledged_sequence, contiguous) in [
+        (Some(12), Some(13), 10, true),
+        (Some(11), Some(11), 11, true),
+        (Some(11), Some(12), 10, false),
+    ] {
+        let prior = replay_prior("source-a", b"root-a", b"stream-a", 1, acknowledged_sequence);
+        assert_invalid_replay_case(
+            adapter_batch(
+                adapter_capture_provenance(
+                    "source-a",
+                    Some(b"root-a".to_vec()),
+                    Some(b"stream-a".to_vec()),
+                    1,
+                    first_sequence,
+                    last_sequence,
+                ),
+                valid_observations(),
+            ),
+            Some(&prior),
+            contiguous,
+            UncertaintyReason::ReplayContinuityGap,
+            true,
+        );
+    }
+
+    let mismatch_cases = [
+        (
+            adapter_capture_provenance(
+                "source-a",
+                Some(b"root-a".to_vec()),
+                Some(b"stream-a".to_vec()),
+                1,
+                Some(11),
+                Some(12),
+            ),
+            replay_prior("source-b", b"root-a", b"stream-a", 1, 10),
+            true,
+            true,
+        ),
+        (
+            adapter_capture_provenance(
+                "source-a",
+                Some(b"root-a".to_vec()),
+                Some(b"stream-a".to_vec()),
+                1,
+                Some(11),
+                Some(12),
+            ),
+            replay_prior("source-a", b"root-b", b"stream-a", 1, 10),
+            true,
+            true,
+        ),
+        (
+            adapter_capture_provenance(
+                "source-a",
+                Some(b"root-a".to_vec()),
+                Some(b"stream-a".to_vec()),
+                1,
+                Some(11),
+                Some(12),
+            ),
+            replay_prior("source-a", b"root-a", b"stream-b", 1, 10),
+            true,
+            true,
+        ),
+        (
+            adapter_capture_provenance(
+                "source-a",
+                Some(b"root-a".to_vec()),
+                Some(b"stream-a".to_vec()),
+                1,
+                Some(11),
+                Some(12),
+            ),
+            replay_prior("source-a", b"root-a", b"stream-a", 8, 10),
+            true,
+            true,
+        ),
+    ];
+    for (provenance, prior, contiguous, _) in mismatch_cases {
+        assert_invalid_replay_case(
+            adapter_batch(provenance, valid_observations()),
+            Some(&prior),
+            contiguous,
+            UncertaintyReason::ReplayContinuityMismatch,
+            true,
+        );
+    }
+
+    for kind in [
+        RawEventKind::RootChanged,
+        RawEventKind::Overflow,
+        RawEventKind::Error,
+        RawEventKind::Unsupported,
+    ] {
+        assert_invalid_replay_case(
+            adapter_batch(
+                adapter_capture_provenance(
+                    "source-a",
+                    Some(b"root-a".to_vec()),
+                    Some(b"stream-a".to_vec()),
+                    1,
+                    Some(11),
+                    Some(12),
+                ),
+                vec![RawObservation::new(kind, Vec::new())],
+            ),
+            Some(&valid_prior),
+            true,
+            UncertaintyReason::ReplayContinuityMismatch,
+            !matches!(
+                kind,
+                RawEventKind::Overflow | RawEventKind::Error | RawEventKind::Unsupported
+            ),
+        );
+    }
+    assert_invalid_replay_case(
+        adapter_batch(
+            adapter_capture_provenance(
+                "source-a",
+                Some(b"root-a".to_vec()),
+                Some(b"stream-a".to_vec()),
+                1,
+                Some(11),
+                Some(12),
+            ),
+            vec![
+                adapter_observation(RawEventKind::Create, "sample.wav")
+                    .with_uncertainty(ObservationUncertainty::CONTINUITY),
+            ],
+        ),
+        Some(&valid_prior),
+        true,
+        UncertaintyReason::ReplayContinuityMismatch,
+        true,
+    );
+}
+
+#[test]
+fn adapter_preserves_exact_live_and_replay_duplicate_suppression() {
+    let source = SourceId::from_string("source-a");
+    let root = RootIdentity::from_bytes(b"root-a".to_vec());
+    let provenance = adapter_capture_provenance(
+        "source-a",
+        Some(b"root-a".to_vec()),
+        Some(b"stream-a".to_vec()),
+        1,
+        Some(10),
+        Some(12),
+    );
+    let batch = adapter_batch(
+        provenance.clone(),
+        vec![adapter_observation(RawEventKind::Create, "sample.wav")],
+    );
+    let mut live_supervisor =
+        ReconciliationAdmissionSupervisor::new(adapter_admission_limits(2, 8));
+    adapter_registered(&mut live_supervisor, &source, &root);
+    let (first_live, second_live) = {
+        let mut adapter = ReconciliationAdapter::new(&mut live_supervisor);
+        (
+            adapter.admit_live(batch.clone()).expect("first live"),
+            adapter.admit_live(batch).expect("duplicate live"),
+        )
+    };
+    assert_eq!(
+        first_live.disposition(),
+        AdapterDisposition::AdmittedUnproven
+    );
+    assert_eq!(
+        second_live.disposition(),
+        AdapterDisposition::DuplicateSuppressed
+    );
+    assert!(matches!(
+        second_live.outcome(),
+        AdmissionOutcome::DuplicateSuppressed(CaptureSequenceRange { .. })
+    ));
+    assert_eq!(live_supervisor.in_flight(), 1);
+    assert_eq!(live_supervisor.uncertainties().len(), 1);
+
+    let prior = replay_prior("source-a", b"root-a", b"stream-a", 1, 9);
+    let mut replay_supervisor =
+        ReconciliationAdmissionSupervisor::new(adapter_admission_limits(2, 8));
+    adapter_registered(&mut replay_supervisor, &source, &root);
+    let replay_batch = adapter_batch(
+        provenance,
+        vec![adapter_observation(RawEventKind::Modify, "sample.wav")],
+    );
+    let (first_replay, second_replay) = {
+        let mut adapter = ReconciliationAdapter::new(&mut replay_supervisor);
+        (
+            adapter
+                .admit_replay(replay_batch.clone(), Some(&prior), true)
+                .expect("first replay"),
+            adapter
+                .admit_replay(replay_batch, Some(&prior), true)
+                .expect("duplicate replay"),
+        )
+    };
+    assert_eq!(
+        first_replay.disposition(),
+        AdapterDisposition::AdmittedWithContinuity
+    );
+    assert_eq!(
+        second_replay.disposition(),
+        AdapterDisposition::DuplicateSuppressed
+    );
+    assert_eq!(replay_supervisor.in_flight(), 1);
+    assert!(replay_supervisor.uncertainties().is_empty());
+}
+
+#[test]
+fn adapter_marker_only_duplicates_remember_live_and_invalid_replay_evidence() {
+    for kind in [
+        RawEventKind::Overflow,
+        RawEventKind::Error,
+        RawEventKind::Unsupported,
+    ] {
+        let source = SourceId::from_string("source-a");
+        let root = RootIdentity::from_bytes(b"root-a".to_vec());
+        let mut supervisor = ReconciliationAdmissionSupervisor::new(adapter_admission_limits(2, 1));
+        let (_lane, generation) = adapter_registered(&mut supervisor, &source, &root);
+        let batch = adapter_batch(
+            adapter_capture_provenance(
+                "source-a",
+                Some(b"root-a".to_vec()),
+                Some(b"stream-a".to_vec()),
+                generation.get(),
+                Some(10),
+                Some(10),
+            ),
+            vec![RawObservation::new(kind, Vec::new())],
+        );
+        let (first, second) = {
+            let mut adapter = ReconciliationAdapter::new(&mut supervisor);
+            (
+                adapter
+                    .admit_live(batch.clone())
+                    .expect("first marker-only live"),
+                adapter
+                    .admit_live(batch)
+                    .expect("duplicate marker-only live"),
+            )
+        };
+        assert_eq!(first.disposition(), AdapterDisposition::SourceAuditRequired);
+        assert!(matches!(first.outcome(), AdmissionOutcome::Rejected(_)));
+        assert_eq!(
+            second.disposition(),
+            AdapterDisposition::DuplicateSuppressed
+        );
+        assert_eq!(
+            second.outcome(),
+            &AdmissionOutcome::DuplicateSuppressed(CaptureSequenceRange::new(10, 10))
+        );
+        assert_eq!(supervisor.in_flight(), 0);
+        assert_eq!(supervisor.uncertainties().len(), 1);
+    }
+
+    for kind in [
+        RawEventKind::Overflow,
+        RawEventKind::Error,
+        RawEventKind::Unsupported,
+    ] {
+        let source = SourceId::from_string("source-a");
+        let root = RootIdentity::from_bytes(b"root-a".to_vec());
+        let mut supervisor = ReconciliationAdmissionSupervisor::new(adapter_admission_limits(2, 1));
+        let (_lane, generation) = adapter_registered(&mut supervisor, &source, &root);
+        let prior = replay_prior("source-a", b"root-a", b"stream-a", generation.get(), 9);
+        let batch = adapter_batch(
+            adapter_capture_provenance(
+                "source-a",
+                Some(b"root-a".to_vec()),
+                Some(b"stream-a".to_vec()),
+                generation.get(),
+                Some(10),
+                Some(10),
+            ),
+            vec![RawObservation::new(kind, Vec::new())],
+        );
+        let (first, second) = {
+            let mut adapter = ReconciliationAdapter::new(&mut supervisor);
+            (
+                adapter
+                    .admit_replay(batch.clone(), Some(&prior), true)
+                    .expect("first marker-only replay"),
+                adapter
+                    .admit_replay(batch, Some(&prior), true)
+                    .expect("duplicate marker-only replay"),
+            )
+        };
+        assert_eq!(first.disposition(), AdapterDisposition::SourceAuditRequired);
+        assert!(matches!(first.outcome(), AdmissionOutcome::Rejected(_)));
+        assert_eq!(
+            second.disposition(),
+            AdapterDisposition::DuplicateSuppressed
+        );
+        assert_eq!(
+            second.outcome(),
+            &AdmissionOutcome::DuplicateSuppressed(CaptureSequenceRange::new(10, 10))
+        );
+        assert_eq!(supervisor.in_flight(), 0);
+        assert_eq!(supervisor.uncertainties().len(), 1);
+        assert!(
+            supervisor.uncertainties()[0]
+                .reasons()
+                .contains(&UncertaintyReason::ReplayContinuityMismatch)
+        );
+    }
+}
+
+#[test]
+fn adapter_marker_only_same_sequence_conflict_retains_audit_and_suppresses_exact_repeat() {
+    let source = SourceId::from_string("source-a");
+    let root = RootIdentity::from_bytes(b"root-a".to_vec());
+    let provenance = adapter_capture_provenance(
+        "source-a",
+        Some(b"root-a".to_vec()),
+        Some(b"stream-a".to_vec()),
+        1,
+        Some(10),
+        Some(10),
+    );
+    let first_batch = adapter_batch(
+        provenance.clone(),
+        vec![RawObservation::new(RawEventKind::Overflow, Vec::new())],
+    );
+    let conflict_batch = adapter_batch(
+        provenance,
+        vec![RawObservation::new(RawEventKind::Error, Vec::new())],
+    );
+    let mut supervisor = ReconciliationAdmissionSupervisor::new(adapter_admission_limits(2, 2));
+    adapter_registered(&mut supervisor, &source, &root);
+    let (first, conflict, duplicate) = {
+        let mut adapter = ReconciliationAdapter::new(&mut supervisor);
+        (
+            adapter
+                .admit_live(first_batch.clone())
+                .expect("first marker-only evidence"),
+            adapter
+                .admit_live(conflict_batch)
+                .expect("conflicting marker-only evidence"),
+            adapter
+                .admit_live(first_batch)
+                .expect("exact marker-only repeat"),
+        )
+    };
+    assert!(matches!(first.outcome(), AdmissionOutcome::Rejected(_)));
+    assert!(matches!(conflict.outcome(), AdmissionOutcome::Rejected(_)));
+    assert!(
+        supervisor.uncertainties()[1]
+            .reasons()
+            .contains(&UncertaintyReason::SequenceConflict)
+    );
+    assert_eq!(
+        duplicate.disposition(),
+        AdapterDisposition::DuplicateSuppressed
+    );
+    assert_eq!(supervisor.in_flight(), 0);
+    assert_eq!(supervisor.uncertainties().len(), 2);
+}
+
+#[test]
+fn adjacent_valid_replays_preserve_fifo_and_raw_order() {
+    let source = SourceId::from_string("source-a");
+    let root = RootIdentity::from_bytes(b"root-a".to_vec());
+    let mut supervisor = ReconciliationAdmissionSupervisor::new(adapter_admission_limits(4, 8));
+    adapter_registered(&mut supervisor, &source, &root);
+    let first_prior = replay_prior("source-a", b"root-a", b"stream-a", 1, 10);
+    let second_prior = replay_prior("source-a", b"root-a", b"stream-a", 1, 12);
+    let first_observations = vec![
+        adapter_observation(RawEventKind::Create, "first-a.wav"),
+        adapter_observation(RawEventKind::Modify, "first-b.wav"),
+    ];
+    let second_observations = vec![
+        adapter_observation(RawEventKind::Delete, "second-a.wav"),
+        adapter_observation(RawEventKind::Rename, "second-b.wav"),
+    ];
+    let first_admission = {
+        let mut adapter = ReconciliationAdapter::new(&mut supervisor);
+        adapter
+            .admit_replay(
+                adapter_batch(
+                    adapter_capture_provenance(
+                        "source-a",
+                        Some(b"root-a".to_vec()),
+                        Some(b"stream-a".to_vec()),
+                        1,
+                        Some(11),
+                        Some(12),
+                    ),
+                    first_observations.clone(),
+                ),
+                Some(&first_prior),
+                true,
+            )
+            .expect("first adjacent replay")
+    };
+    let second_admission = {
+        let mut adapter = ReconciliationAdapter::new(&mut supervisor);
+        adapter
+            .admit_replay(
+                adapter_batch(
+                    adapter_capture_provenance(
+                        "source-a",
+                        Some(b"root-a".to_vec()),
+                        Some(b"stream-a".to_vec()),
+                        1,
+                        Some(13),
+                        Some(14),
+                    ),
+                    second_observations.clone(),
+                ),
+                Some(&second_prior),
+                true,
+            )
+            .expect("second adjacent replay")
+    };
+    let first_ticket = match first_admission.outcome() {
+        AdmissionOutcome::Accepted(ticket) => *ticket,
+        outcome => panic!("unexpected first adjacent outcome: {outcome:?}"),
+    };
+    let second_ticket = match second_admission.outcome() {
+        AdmissionOutcome::Accepted(ticket) => *ticket,
+        outcome => panic!("unexpected second adjacent outcome: {outcome:?}"),
+    };
+    let first_dispatch = supervisor.dispatch_next().expect("first FIFO dispatch");
+    let second_dispatch = supervisor.dispatch_next().expect("second FIFO dispatch");
+    assert_eq!(first_dispatch.ticket(), first_ticket);
+    assert_eq!(second_dispatch.ticket(), second_ticket);
+    assert_eq!(
+        first_dispatch.normalized().envelope().observations(),
+        first_observations.as_slice()
+    );
+    assert_eq!(
+        second_dispatch.normalized().envelope().observations(),
+        second_observations.as_slice()
+    );
+    assert_eq!(
+        first_dispatch
+            .normalized()
+            .proof()
+            .watcher_continuity()
+            .expect("first proof")
+            .replay_coverage()
+            .through_sequence(),
+        12
+    );
+    assert_eq!(
+        second_dispatch
+            .normalized()
+            .proof()
+            .watcher_continuity()
+            .expect("second proof")
+            .replay_coverage()
+            .through_sequence(),
+        14
+    );
+}
+
+#[test]
+fn adapter_error_preserves_original_batch_and_capacity_is_atomic() {
+    let invalid_batch = adapter_batch(
+        adapter_capture_provenance(
+            "source-a",
+            Some(b"root-a".to_vec()),
+            Some(b"stream-a".to_vec()),
+            1,
+            None,
+            None,
+        ),
+        Vec::new(),
+    );
+    let expected_batch = invalid_batch.clone();
+    let mut empty_supervisor =
+        ReconciliationAdmissionSupervisor::new(adapter_admission_limits(2, 8));
+    let error = {
+        let mut adapter = ReconciliationAdapter::new(&mut empty_supervisor);
+        adapter
+            .admit_live(invalid_batch)
+            .expect_err("empty batch error")
+    };
+    assert_eq!(error.error(), &RawEnvelopeError::EmptyEnvelope);
+    assert_eq!(error.batch(), &expected_batch);
+    assert_eq!(error.into_batch(), expected_batch);
+
+    let source = SourceId::from_string("source-a");
+    let root = RootIdentity::from_bytes(b"root-a".to_vec());
+    let mut supervisor = ReconciliationAdmissionSupervisor::new(adapter_admission_limits(2, 1));
+    adapter_registered(&mut supervisor, &source, &root);
+    let first = {
+        let mut adapter = ReconciliationAdapter::new(&mut supervisor);
+        adapter
+            .admit_live(adapter_batch(
+                adapter_capture_provenance(
+                    "source-a",
+                    Some(b"root-a".to_vec()),
+                    Some(b"stream-a".to_vec()),
+                    1,
+                    Some(1),
+                    Some(1),
+                ),
+                vec![adapter_observation(RawEventKind::Create, "first.wav")],
+            ))
+            .expect("first live admission")
+    };
+    assert_eq!(first.disposition(), AdapterDisposition::AdmittedUnproven);
+    let second_batch = adapter_batch(
+        adapter_capture_provenance(
+            "source-a",
+            Some(b"root-a".to_vec()),
+            Some(b"stream-a".to_vec()),
+            1,
+            Some(2),
+            Some(2),
+        ),
+        vec![adapter_observation(RawEventKind::Create, "second.wav")],
+    );
+    let expected_second = second_batch.clone();
+    let second = {
+        let mut adapter = ReconciliationAdapter::new(&mut supervisor);
+        adapter.admit_live(second_batch).expect("capacity result")
+    };
+    assert_eq!(
+        second.disposition(),
+        AdapterDisposition::UncertaintyCapacityExhausted
+    );
+    match second.outcome() {
+        AdmissionOutcome::UncertaintyCapacityExhausted(envelope) => {
+            assert_eq!(envelope.proof(), &Proof::Unproven);
+            assert_eq!(envelope.observations(), expected_second.observations());
+        }
+        outcome => panic!("unexpected capacity outcome: {outcome:?}"),
+    }
+    assert_eq!(supervisor.in_flight(), 1);
+    assert_eq!(supervisor.uncertainties().len(), 1);
+}
+
+#[test]
+fn adapter_remains_fenced_by_cancellation_restart_and_rebind() {
+    let source = SourceId::from_string("source-a");
+    let old_root = RootIdentity::from_bytes(b"root-a".to_vec());
+    let new_root = RootIdentity::from_bytes(b"root-b".to_vec());
+    let mut supervisor = ReconciliationAdmissionSupervisor::new(adapter_admission_limits(4, 8));
+    let (lane, generation) = adapter_registered(&mut supervisor, &source, &old_root);
+
+    let first = {
+        let mut adapter = ReconciliationAdapter::new(&mut supervisor);
+        adapter
+            .admit_live(adapter_batch(
+                adapter_capture_provenance(
+                    "source-a",
+                    Some(b"root-a".to_vec()),
+                    Some(b"stream-a".to_vec()),
+                    generation.get(),
+                    Some(1),
+                    Some(1),
+                ),
+                vec![adapter_observation(RawEventKind::Create, "first.wav")],
+            ))
+            .expect("first live admission")
+    };
+    assert_eq!(first.disposition(), AdapterDisposition::AdmittedUnproven);
+    supervisor.stop_lane(&lane, generation).expect("stop lane");
+    let restarted_generation = supervisor.restart_lane(&lane).expect("restart lane");
+    supervisor
+        .begin_capture(&lane, restarted_generation)
+        .expect("begin restarted capture");
+
+    let stale = {
+        let mut adapter = ReconciliationAdapter::new(&mut supervisor);
+        adapter
+            .admit_live(adapter_batch(
+                adapter_capture_provenance(
+                    "source-a",
+                    Some(b"root-a".to_vec()),
+                    Some(b"stream-a".to_vec()),
+                    generation.get(),
+                    Some(2),
+                    Some(2),
+                ),
+                vec![adapter_observation(RawEventKind::Modify, "stale.wav")],
+            ))
+            .expect("stale live admission result")
+    };
+    assert_eq!(stale.disposition(), AdapterDisposition::SourceAuditRequired);
+    assert_eq!(
+        stale.outcome(),
+        &AdmissionOutcome::Rejected(AdmissionRejectReason::StaleGeneration)
+    );
+
+    let (new_lane, new_generation) = supervisor
+        .rebind_lane(&lane, restarted_generation, new_root.clone())
+        .expect("rebind lane");
+    supervisor
+        .begin_capture(&new_lane, new_generation)
+        .expect("begin rebound capture");
+    let rebound = {
+        let mut adapter = ReconciliationAdapter::new(&mut supervisor);
+        adapter
+            .admit_live(adapter_batch(
+                adapter_capture_provenance(
+                    "source-a",
+                    Some(b"root-b".to_vec()),
+                    Some(b"stream-b".to_vec()),
+                    new_generation.get(),
+                    Some(3),
+                    Some(3),
+                ),
+                vec![adapter_observation(RawEventKind::Create, "rebound.wav")],
+            ))
+            .expect("rebound live admission")
+    };
+    assert_eq!(rebound.disposition(), AdapterDisposition::AdmittedUnproven);
+    assert!(matches!(rebound.outcome(), AdmissionOutcome::Accepted(_)));
 }
