@@ -1,6 +1,8 @@
 use super::classification::{path_is_source_refresh_candidate, retain_source_refresh_candidates};
 use super::handle::{GuiSourceWatcherHandle, doubled_backoff};
-use super::roots::{RootIdentityRecovery, RootWatchUpdate, root_watch_status};
+use super::roots::{
+    RootIdentityRecovery, RootWatchUpdate, registered_root_identity, root_watch_status,
+};
 use super::state::GuiSourceWatchState;
 use notify::{Event, EventKind, event::RemoveKind};
 use std::{
@@ -457,6 +459,35 @@ fn unreadable_root_identity_falls_back_to_bounded_full_reconciliation() {
             .due_roots(&[], started + Duration::from_secs(1))
             .is_empty()
     );
+}
+
+#[test]
+fn registered_root_identity_preserves_registered_identity_bytes() {
+    let root = PathBuf::from("registered-root");
+    let identity = "  registered/root identity :: exact  ".to_string();
+    let watched = HashMap::from([(root.clone(), Some(identity.clone()))]);
+
+    let registered = registered_root_identity(&watched, &root).expect("registered root identity");
+
+    assert_eq!(registered.as_bytes(), identity.as_bytes());
+}
+
+#[test]
+fn registered_root_identity_returns_none_for_none_identity() {
+    let root = PathBuf::from("identity-unavailable");
+    let watched = HashMap::from([(root.clone(), None)]);
+
+    assert!(registered_root_identity(&watched, &root).is_none());
+}
+
+#[test]
+fn registered_root_identity_returns_none_for_missing_root() {
+    let watched = HashMap::from([(
+        PathBuf::from("registered-root"),
+        Some("identity".to_string()),
+    )]);
+
+    assert!(registered_root_identity(&watched, Path::new("missing-root")).is_none());
 }
 
 #[test]
