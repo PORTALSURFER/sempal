@@ -1,10 +1,15 @@
-use std::path::PathBuf;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::OptionalExtension;
 
-use super::super::util::{map_sql_error, normalize_relative_path};
+use super::super::util::{
+    map_sql_error, normalize_relative_path, parse_canonical_directory_path_from_db,
+};
 use super::super::{
-    META_SOURCE_TRAVERSAL_POLICY, SourceDatabase, SourceDbError, SourceIndexEntry,
+    META_SOURCE_TRAVERSAL_POLICY, SourceDatabase, SourceDbError, SourceDirectoryEntry,
+    SourceDirectoryTruthError, SourceDirectoryTruthPublication, SourceIndexEntry,
     SourceManifestEntry, SourceTraversalPolicy, SourceWriteBatch,
 };
 use crate::sample_sources::reconciliation::{RootIdentity, SourceAuditCommit, SourceAuditRequest};
@@ -34,6 +39,348 @@ pub struct SourceIndexCommitResult {
 }
 
 impl SourceWriteBatch<'_> {
+    pub(crate) fn begin_source_directory_truth_generation(
+        &mut self,
+        generation: u64,
+        expected_entry_count: u64,
+    ) -> Result<(), SourceDbError> {
+        let generation = directory_generation_sql_value(generation)?;
+        let expected_entry_count = directory_entry_count_sql_value(expected_entry_count)?;
+        let existing = self
+            .tx
+            .query_row(
+                "SELECT status, expected_entry_count
+                 FROM source_directory_generations
+                 WHERE generation = ?1",
+                [generation],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .optional()
+            .map_err(map_sql_error)?;
+
+        if let Some((status, existing_expected)) = existing {
+            if status == "staging" && existing_expected == expected_entry_count {
+                return Ok(());
+            }
+            return Err(SourceDirectoryTruthError::GenerationCollision {
+                generation: u64::try_from(generation).unwrap_or_default(),
+            }
+            .into());
+        }
+
+        let complete = i64::from(expected_entry_count == 0);
+        self.tx
+            .execute(
+                "INSERT INTO source_directory_generations (
+                    generation, status, expected_entry_count, staged_entry_count, complete,
+                    published_source_revision, created_at
+                 ) VALUES (?1, 'staging', ?2, 0, ?3, NULL, ?4)",
+                rusqlite::params![generation, expected_entry_count, complete, unix_timestamp()],
+            )
+            .map_err(map_sql_error)?;
+        Ok(())
+    }
+
+    pub(crate) fn stage_source_directory_truth_entries(
+        &mut self,
+        generation: u64,
+        entries: &[SourceDirectoryEntry],
+    ) -> Result<(), SourceDbError> {
+        if entries.len() > super::super::SOURCE_DIRECTORY_TRUTH_BATCH_LIMIT {
+            return Err(SourceDirectoryTruthError::BatchTooLarge.into());
+        }
+        let generation_sql = directory_generation_sql_value(generation)?;
+        let Some((status, expected_entry_count, staged_entry_count, complete)) = self
+            .tx
+            .query_row(
+                "SELECT status, expected_entry_count, staged_entry_count, complete
+                 FROM source_directory_generations
+                 WHERE generation = ?1",
+                [generation_sql],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, i64>(3)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(map_sql_error)?
+        else {
+            return Err(SourceDirectoryTruthError::GenerationMissing { generation }.into());
+        };
+        if status != "staging" {
+            return Err(SourceDirectoryTruthError::GenerationCollision { generation }.into());
+        }
+        if expected_entry_count < 0 || staged_entry_count < 0 || complete < 0 {
+            return Err(directory_requires_audit());
+        }
+        if staged_entry_count > expected_entry_count {
+            return Err(SourceDirectoryTruthError::EntryCountExceeded { generation }.into());
+        }
+
+        let mut encoded_paths = HashSet::with_capacity(entries.len());
+        let mut identities = HashSet::with_capacity(entries.len());
+        let mut encoded_entries = Vec::with_capacity(entries.len());
+        for entry in entries {
+            let (path, path_encoding) =
+                super::super::directories::encode_directory_path(&entry.relative_path)?;
+            super::super::directories::validate_directory_identity(&entry.directory_identity)?;
+            if !encoded_paths.insert(path.clone()) {
+                return Err(SourceDirectoryTruthError::DuplicatePath {
+                    path: entry.relative_path.clone(),
+                }
+                .into());
+            }
+            if !identities.insert(entry.directory_identity.clone()) {
+                return Err(SourceDirectoryTruthError::DuplicateDirectoryIdentity {
+                    identity: entry.directory_identity.clone(),
+                }
+                .into());
+            }
+            encoded_entries.push((path, path_encoding, entry.directory_identity.clone()));
+        }
+
+        let incoming_count = i64::try_from(encoded_entries.len()).map_err(|_| {
+            SourceDirectoryTruthError::InvalidEntryCount {
+                count: encoded_entries.len() as u64,
+            }
+        })?;
+        let new_staged_entry_count = staged_entry_count.checked_add(incoming_count).ok_or(
+            SourceDirectoryTruthError::InvalidEntryCount {
+                count: u64::try_from(staged_entry_count).unwrap_or_default(),
+            },
+        )?;
+        if new_staged_entry_count > expected_entry_count {
+            return Err(SourceDirectoryTruthError::EntryCountExceeded { generation }.into());
+        }
+
+        for (path, path_encoding, identity) in encoded_entries {
+            if self
+                .tx
+                .query_row(
+                    "SELECT 1
+                     FROM source_directory_entries
+                     WHERE generation = ?1 AND path = ?2 COLLATE BINARY",
+                    rusqlite::params![generation_sql, path],
+                    |_| Ok(()),
+                )
+                .optional()
+                .map_err(map_sql_error)?
+                .is_some()
+            {
+                return Err(SourceDirectoryTruthError::ExistingPath {
+                    path: PathBuf::from(path),
+                }
+                .into());
+            }
+            if self
+                .tx
+                .query_row(
+                    "SELECT 1
+                     FROM source_directory_entries
+                     WHERE generation = ?1 AND directory_identity = ?2",
+                    rusqlite::params![generation_sql, identity],
+                    |_| Ok(()),
+                )
+                .optional()
+                .map_err(map_sql_error)?
+                .is_some()
+            {
+                return Err(
+                    SourceDirectoryTruthError::DuplicateDirectoryIdentity { identity }.into(),
+                );
+            }
+            self.tx
+                .execute(
+                    "INSERT INTO source_directory_entries (
+                        generation, path, path_encoding, directory_identity
+                     ) VALUES (?1, ?2, ?3, ?4)",
+                    rusqlite::params![generation_sql, path, path_encoding, identity],
+                )
+                .map_err(map_sql_error)?;
+        }
+
+        self.tx
+            .execute(
+                "UPDATE source_directory_generations
+                 SET staged_entry_count = ?1, complete = ?2
+                 WHERE generation = ?3 AND status = 'staging'",
+                rusqlite::params![
+                    new_staged_entry_count,
+                    i64::from(new_staged_entry_count == expected_entry_count),
+                    generation_sql
+                ],
+            )
+            .map_err(map_sql_error)?;
+        Ok(())
+    }
+
+    pub(crate) fn finalize_source_directory_truth_generation(
+        self,
+        generation: u64,
+        expected_source_revision: u64,
+    ) -> Result<SourceDirectoryTruthPublication, SourceDbError> {
+        let generation_sql = directory_generation_sql_value(generation)?;
+        let Some((status, expected_entry_count, staged_entry_count, complete, published_revision)) =
+            self.tx
+                .query_row(
+                    "SELECT status, expected_entry_count, staged_entry_count, complete,
+                            published_source_revision
+                     FROM source_directory_generations
+                     WHERE generation = ?1",
+                    [generation_sql],
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, i64>(1)?,
+                            row.get::<_, i64>(2)?,
+                            row.get::<_, i64>(3)?,
+                            row.get::<_, Option<i64>>(4)?,
+                        ))
+                    },
+                )
+                .optional()
+                .map_err(map_sql_error)?
+        else {
+            return Err(SourceDirectoryTruthError::GenerationMissing { generation }.into());
+        };
+
+        if status == "active" {
+            validate_generation_entries(&self.tx, generation_sql)?;
+            let published_revision = valid_published_revision(published_revision)?;
+            let current_source_revision = manifest_revision(&self.tx)?;
+            if published_revision > current_source_revision {
+                return Err(directory_requires_audit());
+            }
+            validate_generation_counts(
+                &self.tx,
+                generation_sql,
+                expected_entry_count,
+                staged_entry_count,
+                complete,
+            )?;
+            let db_path = self.db_path.clone();
+            let telemetry_label = self.telemetry_label;
+            self.tx.commit().map_err(map_sql_error)?;
+            checkpoint_source_database(&db_path, telemetry_label);
+            return Ok(SourceDirectoryTruthPublication {
+                generation,
+                source_revision: published_revision,
+                idempotent: true,
+            });
+        }
+        if status != "staging" {
+            return Err(SourceDirectoryTruthError::GenerationCollision { generation }.into());
+        }
+
+        let actual_source_revision = manifest_revision(&self.tx)?;
+        if actual_source_revision != expected_source_revision {
+            return Err(SourceDirectoryTruthError::StaleRevision {
+                expected: expected_source_revision,
+                actual: actual_source_revision,
+            }
+            .into());
+        }
+        validate_generation_entries(&self.tx, generation_sql)?;
+        validate_generation_counts(
+            &self.tx,
+            generation_sql,
+            expected_entry_count,
+            staged_entry_count,
+            complete,
+        )?;
+        let active_generations: Vec<(i64, i64, i64, i64, Option<i64>)> = {
+            let mut statement = self
+                .tx
+                .prepare(
+                    "SELECT generation, expected_entry_count, staged_entry_count, complete,
+                            published_source_revision
+                     FROM source_directory_generations
+                     WHERE status = 'active'",
+                )
+                .map_err(map_sql_error)?;
+            statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, Option<i64>>(4)?,
+                    ))
+                })
+                .map_err(map_sql_error)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(map_sql_error)?
+        };
+        if active_generations.len() > 1 {
+            return Err(directory_requires_audit());
+        }
+        if let Some((
+            active_generation,
+            active_expected_entry_count,
+            active_staged_entry_count,
+            active_complete,
+            published_revision,
+        )) = active_generations.first().copied()
+        {
+            if valid_published_revision(published_revision).is_err() {
+                return Err(directory_requires_audit());
+            }
+            validate_generation_counts(
+                &self.tx,
+                active_generation,
+                active_expected_entry_count,
+                active_staged_entry_count,
+                active_complete,
+            )?;
+            if active_generation == generation_sql {
+                return Err(directory_requires_audit());
+            }
+        }
+
+        let next_source_revision = expected_source_revision
+            .checked_add(1)
+            .ok_or(SourceDbError::Unexpected)?;
+        SourceDatabase::bump_revision(&self.tx)?;
+        let committed_source_revision = manifest_revision(&self.tx)?;
+        if committed_source_revision != next_source_revision {
+            return Err(SourceDbError::Unexpected);
+        }
+        self.tx
+            .execute(
+                "UPDATE source_directory_generations
+                 SET status = 'inactive'
+                 WHERE status = 'active'",
+                [],
+            )
+            .map_err(map_sql_error)?;
+        let changed = self
+            .tx
+            .execute(
+                "UPDATE source_directory_generations
+                 SET status = 'active', complete = 1, published_source_revision = ?1
+                 WHERE generation = ?2 AND status = 'staging'",
+                rusqlite::params![committed_source_revision as i64, generation_sql],
+            )
+            .map_err(map_sql_error)?;
+        if changed != 1 {
+            return Err(SourceDirectoryTruthError::GenerationMissing { generation }.into());
+        }
+        let db_path = self.db_path.clone();
+        let telemetry_label = self.telemetry_label;
+        self.tx.commit().map_err(map_sql_error)?;
+        checkpoint_source_database(&db_path, telemetry_label);
+        Ok(SourceDirectoryTruthPublication {
+            generation,
+            source_revision: committed_source_revision,
+            idempotent: false,
+        })
+    }
+
     /// Read a metadata value from the active write transaction.
     ///
     /// The value is read from the same snapshot and writer reservation that will commit the
@@ -295,6 +642,128 @@ impl SourceWriteBatch<'_> {
         }
         Ok(())
     }
+}
+
+fn directory_generation_sql_value(generation: u64) -> Result<i64, SourceDbError> {
+    if generation == 0 {
+        return Err(SourceDirectoryTruthError::InvalidGeneration { generation }.into());
+    }
+    i64::try_from(generation)
+        .map_err(|_| SourceDirectoryTruthError::InvalidGeneration { generation }.into())
+}
+
+fn directory_entry_count_sql_value(count: u64) -> Result<i64, SourceDbError> {
+    i64::try_from(count).map_err(|_| SourceDirectoryTruthError::InvalidEntryCount { count }.into())
+}
+
+fn unix_timestamp() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs().min(i64::MAX as u64) as i64)
+        .unwrap_or_default()
+}
+
+fn directory_requires_audit() -> SourceDbError {
+    SourceDirectoryTruthError::RequiresAudit {
+        reason: super::super::SourceDirectoryTruthUnavailableReason::Malformed,
+    }
+    .into()
+}
+
+fn directory_entry_requires_audit() -> SourceDbError {
+    SourceDirectoryTruthError::RequiresAudit {
+        reason: super::super::SourceDirectoryTruthUnavailableReason::AuditRequired,
+    }
+    .into()
+}
+
+fn valid_published_revision(value: Option<i64>) -> Result<u64, SourceDbError> {
+    let Some(value) = value.filter(|value| *value > 0) else {
+        return Err(directory_requires_audit());
+    };
+    u64::try_from(value).map_err(|_| directory_requires_audit())
+}
+
+fn validate_generation_entries(
+    connection: &rusqlite::Transaction<'_>,
+    generation: i64,
+) -> Result<(), SourceDbError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT path, path_encoding, directory_identity
+             FROM source_directory_entries
+             WHERE generation = ?1",
+        )
+        .map_err(map_sql_error)?;
+    let mut rows = statement.query([generation]).map_err(map_sql_error)?;
+    while let Some(row) = rows.next().map_err(map_sql_error)? {
+        let path = row
+            .get::<_, String>(0)
+            .map_err(|_| directory_entry_requires_audit())?;
+        let path_encoding = row
+            .get::<_, i64>(1)
+            .map_err(|_| directory_entry_requires_audit())?;
+        let directory_identity = row
+            .get::<_, String>(2)
+            .map_err(|_| directory_entry_requires_audit())?;
+        parse_canonical_directory_path_from_db(&path, path_encoding)
+            .map_err(|_| directory_entry_requires_audit())?;
+        super::super::directories::validate_directory_identity(&directory_identity)
+            .map_err(|_| directory_entry_requires_audit())?;
+    }
+    Ok(())
+}
+
+fn validate_generation_counts(
+    connection: &rusqlite::Transaction<'_>,
+    generation: i64,
+    expected_entry_count: i64,
+    staged_entry_count: i64,
+    complete: i64,
+) -> Result<(), SourceDbError> {
+    if expected_entry_count < 0 || staged_entry_count < 0 || complete < 0 {
+        return Err(directory_requires_audit());
+    }
+    let actual_entry_count = connection
+        .query_row(
+            "SELECT COUNT(*), COUNT(DISTINCT path), COUNT(DISTINCT directory_identity)
+             FROM source_directory_entries
+             WHERE generation = ?1",
+            [generation],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            },
+        )
+        .map_err(map_sql_error)?;
+    if actual_entry_count.0 != actual_entry_count.1 || actual_entry_count.0 != actual_entry_count.2
+    {
+        return Err(directory_requires_audit());
+    }
+    if complete != 1 || expected_entry_count != staged_entry_count {
+        return Err(SourceDirectoryTruthError::Incomplete {
+            generation: u64::try_from(generation).unwrap_or_default(),
+            expected: u64::try_from(expected_entry_count).unwrap_or_default(),
+            staged: u64::try_from(actual_entry_count.0).unwrap_or_default(),
+        }
+        .into());
+    }
+    if actual_entry_count.0 != staged_entry_count {
+        return Err(SourceDirectoryTruthError::Incomplete {
+            generation: u64::try_from(generation).unwrap_or_default(),
+            expected: u64::try_from(expected_entry_count).unwrap_or_default(),
+            staged: u64::try_from(actual_entry_count.0).unwrap_or_default(),
+        }
+        .into());
+    }
+    Ok(())
+}
+
+fn checkpoint_source_database(db_path: &Path, telemetry_label: &'static str) {
+    crate::sqlite_wal::maybe_checkpoint_database_file(db_path, "source_db", telemetry_label);
 }
 
 fn manifest_snapshot(

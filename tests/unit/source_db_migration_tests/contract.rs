@@ -102,6 +102,37 @@ fn current_stamped_source_database_repairs_schema_contract() {
     assert_eq!(analysis_job_count(&db.connection), 1);
 }
 
+#[test]
+fn v11_source_database_adds_directory_truth_without_losing_existing_rows() {
+    let dir = with_legacy_db(
+        "CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+         INSERT INTO metadata (key, value) VALUES ('revision', '7');
+         CREATE TABLE wav_files (
+             path TEXT PRIMARY KEY,
+             file_size INTEGER NOT NULL,
+             modified_ns INTEGER NOT NULL
+         );
+         INSERT INTO wav_files (path, file_size, modified_ns)
+         VALUES ('legacy/one.wav', 42, 99);
+         PRAGMA user_version = 11;",
+    );
+
+    let db = SourceDatabase::open_for_test_fixture_source_write(dir.path()).unwrap();
+
+    assert_eq!(
+        schema_version(&db.connection),
+        schema::SOURCE_DB_SCHEMA_VERSION
+    );
+    assert_source_db_schema_contract(&db.connection);
+    assert_eq!(db.get_revision().unwrap(), 7);
+    assert_eq!(
+        db.entry_for_path(std::path::Path::new("legacy/one.wav"))
+            .unwrap()
+            .map(|entry| (entry.file_size, entry.modified_ns)),
+        Some((42, 99))
+    );
+}
+
 fn schema_version(connection: &rusqlite::Connection) -> i64 {
     connection
         .query_row("PRAGMA user_version", [], |row| row.get(0))

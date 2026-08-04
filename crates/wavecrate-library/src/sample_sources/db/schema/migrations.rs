@@ -57,6 +57,71 @@ fn apply_structural_migrations(connection: &Connection) -> Result<(), SourceDbEr
     ensure_collection_membership_schema(connection)?;
     ensure_pending_rename_destination_schema(connection)?;
     ensure_aspect_descriptor_tables(connection)?;
+    ensure_directory_truth_schema(connection)?;
+    Ok(())
+}
+
+fn ensure_directory_truth_schema(connection: &Connection) -> Result<(), SourceDbError> {
+    connection
+        .execute_batch(
+            "CREATE TABLE IF NOT EXISTS source_directory_generations (
+                generation INTEGER PRIMARY KEY CHECK(generation > 0),
+                status TEXT NOT NULL CHECK(status IN ('staging', 'active', 'inactive')),
+                expected_entry_count INTEGER NOT NULL CHECK(expected_entry_count >= 0),
+                staged_entry_count INTEGER NOT NULL DEFAULT 0
+                    CHECK(staged_entry_count >= 0 AND staged_entry_count <= expected_entry_count),
+                complete INTEGER NOT NULL DEFAULT 0 CHECK(complete IN (0, 1)),
+                published_source_revision INTEGER
+                    CHECK(published_source_revision IS NULL OR published_source_revision > 0),
+                created_at INTEGER NOT NULL DEFAULT 0,
+                CHECK (
+                    (status = 'staging' AND published_source_revision IS NULL)
+                    OR (status IN ('active', 'inactive') AND published_source_revision IS NOT NULL)
+                ),
+                CHECK(
+                    status = 'staging'
+                    OR (complete = 1 AND staged_entry_count = expected_entry_count)
+                )
+            );
+            CREATE TABLE IF NOT EXISTS source_directory_entries (
+                generation INTEGER NOT NULL,
+                path TEXT NOT NULL CHECK(length(path) > 0),
+                path_encoding INTEGER NOT NULL DEFAULT 0 CHECK(path_encoding IN (0, 1)),
+                directory_identity TEXT NOT NULL CHECK(length(trim(directory_identity)) > 0),
+                PRIMARY KEY (generation, path),
+                UNIQUE (generation, directory_identity),
+                FOREIGN KEY(generation) REFERENCES source_directory_generations(generation)
+                    ON DELETE CASCADE
+            ) WITHOUT ROWID;
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_source_directory_generations_active
+                ON source_directory_generations(status)
+                WHERE status = 'active';
+            CREATE INDEX IF NOT EXISTS idx_source_directory_generations_status_generation
+                ON source_directory_generations(status, generation);",
+        )
+        .map_err(map_sql_error)?;
+
+    let generation_columns = table_columns(connection, "source_directory_generations")?;
+    let entry_columns = table_columns(connection, "source_directory_entries")?;
+    let generation_required = [
+        "generation",
+        "status",
+        "expected_entry_count",
+        "staged_entry_count",
+        "complete",
+        "published_source_revision",
+        "created_at",
+    ];
+    let entry_required = ["generation", "path", "path_encoding", "directory_identity"];
+    if generation_required
+        .iter()
+        .any(|column| !generation_columns.contains(*column))
+        || entry_required
+            .iter()
+            .any(|column| !entry_columns.contains(*column))
+    {
+        return Err(SourceDbError::Unexpected);
+    }
     Ok(())
 }
 

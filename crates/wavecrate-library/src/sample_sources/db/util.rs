@@ -1,4 +1,3 @@
-#[cfg(unix)]
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
@@ -78,7 +77,16 @@ pub(super) fn normalize_source_index_path(path: &Path) -> Result<(String, i64), 
                 || value.starts_with(INDEX_ESCAPED_COMPONENT_PREFIX)
         })
     });
-    if cleaned.to_str().is_some() && !has_reserved_component {
+    if cleaned.to_str().is_some()
+        && !has_reserved_component
+        && !cleaned.components().any(|component| {
+            let Component::Normal(part) = component else {
+                return false;
+            };
+            part.to_str()
+                .is_some_and(|value| cfg!(unix) && value.contains('\\'))
+        })
+    {
         return normalize_relative_path(&cleaned).map(|value| (value, INDEX_PATH_ENCODING_PLAIN));
     }
 
@@ -90,7 +98,8 @@ pub(super) fn normalize_source_index_path(path: &Path) -> Result<(String, i64), 
         let encoded = match part.to_str() {
             Some(value)
                 if !value.starts_with(INDEX_NON_UNICODE_COMPONENT_PREFIX)
-                    && !value.starts_with(INDEX_ESCAPED_COMPONENT_PREFIX) =>
+                    && !value.starts_with(INDEX_ESCAPED_COMPONENT_PREFIX)
+                    && !(cfg!(unix) && value.contains('\\')) =>
             {
                 value.to_owned()
             }
@@ -129,6 +138,22 @@ pub(super) fn parse_source_index_path_from_db(
     }
 }
 
+/// Parse a directory path and require its stored key to be the canonical encoding.
+///
+/// The generic source-index decoder remains compatible with every valid lossless spelling. Directory
+/// truth rows need a stronger invariant because their encoded path is also their durable identity.
+pub(super) fn parse_canonical_directory_path_from_db(
+    path: &str,
+    encoding: i64,
+) -> Result<PathBuf, SourceDbError> {
+    let decoded = parse_source_index_path_from_db(path, encoding)?;
+    let (canonical_path, canonical_encoding) = normalize_source_index_path(&decoded)?;
+    if canonical_path != path || canonical_encoding != encoding {
+        return Err(SourceDbError::InvalidRelativePath(PathBuf::from(path)));
+    }
+    Ok(decoded)
+}
+
 #[cfg(unix)]
 fn parse_lossless_index_path(path: &str) -> Result<PathBuf, SourceDbError> {
     if path.is_empty() {
@@ -139,21 +164,21 @@ fn parse_lossless_index_path(path: &str) -> Result<PathBuf, SourceDbError> {
         if component.is_empty() {
             return Err(SourceDbError::InvalidRelativePath(PathBuf::from(path)));
         }
-        let value = if let Some(hex) = component.strip_prefix(INDEX_NON_UNICODE_COMPONENT_PREFIX) {
-            OsString::from_vec(
+        if let Some(hex) = component.strip_prefix(INDEX_NON_UNICODE_COMPONENT_PREFIX) {
+            let value = OsString::from_vec(
                 decode_hex(hex)
                     .ok_or_else(|| SourceDbError::InvalidRelativePath(PathBuf::from(path)))?,
-            )
+            );
+            append_lossless_decoded_component(&mut decoded, value, path)?;
         } else if let Some(hex) = component.strip_prefix(INDEX_ESCAPED_COMPONENT_PREFIX) {
             let bytes = decode_hex(hex)
                 .ok_or_else(|| SourceDbError::InvalidRelativePath(PathBuf::from(path)))?;
-            OsString::from_vec(bytes)
+            append_lossless_decoded_component(&mut decoded, OsString::from_vec(bytes), path)?;
         } else {
-            OsString::from(component)
-        };
-        decoded.push(value);
+            decoded.push(component);
+        }
     }
-    Ok(decoded)
+    sanitize_relative_path(&decoded)
 }
 
 #[cfg(not(unix))]
@@ -168,7 +193,7 @@ fn parse_lossless_index_path(path: &str) -> Result<PathBuf, SourceDbError> {
                 .ok_or_else(|| SourceDbError::InvalidRelativePath(PathBuf::from(path)))?;
             let value = String::from_utf8(bytes)
                 .map_err(|_| SourceDbError::InvalidRelativePath(PathBuf::from(path)))?;
-            decoded.push(value);
+            append_lossless_decoded_component(&mut decoded, OsString::from(value), path)?;
         } else {
             // A non-Unicode source key can only be authored on Unix. Preserve
             // that component's encoded projection on platforms that cannot
@@ -176,7 +201,32 @@ fn parse_lossless_index_path(path: &str) -> Result<PathBuf, SourceDbError> {
             decoded.push(component);
         }
     }
-    Ok(decoded)
+    sanitize_relative_path(&decoded)
+}
+
+fn append_lossless_decoded_component(
+    decoded: &mut PathBuf,
+    value: OsString,
+    encoded_path: &str,
+) -> Result<(), SourceDbError> {
+    #[cfg(unix)]
+    let contains_separator = value.as_os_str().as_bytes().contains(&b'/');
+    #[cfg(not(unix))]
+    let contains_separator = value
+        .to_string_lossy()
+        .chars()
+        .any(|character| matches!(character, '/' | '\\'));
+    let mut components = Path::new(&value).components();
+    if contains_separator
+        || !matches!(components.next(), Some(Component::Normal(_)))
+        || components.next().is_some()
+    {
+        return Err(SourceDbError::InvalidRelativePath(PathBuf::from(
+            encoded_path,
+        )));
+    }
+    decoded.push(value);
+    Ok(())
 }
 
 fn encode_hex(bytes: &[u8]) -> String {
@@ -351,6 +401,22 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn source_index_path_encoding_round_trips_unicode_literal_backslashes() {
+        let path = PathBuf::from_iter([
+            std::ffi::OsString::from("folder"),
+            std::ffi::OsString::from(r"kick\raw.wav"),
+        ]);
+        let (encoded, encoding) = normalize_source_index_path(&path).unwrap();
+        assert_eq!(encoding, INDEX_PATH_ENCODING_LOSSLESS);
+        assert!(encoded.contains(INDEX_ESCAPED_COMPONENT_PREFIX));
+        assert_eq!(
+            parse_source_index_path_from_db(&encoded, encoding).unwrap(),
+            path
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn source_index_path_encoding_does_not_alias_reserved_unicode_names() {
         use std::os::unix::ffi::OsStringExt;
 
@@ -365,6 +431,57 @@ mod tests {
         assert_eq!(
             parse_source_index_path_from_db(&raw_key, raw_encoding).unwrap(),
             raw
+        );
+    }
+
+    #[test]
+    fn lossless_path_rejects_encoded_separator_inside_component() {
+        let error = parse_source_index_path_from_db(
+            "valid/~wavecrate-escaped~612f62",
+            INDEX_PATH_ENCODING_LOSSLESS,
+        )
+        .unwrap_err();
+        assert!(matches!(error, SourceDbError::InvalidRelativePath(_)));
+    }
+
+    #[test]
+    fn canonical_directory_path_rejects_noncanonical_aliases() {
+        let escaped_alias = "valid/~wavecrate-escaped~616c696173";
+        assert_eq!(
+            parse_source_index_path_from_db(escaped_alias, INDEX_PATH_ENCODING_LOSSLESS).unwrap(),
+            Path::new("valid/alias")
+        );
+        assert!(
+            parse_canonical_directory_path_from_db(escaped_alias, INDEX_PATH_ENCODING_LOSSLESS)
+                .is_err()
+        );
+
+        let reserved_prefix_plain = "valid/~wavecrate-escaped~616c696173";
+        assert_eq!(
+            parse_source_index_path_from_db(reserved_prefix_plain, INDEX_PATH_ENCODING_PLAIN)
+                .unwrap(),
+            Path::new(reserved_prefix_plain)
+        );
+        assert!(
+            parse_canonical_directory_path_from_db(
+                reserved_prefix_plain,
+                INDEX_PATH_ENCODING_PLAIN
+            )
+            .is_err()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn canonical_directory_path_rejects_noncanonical_hex_case() {
+        let uppercase_hex = "valid/~wavecrate-escaped~6B69636B5C726177";
+        assert_eq!(
+            parse_source_index_path_from_db(uppercase_hex, INDEX_PATH_ENCODING_LOSSLESS).unwrap(),
+            Path::new(r"valid/kick\raw")
+        );
+        assert!(
+            parse_canonical_directory_path_from_db(uppercase_hex, INDEX_PATH_ENCODING_LOSSLESS)
+                .is_err()
         );
     }
 

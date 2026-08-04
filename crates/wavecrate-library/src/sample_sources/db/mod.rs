@@ -11,6 +11,7 @@ use std::fmt;
 use super::source_entry::SourceTraversalPolicy;
 
 mod content_audit;
+mod directories;
 mod error;
 /// Persistent file operation journal for crash recovery.
 pub mod file_ops_journal;
@@ -45,7 +46,7 @@ pub use content_audit::{
     ContentAuditCheckpoint, ContentAuditEntryState, ContentAuditForwardCandidate,
     ContentAuditReport, ContentAuditRetryCandidate, ContentAuditSkipReason,
 };
-pub use error::SourceDbError;
+pub use error::{SourceDbError, SourceDirectoryTruthError};
 pub(crate) use open::SourceDatabaseOpenMode;
 #[cfg(test)]
 pub(crate) use open::open_source_database;
@@ -59,9 +60,12 @@ pub use pending_renames::{PendingRenameDiagnostics, PendingRenameEntry, PendingR
 pub use rename_metadata::RenameMetadataSnapshot;
 pub use types::{
     BrowserFileMetadata, BrowserMetadataCursor, BrowserMetadataPage, BrowserMetadataSnapshot,
-    ExistingFileMetadataUpdate, Rating, SampleCollection, SampleSoundType,
-    SourceIndexClassification, SourceIndexDiagnostic, SourceIndexEntry, SourceIndexSnapshot,
-    SourceManifestEntry, SourceTag, SourceTagUsage, WavEntry,
+    ExistingFileMetadataUpdate, Rating, SampleCollection, SampleSoundType, SourceDirectoryEntry,
+    SourceDirectoryTruthCleanup, SourceDirectoryTruthCursor, SourceDirectoryTruthPage,
+    SourceDirectoryTruthPublication, SourceDirectoryTruthState,
+    SourceDirectoryTruthUnavailableReason, SourceIndexClassification, SourceIndexDiagnostic,
+    SourceIndexEntry, SourceIndexSnapshot, SourceManifestEntry, SourceTag, SourceTagUsage,
+    WavEntry,
 };
 pub use util::normalize_relative_path;
 pub use write::{
@@ -97,6 +101,12 @@ pub const META_READINESS_DUPLICATE_IDENTITY: &str = "readiness_duplicate_identit
 pub const META_SOURCE_INDEX_REVISION: &str = "source_index_revision_v1";
 /// Metadata key for the persisted source traversal/visibility policy.
 pub const META_SOURCE_TRAVERSAL_POLICY: &str = "source_traversal_policy_v1";
+/// Maximum number of directory entries accepted by one staging batch or read page.
+pub const SOURCE_DIRECTORY_TRUTH_BATCH_LIMIT: usize = 256;
+/// Maximum number of inactive directory generations removed by one cleanup transaction.
+pub const SOURCE_DIRECTORY_TRUTH_CLEANUP_LIMIT: usize = 8;
+/// Maximum encoded length of one persisted stable directory identity.
+pub const SOURCE_DIRECTORY_TRUTH_MAX_IDENTITY_BYTES: usize = 1024;
 /// Env var that enables read-only source DB opening by default.
 pub const SOURCE_DB_READ_ONLY_ENV: &str = "WAVECRATE_SOURCE_DB_READ_ONLY";
 
