@@ -5,6 +5,7 @@ use super::{
 };
 use crate::native_app::sample_library::source_watcher::RevisionBoundCheckpoint;
 use std::collections::VecDeque;
+use wavecrate_library::sample_sources::reconciliation::SourceAuditRequest;
 
 pub(super) struct ControlState {
     pub(super) sources: BTreeMap<String, SampleSource>,
@@ -24,6 +25,8 @@ pub(super) struct ControlState {
     pub(super) accepted_manifest_revisions: BTreeMap<String, AcceptedManifestRevision>,
     pub(super) awaiting_foreground_refresh_sources: BTreeSet<String>,
     pub(super) force_manifest_audit_sources: BTreeSet<String>,
+    pub(super) pending_source_audit_requests: BTreeMap<String, SourceAuditRequest>,
+    pub(super) active_source_audit_requests: BTreeMap<String, SourceAuditRequest>,
     pub(super) force_reanalysis_sources: BTreeSet<String>,
     pub(super) quarantined_sources: BTreeSet<String>,
     pub(super) pending_retirements: BTreeMap<u64, PendingSourceRetirement>,
@@ -72,6 +75,94 @@ impl ControlState {
             self.safety_probe_sources.remove(source_id);
             self.dirty_sources.insert(source_id.to_string());
             self.notify(reason);
+        }
+    }
+
+    fn merge_deferred_source_audit_request(
+        &mut self,
+        source_id: &str,
+        request: SourceAuditRequest,
+    ) {
+        let Some(existing) = self.pending_source_audit_requests.get_mut(source_id) else {
+            self.pending_source_audit_requests
+                .insert(source_id.to_string(), request);
+            return;
+        };
+
+        // A deferred request is never allowed to lose an earlier boundary. Different
+        // identities cannot be covered; the lifecycle fence owns that stale identity boundary,
+        // so retain the request from the latest current lane in the single deferred slot.
+        if let Some(covering) = existing.covering(&request) {
+            *existing = covering;
+        } else {
+            *existing = request;
+        }
+    }
+
+    pub(super) fn queue_source_audit_request(&mut self, request: SourceAuditRequest) -> bool {
+        let source_id = request.source_id().as_str().to_string();
+        if !self.source_is_active(&source_id) {
+            return false;
+        }
+        let deferred_request = match self.active_source_audit_requests.get(&source_id) {
+            None => Some(request),
+            Some(active) => match active.covering(&request) {
+                // The active request already covers the incoming evidence. There is no
+                // deferred work to retain for this arrival.
+                Some(covering) if covering == *active => None,
+                // Preserve the union in the deferred slot without mutating the active request.
+                Some(covering) => Some(covering),
+                // A root or generation change is not coverable by the active request. Keep the
+                // identity separate and let lifecycle fencing reject stale work at its boundary.
+                None => Some(request),
+            },
+        };
+        if let Some(deferred_request) = deferred_request {
+            self.merge_deferred_source_audit_request(&source_id, deferred_request);
+        }
+        self.force_manifest_audit_sources.insert(source_id.clone());
+        self.deferred_lifecycle_audit_sources.remove(&source_id);
+        self.mark_source_dirty(&source_id, "live_unproven_audit_request");
+        true
+    }
+
+    pub(super) fn begin_source_audit_request(
+        &mut self,
+        source_id: &str,
+    ) -> Option<SourceAuditRequest> {
+        let request = self.pending_source_audit_requests.remove(source_id)?;
+        self.active_source_audit_requests
+            .insert(source_id.to_string(), request.clone());
+        Some(request)
+    }
+
+    pub(super) fn finish_source_audit_request(&mut self, source_id: &str, complete: bool) {
+        let Some(active) = self.active_source_audit_requests.remove(source_id) else {
+            return;
+        };
+
+        if !complete && self.source_is_active(source_id) {
+            if let Some(pending) = self.pending_source_audit_requests.get_mut(source_id) {
+                // Do not overwrite deferred work with an incomplete active request. Same-
+                // identity work retains the complete union; a different identity remains
+                // separate and is treated as the current deferred fence.
+                if let Some(covering) = active.covering(pending) {
+                    *pending = covering;
+                }
+            } else {
+                self.pending_source_audit_requests
+                    .insert(source_id.to_string(), active);
+            }
+        }
+
+        // The coordinator may have consumed dirty/force state while this request was active.
+        // Keep deferred work actionable and wake the owner whenever it remains.
+        if self.pending_source_audit_requests.contains_key(source_id)
+            && self.source_is_active(source_id)
+        {
+            self.force_manifest_audit_sources
+                .insert(source_id.to_string());
+            self.mark_source_dirty(source_id, "source_audit_deferred");
         }
     }
 

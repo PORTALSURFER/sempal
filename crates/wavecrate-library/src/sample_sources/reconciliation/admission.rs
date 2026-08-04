@@ -67,7 +67,15 @@ pub struct ReconciliationAdmissionLimits {
     capacity_mode: InFlightCapacityMode,
     max_recent_sequences_per_lane: usize,
     max_retained_uncertainties: usize,
+    max_emergency_uncertainties: usize,
 }
+
+/// Fixed upper bound for emergency uncertainty slots derived from the configured lane bound.
+///
+/// Ordinary retained markers remain the primary bounded store. Emergency slots exist only to
+/// preserve source-bound audit evidence when that store is full; same-lane evidence is coalesced
+/// before a new emergency slot is consumed.
+const MAX_EMERGENCY_UNCERTAINTIES: usize = 64;
 
 impl ReconciliationAdmissionLimits {
     /// Construct limits for a supervisor.
@@ -163,6 +171,7 @@ impl ReconciliationAdmissionLimits {
             capacity_mode,
             max_recent_sequences_per_lane,
             max_retained_uncertainties,
+            max_emergency_uncertainties: max_lanes.min(MAX_EMERGENCY_UNCERTAINTIES),
         })
     }
 
@@ -194,6 +203,11 @@ impl ReconciliationAdmissionLimits {
     /// Return the global retained-uncertainty capacity.
     pub const fn max_retained_uncertainties(self) -> usize {
         self.max_retained_uncertainties
+    }
+
+    /// Return the bounded emergency uncertainty capacity.
+    pub const fn max_emergency_uncertainties(self) -> usize {
+        self.max_emergency_uncertainties
     }
 }
 
@@ -364,6 +378,212 @@ impl ReconciliationAcknowledgementIdentity {
     }
 }
 
+/// An opaque, source-scoped request boundary for one authoritative manifest audit.
+///
+/// The boundary is assigned by the admission supervisor when it retains the live uncertainty
+/// marker. It therefore orders requests without exposing a second mutable request counter.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourceAuditRequest {
+    identity: ReconciliationAcknowledgementIdentity,
+    boundary: RetainedUncertaintyBoundary,
+}
+
+impl SourceAuditRequest {
+    /// Construct a request for crate-owned admission and transport tests.
+    #[allow(dead_code)]
+    pub(crate) fn new(
+        identity: ReconciliationAcknowledgementIdentity,
+        boundary: RetainedUncertaintyBoundary,
+    ) -> Self {
+        Self { identity, boundary }
+    }
+
+    /// Borrow the exact source/root/generation identity requested for audit.
+    pub const fn identity(&self) -> &ReconciliationAcknowledgementIdentity {
+        &self.identity
+    }
+
+    /// Return the monotonic retained-marker boundary covered by this request.
+    pub const fn boundary(&self) -> RetainedUncertaintyBoundary {
+        self.boundary
+    }
+
+    /// Cover two requests for the same source/root/generation identity.
+    ///
+    /// Requests with different identities must remain separate so a later committed audit cannot
+    /// accidentally clear uncertainty from another root or lifecycle generation.
+    pub fn covering(&self, other: &Self) -> Option<Self> {
+        if self.identity() != other.identity() {
+            return None;
+        }
+        Some(Self::new(
+            self.identity.clone(),
+            RetainedUncertaintyBoundary::new(
+                self.boundary.first().min(other.boundary.first()),
+                self.boundary.through().max(other.boundary.through()),
+            ),
+        ))
+    }
+
+    /// Borrow the requested source identifier.
+    pub fn source_id(&self) -> &SourceId {
+        self.identity.source_id()
+    }
+
+    /// Borrow the requested physical root identity.
+    pub fn root_identity(&self) -> &RootIdentity {
+        self.identity.root_identity()
+    }
+
+    /// Return the requested watcher generation.
+    pub const fn generation(&self) -> WatcherGeneration {
+        self.identity.generation()
+    }
+
+    /// Build a complete receipt from an opaque committed source-audit authority.
+    ///
+    /// The authority is produced by the source-processing scanner only after it has held and
+    /// revalidated its source-root capability and committed complete manifest coverage. A
+    /// delivered request by itself cannot mint a clearing receipt.
+    pub fn complete_from_committed_audit(
+        &self,
+        committed_audit: SourceAuditCommit,
+    ) -> Option<SourceAuditReceipt> {
+        if committed_audit.request.as_ref() != Some(self)
+            || committed_audit.committed_source_revision == 0
+            || committed_audit.committed_root_identity != *self.root_identity()
+        {
+            return None;
+        }
+        Some(SourceAuditReceipt {
+            request: self.clone(),
+            covered_boundary: self.boundary,
+            committed_identity: self.identity.clone(),
+            committed_source_revision: Some(committed_audit.committed_source_revision),
+            committed_root_identity: Some(committed_audit.committed_root_identity),
+            complete: true,
+        })
+    }
+
+    /// Build a non-clearing receipt for an audit that did not complete authoritatively.
+    pub fn incomplete(&self) -> SourceAuditReceipt {
+        SourceAuditReceipt {
+            request: self.clone(),
+            covered_boundary: self.boundary,
+            committed_identity: self.identity.clone(),
+            committed_source_revision: None,
+            committed_root_identity: None,
+            complete: false,
+        }
+    }
+}
+
+/// Opaque authority returned by a committed, complete source-manifest audit.
+///
+/// There is deliberately no public constructor. The source database creates this value only
+/// from the transaction that records manifest-audit completion and commits the authoritative
+/// manifest revision. The scanner binds the held `SourceRootCapability` identity immediately
+/// before that commit. Public scanner calls without a live request may carry an unbound value,
+/// which cannot mint a clearing receipt.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourceAuditCommit {
+    request: Option<SourceAuditRequest>,
+    committed_source_revision: u64,
+    committed_root_identity: RootIdentity,
+}
+
+impl SourceAuditCommit {
+    pub(crate) const fn new(
+        committed_source_revision: u64,
+        committed_root_identity: RootIdentity,
+        request: Option<SourceAuditRequest>,
+    ) -> Self {
+        Self {
+            request,
+            committed_source_revision,
+            committed_root_identity,
+        }
+    }
+
+    /// Return the source-manifest revision committed by the audit.
+    pub const fn committed_source_revision(&self) -> u64 {
+        self.committed_source_revision
+    }
+
+    /// Borrow the physical root identity held by the committed audit.
+    pub fn committed_root_identity(&self) -> &RootIdentity {
+        &self.committed_root_identity
+    }
+}
+
+/// Typed result of a source manifest audit associated with one audit request.
+///
+/// The watcher admission owner converts a receipt into the existing committed-authoritative
+/// acknowledgement only when every request, boundary, identity, completion, revision, and root
+/// field matches. A receipt is transport evidence, not authority by itself.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourceAuditReceipt {
+    request: SourceAuditRequest,
+    covered_boundary: RetainedUncertaintyBoundary,
+    committed_identity: ReconciliationAcknowledgementIdentity,
+    committed_source_revision: Option<u64>,
+    committed_root_identity: Option<RootIdentity>,
+    complete: bool,
+}
+
+impl SourceAuditReceipt {
+    /// Borrow the request whose retained uncertainty this receipt claims to cover.
+    pub const fn request(&self) -> &SourceAuditRequest {
+        &self.request
+    }
+
+    /// Return the request boundary claimed by the committed audit.
+    pub const fn covered_boundary(&self) -> RetainedUncertaintyBoundary {
+        self.covered_boundary
+    }
+
+    /// Borrow the identity observed by the committed audit.
+    pub const fn committed_identity(&self) -> &ReconciliationAcknowledgementIdentity {
+        &self.committed_identity
+    }
+
+    /// Return the committed source revision, when the audit supplied one.
+    pub const fn committed_source_revision(&self) -> Option<u64> {
+        self.committed_source_revision
+    }
+
+    /// Borrow the physical root identity held by the audit, when available.
+    pub fn committed_root_identity(&self) -> Option<&RootIdentity> {
+        self.committed_root_identity.as_ref()
+    }
+
+    /// Return whether the source audit completed authoritatively.
+    pub const fn is_complete(&self) -> bool {
+        self.complete
+    }
+
+    pub(crate) fn authoritative_acknowledgement(
+        &self,
+    ) -> Option<CommittedAuthoritativeReconciliationAcknowledgement> {
+        if !self.complete
+            || self.covered_boundary != self.request.boundary
+            || self.committed_identity != self.request.identity
+            || self
+                .committed_source_revision
+                .is_none_or(|revision| revision == 0)
+            || self.committed_root_identity.as_ref()
+                != Some(self.committed_identity.root_identity())
+        {
+            return None;
+        }
+        Some(CommittedAuthoritativeReconciliationAcknowledgement::new(
+            self.committed_identity.clone(),
+            ReconciliationScopeKind::SourceAudit,
+            self.covered_boundary,
+        ))
+    }
+}
+
 /// A committed authoritative reconciliation acknowledgement.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CommittedAuthoritativeReconciliationAcknowledgement {
@@ -411,6 +631,13 @@ pub struct ReconciliationAcknowledgementOutcome {
 }
 
 impl ReconciliationAcknowledgementOutcome {
+    pub(crate) const fn unchanged(remaining_markers: usize) -> Self {
+        Self {
+            cleared_markers: 0,
+            remaining_markers,
+        }
+    }
+
     /// Return the number of markers cleared by the acknowledgement.
     pub const fn cleared_markers(self) -> usize {
         self.cleared_markers
@@ -428,10 +655,12 @@ pub struct RetainedUncertainty {
     source_id: Option<SourceId>,
     root_identity: Option<RootIdentity>,
     generation: Option<WatcherGeneration>,
+    backend_stream_identity: Option<BackendStreamIdentity>,
     capture_boundary: Option<CaptureBoundary>,
     retained_boundary: RetainedUncertaintyBoundary,
     scope: ReconciliationScopeKind,
     reasons: Vec<UncertaintyReason>,
+    emergency: bool,
 }
 
 impl RetainedUncertainty {
@@ -448,6 +677,11 @@ impl RetainedUncertainty {
     /// Return the generation when all retained evidence belongs to one generation.
     pub const fn generation(&self) -> Option<WatcherGeneration> {
         self.generation
+    }
+
+    /// Borrow the backend stream identity when it remains unambiguous.
+    pub fn backend_stream_identity(&self) -> Option<&BackendStreamIdentity> {
+        self.backend_stream_identity.as_ref()
     }
 
     /// Return the original capture boundary, if it is known.
@@ -473,6 +707,11 @@ impl RetainedUncertainty {
     /// Borrow the bounded, ordered reasons retained by this marker.
     pub fn reasons(&self) -> &[UncertaintyReason] {
         &self.reasons
+    }
+
+    /// Return whether this marker occupies the bounded emergency retention path.
+    pub const fn is_emergency(&self) -> bool {
+        self.emergency
     }
 }
 
@@ -714,6 +953,7 @@ pub struct ReconciliationAdmissionSupervisor {
     next_ticket: u64,
     retained_uncertainties: Vec<RetainedUncertainty>,
     next_retained_uncertainty_boundary: u64,
+    emergency_uncertainty_count: usize,
 }
 
 impl ReconciliationAdmissionSupervisor {
@@ -731,6 +971,7 @@ impl ReconciliationAdmissionSupervisor {
             next_ticket: 0,
             retained_uncertainties: Vec::new(),
             next_retained_uncertainty_boundary: 0,
+            emergency_uncertainty_count: 0,
         }
     }
 
@@ -1082,14 +1323,24 @@ impl ReconciliationAdmissionSupervisor {
             }
         };
         let has_uncertainty = !evidence_reasons.is_empty();
-        if has_uncertainty && let Err(error) = self.ensure_uncertainty_capacity(1) {
-            debug_assert!(matches!(
-                error,
-                AdmissionError::UncertaintyCapacityExhausted
-                    | AdmissionError::UncertaintyBoundaryExhausted
-            ));
-            return AdmissionOutcome::UncertaintyCapacityExhausted(Box::new(envelope));
-        }
+        let retained_marker = has_uncertainty.then(|| {
+            RetainedUncertainty::from_envelope_with_generation_and_reasons(
+                &envelope,
+                Some(current_generation),
+                evidence_reasons,
+            )
+        });
+        let use_emergency = if let Some(marker) = retained_marker.as_ref() {
+            if self.ensure_uncertainty_capacity(1).is_ok() {
+                false
+            } else if self.can_retain_marker_with_emergency(marker) {
+                true
+            } else {
+                return AdmissionOutcome::UncertaintyCapacityExhausted(Box::new(envelope));
+            }
+        } else {
+            false
+        };
         let recent_record = recent_exact_sequence_record(&envelope);
         let pending_envelope = envelope.clone();
         self.next_ticket = ticket.id();
@@ -1115,14 +1366,13 @@ impl ReconciliationAdmissionSupervisor {
         if was_empty && self.runnable_set.insert(lane.clone()) {
             self.runnable.push_back(lane);
         }
-        if has_uncertainty {
-            self.retain_marker(
-                RetainedUncertainty::from_envelope_with_generation_and_reasons(
-                    &envelope,
-                    Some(current_generation),
-                    evidence_reasons,
-                ),
-            );
+        if let Some(marker) = retained_marker {
+            if use_emergency {
+                self.retain_marker_with_emergency(marker)
+                    .expect("emergency uncertainty capacity was preflighted");
+            } else {
+                self.retain_marker(marker);
+            }
         }
         AdmissionOutcome::Accepted(ticket)
     }
@@ -1212,6 +1462,71 @@ impl ReconciliationAdmissionSupervisor {
         self.uncertainties()
     }
 
+    pub(crate) fn source_audit_request_for_source(
+        &self,
+        source_id: &SourceId,
+        reason: UncertaintyReason,
+    ) -> Option<SourceAuditRequest> {
+        let lane = self.sources.get(source_id)?;
+        let generation = self.lanes.get(lane)?.generation;
+        let root_identity = lane.root_identity();
+        self.retained_uncertainties
+            .iter()
+            .filter(|marker| {
+                marker.source_id() == Some(source_id)
+                    && marker.root_identity() == Some(root_identity)
+                    && marker.generation() == Some(generation)
+                    && marker.reasons().contains(&reason)
+            })
+            .max_by_key(|marker| marker.boundary().through())
+            .map(|marker| {
+                SourceAuditRequest::new(
+                    ReconciliationAcknowledgementIdentity::new(
+                        source_id.clone(),
+                        root_identity.clone(),
+                        generation,
+                    ),
+                    marker.boundary(),
+                )
+            })
+    }
+
+    /// Build a bounded source-audit request for the current registered lane when retained-marker
+    /// capacity could not preserve the incoming raw evidence.
+    ///
+    /// The request uses the supervisor's already-issued watermark rather than allocating another
+    /// marker. It therefore remains bounded and monotonic even when both ordinary and emergency
+    /// retention are full. Any existing marker for the lane is included from its first boundary;
+    /// a lane without a marker starts at the current watermark and still receives a full source
+    /// audit request before the raw envelope is dropped.
+    pub(crate) fn source_audit_request_for_current_lane(
+        &self,
+        source_id: &SourceId,
+    ) -> Option<SourceAuditRequest> {
+        let lane = self.sources.get(source_id)?;
+        let generation = self.lanes.get(lane)?.generation;
+        let watermark = self.next_retained_uncertainty_boundary;
+        let first = self
+            .retained_uncertainties
+            .iter()
+            .filter(|marker| {
+                marker.source_id() == Some(source_id)
+                    && marker.root_identity() == Some(lane.root_identity())
+                    && marker.generation() == Some(generation)
+            })
+            .map(|marker| marker.boundary().first())
+            .min()
+            .unwrap_or(watermark);
+        Some(SourceAuditRequest::new(
+            ReconciliationAcknowledgementIdentity::new(
+                source_id.clone(),
+                lane.root_identity().clone(),
+                generation,
+            ),
+            RetainedUncertaintyBoundary::new(first, watermark),
+        ))
+    }
+
     /// Borrow retained markers that belong to a registered lane's exact identity.
     pub fn uncertainties_for_lane(
         &self,
@@ -1235,8 +1550,17 @@ impl ReconciliationAdmissionSupervisor {
         acknowledgement: &CommittedAuthoritativeReconciliationAcknowledgement,
     ) -> ReconciliationAcknowledgementOutcome {
         let before = self.retained_uncertainties.len();
-        self.retained_uncertainties
-            .retain(|marker| !marker.is_covered_by(acknowledgement));
+        let mut cleared_emergency = 0;
+        self.retained_uncertainties.retain(|marker| {
+            let covered = marker.is_covered_by(acknowledgement);
+            if covered && marker.emergency {
+                cleared_emergency += 1;
+            }
+            !covered
+        });
+        self.emergency_uncertainty_count = self
+            .emergency_uncertainty_count
+            .saturating_sub(cleared_emergency);
         ReconciliationAcknowledgementOutcome {
             cleared_markers: before - self.retained_uncertainties.len(),
             remaining_markers: self.retained_uncertainties.len(),
@@ -1317,12 +1641,86 @@ impl ReconciliationAdmissionSupervisor {
         if next_len > self.limits.max_retained_uncertainties {
             return Err(AdmissionError::UncertaintyCapacityExhausted);
         }
+        self.ensure_uncertainty_boundary_capacity(additional)
+    }
+
+    fn ensure_uncertainty_boundary_capacity(
+        &self,
+        additional: usize,
+    ) -> Result<(), AdmissionError> {
         let additional =
             u64::try_from(additional).map_err(|_| AdmissionError::UncertaintyBoundaryExhausted)?;
         self.next_retained_uncertainty_boundary
             .checked_add(additional)
             .ok_or(AdmissionError::UncertaintyBoundaryExhausted)
             .map(|_| ())
+    }
+
+    fn same_lane_marker_index(&self, marker: &RetainedUncertainty) -> Option<usize> {
+        if marker.source_id.is_none()
+            || marker.root_identity.is_none()
+            || marker.generation.is_none()
+        {
+            return None;
+        }
+        self.retained_uncertainties.iter().position(|existing| {
+            existing.source_id == marker.source_id
+                && existing.root_identity == marker.root_identity
+                && existing.generation == marker.generation
+        })
+    }
+
+    fn can_retain_marker_with_emergency(&self, marker: &RetainedUncertainty) -> bool {
+        self.ensure_uncertainty_boundary_capacity(1).is_ok()
+            && (self.same_lane_marker_index(marker).is_some()
+                || (marker.source_id.is_some()
+                    && marker.root_identity.is_some()
+                    && marker.generation.is_some()
+                    && self.emergency_uncertainty_count < self.limits.max_emergency_uncertainties))
+    }
+
+    fn retain_marker_with_emergency(
+        &mut self,
+        mut marker: RetainedUncertainty,
+    ) -> Result<(), AdmissionError> {
+        self.ensure_uncertainty_boundary_capacity(1)?;
+        if let Some(index) = self.same_lane_marker_index(&marker) {
+            let next = self
+                .next_retained_uncertainty_boundary
+                .checked_add(1)
+                .ok_or(AdmissionError::UncertaintyBoundaryExhausted)?;
+            self.next_retained_uncertainty_boundary = next;
+            let existing = &mut self.retained_uncertainties[index];
+            existing.retained_boundary =
+                RetainedUncertaintyBoundary::new(existing.retained_boundary.first(), next);
+            if existing.capture_boundary != marker.capture_boundary {
+                existing.capture_boundary = None;
+            }
+            if existing.backend_stream_identity != marker.backend_stream_identity {
+                existing.backend_stream_identity = None;
+            }
+            existing.reasons.append(&mut marker.reasons);
+            existing.reasons.sort_unstable();
+            existing.reasons.dedup();
+            return Ok(());
+        }
+        if marker.source_id.is_none()
+            || marker.root_identity.is_none()
+            || marker.generation.is_none()
+            || self.emergency_uncertainty_count >= self.limits.max_emergency_uncertainties
+        {
+            return Err(AdmissionError::UncertaintyCapacityExhausted);
+        }
+        let next = self
+            .next_retained_uncertainty_boundary
+            .checked_add(1)
+            .ok_or(AdmissionError::UncertaintyBoundaryExhausted)?;
+        self.next_retained_uncertainty_boundary = next;
+        marker.retained_boundary = RetainedUncertaintyBoundary::new(next, next);
+        marker.emergency = true;
+        self.retained_uncertainties.push(marker);
+        self.emergency_uncertainty_count += 1;
+        Ok(())
     }
 
     fn release_usage(&mut self, lane: &AdmissionLaneKey, usage: Usage) {
@@ -1373,7 +1771,20 @@ impl ReconciliationAdmissionSupervisor {
             .expect("retained uncertainty capacity was preflighted");
         self.next_retained_uncertainty_boundary = next;
         marker.retained_boundary = RetainedUncertaintyBoundary::new(next, next);
+        marker.emergency = false;
         self.retained_uncertainties.push(marker);
+    }
+
+    fn retain_marker_with_fallback(
+        &mut self,
+        marker: RetainedUncertainty,
+    ) -> Result<(), AdmissionError> {
+        if self.ensure_uncertainty_capacity(1).is_ok() {
+            self.retain_marker(marker);
+            Ok(())
+        } else {
+            self.retain_marker_with_emergency(marker)
+        }
     }
 
     fn reject_with_marker(
@@ -1439,7 +1850,7 @@ impl ReconciliationAdmissionSupervisor {
             root_identity,
             reasons,
         );
-        if let Err(error) = self.ensure_uncertainty_capacity(1) {
+        if let Err(error) = self.retain_marker_with_fallback(marker) {
             debug_assert!(matches!(
                 error,
                 AdmissionError::UncertaintyCapacityExhausted
@@ -1447,7 +1858,6 @@ impl ReconciliationAdmissionSupervisor {
             ));
             return AdmissionOutcome::UncertaintyCapacityExhausted(Box::new(envelope));
         }
-        self.retain_marker(marker);
         AdmissionOutcome::Rejected(reject_reason)
     }
 
@@ -1476,13 +1886,21 @@ impl RetainedUncertainty {
         boundary: Option<CaptureBoundary>,
         reason: UncertaintyReason,
     ) -> Self {
-        Self::with_reasons(source_id, root_identity, generation, boundary, vec![reason])
+        Self::with_reasons(
+            source_id,
+            root_identity,
+            generation,
+            None,
+            boundary,
+            vec![reason],
+        )
     }
 
     fn with_reasons(
         source_id: Option<SourceId>,
         root_identity: Option<RootIdentity>,
         generation: Option<WatcherGeneration>,
+        backend_stream_identity: Option<BackendStreamIdentity>,
         boundary: Option<CaptureBoundary>,
         mut reasons: Vec<UncertaintyReason>,
     ) -> Self {
@@ -1493,10 +1911,12 @@ impl RetainedUncertainty {
             source_id,
             root_identity,
             generation,
+            backend_stream_identity,
             capture_boundary: boundary,
             retained_boundary: RetainedUncertaintyBoundary::new(0, 0),
             scope: ReconciliationScopeKind::SourceAudit,
             reasons,
+            emergency: false,
         }
     }
 
@@ -1505,12 +1925,13 @@ impl RetainedUncertainty {
         generation: Option<WatcherGeneration>,
         reason: UncertaintyReason,
     ) -> Self {
-        Self::new(
+        Self::with_reasons(
             Some(envelope.provenance().source_id().clone()),
             envelope.provenance().root_identity().cloned(),
             generation,
+            envelope.provenance().backend_stream_identity().cloned(),
             Some(envelope.provenance().capture_boundary()),
-            reason,
+            vec![reason],
         )
     }
 
@@ -1539,6 +1960,7 @@ impl RetainedUncertainty {
             source_id,
             root_identity,
             generation,
+            envelope.provenance().backend_stream_identity().cloned(),
             Some(envelope.provenance().capture_boundary()),
             reasons,
         )
@@ -1718,6 +2140,30 @@ mod tests {
             scope,
             RetainedUncertaintyBoundary::new(first, through),
         )
+    }
+
+    #[test]
+    fn source_audit_requests_cover_same_identity_only() {
+        let identity = ReconciliationAcknowledgementIdentity::new(
+            SourceId::from_string("source-a"),
+            RootIdentity::from_bytes(b"root-a".to_vec()),
+            WatcherGeneration::new(7),
+        );
+        let first =
+            SourceAuditRequest::new(identity.clone(), RetainedUncertaintyBoundary::new(10, 20));
+        let second = SourceAuditRequest::new(identity, RetainedUncertaintyBoundary::new(5, 30));
+
+        let covered = first.covering(&second).expect("matching request identity");
+        assert_eq!(covered.boundary(), RetainedUncertaintyBoundary::new(5, 30));
+
+        let different_identity = ReconciliationAcknowledgementIdentity::new(
+            SourceId::from_string("source-b"),
+            RootIdentity::from_bytes(b"root-b".to_vec()),
+            WatcherGeneration::new(8),
+        );
+        let different =
+            SourceAuditRequest::new(different_identity, RetainedUncertaintyBoundary::new(5, 30));
+        assert_eq!(first.covering(&different), None);
     }
 
     fn marker_bearing_envelope(
@@ -3059,10 +3505,10 @@ mod tests {
     }
 
     #[test]
-    fn uncertainty_capacity_returns_envelope_and_control_error_without_mutation() {
+    fn full_retention_coalesces_same_lane_without_dropping_new_uncertainty() {
         let source = SourceId::from_string("source-a");
         let root = RootIdentity::from_bytes(b"root-a".to_vec());
-        let mut supervisor = ReconciliationAdmissionSupervisor::new(limits_with(1, 8, 2, 8, 1));
+        let mut supervisor = ReconciliationAdmissionSupervisor::new(limits_with(1, 8, 1, 8, 1));
         let (lane, generation) = registered(&mut supervisor, &source, &root);
         let first_marker =
             envelope_with_kinds(&source, &root, generation, 1, &[RawEventKind::Overflow]);
@@ -3075,12 +3521,15 @@ mod tests {
             AdmissionOutcome::Accepted(ticket) => ticket,
             outcome => panic!("unexpected outcome: {outcome:?}"),
         };
-        let markers_before = supervisor.uncertainties().to_vec();
         assert_eq!(
             supervisor.admit(first_marker.clone()),
-            AdmissionOutcome::UncertaintyCapacityExhausted(Box::new(first_marker))
+            AdmissionOutcome::Rejected(AdmissionRejectReason::UncertaintyMarkerRetained)
         );
-        assert_eq!(supervisor.uncertainties(), markers_before.as_slice());
+        assert_eq!(supervisor.uncertainties().len(), 1);
+        assert_eq!(
+            supervisor.uncertainties()[0].boundary(),
+            RetainedUncertaintyBoundary::new(1, 2)
+        );
         assert_eq!(supervisor.in_flight(), 1);
         let mixed = envelope_with_kinds(
             &source,
@@ -3090,10 +3539,14 @@ mod tests {
             &[RawEventKind::Create, RawEventKind::Overflow],
         );
         assert_eq!(
-            supervisor.admit(mixed.clone()),
-            AdmissionOutcome::UncertaintyCapacityExhausted(Box::new(mixed))
+            supervisor.admit(mixed),
+            AdmissionOutcome::Rejected(AdmissionRejectReason::QueueSaturated)
         );
-        assert_eq!(supervisor.uncertainties(), markers_before.as_slice());
+        assert_eq!(supervisor.uncertainties().len(), 1);
+        assert_eq!(
+            supervisor.uncertainties()[0].boundary(),
+            RetainedUncertaintyBoundary::new(1, 3)
+        );
         assert_eq!(supervisor.in_flight(), 1);
         assert_eq!(
             supervisor.lifecycle(&lane).expect("lifecycle"),
@@ -3103,7 +3556,7 @@ mod tests {
             supervisor.stop_lane(&lane, generation),
             Err(AdmissionError::UncertaintyCapacityExhausted)
         );
-        assert_eq!(supervisor.uncertainties(), markers_before.as_slice());
+        assert_eq!(supervisor.uncertainties().len(), 1);
         assert_eq!(supervisor.in_flight(), 1);
         assert_eq!(
             supervisor.lifecycle(&lane).expect("lifecycle"),
@@ -3134,7 +3587,7 @@ mod tests {
         supervisor
             .mark_checkpointed(ticket)
             .expect("checkpointed phase");
-        let boundary = markers_before[0].boundary();
+        let boundary = supervisor.uncertainties()[0].boundary();
         let acknowledgement = acknowledgement(
             &source,
             &root,

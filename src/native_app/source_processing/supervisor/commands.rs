@@ -3,6 +3,7 @@ use super::{
     SourceDeltaQueueResult, SourceProcessingBudgetHandle, SourceProcessingSupervisor,
     register_source_for_scan_locked,
 };
+use wavecrate_library::sample_sources::reconciliation::SourceAuditRequest;
 
 /// Lifecycle hints that may require source-audit admission, but are not proof that a complete
 /// traversal is required. The durable readiness and watcher coverage gates decide that per source.
@@ -39,6 +40,19 @@ pub(super) fn request_source_manifest_audit(
     control.mark_source_dirty(source_id, reason);
     drop(control);
     shared.wake.notify_one();
+}
+
+pub(super) fn request_source_manifest_audit_for_request(
+    shared: &super::Shared,
+    request: SourceAuditRequest,
+    reason: &'static str,
+) {
+    let mut control = shared.control();
+    if control.queue_source_audit_request(request) {
+        control.notify(reason);
+        drop(control);
+        shared.wake.notify_one();
+    }
 }
 
 impl SourceProcessingSupervisor {
@@ -107,6 +121,15 @@ impl SourceProcessingSupervisor {
         reason: &'static str,
     ) {
         request_source_manifest_audit(self.shared.as_ref(), source_id, reason);
+    }
+
+    /// Queue one opaque live-capture audit request without widening its covered boundary.
+    pub(in crate::native_app) fn request_source_manifest_audit_for_request(
+        &self,
+        request: SourceAuditRequest,
+        reason: &'static str,
+    ) {
+        request_source_manifest_audit_for_request(self.shared.as_ref(), request, reason);
     }
 
     pub(in crate::native_app) fn wake_source(&self, source_id: &str, reason: &'static str) {

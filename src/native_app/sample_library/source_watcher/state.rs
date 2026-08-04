@@ -5,6 +5,7 @@ use std::{
     time::{Duration, Instant},
 };
 use wavecrate::sample_sources::SampleSource;
+use wavecrate_library::sample_sources::reconciliation::SourceAuditRequest;
 
 use super::classification::path_is_source_refresh_candidate;
 use super::debounce::{GuiSourceWatchEvent, PendingGuiSourceWatch};
@@ -17,12 +18,149 @@ use crate::native_app::sample_library::committed_file_mutations::{
     CommittedWatcherEcho, CommittedWatcherPathState, RevisionFirstCursor,
 };
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum AuditRequestQueueOutcome {
+    Queued,
+    Coalesced,
+    QueuedAfterDroppingFallback,
+    FallbackCouldNotFit,
+    MarkerCouldNotFit,
+}
+
+struct PendingSourceAuditRequest {
+    request: SourceAuditRequest,
+    marker_backed: bool,
+}
+
+/// Watcher-owned FIFO transport for exact source-audit requests.
+///
+/// Requests with one source/root/generation identity are covered into their original queue entry.
+/// The capacity is supplied by the admission owner and includes ordinary plus emergency retained
+/// uncertainty capacity; it is intentionally independent from the raw capture-context limit.
+pub(super) struct PendingSourceAuditRequests {
+    entries: Vec<PendingSourceAuditRequest>,
+    capacity: usize,
+    conservative_recovery_latched: bool,
+}
+
+impl Default for PendingSourceAuditRequests {
+    fn default() -> Self {
+        Self {
+            entries: Vec::new(),
+            capacity: 0,
+            conservative_recovery_latched: false,
+        }
+    }
+}
+
+impl PendingSourceAuditRequests {
+    pub(super) fn set_capacity(&mut self, capacity: usize) {
+        debug_assert!(
+            capacity >= self.entries.len(),
+            "audit request capacity cannot displace retained queue entries"
+        );
+        self.capacity = capacity;
+    }
+
+    pub(super) fn insert(
+        &mut self,
+        request: SourceAuditRequest,
+        marker_backed: bool,
+    ) -> AuditRequestQueueOutcome {
+        if let Some(entry) = self
+            .entries
+            .iter_mut()
+            .find(|entry| entry.request.identity() == request.identity())
+        {
+            entry.request = entry
+                .request
+                .covering(&request)
+                .expect("queue identity was checked before covering requests");
+            entry.marker_backed |= marker_backed;
+            return AuditRequestQueueOutcome::Coalesced;
+        }
+
+        if self.entries.len() < self.capacity {
+            self.entries.push(PendingSourceAuditRequest {
+                request,
+                marker_backed,
+            });
+            return AuditRequestQueueOutcome::Queued;
+        }
+
+        if marker_backed {
+            if let Some(index) = self.entries.iter().position(|entry| !entry.marker_backed) {
+                self.entries.remove(index);
+                self.conservative_recovery_latched = true;
+                self.entries.push(PendingSourceAuditRequest {
+                    request,
+                    marker_backed,
+                });
+                return AuditRequestQueueOutcome::QueuedAfterDroppingFallback;
+            }
+            self.conservative_recovery_latched = true;
+            return AuditRequestQueueOutcome::MarkerCouldNotFit;
+        }
+
+        self.conservative_recovery_latched = true;
+        AuditRequestQueueOutcome::FallbackCouldNotFit
+    }
+
+    pub(super) fn purge_non_matching<F>(&mut self, mut matches: F) -> Vec<SourceAuditRequest>
+    where
+        F: FnMut(&SourceAuditRequest) -> bool,
+    {
+        let mut displaced = Vec::new();
+        self.entries.retain(|entry| {
+            let keep = matches(&entry.request);
+            if !keep {
+                displaced.push(entry.request.clone());
+            }
+            keep
+        });
+        displaced
+    }
+
+    #[cfg(test)]
+    pub(super) fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    #[cfg(test)]
+    pub(super) fn clear(&mut self) {
+        self.entries.clear();
+        self.conservative_recovery_latched = false;
+    }
+
+    pub(super) fn conservative_recovery_latched(&self) -> bool {
+        self.conservative_recovery_latched
+    }
+
+    pub(super) fn clear_conservative_recovery_latch(&mut self) {
+        self.conservative_recovery_latched = false;
+    }
+
+    #[cfg(test)]
+    pub(super) fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub(super) fn front(&self) -> Option<&SourceAuditRequest> {
+        self.entries.first().map(|entry| &entry.request)
+    }
+
+    pub(super) fn pop_front(&mut self) -> Option<SourceAuditRequest> {
+        (!self.entries.is_empty()).then(|| self.entries.remove(0).request)
+    }
+}
+
 #[derive(Default)]
 pub(super) struct GuiSourceWatchState {
     pub(super) watched_roots: WatchedRootIdentities,
     pub(super) sources: Vec<SampleSource>,
     pub(super) pending: HashMap<String, PendingGuiSourceWatch>,
     pub(super) acknowledged_paths: HashMap<(String, PathBuf), (CommittedWatcherPathState, Instant)>,
+    pub(super) pending_audit_requests: PendingSourceAuditRequests,
 }
 
 impl GuiSourceWatchState {
@@ -37,6 +175,55 @@ impl GuiSourceWatchState {
             .retain(|source_id, _| allowed.contains(source_id));
         self.acknowledged_paths
             .retain(|(source_id, _), _| allowed.contains(source_id));
+    }
+
+    pub(super) fn set_audit_request_capacity(&mut self, capacity: usize) {
+        self.pending_audit_requests.set_capacity(capacity);
+    }
+
+    pub(super) fn enqueue_audit_request(
+        &mut self,
+        request: SourceAuditRequest,
+        marker_backed: bool,
+    ) -> AuditRequestQueueOutcome {
+        self.pending_audit_requests.insert(request, marker_backed)
+    }
+
+    pub(super) fn purge_non_matching_audit_requests<F>(
+        &mut self,
+        matches: F,
+    ) -> Vec<SourceAuditRequest>
+    where
+        F: FnMut(&SourceAuditRequest) -> bool,
+    {
+        self.pending_audit_requests.purge_non_matching(matches)
+    }
+
+    /// Replace displaced typed work with the existing bounded conservative source recovery.
+    ///
+    /// A request whose source is still configured widens only that source. If its source was
+    /// removed, the old identity cannot be emitted or acknowledged, so the remaining configured
+    /// sources receive the existing all-source conservative recovery instead.
+    pub(super) fn recover_displaced_audit_requests(
+        &mut self,
+        requests: &[SourceAuditRequest],
+        now: Instant,
+    ) {
+        let mut recover_all = false;
+        for request in requests {
+            if self
+                .sources
+                .iter()
+                .any(|source| source.id == *request.source_id())
+            {
+                self.mark_source_overflowed(request.source_id().as_str(), now);
+            } else {
+                recover_all = true;
+            }
+        }
+        if recover_all {
+            self.mark_all_overflowed(now);
+        }
     }
 
     pub(super) fn apply_root_watch_update(

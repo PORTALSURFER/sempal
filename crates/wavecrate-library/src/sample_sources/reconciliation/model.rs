@@ -541,6 +541,8 @@ pub struct RawObservationMetadata {
     event_id: Option<u64>,
     cursor: Option<Vec<u8>>,
     detail: Option<OsString>,
+    source: Option<OsString>,
+    process_id: Option<u32>,
 }
 
 impl RawObservationMetadata {
@@ -579,6 +581,18 @@ impl RawObservationMetadata {
         self
     }
 
+    /// Retain the backend source identifier.
+    pub fn with_source(mut self, source: OsString) -> Self {
+        self.source = Some(source);
+        self
+    }
+
+    /// Retain the origin process identifier.
+    pub fn with_process_id(mut self, process_id: u32) -> Self {
+        self.process_id = Some(process_id);
+        self
+    }
+
     /// Return backend flags, with zero meaning no flags were retained.
     pub const fn flags(&self) -> u64 {
         self.flags
@@ -604,6 +618,16 @@ impl RawObservationMetadata {
         self.detail.as_deref()
     }
 
+    /// Borrow the backend source identifier.
+    pub fn source(&self) -> Option<&OsStr> {
+        self.source.as_deref()
+    }
+
+    /// Return the origin process identifier.
+    pub const fn process_id(&self) -> Option<u32> {
+        self.process_id
+    }
+
     fn encoded_metadata_bytes(&self) -> Result<usize, RawEnvelopeError> {
         let flags_bytes = if self.flags == 0 {
             0
@@ -625,12 +649,23 @@ impl RawObservationMetadata {
             .detail
             .as_ref()
             .map_or(0, |detail| detail.as_os_str().as_encoded_bytes().len());
+        let source_bytes = self
+            .source
+            .as_ref()
+            .map_or(0, |source| source.as_os_str().as_encoded_bytes().len());
+        let process_id_bytes = if self.process_id.is_some() {
+            std::mem::size_of::<u32>()
+        } else {
+            0
+        };
 
         flags_bytes
             .checked_add(rename_cookie_bytes)
             .and_then(|value| value.checked_add(event_id_bytes))
             .and_then(|value| value.checked_add(cursor_bytes))
             .and_then(|value| value.checked_add(detail_bytes))
+            .and_then(|value| value.checked_add(source_bytes))
+            .and_then(|value| value.checked_add(process_id_bytes))
             .ok_or(RawEnvelopeError::ArithmeticOverflow {
                 counter: RawEnvelopeCounter::MetadataBytes,
             })

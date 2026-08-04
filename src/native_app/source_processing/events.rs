@@ -119,6 +119,7 @@ pub(in crate::native_app) enum SourceProcessingEvent {
         lifecycle: SourceProcessingLifecycle,
         source_revision: Option<u64>,
         complete: bool,
+        receipt: Option<wavecrate_library::sample_sources::reconciliation::SourceAuditReceipt>,
     },
     Completed,
 }

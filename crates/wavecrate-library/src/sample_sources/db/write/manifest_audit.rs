@@ -168,6 +168,7 @@ impl SourceWriteBatch<'_> {
                 params![1],
             )
             .map_err(map_sql_error)?;
+        self.manifest_audit_completed = true;
         Ok(())
     }
 }

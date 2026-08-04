@@ -7,6 +7,7 @@ use super::super::{
     META_SOURCE_TRAVERSAL_POLICY, SourceDatabase, SourceDbError, SourceManifestEntry,
     SourceTraversalPolicy, SourceWriteBatch,
 };
+use crate::sample_sources::reconciliation::{RootIdentity, SourceAuditCommit, SourceAuditRequest};
 
 /// Manifest state published by a committed source-database write batch.
 pub struct ManifestCommitResult {
@@ -121,6 +122,34 @@ impl SourceWriteBatch<'_> {
             self.telemetry_label,
         );
         Ok(snapshot)
+    }
+
+    /// Commit complete manifest-audit coverage and return its opaque source-audit authority.
+    ///
+    /// The authority exists only when [`SourceWriteBatch::complete_manifest_audit`] was applied
+    /// to this same transaction. Callers must revalidate their held source-root capability before
+    /// invoking this method; the returned token is the only input accepted by the receipt boundary
+    /// for a clearing source-audit acknowledgement.
+    pub fn commit_with_manifest_snapshot_and_audit(
+        self,
+        committed_root_identity: RootIdentity,
+        audit_request: Option<&SourceAuditRequest>,
+    ) -> Result<(SourceAuditCommit, Vec<SourceManifestEntry>), SourceDbError> {
+        if !self.manifest_audit_completed {
+            return Err(SourceDbError::Unexpected);
+        }
+        self.prepare_commit()?;
+        let (revision, snapshot) = manifest_snapshot(&self.tx)?;
+        self.tx.commit().map_err(map_sql_error)?;
+        crate::sqlite_wal::maybe_checkpoint_database_file(
+            &self.db_path,
+            "source_db",
+            self.telemetry_label,
+        );
+        Ok((
+            SourceAuditCommit::new(revision, committed_root_identity, audit_request.cloned()),
+            snapshot,
+        ))
     }
 
     /// Commit the batch and return its exact revision plus manifest state owned by that revision.

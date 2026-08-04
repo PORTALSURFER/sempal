@@ -66,6 +66,11 @@ impl SourceRootCapability {
         })
     }
 
+    /// Borrow the physical identity captured by the held source-root capability.
+    pub(super) fn generation(&self) -> &str {
+        &self.generation
+    }
+
     /// Revalidate that the configured ambient path still names this retained root.
     pub(super) fn ensure_current_generation(&self) -> Result<(), ScanError> {
         let Ok(metadata) = fs::metadata(&self.root) else {

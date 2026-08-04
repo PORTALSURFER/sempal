@@ -4,13 +4,12 @@ use std::collections::HashSet;
 
 use wavecrate::sample_sources::{SampleSource, SourceId};
 use wavecrate_library::sample_sources::reconciliation::{
-    AdmissionOwnerError, RawObservationLimits, ReconciliationAdmissionLimits,
-    ReconciliationAdmissionOwner, ReconciliationAdmissionSupervisor, ReconciliationLifecycle,
-    RootIdentity,
+    AdapterError, AdmissionOwnerError, DispatchTicket, DispatchedObservation, LiveAuditAdmission,
+    OwnedAdmissionLane, RawObservationLimits, ReconciliationAcknowledgementOutcome,
+    ReconciliationAdmissionLimits, ReconciliationAdmissionOwner, ReconciliationAdmissionSupervisor,
+    ReconciliationLifecycle, RootIdentity, SourceAuditReceipt, SourceAuditRequest,
+    SyntheticObservationBatch,
 };
-
-#[cfg(test)]
-use wavecrate_library::sample_sources::reconciliation::OwnedAdmissionLane;
 
 use super::roots::{WatchedRootIdentities, registered_root_identity};
 
@@ -47,7 +46,7 @@ impl AdmissionLifecycle {
     }
 
     #[cfg(test)]
-    fn with_limits(limits: ReconciliationAdmissionLimits) -> Self {
+    pub(super) fn with_limits(limits: ReconciliationAdmissionLimits) -> Self {
         Self::from_limits(limits)
     }
 
@@ -153,9 +152,129 @@ impl AdmissionLifecycle {
         Ok(())
     }
 
+    /// Return the owner-authoritative lane snapshot used to bind a live capture.
+    pub(super) fn lane_for_capture(&self, source_id: &SourceId) -> Option<OwnedAdmissionLane> {
+        if self.admission_closed {
+            return None;
+        }
+        self.owner.lane(source_id)
+    }
+
+    /// Check a queued audit request against the owner-held current capturing lane.
+    ///
+    /// This is deliberately pure: it observes only the in-memory source, root, generation, and
+    /// lifecycle identity owned by the admission supervisor. A request from a stopped lane or a
+    /// replaced root/generation is never eligible for watcher transport.
+    pub(super) fn request_matches_current_capturing_lane(
+        &self,
+        request: &SourceAuditRequest,
+    ) -> bool {
+        self.lane_for_capture(request.source_id())
+            .is_some_and(|lane| {
+                lane.lifecycle() == ReconciliationLifecycle::Capturing
+                    && lane.root_identity() == request.root_identity()
+                    && lane.generation() == request.generation()
+            })
+    }
+
+    /// Build the existing bounded request for the current owner-authoritative source lane.
+    pub(super) fn source_audit_request_for_current_lane(
+        &self,
+        source_id: &SourceId,
+    ) -> Option<(SourceAuditRequest, bool)> {
+        let request = self
+            .owner
+            .source_audit_request_for_current_lane(source_id)?;
+        let marker_backed = self.source_audit_request_is_marker_backed(&request);
+        Some((request, marker_backed))
+    }
+
+    pub(super) fn source_audit_request_is_marker_backed(
+        &self,
+        request: &SourceAuditRequest,
+    ) -> bool {
+        self.owner
+            .supervisor()
+            .retained_uncertainties()
+            .iter()
+            .any(|marker| {
+                marker.source_id() == Some(request.source_id())
+                    && marker.root_identity() == Some(request.root_identity())
+                    && marker.generation() == Some(request.generation())
+            })
+    }
+
+    /// Admit live evidence through the existing owner-held adapter.
+    pub(super) fn admit_live_with_correlation(
+        &mut self,
+        batch: SyntheticObservationBatch,
+    ) -> Result<LiveAuditAdmission, AdapterError> {
+        self.owner.admit_live_with_correlation(batch)
+    }
+
+    /// Select the next owner-scheduled live envelope.
+    pub(super) fn dispatch_next(&mut self) -> Option<DispatchedObservation> {
+        if self.admission_closed {
+            return None;
+        }
+        self.owner.dispatch_next()
+    }
+
+    /// Advance an owner-scheduled envelope through its handoff phases.
+    pub(super) fn mark_dispatched(
+        &mut self,
+        ticket: DispatchTicket,
+    ) -> Result<(), wavecrate_library::sample_sources::reconciliation::AdmissionError> {
+        self.owner.mark_dispatched(ticket)
+    }
+
+    pub(super) fn mark_applied(
+        &mut self,
+        ticket: DispatchTicket,
+    ) -> Result<(), wavecrate_library::sample_sources::reconciliation::AdmissionError> {
+        self.owner.mark_applied(ticket)
+    }
+
+    pub(super) fn mark_unproven_audit_handed_off(
+        &mut self,
+        ticket: DispatchTicket,
+    ) -> Result<(), wavecrate_library::sample_sources::reconciliation::AdmissionError> {
+        self.owner.mark_unproven_audit_handed_off(ticket)
+    }
+
+    /// Apply a complete source-audit receipt through the owner-authoritative typed acknowledgement.
+    ///
+    /// Receipts are checked against the currently capturing source/root/generation lane by the
+    /// owner. No receipt can grant continuity or checkpoint authority.
+    pub(super) fn acknowledge_source_audit_receipt(
+        &mut self,
+        receipt: &SourceAuditReceipt,
+    ) -> ReconciliationAcknowledgementOutcome {
+        self.owner.acknowledge_source_audit_receipt(receipt)
+    }
+
+    pub(super) fn max_in_flight(&self) -> usize {
+        self.owner.max_in_flight()
+    }
+
+    pub(super) fn max_source_audit_request_entries(&self) -> usize {
+        self.owner.max_source_audit_request_entries()
+    }
+
+    pub(super) fn in_flight(&self) -> usize {
+        self.owner.supervisor().in_flight()
+    }
+
+    #[cfg(test)]
+    pub(super) fn retained_uncertainties(
+        &self,
+    ) -> &[wavecrate_library::sample_sources::reconciliation::RetainedUncertainty] {
+        self.owner.supervisor().retained_uncertainties()
+    }
+
     #[cfg(test)]
     fn lane(&self, source_id: &SourceId) -> Option<OwnedAdmissionLane> {
-        self.owner.lane(source_id)
+        self.lane_for_capture(source_id)
     }
 }
 
@@ -366,6 +485,54 @@ mod tests {
         assert!(new.generation() > old.generation());
         assert_eq!(new.lifecycle(), ReconciliationLifecycle::Capturing);
         assert_eq!(lifecycle.owner.supervisor().in_flight(), 0);
+    }
+
+    #[test]
+    fn audit_request_matches_only_the_current_capturing_root_and_generation() {
+        let initial_source = source("request-fence", "root-a");
+        let mut lifecycle = AdmissionLifecycle::with_limits(limits(1, 1, 16));
+        lifecycle
+            .reconcile(
+                std::slice::from_ref(&initial_source),
+                &watched(&[("root-a", Some(b"identity-a"))]),
+            )
+            .expect("old binding");
+        let old_request = lifecycle
+            .source_audit_request_for_current_lane(&initial_source.id)
+            .expect("old lane request")
+            .0;
+        assert!(lifecycle.request_matches_current_capturing_lane(&old_request));
+
+        let replacement = source("request-fence", "root-b");
+        lifecycle
+            .reconcile(
+                std::slice::from_ref(&replacement),
+                &watched(&[("root-b", Some(b"identity-b"))]),
+            )
+            .expect("root rebind");
+        let rebound_request = lifecycle
+            .source_audit_request_for_current_lane(&replacement.id)
+            .expect("rebound lane request")
+            .0;
+        assert!(!lifecycle.request_matches_current_capturing_lane(&old_request));
+        assert!(lifecycle.request_matches_current_capturing_lane(&rebound_request));
+        assert!(rebound_request.generation() > old_request.generation());
+
+        lifecycle.fence_all().expect("stop current lane");
+        assert!(!lifecycle.request_matches_current_capturing_lane(&rebound_request));
+        lifecycle
+            .reconcile(
+                std::slice::from_ref(&replacement),
+                &watched(&[("root-b", Some(b"identity-b"))]),
+            )
+            .expect("restart current lane");
+        let restarted_request = lifecycle
+            .source_audit_request_for_current_lane(&replacement.id)
+            .expect("restarted lane request")
+            .0;
+        assert!(!lifecycle.request_matches_current_capturing_lane(&rebound_request));
+        assert!(lifecycle.request_matches_current_capturing_lane(&restarted_request));
+        assert!(restarted_request.generation() > rebound_request.generation());
     }
 
     #[test]

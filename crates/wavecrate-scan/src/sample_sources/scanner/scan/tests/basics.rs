@@ -1001,7 +1001,10 @@ fn typed_manifest_audit_outcome_retains_coverage_barrier_for_unreadable_traversa
     .unwrap();
     drop(failure);
 
-    let ManifestAuditOutcome::Incomplete { committed, error } = outcome else {
+    let ManifestAuditOutcome::Incomplete {
+        committed, error, ..
+    } = outcome
+    else {
         panic!("uncertain traversal must retain the manifest coverage barrier");
     };
     assert!(error.contains("retry required"));
@@ -1074,6 +1077,7 @@ fn typed_manifest_audit_outcome_keeps_coverage_complete_when_content_pauses() {
     let ManifestAuditOutcome::Complete {
         stats,
         content_incomplete,
+        ..
     } = outcome
     else {
         panic!("content verification pause must not downgrade manifest coverage");
@@ -1106,7 +1110,10 @@ fn typed_manifest_audit_outcome_retains_barrier_for_noncheckpoint_verification_e
     std::fs::remove_dir(&source_root).unwrap();
     std::fs::rename(&displaced, &source_root).unwrap();
 
-    let ManifestAuditOutcome::Incomplete { committed, error } = outcome else {
+    let ManifestAuditOutcome::Incomplete {
+        committed, error, ..
+    } = outcome
+    else {
         panic!("non-checkpoint verification errors must retain the recovery barrier");
     };
     assert!(error.contains("generation changed"));

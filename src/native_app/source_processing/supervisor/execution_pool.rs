@@ -171,6 +171,16 @@ fn run_worker(
             }
         };
         let started = Instant::now();
+        let audit_request = if matches!(
+            &request.candidate.task,
+            super::RuntimeTask::ManifestAudit { .. }
+        ) {
+            shared
+                .control()
+                .begin_source_audit_request(request.candidate.source.id.as_str())
+        } else {
+            None
+        };
         let result = execute_candidate_with_presentation(
             &request.candidate,
             lifecycle_generation,
@@ -178,6 +188,7 @@ fn run_worker(
             &shared.database_writer,
             content_audit_activity,
             request.presentation,
+            audit_request,
             &mut |event| shared.publish_event(event),
         );
         let elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0;

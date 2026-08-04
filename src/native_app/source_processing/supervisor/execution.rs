@@ -6,10 +6,11 @@ use super::{
 use super::{
     AtomicBool, ContentAuditActivity, ContentAuditBudget, ContentAuditStorage, DatabaseWriterGate,
     Duration, ExecutionOutcome, Instant, ManifestAuditOutcome, Ordering, RuntimeCandidate,
-    RuntimeTask, SourceDatabase, SourceProcessingActivity, SourceProcessingEvent,
-    SourceProcessingLifecycle, SourceProcessingPresentation, SourceProcessingProgressEvent,
-    audit_source_and_record_with_budget_and_progress_and_writer_outcome, execute_readiness_target,
-    manifest_audit_source_row_active, now_epoch_seconds,
+    RuntimeTask, SourceAuditRequest, SourceDatabase, SourceProcessingActivity,
+    SourceProcessingEvent, SourceProcessingLifecycle, SourceProcessingPresentation,
+    SourceProcessingProgressEvent,
+    audit_source_and_record_with_budget_and_progress_and_writer_with_request,
+    execute_readiness_target, manifest_audit_source_row_active, now_epoch_seconds,
 };
 
 #[cfg(test)]
@@ -28,6 +29,7 @@ pub(super) fn execute_candidate(
         database_writer,
         content_audit_activity,
         SourceProcessingPresentation::UserRelevant,
+        None,
         publish_event,
     )
 }
@@ -39,6 +41,7 @@ pub(super) fn execute_candidate_with_presentation(
     database_writer: &DatabaseWriterGate,
     content_audit_activity: ContentAuditActivity,
     presentation: SourceProcessingPresentation,
+    audit_request: Option<SourceAuditRequest>,
     publish_event: &mut dyn FnMut(SourceProcessingEvent) -> bool,
 ) -> Result<ExecutionOutcome, String> {
     let result = match &candidate.task {
@@ -106,22 +109,24 @@ pub(super) fn execute_candidate_with_presentation(
                 ));
                 last_progress_publish_at = Some(Instant::now());
             };
-            let (outcome, manifest_complete, content_incomplete_error) =
-                match audit_source_and_record_with_budget_and_progress_and_writer_outcome(
+            let (outcome, manifest_complete, content_incomplete_error, audit_commit) =
+                match audit_source_and_record_with_budget_and_progress_and_writer_with_request(
                     &database,
                     Some(cancel),
                     content_budget,
                     completed_at,
                     &mut publish_progress,
                     database_writer,
+                    audit_request.as_ref(),
                 ) {
                     Ok(ManifestAuditOutcome::Complete {
                         stats,
                         content_incomplete,
-                    }) => (stats, true, content_incomplete),
-                    Ok(ManifestAuditOutcome::Incomplete { committed, error }) => {
-                        (committed, false, Some(error))
-                    }
+                        audit_commit,
+                    }) => (stats, true, content_incomplete, Some(audit_commit)),
+                    Ok(ManifestAuditOutcome::Incomplete {
+                        committed, error, ..
+                    }) => (committed, false, Some(error), None),
                     Err(error) => {
                         publish_event(SourceProcessingEvent::ManifestAuditFinished {
                             lifecycle: SourceProcessingLifecycle::new(
@@ -130,6 +135,7 @@ pub(super) fn execute_candidate_with_presentation(
                             ),
                             source_revision: None,
                             complete: false,
+                            receipt: audit_request.as_ref().map(SourceAuditRequest::incomplete),
                         });
                         return Err(error.to_string());
                     }
@@ -193,6 +199,36 @@ pub(super) fn execute_candidate_with_presentation(
             });
             let foreground_refresh_owns_reconciliation =
                 browser_refresh_required && audit_published;
+            let cancelled = cancel.load(Ordering::Acquire);
+            let mut execution_outcome = manifest_audit_execution_outcome(
+                foreground_refresh_owns_reconciliation,
+                !manifest_complete,
+                cancelled,
+            );
+            let receipt = if matches!(
+                execution_outcome,
+                ExecutionOutcome::Completed | ExecutionOutcome::CompletedAwaitingForegroundRefresh
+            ) {
+                audit_request
+                    .as_ref()
+                    .zip(audit_commit)
+                    .and_then(|(request, audit_commit)| {
+                        request.complete_from_committed_audit(audit_commit)
+                    })
+                    .or_else(|| audit_request.as_ref().map(SourceAuditRequest::incomplete))
+            } else {
+                audit_request.as_ref().map(SourceAuditRequest::incomplete)
+            };
+            if matches!(
+                execution_outcome,
+                ExecutionOutcome::Completed | ExecutionOutcome::CompletedAwaitingForegroundRefresh
+            ) && audit_request.is_some()
+                && !receipt
+                    .as_ref()
+                    .is_some_and(|receipt| receipt.is_complete())
+            {
+                execution_outcome = ExecutionOutcome::Failed;
+            }
             publish_event(SourceProcessingEvent::ManifestAuditFinished {
                 lifecycle: SourceProcessingLifecycle::new(
                     candidate.source.id.as_str(),
@@ -200,6 +236,7 @@ pub(super) fn execute_candidate_with_presentation(
                 ),
                 source_revision: Some(committed_source_revision),
                 complete: manifest_complete,
+                receipt,
             });
             if let Some(error) = content_incomplete_error {
                 tracing::warn!(
@@ -210,11 +247,7 @@ pub(super) fn execute_candidate_with_presentation(
                     "Manifest audit did not complete all work"
                 );
             }
-            Ok(manifest_audit_execution_outcome(
-                foreground_refresh_owns_reconciliation,
-                !manifest_complete,
-                cancel.load(Ordering::Acquire),
-            ))
+            Ok(execution_outcome)
         }
         RuntimeTask::Readiness(target) => {
             execute_readiness_target(&candidate.source, target, cancel, database_writer)

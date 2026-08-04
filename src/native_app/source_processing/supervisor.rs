@@ -33,10 +33,12 @@ use wavecrate::sample_sources::{
     },
     scanner::{
         CommittedSourceDelta, ContentAuditActivity, ContentAuditBudget, ContentAuditStorage,
-        ManifestAuditOutcome, audit_source_and_record_with_budget_and_progress_and_writer_outcome,
+        ManifestAuditOutcome,
+        audit_source_and_record_with_budget_and_progress_and_writer_with_request,
         complete_pending_deep_hash_for_path, sync_paths_with_progress,
     },
 };
+use wavecrate_library::sample_sources::reconciliation::SourceAuditRequest;
 
 use super::worker::{SourceProcessingFailure, source_database_failure};
 use super::{

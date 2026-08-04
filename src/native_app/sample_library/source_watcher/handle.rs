@@ -1,6 +1,4 @@
-#[cfg(test)]
-use notify::EventKind;
-use notify::{Config, Event, EventHandler, PollWatcher, Watcher};
+use notify::{Config, Event, EventHandler, EventKind, PollWatcher, Watcher};
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
@@ -13,9 +11,14 @@ use std::{
     time::{Duration, Instant},
 };
 use wavecrate::sample_sources::{SampleSource, SourceId};
+use wavecrate_library::sample_sources::reconciliation::{
+    AdmissionOutcome, BackendStreamIdentity, CaptureBoundary, DispatchTicket, LiveAuditCorrelation,
+    ReconciliationLifecycle, ReconciliationScopeKind, RootIdentity, SourceAuditReceipt,
+    WatcherGeneration,
+};
 
 use super::admission_lifecycle::AdmissionLifecycle;
-use super::capture::{SourceWatcherCapture, capture_event};
+use super::capture::{SourceWatcherCapture, capture_event, capture_to_observation_batch};
 use super::classification::retain_source_refresh_candidates;
 use super::journal::{self, JournalRecovery};
 use super::roots::{
@@ -43,6 +46,36 @@ static NEXT_STREAM_ID: AtomicU64 = AtomicU64::new(1);
 
 fn next_stream_id() -> u64 {
     NEXT_STREAM_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+static NEXT_CAPTURE_BOUNDARY: AtomicU64 = AtomicU64::new(1);
+
+fn next_capture_boundary() -> CaptureBoundary {
+    let captured_at = NEXT_CAPTURE_BOUNDARY.fetch_add(1, Ordering::Relaxed);
+    // This process-local monotonic value is an opaque callback marker only. It is deliberately
+    // not copied into the optional backend sequence fields, which remain absent unless notify
+    // supplies real sequence or cookie evidence.
+    CaptureBoundary::try_new(captured_at, None, None).expect("capture boundary")
+}
+
+#[derive(Debug)]
+struct CapturedSourceWatcherCapture {
+    capture: SourceWatcherCapture,
+    boundary: CaptureBoundary,
+}
+
+impl CapturedSourceWatcherCapture {
+    fn from_capture(capture: SourceWatcherCapture) -> Self {
+        Self {
+            capture,
+            boundary: next_capture_boundary(),
+        }
+    }
+
+    #[cfg(test)]
+    fn with_boundary(capture: SourceWatcherCapture, boundary: CaptureBoundary) -> Self {
+        Self { capture, boundary }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -210,7 +243,7 @@ impl SourceWatcherTeardown {
 }
 
 struct SourceWatcherIngress {
-    event_tx: SyncSender<SourceWatcherCapture>,
+    event_tx: SyncSender<CapturedSourceWatcherCapture>,
     overflowed: Arc<AtomicBool>,
     enabled: Arc<AtomicBool>,
     stream_id: u64,
@@ -233,7 +266,10 @@ impl EventHandler for SourceWatcherIngress {
         if !self.enabled.load(Ordering::Acquire) {
             return;
         }
-        match self.event_tx.try_send(capture) {
+        match self
+            .event_tx
+            .try_send(CapturedSourceWatcherCapture::from_capture(capture))
+        {
             Ok(()) => {}
             Err(TrySendError::Full(_)) => {
                 self.overflowed.store(true, Ordering::Release);
@@ -313,6 +349,15 @@ impl GuiSourceWatcherHandle {
                 source_revision,
                 complete,
             });
+    }
+
+    pub(in crate::native_app) fn acknowledge_source_audit_receipt(
+        &self,
+        receipt: SourceAuditReceipt,
+    ) {
+        let _ = self
+            .command_tx
+            .send(GuiSourceWatchCommand::AcknowledgeSourceAuditReceipt { receipt });
     }
 
     #[cfg(test)]
@@ -402,6 +447,9 @@ enum GuiSourceWatchCommand {
         echoes: Vec<CommittedWatcherEcho>,
         cursor: RevisionFirstCursor,
     },
+    AcknowledgeSourceAuditReceipt {
+        receipt: SourceAuditReceipt,
+    },
     FinishJournalBarrierAudit {
         source_id: String,
         lifecycle_generation: u64,
@@ -429,7 +477,8 @@ fn run_source_watcher(
     initial_sources: Vec<SampleSource>,
     lifecycle_tx: Sender<SourceWatcherLifecycle>,
 ) {
-    let (event_tx, event_rx) = std::sync::mpsc::sync_channel(WATCHER_EVENT_QUEUE_CAPACITY);
+    let (event_tx, event_rx) =
+        std::sync::mpsc::sync_channel::<CapturedSourceWatcherCapture>(WATCHER_EVENT_QUEUE_CAPACITY);
     let ingress_overflowed = Arc::new(AtomicBool::new(false));
     let mut watcher = None;
     let mut pending_watcher = None;
@@ -440,6 +489,8 @@ fn run_source_watcher(
     let mut state = GuiSourceWatchState::default();
     state.set_sources(initial_sources);
     let mut admission_lifecycle = AdmissionLifecycle::new();
+    state.set_audit_request_capacity(admission_lifecycle.max_source_audit_request_entries());
+    let mut pending_capture_contexts = HashMap::<DispatchTicket, PendingCaptureContext>::new();
     let mut next_restart = Instant::now();
     let mut restart_delay = WATCHER_RESTART_MIN;
     let mut next_root_refresh = Instant::now();
@@ -459,9 +510,8 @@ fn run_source_watcher(
                     desired_watched_roots(&sources) != desired_watched_roots(&state.sources);
                 state.set_sources(sources);
                 if !reconcile_watcher_admission(
+                    &mut state,
                     &mut admission_lifecycle,
-                    &state.sources,
-                    &state.watched_roots,
                     "source-list replacement",
                 ) {
                     retire_source_watcher(&mut watcher, &mut teardown);
@@ -474,7 +524,12 @@ fn run_source_watcher(
                     next_restart = now + restart_delay;
                     restart_delay = doubled_backoff(restart_delay);
                 } else if roots_changed {
-                    fence_watcher_admission(&mut admission_lifecycle, "source-list watcher reset");
+                    fence_watcher_admission(
+                        &mut state,
+                        &mut admission_lifecycle,
+                        "source-list watcher reset",
+                        now,
+                    );
                     retire_source_watcher(&mut watcher, &mut teardown);
                     cancel_pending_source_watcher(&mut pending_watcher, &mut retired_initializers);
                     state.reset_watches(now);
@@ -493,6 +548,15 @@ fn run_source_watcher(
                     &echoes,
                     cursor,
                     Instant::now(),
+                );
+            }
+            Ok(GuiSourceWatchCommand::AcknowledgeSourceAuditReceipt { receipt }) => {
+                let outcome = admission_lifecycle.acknowledge_source_audit_receipt(&receipt);
+                tracing::debug!(
+                    cleared_markers = outcome.cleared_markers(),
+                    remaining_markers = outcome.remaining_markers(),
+                    complete = receipt.is_complete(),
+                    "Applied source manifest audit receipt to retained watcher uncertainty"
                 );
             }
             Ok(GuiSourceWatchCommand::FinishJournalBarrierAudit {
@@ -518,11 +582,17 @@ fn run_source_watcher(
             }
             #[cfg(test)]
             Ok(GuiSourceWatchCommand::ForceRestart) => {
-                fence_watcher_admission(&mut admission_lifecycle, "forced watcher restart");
+                let now = Instant::now();
+                fence_watcher_admission(
+                    &mut state,
+                    &mut admission_lifecycle,
+                    "forced watcher restart",
+                    now,
+                );
                 retire_source_watcher(&mut watcher, &mut teardown);
                 cancel_pending_source_watcher(&mut pending_watcher, &mut retired_initializers);
-                state.reset_watches(Instant::now());
-                next_restart = Instant::now();
+                state.reset_watches(now);
+                next_restart = now;
                 restart_delay = WATCHER_RESTART_MIN;
             }
             #[cfg(test)]
@@ -551,7 +621,7 @@ fn run_source_watcher(
                         SourceWatcherCapture::Overflow { stream_id }
                     }
                 };
-                match event_tx.try_send(capture) {
+                match event_tx.try_send(CapturedSourceWatcherCapture::from_capture(capture)) {
                     Ok(()) => {}
                     Err(TrySendError::Full(_)) => {
                         ingress_overflowed.store(true, Ordering::Release);
@@ -560,13 +630,15 @@ fn run_source_watcher(
                 }
             }
             #[cfg(test)]
-            Ok(GuiSourceWatchCommand::InjectCapture(capture)) => match event_tx.try_send(capture) {
-                Ok(()) => {}
-                Err(TrySendError::Full(_)) => {
-                    ingress_overflowed.store(true, Ordering::Release);
+            Ok(GuiSourceWatchCommand::InjectCapture(capture)) => {
+                match event_tx.try_send(CapturedSourceWatcherCapture::from_capture(capture)) {
+                    Ok(()) => {}
+                    Err(TrySendError::Full(_)) => {
+                        ingress_overflowed.store(true, Ordering::Release);
+                    }
+                    Err(TrySendError::Disconnected(_)) => {}
                 }
-                Err(TrySendError::Disconnected(_)) => {}
-            },
+            }
             #[cfg(test)]
             Ok(GuiSourceWatchCommand::ReportWatcherLive(status_tx)) => {
                 let is_live = watcher
@@ -575,14 +647,26 @@ fn run_source_watcher(
                 let _ = status_tx.send(is_live);
             }
             Ok(GuiSourceWatchCommand::Shutdown) => {
-                fence_watcher_admission(&mut admission_lifecycle, "watcher shutdown");
+                let now = Instant::now();
+                fence_watcher_admission(
+                    &mut state,
+                    &mut admission_lifecycle,
+                    "watcher shutdown",
+                    now,
+                );
                 cancel_pending_source_watcher(&mut pending_watcher, &mut retired_initializers);
                 retire_source_watcher_on_shutdown(&mut watcher, &mut teardown);
                 break;
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                fence_watcher_admission(&mut admission_lifecycle, "watcher command disconnect");
+                let now = Instant::now();
+                fence_watcher_admission(
+                    &mut state,
+                    &mut admission_lifecycle,
+                    "watcher command disconnect",
+                    now,
+                );
                 cancel_pending_source_watcher(&mut pending_watcher, &mut retired_initializers);
                 retire_source_watcher_on_shutdown(&mut watcher, &mut teardown);
                 break;
@@ -647,8 +731,10 @@ fn run_source_watcher(
                         state.apply_root_watch_update(update, now, false);
                     if watch_failed {
                         fence_watcher_admission(
+                            &mut state,
                             &mut admission_lifecycle,
                             "partial watcher installation",
+                            now,
                         );
                         if let Err(restarted) =
                             retire_source_watcher_value(restarted, &mut teardown)
@@ -680,9 +766,8 @@ fn run_source_watcher(
                         }
                     } else {
                         let lifecycle_ready = reconcile_watcher_admission(
+                            &mut state,
                             &mut admission_lifecycle,
-                            &state.sources,
-                            &state.watched_roots,
                             "successful watcher installation",
                         );
                         if !lifecycle_ready {
@@ -745,8 +830,10 @@ fn run_source_watcher(
                 Ok(Err(error)) => {
                     let _ = pending.join_handle.join();
                     fence_watcher_admission(
+                        &mut state,
                         &mut admission_lifecycle,
                         "watcher initialization failure",
+                        now,
                     );
                     tracing::warn!(
                         ?backend,
@@ -788,8 +875,10 @@ fn run_source_watcher(
                 }
                 Err(TryRecvError::Empty) => {
                     fence_watcher_admission(
+                        &mut state,
                         &mut admission_lifecycle,
                         "watcher initialization timeout",
+                        now,
                     );
                     pending.ingress_enabled.store(false, Ordering::Release);
                     debug_assert!(
@@ -840,8 +929,10 @@ fn run_source_watcher(
                 Err(TryRecvError::Disconnected) => {
                     let _ = pending.join_handle.join();
                     fence_watcher_admission(
+                        &mut state,
                         &mut admission_lifecycle,
                         "watcher initializer disconnect",
+                        now,
                     );
                     tracing::warn!(
                         ?backend,
@@ -897,7 +988,12 @@ fn run_source_watcher(
                     "Source root availability or filesystem identity changed; restarting watcher"
                 );
                 state.mark_roots_overflowed(&invalidated_roots, now);
-                fence_watcher_admission(&mut admission_lifecycle, "root identity refresh");
+                fence_watcher_admission(
+                    &mut state,
+                    &mut admission_lifecycle,
+                    "root identity refresh",
+                    now,
+                );
                 retire_source_watcher(&mut watcher, &mut teardown);
                 cancel_pending_source_watcher(&mut pending_watcher, &mut retired_initializers);
                 state.clear_watches();
@@ -917,11 +1013,22 @@ fn run_source_watcher(
             state.mark_all_overflowed(now);
         }
 
-        let (watcher_failed, root_invalidated) =
-            drain_watcher_captures(&mut state, watcher.as_ref(), &event_rx, now);
+        let (watcher_failed, root_invalidated) = drain_watcher_captures(
+            &mut state,
+            &mut admission_lifecycle,
+            watcher.as_ref(),
+            &event_rx,
+            &mut pending_capture_contexts,
+            now,
+        );
 
         if watcher_failed || root_invalidated {
-            fence_watcher_admission(&mut admission_lifecycle, "watcher capture retirement");
+            fence_watcher_admission(
+                &mut state,
+                &mut admission_lifecycle,
+                "watcher capture retirement",
+                now,
+            );
             retire_source_watcher(&mut watcher, &mut teardown);
             cancel_pending_source_watcher(&mut pending_watcher, &mut retired_initializers);
             if watcher_failed {
@@ -934,6 +1041,8 @@ fn run_source_watcher(
                 restart_delay = WATCHER_RESTART_MIN;
             }
         }
+
+        flush_pending_audit_requests(&mut state, &admission_lifecycle, &message_tx, now);
 
         for event in state.drain_ready_sources(now, SOURCE_CHANGE_DEBOUNCE) {
             tracing::debug!(
@@ -975,7 +1084,12 @@ fn run_source_watcher(
     }
 }
 
-fn fence_watcher_admission(admission: &mut AdmissionLifecycle, boundary: &'static str) {
+fn fence_watcher_admission(
+    state: &mut GuiSourceWatchState,
+    admission: &mut AdmissionLifecycle,
+    boundary: &'static str,
+    now: Instant,
+) {
     if let Err(error) = admission.fence_all() {
         tracing::error!(
             boundary,
@@ -983,15 +1097,17 @@ fn fence_watcher_admission(admission: &mut AdmissionLifecycle, boundary: &'stati
             "Could not fully fence native watcher admission; keeping backend ingress closed"
         );
     }
+    purge_stale_audit_requests(state, admission, now);
 }
 
 fn reconcile_watcher_admission(
+    state: &mut GuiSourceWatchState,
     admission: &mut AdmissionLifecycle,
-    sources: &[SampleSource],
-    watched_roots: &WatchedRootIdentities,
     boundary: &'static str,
 ) -> bool {
-    match admission.reconcile(sources, watched_roots) {
+    let result = admission.reconcile(&state.sources, &state.watched_roots);
+    purge_stale_audit_requests(state, admission, Instant::now());
+    match result {
         Ok(()) => true,
         Err(error) => {
             tracing::error!(
@@ -999,26 +1115,542 @@ fn reconcile_watcher_admission(
                 ?error,
                 "Native watcher admission lifecycle failed closed"
             );
-            fence_watcher_admission(admission, boundary);
+            fence_watcher_admission(state, admission, boundary, Instant::now());
             false
         }
     }
 }
 
+fn purge_stale_audit_requests(
+    state: &mut GuiSourceWatchState,
+    admission: &AdmissionLifecycle,
+    now: Instant,
+) {
+    let displaced = state.purge_non_matching_audit_requests(|request| {
+        admission.request_matches_current_capturing_lane(request)
+    });
+    if !displaced.is_empty() {
+        tracing::warn!(
+            request_count = displaced.len(),
+            "Purged watcher audit requests from a stopped or replaced admission lane"
+        );
+        state.recover_displaced_audit_requests(&displaced, now);
+    }
+}
+
+struct SourceCaptureTarget {
+    source_id: SourceId,
+    source_root: PathBuf,
+    paths: Vec<PathBuf>,
+    conservative: bool,
+}
+
+struct PendingCaptureContext {
+    source_id: SourceId,
+    source_root: PathBuf,
+    root_identity: RootIdentity,
+    stream_id: u64,
+    watcher_generation: WatcherGeneration,
+    capture_boundary: CaptureBoundary,
+    original_event: Option<Event>,
+    compatibility_event: Option<Event>,
+    conservative: bool,
+    correlation: Option<LiveAuditCorrelation>,
+}
+
+fn capture_stream_id(capture: &SourceWatcherCapture) -> u64 {
+    match capture {
+        SourceWatcherCapture::Notify { stream_id, .. }
+        | SourceWatcherCapture::Error { stream_id }
+        | SourceWatcherCapture::Overflow { stream_id } => *stream_id,
+    }
+}
+
+fn source_capture_targets(
+    capture: &SourceWatcherCapture,
+    sources: &[SampleSource],
+) -> Vec<SourceCaptureTarget> {
+    let Some(event) = (match capture {
+        SourceWatcherCapture::Notify { event, .. } => Some(event),
+        SourceWatcherCapture::Error { .. } | SourceWatcherCapture::Overflow { .. } => None,
+    }) else {
+        return sources
+            .iter()
+            .map(|source| SourceCaptureTarget {
+                source_id: source.id.clone(),
+                source_root: source.root.clone(),
+                paths: Vec::new(),
+                conservative: true,
+            })
+            .collect();
+    };
+
+    if event.paths.is_empty() {
+        return sources
+            .iter()
+            .map(|source| SourceCaptureTarget {
+                source_id: source.id.clone(),
+                source_root: source.root.clone(),
+                paths: Vec::new(),
+                conservative: true,
+            })
+            .collect();
+    }
+
+    let mut targets = Vec::<SourceCaptureTarget>::new();
+    let mut ambiguous = false;
+    for path in &event.paths {
+        let mut matches = sources
+            .iter()
+            .filter(|source| path.starts_with(&source.root))
+            .collect::<Vec<_>>();
+        let deepest_root = matches
+            .iter()
+            .map(|source| source.root.components().count())
+            .max();
+        matches.retain(|source| Some(source.root.components().count()) == deepest_root);
+        if matches.is_empty() || matches.len() > 1 {
+            ambiguous = true;
+        }
+        for source in matches {
+            if let Some(target) = targets
+                .iter_mut()
+                .find(|target| target.source_id == source.id)
+            {
+                target.paths.push(path.clone());
+            } else {
+                targets.push(SourceCaptureTarget {
+                    source_id: source.id.clone(),
+                    source_root: source.root.clone(),
+                    paths: vec![path.clone()],
+                    conservative: false,
+                });
+            }
+        }
+    }
+
+    if ambiguous {
+        return sources
+            .iter()
+            .map(|source| SourceCaptureTarget {
+                source_id: source.id.clone(),
+                source_root: source.root.clone(),
+                paths: Vec::new(),
+                conservative: true,
+            })
+            .collect();
+    }
+    if targets.len() > 1 {
+        return targets
+            .into_iter()
+            .map(|target| SourceCaptureTarget {
+                source_id: target.source_id,
+                source_root: target.source_root,
+                paths: Vec::new(),
+                conservative: true,
+            })
+            .collect();
+    }
+    targets
+}
+
+fn capture_for_target(
+    capture: &SourceWatcherCapture,
+    target: &SourceCaptureTarget,
+) -> SourceWatcherCapture {
+    match capture {
+        SourceWatcherCapture::Notify { stream_id, event } => {
+            let event = if target.conservative {
+                let mut event = event.clone();
+                // Keep bounded callback attributes (including Rescan/tracker) while replacing
+                // path-bearing evidence with an explicit pathless observation. The normalizer
+                // widens this to SourceAudit, but the non-marker raw kind still receives a ticket
+                // so the exact original Event remains retained through handoff.
+                event.kind = EventKind::Create(notify::event::CreateKind::Any);
+                event.paths.clear();
+                event
+            } else {
+                let mut event = event.clone();
+                event.paths = target.paths.clone();
+                event
+            };
+            SourceWatcherCapture::Notify {
+                stream_id: *stream_id,
+                event,
+            }
+        }
+        SourceWatcherCapture::Error { stream_id } => SourceWatcherCapture::Error {
+            stream_id: *stream_id,
+        },
+        SourceWatcherCapture::Overflow { stream_id } => SourceWatcherCapture::Overflow {
+            stream_id: *stream_id,
+        },
+    }
+}
+
+fn widen_source(state: &mut GuiSourceWatchState, source_root: &PathBuf, now: Instant) {
+    state.mark_roots_overflowed(std::slice::from_ref(source_root), now);
+}
+
+fn admit_capture_target(
+    state: &mut GuiSourceWatchState,
+    admission: &mut AdmissionLifecycle,
+    capture: &SourceWatcherCapture,
+    boundary: CaptureBoundary,
+    target: SourceCaptureTarget,
+    pending_contexts: &mut HashMap<DispatchTicket, PendingCaptureContext>,
+    now: Instant,
+) {
+    let Some(lane) = admission.lane_for_capture(&target.source_id) else {
+        tracing::warn!(
+            source_id = target.source_id.as_str(),
+            "Native watcher capture had no identity-qualified admission lane"
+        );
+        widen_source(state, &target.source_root, now);
+        return;
+    };
+    if lane.lifecycle() != ReconciliationLifecycle::Capturing {
+        tracing::warn!(
+            source_id = target.source_id.as_str(),
+            generation = lane.generation().get(),
+            "Native watcher capture arrived outside a capturing admission lane"
+        );
+        widen_source(state, &target.source_root, now);
+        return;
+    }
+
+    let context_limit = admission
+        .max_in_flight()
+        .min(super::MAX_PENDING_CAPTURE_CONTEXTS);
+    if pending_contexts.len() >= context_limit {
+        if let Some((request, marker_backed)) =
+            admission.source_audit_request_for_current_lane(&target.source_id)
+        {
+            state.enqueue_audit_request(request, marker_backed);
+        }
+        tracing::warn!(
+            source_id = target.source_id.as_str(),
+            context_limit,
+            "Native watcher admission context pressure widened source"
+        );
+        widen_source(state, &target.source_root, now);
+        return;
+    }
+
+    let original_event = match capture {
+        SourceWatcherCapture::Notify { event, .. } => Some(event.clone()),
+        _ => None,
+    };
+    let compatibility_event = match capture {
+        SourceWatcherCapture::Notify { event, .. } if !target.conservative => {
+            let mut event = event.clone();
+            event.paths = target.paths.clone();
+            Some(event)
+        }
+        _ => None,
+    };
+    let stream_id = capture_stream_id(capture);
+    let capture = capture_for_target(capture, &target);
+    let batch = match capture_to_observation_batch(
+        capture,
+        &target.source_root,
+        target.source_id.clone(),
+        lane.root_identity().clone(),
+        lane.generation(),
+        boundary,
+    ) {
+        Ok(batch) => batch,
+        Err(error) => {
+            tracing::warn!(
+                source_id = target.source_id.as_str(),
+                ?error,
+                "Native watcher capture could not be mapped to a root-relative observation"
+            );
+            widen_source(state, &target.source_root, now);
+            return;
+        }
+    };
+
+    let live = match admission.admit_live_with_correlation(batch) {
+        Ok(live) => live,
+        Err(error) => {
+            tracing::warn!(
+                source_id = target.source_id.as_str(),
+                ?error,
+                "Native watcher live admission failed closed"
+            );
+            widen_source(state, &target.source_root, now);
+            return;
+        }
+    };
+    let outcome = live.admission().outcome().clone();
+    let audit_request_to_queue = match &outcome {
+        AdmissionOutcome::Accepted(_) if live.correlation().is_some() => None,
+        _ => live.audit_request().cloned().map(|request| {
+            let marker_backed = admission.source_audit_request_is_marker_backed(&request);
+            (request, marker_backed)
+        }),
+    };
+    if let Some((request, marker_backed)) = audit_request_to_queue {
+        state.enqueue_audit_request(request, marker_backed);
+    }
+    match outcome {
+        AdmissionOutcome::Accepted(ticket) => {
+            let source_id = target.source_id.clone();
+            let context = PendingCaptureContext {
+                source_id: target.source_id,
+                source_root: target.source_root,
+                root_identity: lane.root_identity().clone(),
+                stream_id,
+                watcher_generation: lane.generation(),
+                capture_boundary: boundary,
+                original_event,
+                compatibility_event,
+                conservative: target.conservative,
+                correlation: live.correlation().cloned(),
+            };
+            if let Some(previous) = pending_contexts.insert(ticket, context) {
+                tracing::error!(
+                    ticket = ticket.id(),
+                    source_id = previous.source_id.as_str(),
+                    "Native watcher admission ticket unexpectedly replaced its handoff context"
+                );
+                state.mark_all_overflowed(now);
+            }
+            if live.correlation().is_none() {
+                tracing::error!(
+                    ticket = ticket.id(),
+                    source_id = source_id.as_str(),
+                    "Accepted live admission did not return its retained audit correlation"
+                );
+            }
+        }
+        AdmissionOutcome::DuplicateSuppressed(_) => {
+            tracing::debug!(
+                source_id = target.source_id.as_str(),
+                "Suppressing duplicate native watcher observation"
+            );
+        }
+        AdmissionOutcome::Rejected(reason) => {
+            tracing::warn!(
+                source_id = target.source_id.as_str(),
+                ?reason,
+                "Native watcher evidence was retained as conservative uncertainty"
+            );
+            widen_source(state, &target.source_root, now);
+        }
+        AdmissionOutcome::UncertaintyCapacityExhausted(_) => {
+            tracing::error!(
+                source_id = target.source_id.as_str(),
+                "Native watcher uncertainty capacity was exhausted"
+            );
+            widen_source(state, &target.source_root, now);
+        }
+    }
+}
+
+fn handoff_dispatched_capture(
+    state: &mut GuiSourceWatchState,
+    context: &PendingCaptureContext,
+    dispatched: &wavecrate_library::sample_sources::reconciliation::DispatchedObservation,
+    now: Instant,
+) -> (bool, bool) {
+    let provenance = dispatched.normalized().envelope().provenance();
+    let expected_stream =
+        BackendStreamIdentity::from_bytes(context.stream_id.to_be_bytes().to_vec());
+    let correlation_matches = context
+        .correlation
+        .as_ref()
+        .is_some_and(|correlation| correlation.ticket() == dispatched.ticket());
+    let provenance_matches = provenance.source_id() == &context.source_id
+        && provenance.root_identity() == Some(&context.root_identity)
+        && provenance.backend_stream_identity() == Some(&expected_stream)
+        && provenance.watcher_generation() == context.watcher_generation
+        && provenance.capture_boundary() == context.capture_boundary;
+    if !correlation_matches || !provenance_matches {
+        tracing::error!(
+            source_id = context.source_id.as_str(),
+            ticket = dispatched.ticket().id(),
+            correlation_matches,
+            provenance_matches,
+            "Native watcher dispatch provenance did not match its retained capture context"
+        );
+        state.mark_all_overflowed(now);
+        return (false, false);
+    }
+    let source_audit = context.conservative
+        || dispatched
+            .normalized()
+            .scopes()
+            .iter()
+            .any(|scope| scope.kind() == ReconciliationScopeKind::SourceAudit);
+    if let Some(correlation) = context.correlation.as_ref() {
+        state.enqueue_audit_request(correlation.audit_request(), true);
+    }
+    if source_audit {
+        widen_source(state, &context.source_root, now);
+        return (true, false);
+    }
+
+    let Some(compatibility_event) = context.compatibility_event.as_ref() else {
+        tracing::error!(
+            source_id = context.source_id.as_str(),
+            original_event_retained = context.original_event.is_some(),
+            "Native watcher dispatch has no compatible source-refresh event"
+        );
+        state.mark_all_overflowed(now);
+        return (false, false);
+    };
+    let mut event = compatibility_event.clone();
+    if !retain_source_refresh_candidates(&mut event) {
+        return (true, false);
+    }
+    (true, state.collect_event(&event, now))
+}
+
+fn dispatch_pending_capture_contexts(
+    state: &mut GuiSourceWatchState,
+    admission: &mut AdmissionLifecycle,
+    pending_contexts: &mut HashMap<DispatchTicket, PendingCaptureContext>,
+    now: Instant,
+) -> bool {
+    let mut root_invalidated = false;
+    if admission.in_flight() == 0 && !pending_contexts.is_empty() {
+        tracing::error!(
+            context_count = pending_contexts.len(),
+            "Native watcher admission fence retired pending capture contexts before handoff"
+        );
+        for (_, context) in pending_contexts.drain() {
+            widen_source(state, &context.source_root, now);
+        }
+    }
+    while let Some(dispatched) = admission.dispatch_next() {
+        let ticket = dispatched.ticket();
+        let Some(context) = pending_contexts.remove(&ticket) else {
+            tracing::error!(
+                ticket = ticket.id(),
+                "Native watcher dispatch ticket had no retained handoff context"
+            );
+            state.mark_all_overflowed(now);
+            if let Err(error) = admission.mark_dispatched(ticket) {
+                tracing::error!(
+                    ticket = ticket.id(),
+                    ?error,
+                    "Could not mark orphaned watcher dispatch"
+                );
+                break;
+            }
+            if let Err(error) = admission.mark_applied(ticket) {
+                tracing::error!(
+                    ticket = ticket.id(),
+                    ?error,
+                    "Could not mark orphaned watcher application"
+                );
+                break;
+            }
+            if let Err(error) = admission.mark_unproven_audit_handed_off(ticket) {
+                tracing::error!(
+                    ticket = ticket.id(),
+                    ?error,
+                    "Could not retire orphaned watcher dispatch"
+                );
+                break;
+            }
+            continue;
+        };
+
+        if let Err(error) = admission.mark_dispatched(ticket) {
+            tracing::error!(
+                ticket = ticket.id(),
+                ?error,
+                "Could not mark native watcher dispatch"
+            );
+            widen_source(state, &context.source_root, now);
+            pending_contexts.insert(ticket, context);
+            break;
+        }
+        let (handoff_succeeded, invalidated) =
+            handoff_dispatched_capture(state, &context, &dispatched, now);
+        root_invalidated |= invalidated;
+        if !handoff_succeeded {
+            tracing::error!(
+                ticket = ticket.id(),
+                source_id = context.source_id.as_str(),
+                "Native watcher handoff failed closed"
+            );
+        }
+        if let Err(error) = admission.mark_applied(ticket) {
+            tracing::error!(
+                ticket = ticket.id(),
+                ?error,
+                "Could not mark native watcher application"
+            );
+            widen_source(state, &context.source_root, now);
+            pending_contexts.insert(ticket, context);
+            break;
+        }
+        if let Err(error) = admission.mark_unproven_audit_handed_off(ticket) {
+            tracing::error!(
+                ticket = ticket.id(),
+                ?error,
+                "Could not retire native watcher proofless dispatch"
+            );
+            widen_source(state, &context.source_root, now);
+            pending_contexts.insert(ticket, context);
+            break;
+        }
+    }
+    root_invalidated
+}
+
+fn flush_pending_audit_requests(
+    state: &mut GuiSourceWatchState,
+    admission: &AdmissionLifecycle,
+    message_tx: &Sender<GuiMessage>,
+    now: Instant,
+) {
+    purge_stale_audit_requests(state, admission, now);
+    if state.pending_audit_requests.conservative_recovery_latched() {
+        state.mark_all_overflowed(now);
+        state
+            .pending_audit_requests
+            .clear_conservative_recovery_latch();
+    }
+    while state.pending_audit_requests.front().is_some() {
+        // Revalidate immediately before each send. A lifecycle boundary can leave a retained
+        // request in the queue until this exact transport point; stale identities must never be
+        // emitted, while a failed send below deliberately leaves the request at the front.
+        purge_stale_audit_requests(state, admission, now);
+        let Some(request) = state.pending_audit_requests.front().cloned() else {
+            break;
+        };
+        if !admission.request_matches_current_capturing_lane(&request) {
+            continue;
+        }
+        if message_tx
+            .send(GuiMessage::SourceWatcherManifestAuditRequested { request })
+            .is_err()
+        {
+            tracing::warn!("Source-processing request channel closed before live audit handoff");
+            break;
+        }
+        state.pending_audit_requests.pop_front();
+    }
+}
+
 fn drain_watcher_captures(
     state: &mut GuiSourceWatchState,
+    admission: &mut AdmissionLifecycle,
     watcher: Option<&ActiveSourceWatcher>,
-    event_rx: &Receiver<SourceWatcherCapture>,
+    event_rx: &Receiver<CapturedSourceWatcherCapture>,
+    pending_contexts: &mut HashMap<DispatchTicket, PendingCaptureContext>,
     now: Instant,
 ) -> (bool, bool) {
     let mut watcher_failed = false;
-    let mut root_invalidated = false;
-    while let Ok(event) = event_rx.try_recv() {
-        let stream_id = match &event {
-            SourceWatcherCapture::Notify { stream_id, .. }
-            | SourceWatcherCapture::Error { stream_id }
-            | SourceWatcherCapture::Overflow { stream_id } => *stream_id,
-        };
+    let mut root_invalidated =
+        dispatch_pending_capture_contexts(state, admission, pending_contexts, now);
+    while let Ok(captured) = event_rx.try_recv() {
+        let stream_id = capture_stream_id(&captured.capture);
         let current_stream = watcher.is_some_and(|watcher| {
             watcher.stream_id == stream_id && watcher.ingress_enabled.load(Ordering::Acquire)
         });
@@ -1026,22 +1658,26 @@ fn drain_watcher_captures(
             state.mark_all_overflowed(now);
             continue;
         }
-        match event {
-            SourceWatcherCapture::Notify { mut event, .. } => {
-                if !retain_source_refresh_candidates(&mut event) {
-                    continue;
-                }
-                root_invalidated |= state.collect_event(&event, Instant::now());
-            }
-            SourceWatcherCapture::Error { .. } => {
-                tracing::warn!("GUI source watcher error");
-                watcher_failed = true;
-            }
-            SourceWatcherCapture::Overflow { .. } => {
-                state.mark_all_overflowed(now);
-            }
+        if matches!(&captured.capture, SourceWatcherCapture::Error { .. }) {
+            tracing::warn!("GUI source watcher error");
+            watcher_failed = true;
+        }
+        if matches!(&captured.capture, SourceWatcherCapture::Overflow { .. }) {
+            tracing::warn!("GUI source watcher overflow marker");
+        }
+        for target in source_capture_targets(&captured.capture, &state.sources) {
+            admit_capture_target(
+                state,
+                admission,
+                &captured.capture,
+                captured.boundary,
+                target,
+                pending_contexts,
+                now,
+            );
         }
     }
+    root_invalidated |= dispatch_pending_capture_contexts(state, admission, pending_contexts, now);
     (watcher_failed, root_invalidated)
 }
 
@@ -1201,7 +1837,7 @@ fn run_source_watcher_without_lifecycle(command_rx: Receiver<GuiSourceWatchComma
 
 fn spawn_source_watcher(
     sources: Vec<SampleSource>,
-    event_tx: SyncSender<SourceWatcherCapture>,
+    event_tx: SyncSender<CapturedSourceWatcherCapture>,
     ingress_overflowed: Arc<AtomicBool>,
     backend: SourceWatcherBackend,
 ) -> Result<PendingSourceWatcher, String> {
@@ -1284,7 +1920,7 @@ fn start_pending_source_watcher(
     pending: &mut Option<PendingSourceWatcher>,
     retired_initializers: &[PendingSourceWatcher],
     sources: Vec<SampleSource>,
-    event_tx: SyncSender<SourceWatcherCapture>,
+    event_tx: SyncSender<CapturedSourceWatcherCapture>,
     ingress_overflowed: Arc<AtomicBool>,
     backend: SourceWatcherBackend,
 ) -> bool {
@@ -1442,6 +2078,7 @@ pub(super) fn doubled_backoff(current: Duration) -> Duration {
 
 #[cfg(test)]
 mod lifecycle_tests {
+    use super::super::MAX_PENDING_CAPTURE_CONTEXTS;
     use super::super::capture::MAX_CAPTURE_PATHS;
     use super::*;
     use notify::{Event, EventKind, RecursiveMode, WatcherKind};
@@ -1454,6 +2091,10 @@ mod lifecycle_tests {
         },
     };
     use wavecrate::sample_sources::{SampleSource, SourceId};
+    use wavecrate_library::sample_sources::reconciliation::{
+        CaptureBoundary, RawObservationLimits, ReconciliationAdmissionLimits,
+        ReconciliationScopeKind, UncertaintyReason,
+    };
 
     static LIFECYCLE_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
@@ -1788,18 +2429,908 @@ mod lifecycle_tests {
             attrs: notify::event::EventAttributes::default(),
         }));
 
+        let notification = event_rx.recv().expect("captured notification");
         assert!(matches!(
-            event_rx.recv().expect("captured notification"),
+            notification.capture,
             SourceWatcherCapture::Notify { stream_id: 41, .. }
         ));
+        assert!(notification.boundary.captured_at() > 0);
+        let error = event_rx.recv().expect("captured error");
         assert!(matches!(
-            event_rx.recv().expect("captured error"),
+            error.capture,
             SourceWatcherCapture::Error { stream_id: 41 }
         ));
+        assert!(error.boundary.captured_at() > 0);
+        let overflow = event_rx.recv().expect("captured overflow");
         assert!(matches!(
-            event_rx.recv().expect("captured overflow"),
+            overflow.capture,
             SourceWatcherCapture::Overflow { stream_id: 41 }
         ));
+        assert!(overflow.boundary.captured_at() > 0);
+    }
+
+    struct ImmediateDropWatcher;
+
+    impl Watcher for ImmediateDropWatcher {
+        fn new<F: EventHandler>(_event_handler: F, _config: Config) -> notify::Result<Self>
+        where
+            Self: Sized,
+        {
+            unreachable!("test watcher is constructed directly")
+        }
+
+        fn watch(&mut self, _path: &Path, _recursive_mode: RecursiveMode) -> notify::Result<()> {
+            Ok(())
+        }
+
+        fn unwatch(&mut self, _path: &Path) -> notify::Result<()> {
+            Ok(())
+        }
+
+        fn kind() -> WatcherKind
+        where
+            Self: Sized,
+        {
+            WatcherKind::NullWatcher
+        }
+    }
+
+    fn source_with_root(id: &str, root: &Path) -> SampleSource {
+        SampleSource::new_with_id(SourceId::from_string(id), root.to_path_buf())
+    }
+
+    fn configured_admission(sources: &[SampleSource]) -> AdmissionLifecycle {
+        configured_admission_with_limits(sources, None)
+    }
+
+    fn configured_admission_with_limits(
+        sources: &[SampleSource],
+        limits: Option<ReconciliationAdmissionLimits>,
+    ) -> AdmissionLifecycle {
+        let watched_roots = sources
+            .iter()
+            .enumerate()
+            .map(|(index, source)| (source.root.clone(), Some(format!("identity-{index}"))))
+            .collect::<WatchedRootIdentities>();
+        let mut admission = limits
+            .map(AdmissionLifecycle::with_limits)
+            .unwrap_or_else(AdmissionLifecycle::new);
+        admission
+            .reconcile(sources, &watched_roots)
+            .expect("configured source admission");
+        admission
+    }
+
+    fn limited_admission(sources: &[SampleSource], max_in_flight: usize) -> AdmissionLifecycle {
+        let per_lane = RawObservationLimits::new(8, usize::MAX, usize::MAX)
+            .expect("native test per-lane limits");
+        let global = RawObservationLimits::new(32, usize::MAX, usize::MAX)
+            .expect("native test global limits");
+        let limits = ReconciliationAdmissionLimits::new_with_per_lane_capacity(
+            sources.len().max(1),
+            per_lane,
+            global,
+            max_in_flight,
+            1,
+            8,
+            64,
+        )
+        .expect("native test admission limits");
+        configured_admission_with_limits(sources, Some(limits))
+    }
+
+    fn source_watcher_state(sources: Vec<SampleSource>) -> GuiSourceWatchState {
+        GuiSourceWatchState {
+            sources,
+            ..Default::default()
+        }
+    }
+
+    fn notify_capture(root: &Path, stream_id: u64, paths: &[&str]) -> SourceWatcherCapture {
+        SourceWatcherCapture::Notify {
+            stream_id,
+            event: Event {
+                kind: EventKind::Create(notify::event::CreateKind::File),
+                paths: paths.iter().map(|path| root.join(path)).collect(),
+                attrs: notify::event::EventAttributes::default(),
+            },
+        }
+    }
+
+    fn exact_boundary(sequence: u64) -> CaptureBoundary {
+        CaptureBoundary::try_new(sequence, Some(sequence), Some(sequence))
+            .expect("native test capture boundary")
+    }
+
+    fn live_test_watcher(stream_id: u64) -> ActiveSourceWatcher {
+        ActiveSourceWatcher {
+            _watcher: Box::new(ImmediateDropWatcher),
+            ingress_enabled: Arc::new(AtomicBool::new(true)),
+            stream_id,
+        }
+    }
+
+    #[test]
+    fn admitted_capture_retains_identity_and_correlation_until_proofless_handoff() {
+        let directory = tempfile::tempdir().expect("source root");
+        let source = source_with_root("identity-bound", directory.path());
+        let mut state = source_watcher_state(vec![source.clone()]);
+        let mut admission = configured_admission(&state.sources);
+        state.set_audit_request_capacity(admission.max_source_audit_request_entries());
+        let capture = notify_capture(directory.path(), 17, &["sample.wav"]);
+        let boundary = exact_boundary(77);
+        let mut targets = source_capture_targets(&capture, &state.sources);
+        assert_eq!(targets.len(), 1);
+        let target = targets.pop().expect("source target");
+        let mut pending_contexts = HashMap::new();
+
+        admit_capture_target(
+            &mut state,
+            &mut admission,
+            &capture,
+            boundary,
+            target,
+            &mut pending_contexts,
+            Instant::now(),
+        );
+
+        let ticket = *pending_contexts
+            .keys()
+            .next()
+            .expect("accepted capture ticket");
+        let lane = admission
+            .lane_for_capture(&source.id)
+            .expect("identity-qualified lane");
+        let context = pending_contexts
+            .get(&ticket)
+            .expect("pending capture context");
+        assert_eq!(context.source_id, source.id);
+        assert_eq!(context.source_root, source.root);
+        assert_eq!(
+            context.root_identity,
+            RootIdentity::from_bytes(b"identity-0".to_vec())
+        );
+        assert_eq!(context.stream_id, 17);
+        assert_eq!(context.watcher_generation, lane.generation());
+        assert_eq!(context.capture_boundary, boundary);
+        assert_eq!(
+            context.correlation.as_ref().map(|value| value.ticket()),
+            Some(ticket)
+        );
+        let expected_root_identity = context.root_identity.clone();
+        let expected_generation = context.watcher_generation;
+        assert_eq!(admission.in_flight(), 1);
+
+        assert!(!dispatch_pending_capture_contexts(
+            &mut state,
+            &mut admission,
+            &mut pending_contexts,
+            Instant::now(),
+        ));
+
+        assert!(pending_contexts.is_empty());
+        assert_eq!(admission.in_flight(), 0);
+        let marker = admission
+            .retained_uncertainties()
+            .iter()
+            .find(|marker| marker.source_id() == Some(&source.id))
+            .expect("live uncertainty marker");
+        assert_eq!(marker.root_identity(), Some(&expected_root_identity));
+        assert_eq!(marker.generation(), Some(expected_generation));
+        assert_eq!(marker.capture_boundary(), Some(boundary));
+        assert_eq!(marker.scope(), ReconciliationScopeKind::SourceAudit);
+        assert!(marker.reasons().contains(&UncertaintyReason::LiveUnproven));
+        let request = state
+            .pending_audit_requests
+            .pop_front()
+            .expect("proofless handoff audit request");
+        assert_eq!(request.source_id(), &source.id);
+        assert_eq!(request.root_identity(), &expected_root_identity);
+        assert_eq!(request.generation(), expected_generation);
+        assert_eq!(request.boundary(), marker.boundary());
+        assert_eq!(admission.retained_uncertainties().len(), 1);
+        assert_eq!(
+            state
+                .pending
+                .get(source.id.as_str())
+                .expect("compatibility refresh handoff")
+                .paths,
+            [Path::new("sample.wav").to_path_buf()]
+                .into_iter()
+                .collect()
+        );
+        assert!(
+            !state
+                .pending
+                .get(source.id.as_str())
+                .expect("compatibility refresh handoff")
+                .overflowed
+        );
+    }
+
+    #[test]
+    fn audit_request_queue_coalesces_identity_and_latches_on_fallback_overflow() {
+        let first_directory = tempfile::tempdir().expect("first source root");
+        let second_directory = tempfile::tempdir().expect("second source root");
+        let first = source_with_root("queue-first", first_directory.path());
+        let second = source_with_root("queue-second", second_directory.path());
+        let sources = vec![first.clone(), second.clone()];
+        let mut state = source_watcher_state(sources.clone());
+        let mut admission = limited_admission(&sources, 1);
+        state.set_audit_request_capacity(1);
+        let mut pending_contexts = HashMap::new();
+
+        let capture = notify_capture(&first.root, 301, &["first.wav"]);
+        let target = source_capture_targets(&capture, &state.sources)
+            .pop()
+            .expect("first source target");
+        admit_capture_target(
+            &mut state,
+            &mut admission,
+            &capture,
+            exact_boundary(301),
+            target,
+            &mut pending_contexts,
+            Instant::now(),
+        );
+        dispatch_pending_capture_contexts(
+            &mut state,
+            &mut admission,
+            &mut pending_contexts,
+            Instant::now(),
+        );
+        state.pending_audit_requests.clear();
+
+        let (first_request, marker_backed) = admission
+            .source_audit_request_for_current_lane(&first.id)
+            .expect("first source audit request");
+        assert!(marker_backed);
+        state.enqueue_audit_request(first_request.clone(), true);
+        assert_eq!(state.pending_audit_requests.len(), 1);
+        assert_eq!(
+            state
+                .pending_audit_requests
+                .front()
+                .expect("first queued request")
+                .identity(),
+            first_request.identity()
+        );
+
+        let capture = notify_capture(&first.root, 301, &["second.wav"]);
+        let target = source_capture_targets(&capture, &state.sources)
+            .pop()
+            .expect("second source target");
+        admit_capture_target(
+            &mut state,
+            &mut admission,
+            &capture,
+            exact_boundary(302),
+            target,
+            &mut pending_contexts,
+            Instant::now(),
+        );
+        let (covering_request, marker_backed) = admission
+            .source_audit_request_for_current_lane(&first.id)
+            .expect("covering source audit request");
+        assert!(marker_backed);
+        assert_eq!(covering_request.identity(), first_request.identity());
+        assert!(covering_request.boundary().covers(first_request.boundary()));
+        state.enqueue_audit_request(covering_request.clone(), true);
+        assert_eq!(state.pending_audit_requests.len(), 1);
+        let queued = state
+            .pending_audit_requests
+            .front()
+            .expect("coalesced request");
+        assert_eq!(queued.identity(), first_request.identity());
+        assert_eq!(queued.boundary(), covering_request.boundary());
+
+        let (fallback_request, marker_backed) = admission
+            .source_audit_request_for_current_lane(&second.id)
+            .expect("second source audit request");
+        assert!(!marker_backed);
+        assert_ne!(fallback_request.identity(), first_request.identity());
+        state.enqueue_audit_request(fallback_request, false);
+        assert!(state.pending_audit_requests.len() <= 1);
+        assert!(state.pending_audit_requests.conservative_recovery_latched());
+        assert_eq!(
+            state
+                .pending_audit_requests
+                .front()
+                .expect("marker-backed request retained")
+                .identity(),
+            first_request.identity()
+        );
+    }
+
+    #[test]
+    fn root_rebind_drops_old_typed_requests_and_widens_the_replacement_source() {
+        let old_directory = tempfile::tempdir().expect("old source root");
+        let new_directory = tempfile::tempdir().expect("replacement source root");
+        let old_source = source_with_root("root-rebind-request", old_directory.path());
+        let replacement = source_with_root("root-rebind-request", new_directory.path());
+        let mut state = source_watcher_state(vec![old_source.clone()]);
+        let mut admission = configured_admission(&state.sources);
+        state.set_audit_request_capacity(admission.max_source_audit_request_entries());
+
+        let old_request = admission
+            .source_audit_request_for_current_lane(&old_source.id)
+            .expect("old typed request")
+            .0;
+        state.enqueue_audit_request(old_request.clone(), true);
+
+        state.set_sources(vec![replacement.clone()]);
+        state.watched_roots = HashMap::from([(
+            replacement.root.clone(),
+            Some(String::from("replacement-identity")),
+        )]);
+        admission
+            .reconcile(&state.sources, &state.watched_roots)
+            .expect("replacement admission lane");
+
+        let (message_tx, message_rx) = std::sync::mpsc::channel();
+        purge_stale_audit_requests(&mut state, &admission, Instant::now());
+        flush_pending_audit_requests(&mut state, &admission, &message_tx, Instant::now());
+
+        assert!(matches!(
+            message_rx.try_recv(),
+            Err(std::sync::mpsc::TryRecvError::Empty)
+        ));
+        assert!(
+            state
+                .pending
+                .get(replacement.id.as_str())
+                .is_some_and(|pending| pending.overflowed)
+        );
+        assert!(
+            !state
+                .pending_audit_requests
+                .front()
+                .is_some_and(|request| request == &old_request)
+        );
+    }
+
+    #[test]
+    fn stop_restart_drops_old_typed_requests_then_emits_only_restarted_identity() {
+        let directory = tempfile::tempdir().expect("source root");
+        let source = source_with_root("stop-restart-request", directory.path());
+        let mut state = source_watcher_state(vec![source.clone()]);
+        let mut admission = configured_admission(&state.sources);
+        state.watched_roots =
+            HashMap::from([(source.root.clone(), Some(String::from("identity-0")))]);
+        state.set_audit_request_capacity(admission.max_source_audit_request_entries());
+
+        let old_request = admission
+            .source_audit_request_for_current_lane(&source.id)
+            .expect("old typed request")
+            .0;
+        state.enqueue_audit_request(old_request.clone(), true);
+        admission.fence_all().expect("stop watcher lane");
+
+        let (message_tx, message_rx) = std::sync::mpsc::channel();
+        purge_stale_audit_requests(&mut state, &admission, Instant::now());
+        flush_pending_audit_requests(&mut state, &admission, &message_tx, Instant::now());
+        assert!(matches!(
+            message_rx.try_recv(),
+            Err(std::sync::mpsc::TryRecvError::Empty)
+        ));
+        assert!(
+            state
+                .pending
+                .get(source.id.as_str())
+                .is_some_and(|pending| pending.overflowed)
+        );
+
+        admission
+            .reconcile(&state.sources, &state.watched_roots)
+            .expect("restart watcher lane");
+        let restarted_request = admission
+            .source_audit_request_for_current_lane(&source.id)
+            .expect("restarted typed request")
+            .0;
+        assert!(restarted_request.generation() > old_request.generation());
+        state.enqueue_audit_request(restarted_request.clone(), true);
+        flush_pending_audit_requests(&mut state, &admission, &message_tx, Instant::now());
+
+        let emitted = match message_rx.recv().expect("restarted audit request") {
+            GuiMessage::SourceWatcherManifestAuditRequested { request } => request,
+            message => panic!("expected restarted audit request, got {message:?}"),
+        };
+        assert_eq!(emitted, restarted_request);
+        assert_ne!(emitted, old_request);
+    }
+
+    #[test]
+    fn failed_audit_handoff_retains_the_current_request_for_retry() {
+        let directory = tempfile::tempdir().expect("source root");
+        let source = source_with_root("failed-audit-handoff", directory.path());
+        let mut state = source_watcher_state(vec![source.clone()]);
+        let admission = configured_admission(&state.sources);
+        state.set_audit_request_capacity(admission.max_source_audit_request_entries());
+        let request = admission
+            .source_audit_request_for_current_lane(&source.id)
+            .expect("current typed request")
+            .0;
+        state.enqueue_audit_request(request.clone(), true);
+
+        let (message_tx, message_rx) = std::sync::mpsc::channel();
+        drop(message_rx);
+        flush_pending_audit_requests(&mut state, &admission, &message_tx, Instant::now());
+
+        assert_eq!(state.pending_audit_requests.front(), Some(&request));
+    }
+
+    #[test]
+    fn exact_callback_boundary_duplicate_is_suppressed_without_new_handoff() {
+        let directory = tempfile::tempdir().expect("source root");
+        let source = source_with_root("duplicate", directory.path());
+        let mut state = source_watcher_state(vec![source.clone()]);
+        let mut admission = configured_admission(&state.sources);
+        let boundary = exact_boundary(88);
+        let mut pending_contexts = HashMap::new();
+
+        for capture in [
+            notify_capture(directory.path(), 21, &["duplicate.wav"]),
+            notify_capture(directory.path(), 21, &["duplicate.wav"]),
+        ] {
+            let target = source_capture_targets(&capture, &state.sources)
+                .pop()
+                .expect("source target");
+            admit_capture_target(
+                &mut state,
+                &mut admission,
+                &capture,
+                boundary,
+                target,
+                &mut pending_contexts,
+                Instant::now(),
+            );
+            if admission.in_flight() != 0 {
+                dispatch_pending_capture_contexts(
+                    &mut state,
+                    &mut admission,
+                    &mut pending_contexts,
+                    Instant::now(),
+                );
+            }
+        }
+
+        assert!(pending_contexts.is_empty());
+        assert_eq!(admission.in_flight(), 0);
+        assert_eq!(
+            admission
+                .retained_uncertainties()
+                .iter()
+                .filter(|marker| marker.source_id() == Some(&source.id))
+                .count(),
+            1,
+            "duplicate suppression must not retain a second marker"
+        );
+    }
+
+    #[test]
+    fn stale_stream_is_fenced_before_native_admission() {
+        let directory = tempfile::tempdir().expect("source root");
+        let source = source_with_root("stale-stream", directory.path());
+        let mut state = source_watcher_state(vec![source]);
+        let mut admission = configured_admission(&state.sources);
+        let watcher = live_test_watcher(41);
+        let (event_tx, event_rx) = std::sync::mpsc::sync_channel(1);
+        event_tx
+            .send(CapturedSourceWatcherCapture::with_boundary(
+                notify_capture(directory.path(), 40, &["stale.wav"]),
+                exact_boundary(91),
+            ))
+            .expect("stale capture");
+        let mut pending_contexts = HashMap::new();
+
+        let (watcher_failed, root_invalidated) = drain_watcher_captures(
+            &mut state,
+            &mut admission,
+            Some(&watcher),
+            &event_rx,
+            &mut pending_contexts,
+            Instant::now(),
+        );
+
+        assert!(!watcher_failed);
+        assert!(!root_invalidated);
+        assert_eq!(admission.in_flight(), 0);
+        assert!(pending_contexts.is_empty());
+        assert!(
+            state
+                .pending
+                .values()
+                .next()
+                .expect("stale stream widening")
+                .overflowed
+        );
+    }
+
+    #[test]
+    fn queue_pressure_and_handoff_failure_widen_without_dropping_ticket_state() {
+        let directory = tempfile::tempdir().expect("source root");
+        let source = source_with_root("pressure", directory.path());
+        let mut state = source_watcher_state(vec![source.clone()]);
+        let mut admission = limited_admission(&state.sources, 1);
+        let mut pending_contexts = HashMap::new();
+        let now = Instant::now();
+
+        for path in ["first.wav", "second.wav"] {
+            let capture = notify_capture(directory.path(), 31, &[path]);
+            let target = source_capture_targets(&capture, &state.sources)
+                .pop()
+                .expect("source target");
+            admit_capture_target(
+                &mut state,
+                &mut admission,
+                &capture,
+                exact_boundary(if path == "first.wav" { 101 } else { 102 }),
+                target,
+                &mut pending_contexts,
+                now,
+            );
+        }
+        assert_eq!(admission.in_flight(), 1);
+        assert_eq!(pending_contexts.len(), 1);
+        assert!(
+            state
+                .pending
+                .get(source.id.as_str())
+                .is_some_and(|pending| pending.overflowed)
+        );
+
+        dispatch_pending_capture_contexts(&mut state, &mut admission, &mut pending_contexts, now);
+        assert_eq!(admission.in_flight(), 0);
+        assert!(pending_contexts.is_empty());
+
+        let capture = notify_capture(directory.path(), 31, &["handoff.wav"]);
+        let target = source_capture_targets(&capture, &state.sources)
+            .pop()
+            .expect("source target");
+        admit_capture_target(
+            &mut state,
+            &mut admission,
+            &capture,
+            exact_boundary(103),
+            target,
+            &mut pending_contexts,
+            now,
+        );
+        pending_contexts
+            .values_mut()
+            .next()
+            .expect("handoff context")
+            .correlation = None;
+        dispatch_pending_capture_contexts(&mut state, &mut admission, &mut pending_contexts, now);
+        assert_eq!(admission.in_flight(), 0);
+        assert!(pending_contexts.is_empty());
+        assert!(
+            state
+                .pending
+                .get(source.id.as_str())
+                .is_some_and(|pending| pending.overflowed)
+        );
+    }
+
+    #[test]
+    fn full_context_capacity_queues_current_lane_audit_without_extra_ticket_or_context() {
+        let directory = tempfile::tempdir().expect("source root");
+        let sources = (0..=MAX_PENDING_CAPTURE_CONTEXTS)
+            .map(|index| {
+                source_with_root(
+                    &format!("full-context-{index}"),
+                    &directory.path().join(format!("source-{index}")),
+                )
+            })
+            .collect::<Vec<_>>();
+        let overflow_source = sources.last().cloned().expect("overflow source");
+        let mut state = source_watcher_state(sources.clone());
+        let mut admission = configured_admission(&sources);
+        state.set_audit_request_capacity(admission.max_source_audit_request_entries());
+        let mut pending_contexts = HashMap::new();
+
+        for (index, source) in sources
+            .iter()
+            .take(MAX_PENDING_CAPTURE_CONTEXTS)
+            .enumerate()
+        {
+            let capture = notify_capture(&source.root, 101, &["sample.wav"]);
+            let target = SourceCaptureTarget {
+                source_id: source.id.clone(),
+                source_root: source.root.clone(),
+                paths: vec![source.root.join("sample.wav")],
+                conservative: false,
+            };
+            admit_capture_target(
+                &mut state,
+                &mut admission,
+                &capture,
+                exact_boundary(index as u64 + 1),
+                target,
+                &mut pending_contexts,
+                Instant::now(),
+            );
+        }
+
+        assert_eq!(pending_contexts.len(), MAX_PENDING_CAPTURE_CONTEXTS);
+        assert_eq!(admission.in_flight(), MAX_PENDING_CAPTURE_CONTEXTS);
+        assert_eq!(
+            admission.retained_uncertainties().len(),
+            MAX_PENDING_CAPTURE_CONTEXTS
+        );
+
+        let lane = admission
+            .lane_for_capture(&overflow_source.id)
+            .expect("overflow source lane");
+        state.pending_audit_requests.clear();
+        let capture = notify_capture(&overflow_source.root, 101, &["sample.wav"]);
+        let target = SourceCaptureTarget {
+            source_id: overflow_source.id.clone(),
+            source_root: overflow_source.root.clone(),
+            paths: vec![overflow_source.root.join("sample.wav")],
+            conservative: false,
+        };
+        admit_capture_target(
+            &mut state,
+            &mut admission,
+            &capture,
+            exact_boundary(258),
+            target,
+            &mut pending_contexts,
+            Instant::now(),
+        );
+
+        assert_eq!(pending_contexts.len(), MAX_PENDING_CAPTURE_CONTEXTS);
+        assert_eq!(admission.in_flight(), MAX_PENDING_CAPTURE_CONTEXTS);
+        assert_eq!(
+            admission.retained_uncertainties().len(),
+            MAX_PENDING_CAPTURE_CONTEXTS,
+            "full-context widening must not retain another marker"
+        );
+        let request = state
+            .pending_audit_requests
+            .front()
+            .expect("full-context source audit request");
+        assert_eq!(request.source_id(), &overflow_source.id);
+        assert_eq!(request.root_identity(), lane.root_identity());
+        assert_eq!(request.generation(), lane.generation());
+        assert!(request.boundary().first() > 0);
+        assert_eq!(request.boundary().first(), request.boundary().through());
+        assert!(
+            state
+                .pending
+                .get(overflow_source.id.as_str())
+                .is_some_and(|pending| pending.overflowed)
+        );
+    }
+
+    #[test]
+    fn full_context_stopped_lane_widens_without_typed_request() {
+        let directory = tempfile::tempdir().expect("source root");
+        let source = source_with_root("full-context-stopped", directory.path());
+        let mut state = source_watcher_state(vec![source.clone()]);
+        let mut admission = limited_admission(&state.sources, 1);
+        let capture = notify_capture(directory.path(), 102, &["first.wav"]);
+        let target = SourceCaptureTarget {
+            source_id: source.id.clone(),
+            source_root: source.root.clone(),
+            paths: vec![source.root.join("first.wav")],
+            conservative: false,
+        };
+        let mut pending_contexts = HashMap::new();
+        admit_capture_target(
+            &mut state,
+            &mut admission,
+            &capture,
+            exact_boundary(259),
+            target,
+            &mut pending_contexts,
+            Instant::now(),
+        );
+        assert_eq!(pending_contexts.len(), 1);
+        admission.fence_all().expect("stop capturing lane");
+        state.pending_audit_requests.clear();
+
+        let capture = notify_capture(directory.path(), 102, &["second.wav"]);
+        let target = SourceCaptureTarget {
+            source_id: source.id.clone(),
+            source_root: source.root.clone(),
+            paths: vec![source.root.join("second.wav")],
+            conservative: false,
+        };
+        admit_capture_target(
+            &mut state,
+            &mut admission,
+            &capture,
+            exact_boundary(260),
+            target,
+            &mut pending_contexts,
+            Instant::now(),
+        );
+
+        assert!(state.pending_audit_requests.is_empty());
+        assert_eq!(pending_contexts.len(), 1);
+        assert!(
+            state
+                .pending
+                .get(source.id.as_str())
+                .is_some_and(|pending| pending.overflowed)
+        );
+    }
+
+    #[test]
+    fn multi_source_and_ambiguous_paths_widen_all_configured_sources() {
+        let first_directory = tempfile::tempdir().expect("first source root");
+        let second_directory = tempfile::tempdir().expect("second source root");
+        let first = source_with_root("multi-first", first_directory.path());
+        let second = source_with_root("multi-second", second_directory.path());
+        let sources = vec![first.clone(), second.clone()];
+        let mut state = source_watcher_state(sources.clone());
+        let mut admission = configured_admission(&sources);
+        let capture = SourceWatcherCapture::Notify {
+            stream_id: 51,
+            event: Event {
+                kind: EventKind::Create(notify::event::CreateKind::File),
+                paths: vec![
+                    first_directory.path().join("first.wav"),
+                    second_directory.path().join("second.wav"),
+                ],
+                attrs: notify::event::EventAttributes::default(),
+            },
+        };
+        let targets = source_capture_targets(&capture, &sources);
+        assert_eq!(targets.len(), 2);
+        assert!(targets.iter().all(|target| target.conservative));
+        let (event_tx, event_rx) = std::sync::mpsc::sync_channel(1);
+        event_tx
+            .send(CapturedSourceWatcherCapture::with_boundary(
+                capture,
+                exact_boundary(111),
+            ))
+            .expect("multi-source capture");
+        let watcher = live_test_watcher(51);
+        let mut pending_contexts = HashMap::new();
+        drain_watcher_captures(
+            &mut state,
+            &mut admission,
+            Some(&watcher),
+            &event_rx,
+            &mut pending_contexts,
+            Instant::now(),
+        );
+        assert!(sources.iter().all(|source| {
+            state
+                .pending
+                .get(source.id.as_str())
+                .is_some_and(|pending| pending.overflowed)
+        }));
+        assert!(pending_contexts.is_empty());
+
+        let shared_directory = tempfile::tempdir().expect("ambiguous root");
+        let ambiguous_sources = vec![
+            source_with_root("ambiguous-first", shared_directory.path()),
+            source_with_root("ambiguous-second", shared_directory.path()),
+        ];
+        let mut ambiguous_state = source_watcher_state(ambiguous_sources.clone());
+        let mut ambiguous_admission = configured_admission(&ambiguous_sources);
+        let ambiguous_capture = notify_capture(shared_directory.path(), 61, &["ambiguous.wav"]);
+        let ambiguous_targets = source_capture_targets(&ambiguous_capture, &ambiguous_sources);
+        assert_eq!(ambiguous_targets.len(), 2);
+        assert!(ambiguous_targets.iter().all(|target| target.conservative));
+        let (event_tx, event_rx) = std::sync::mpsc::sync_channel(1);
+        event_tx
+            .send(CapturedSourceWatcherCapture::with_boundary(
+                ambiguous_capture,
+                exact_boundary(112),
+            ))
+            .expect("ambiguous capture");
+        let watcher = live_test_watcher(61);
+        let mut pending_contexts = HashMap::new();
+        drain_watcher_captures(
+            &mut ambiguous_state,
+            &mut ambiguous_admission,
+            Some(&watcher),
+            &event_rx,
+            &mut pending_contexts,
+            Instant::now(),
+        );
+        assert!(ambiguous_sources.iter().all(|source| {
+            ambiguous_state
+                .pending
+                .get(source.id.as_str())
+                .is_some_and(|pending| pending.overflowed)
+        }));
+    }
+
+    #[test]
+    fn lifecycle_fence_cleans_pending_contexts_and_widens_retired_work() {
+        let directory = tempfile::tempdir().expect("source root");
+        let source = source_with_root("fenced-context", directory.path());
+        let mut state = source_watcher_state(vec![source.clone()]);
+        let mut admission = configured_admission(&state.sources);
+        let capture = notify_capture(directory.path(), 71, &["retired.wav"]);
+        let target = source_capture_targets(&capture, &state.sources)
+            .pop()
+            .expect("source target");
+        let mut pending_contexts = HashMap::new();
+        admit_capture_target(
+            &mut state,
+            &mut admission,
+            &capture,
+            exact_boundary(121),
+            target,
+            &mut pending_contexts,
+            Instant::now(),
+        );
+        assert_eq!(admission.in_flight(), 1);
+        admission.fence_all().expect("fence captured work");
+        assert_eq!(admission.in_flight(), 0);
+
+        dispatch_pending_capture_contexts(
+            &mut state,
+            &mut admission,
+            &mut pending_contexts,
+            Instant::now(),
+        );
+        assert!(pending_contexts.is_empty());
+        assert!(
+            state
+                .pending
+                .get(source.id.as_str())
+                .is_some_and(|pending| pending.overflowed)
+        );
+    }
+
+    #[test]
+    fn missing_identity_and_invalid_root_mapping_widen_conservatively() {
+        let directory = tempfile::tempdir().expect("source root");
+        let source = source_with_root("missing-identity", directory.path());
+        let mut state = source_watcher_state(vec![source.clone()]);
+        let mut admission = AdmissionLifecycle::new();
+        let capture = notify_capture(directory.path(), 81, &["missing.wav"]);
+        let target = source_capture_targets(&capture, &state.sources)
+            .pop()
+            .expect("source target");
+        let mut pending_contexts = HashMap::new();
+        admit_capture_target(
+            &mut state,
+            &mut admission,
+            &capture,
+            exact_boundary(131),
+            target,
+            &mut pending_contexts,
+            Instant::now(),
+        );
+        assert!(
+            state
+                .pending
+                .get(source.id.as_str())
+                .is_some_and(|pending| pending.overflowed)
+        );
+
+        let mut configured = configured_admission(&state.sources);
+        let invalid_target = SourceCaptureTarget {
+            source_id: source.id.clone(),
+            source_root: source.root.clone(),
+            paths: vec![source.root.join("../escape.wav")],
+            conservative: false,
+        };
+        let mut invalid_state = source_watcher_state(vec![source.clone()]);
+        admit_capture_target(
+            &mut invalid_state,
+            &mut configured,
+            &notify_capture(directory.path(), 82, &["ignored.wav"]),
+            exact_boundary(132),
+            invalid_target,
+            &mut pending_contexts,
+            Instant::now(),
+        );
+        assert!(
+            invalid_state
+                .pending
+                .get(source.id.as_str())
+                .is_some_and(|pending| pending.overflowed)
+        );
     }
 
     struct BlockingDropWatcher {
@@ -1884,11 +3415,21 @@ mod lifecycle_tests {
         };
         let (event_tx, event_rx) = std::sync::mpsc::sync_channel(1);
         event_tx
-            .send(SourceWatcherCapture::Error { stream_id })
+            .send(CapturedSourceWatcherCapture::from_capture(
+                SourceWatcherCapture::Error { stream_id },
+            ))
             .expect("inject same-stream fenced capture");
+        let mut admission = AdmissionLifecycle::new();
+        let mut pending_contexts = HashMap::new();
 
-        let (watcher_failed, root_invalidated) =
-            drain_watcher_captures(&mut state, watcher.as_ref(), &event_rx, Instant::now());
+        let (watcher_failed, root_invalidated) = drain_watcher_captures(
+            &mut state,
+            &mut admission,
+            watcher.as_ref(),
+            &event_rx,
+            &mut pending_contexts,
+            Instant::now(),
+        );
 
         assert!(
             !watcher_failed,
