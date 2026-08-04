@@ -330,12 +330,14 @@ impl AdmissionLifecycle {
     }
 
     /// Retire an applied replay only with the opaque authority reread after the source owner has
-    /// durably committed the matching revision-bound checkpoint.
+    /// durably committed the matching revision-bound checkpoint. The supplied lifecycle
+    /// generation is the current terminal checkpoint generation; it is intentionally distinct
+    /// from the historical generation used to validate replay admission.
     pub(super) fn mark_fsevents_replay_checkpointed(
         &mut self,
         source_id: &SourceId,
         database: &SourceDatabase,
-        source_lifecycle_generation: WatcherGeneration,
+        current_source_lifecycle_generation: WatcherGeneration,
         ticket: DispatchTicket,
     ) -> Result<(), FseventsReplayCheckpointError> {
         let lane = self
@@ -345,7 +347,7 @@ impl AdmissionLifecycle {
             .read_durable_replay_prior(
                 source_id,
                 lane.root_identity(),
-                source_lifecycle_generation,
+                current_source_lifecycle_generation,
                 lane.generation(),
             )
             .map_err(FseventsReplayCheckpointError::Database)?

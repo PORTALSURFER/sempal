@@ -1197,7 +1197,6 @@ struct PendingCaptureContext {
 struct PendingReplayHandoff {
     paths: Vec<PathBuf>,
     proof: WatcherContinuityProof,
-    source_lifecycle_generation: WatcherGeneration,
     continuity_proven: bool,
 }
 
@@ -1207,7 +1206,6 @@ struct PendingReplayCheckpoint {
     root_identity: RootIdentity,
     owner_watcher_generation: WatcherGeneration,
     proof: WatcherContinuityProof,
-    source_lifecycle_generation: WatcherGeneration,
 }
 
 fn capture_stream_id(capture: &SourceWatcherCapture) -> u64 {
@@ -1686,7 +1684,6 @@ fn dispatch_pending_capture_contexts_with_replay(
                     root_identity: context.root_identity.clone(),
                     owner_watcher_generation: context.watcher_generation,
                     proof: replay.proof.clone(),
-                    source_lifecycle_generation: replay.source_lifecycle_generation,
                 },
             );
             continue;
@@ -2126,9 +2123,6 @@ fn publish_closed_app_journal_recovery(
                             replay: Some(PendingReplayHandoff {
                                 paths,
                                 proof,
-                                source_lifecycle_generation: WatcherGeneration::new(
-                                    source_lifecycle_generation,
-                                ),
                                 continuity_proven,
                             }),
                         };
@@ -2204,9 +2198,7 @@ fn acknowledge_replay_checkpoint(
     let Some(ticket) = pending_replay_checkpoints
         .iter()
         .find_map(|(ticket, pending)| {
-            (pending.source_id.as_str() == request.source_id
-                && pending.source_lifecycle_generation.get() == request.lifecycle_generation
-                && pending.proof == *proof)
+            (pending.source_id.as_str() == request.source_id && pending.proof == *proof)
                 .then_some(*ticket)
         })
     else {
@@ -2222,7 +2214,7 @@ fn acknowledge_replay_checkpoint(
     };
     let source_id = pending.source_id.clone();
     let source_root = pending.source_root.clone();
-    let source_lifecycle_generation = pending.source_lifecycle_generation;
+    let current_source_lifecycle_generation = WatcherGeneration::new(request.lifecycle_generation);
     let Some(source) = sources.iter().find(|source| source.id == source_id) else {
         tracing::warn!(
             source_id = source_id.as_str(),
@@ -2275,7 +2267,7 @@ fn acknowledge_replay_checkpoint(
     match admission.mark_fsevents_replay_checkpointed(
         &source_id,
         &database,
-        source_lifecycle_generation,
+        current_source_lifecycle_generation,
         ticket,
     ) {
         Ok(()) => {
@@ -2600,6 +2592,7 @@ pub(super) fn doubled_backoff(current: Duration) -> Duration {
 
 #[cfg(test)]
 mod lifecycle_tests {
+    use super::super::CheckpointCause;
     use super::super::MAX_PENDING_CAPTURE_CONTEXTS;
     use super::super::capture::MAX_CAPTURE_PATHS;
     use super::*;
@@ -2613,6 +2606,7 @@ mod lifecycle_tests {
         },
     };
     use wavecrate::sample_sources::{SampleSource, SourceId};
+    use wavecrate_library::sample_sources::db::META_SOURCE_WATCHER_CHECKPOINT;
     use wavecrate_library::sample_sources::reconciliation::{
         CaptureBoundary, RawObservationLimits, ReconciliationAdmissionLimits,
         ReconciliationScopeKind, UncertaintyReason,
@@ -3876,7 +3870,6 @@ mod lifecycle_tests {
                     replay_coverage_end_event_id: 2,
                     acknowledged_end_event_id: 2,
                 },
-                source_lifecycle_generation: WatcherGeneration::new(1),
             },
         )]);
 
@@ -3901,6 +3894,144 @@ mod lifecycle_tests {
         assert_eq!(admission.in_flight(), 1);
         assert!(admission.lane_for_capture(&second.id).is_some());
         admission.fence_all().expect("clean up active test lanes");
+    }
+
+    #[test]
+    fn replay_checkpoint_ack_uses_current_terminal_lifecycle_generation() {
+        let directory = tempfile::tempdir().expect("source root");
+        let source = source_with_root("replay-generation", directory.path());
+        let source_id = source.id.clone();
+        let root_identity = "identity-0";
+        let replay_stream_generation = 42;
+        let backend_device = 99;
+        let replay_start_event_id = 17;
+        let replay_end_event_id = 18;
+        let checkpoint_value = |lifecycle_generation: u64, event_id: u64| {
+            serde_json::json!({
+                "root_identity": root_identity,
+                "event_id": event_id,
+                "format_version": 3,
+                "source_id": source_id.as_str(),
+                "lifecycle_generation": lifecycle_generation,
+                "source_revision": 1,
+                "cause": "targeted_replay",
+                "continuity_proof": {
+                    "root_identity": root_identity,
+                    "backend": "fsevents",
+                    "backend_device": backend_device,
+                    "watcher_generation": replay_stream_generation,
+                    "replay_coverage_start_event_id": event_id - 1,
+                    "replay_coverage_end_event_id": event_id,
+                    "acknowledged_end_event_id": event_id
+                }
+            })
+            .to_string()
+        };
+
+        {
+            let database =
+                SourceDatabase::open_for_source_write(&source.root).expect("source database");
+            database
+                .set_metadata(
+                    META_SOURCE_WATCHER_CHECKPOINT,
+                    &checkpoint_value(1, replay_start_event_id),
+                )
+                .expect("historical replay checkpoint");
+        }
+
+        let mut state = source_watcher_state(vec![source.clone()]);
+        let mut admission = configured_admission(&state.sources);
+        let lane = admission
+            .lane_for_capture(&source_id)
+            .expect("replay source lane");
+        let (observations, limits) =
+            fsevents_replay_observations(vec![source.root.join("replayed.wav")])
+                .expect("bounded replay observations");
+        let replay_admission = {
+            let database = SourceDatabase::open_for_background_job(&source.root)
+                .expect("replay authority database");
+            admission
+                .admit_fsevents_replay(
+                    &source,
+                    &database,
+                    replay_stream_generation,
+                    FseventsReplayEvidence {
+                        source_lifecycle_generation: WatcherGeneration::new(1),
+                        replay_stream_generation,
+                        backend_device,
+                        replay_start_event_id,
+                        replay_end_event_id,
+                        observations,
+                        limits,
+                    },
+                )
+                .expect("replay admission")
+        };
+        assert_eq!(
+            replay_admission.admission().disposition(),
+            AdapterDisposition::AdmittedWithContinuity
+        );
+        let ticket = match replay_admission.admission().outcome() {
+            AdmissionOutcome::Accepted(ticket) => *ticket,
+            outcome => panic!("expected accepted replay, got {outcome:?}"),
+        };
+        let dispatched = admission.dispatch_next().expect("replay dispatch");
+        assert_eq!(dispatched.ticket(), ticket);
+        admission
+            .mark_dispatched(ticket)
+            .expect("replay dispatched");
+        admission.mark_applied(ticket).expect("replay applied");
+
+        let proof = journal::WatcherContinuityProof {
+            root_identity: root_identity.to_string(),
+            backend: journal::WatcherBackend::Fsevents,
+            backend_device,
+            watcher_generation: replay_stream_generation,
+            replay_coverage_start_event_id: replay_start_event_id,
+            replay_coverage_end_event_id: replay_end_event_id,
+            acknowledged_end_event_id: replay_end_event_id,
+        };
+        let mut pending_replay_checkpoints = HashMap::from([(
+            ticket,
+            PendingReplayCheckpoint {
+                source_id: source_id.clone(),
+                source_root: source.root.clone(),
+                root_identity: lane.root_identity().clone(),
+                owner_watcher_generation: lane.generation(),
+                proof: proof.clone(),
+            },
+        )]);
+
+        {
+            let database = SourceDatabase::open_for_source_write(&source.root)
+                .expect("terminal checkpoint database");
+            database
+                .set_metadata(
+                    META_SOURCE_WATCHER_CHECKPOINT,
+                    &checkpoint_value(2, replay_end_event_id),
+                )
+                .expect("current terminal replay checkpoint");
+        }
+
+        acknowledge_replay_checkpoint(
+            &mut state,
+            &mut admission,
+            &mut pending_replay_checkpoints,
+            std::slice::from_ref(&source),
+            RevisionBoundCheckpoint {
+                source_id: source_id.as_str().to_string(),
+                lifecycle_generation: 2,
+                source_revision: 1,
+                root_identity: root_identity.to_string(),
+                event_id: replay_end_event_id,
+                cause: CheckpointCause::TargetedReplay,
+                continuity_proof: Some(proof),
+            },
+            Instant::now(),
+        );
+
+        assert!(pending_replay_checkpoints.is_empty());
+        assert_eq!(admission.in_flight(), 0);
     }
 
     #[test]
