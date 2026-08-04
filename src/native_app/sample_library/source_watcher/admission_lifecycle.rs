@@ -164,7 +164,7 @@ impl AdmissionLifecycle {
         Ok(())
     }
 
-    fn reconcile_source(
+    pub(super) fn reconcile_source(
         &mut self,
         source: &SampleSource,
         root_identity: RootIdentity,
@@ -205,6 +205,28 @@ impl AdmissionLifecycle {
             self.owner.stop_source(source_id)?;
         }
         Ok(())
+    }
+
+    /// Stop one current capturing lane only when its source, root, and owner generation still
+    /// match the retained context that requested the fence. A stale context is a no-op so an old
+    /// acknowledgement cannot stop a newer lane for the same source.
+    pub(super) fn fence_source_if_current(
+        &mut self,
+        source_id: &SourceId,
+        root_identity: &RootIdentity,
+        watcher_generation: WatcherGeneration,
+    ) -> Result<bool, AdmissionOwnerError> {
+        let Some(lane) = self.owner.lane(source_id) else {
+            return Ok(false);
+        };
+        if lane.lifecycle() != ReconciliationLifecycle::Capturing
+            || lane.root_identity() != root_identity
+            || lane.generation() != watcher_generation
+        {
+            return Ok(false);
+        }
+        self.owner.stop_source(source_id)?;
+        Ok(true)
     }
 
     /// Return the owner-authoritative lane snapshot used to bind a live capture.
@@ -451,7 +473,9 @@ mod tests {
     use tempfile::tempdir;
     use wavecrate_library::sample_sources::db::META_SOURCE_WATCHER_CHECKPOINT;
     use wavecrate_library::sample_sources::reconciliation::{
-        AdapterDisposition, AdmissionOutcome, Proof, RawEventKind, RawObservedPath, RawPathRole,
+        AdapterDisposition, AdmissionOutcome, BackendStreamIdentity, Proof, RawEventKind,
+        RawObservation, RawObservationProvenance, RawObservedPath, RawPathRole,
+        SyntheticObservationBatch,
     };
 
     fn source(id: &str, root: &str) -> SampleSource {
@@ -528,6 +552,31 @@ mod tests {
                 PathBuf::from("replayed.wav"),
                 RawPathRole::Subject,
             )],
+        )
+    }
+
+    fn live_batch(
+        source_id: &SourceId,
+        root_identity: &RootIdentity,
+        generation: WatcherGeneration,
+        captured_at: u64,
+    ) -> SyntheticObservationBatch {
+        SyntheticObservationBatch::new(
+            RawObservationProvenance::new(
+                source_id.clone(),
+                Some(root_identity.clone()),
+                Some(BackendStreamIdentity::from_bytes(b"live-stream".to_vec())),
+                generation,
+                CaptureBoundary::try_new(captured_at, None, None).expect("capture boundary"),
+            ),
+            vec![RawObservation::new(
+                RawEventKind::Create,
+                vec![RawObservedPath::new(
+                    PathBuf::from("live.wav"),
+                    RawPathRole::Subject,
+                )],
+            )],
+            RawObservationLimits::new(8, usize::MAX, usize::MAX).expect("live limits"),
         )
     }
 
@@ -876,6 +925,100 @@ mod tests {
                 .is_empty()
         );
         assert_eq!(lifecycle.owner.supervisor().in_flight(), 0);
+    }
+
+    #[test]
+    fn source_local_fence_preserves_separate_lane_and_ticket() {
+        let first = source("local-fence-first", "root-a");
+        let second = source("local-fence-second", "root-b");
+        let sources = [first.clone(), second.clone()];
+        let mut lifecycle = AdmissionLifecycle::with_limits(limits(2, 2, 8));
+        let watched = watched(&[
+            ("root-a", Some(b"identity-a")),
+            ("root-b", Some(b"identity-b")),
+        ]);
+        lifecycle
+            .reconcile(&sources, &watched)
+            .expect("source lanes");
+        let first_lane = lifecycle.lane(&first.id).expect("first lane");
+        let second_lane = lifecycle.lane(&second.id).expect("second lane");
+
+        let first_ticket = match lifecycle
+            .admit_live_with_correlation(live_batch(
+                &first.id,
+                first_lane.root_identity(),
+                first_lane.generation(),
+                1,
+            ))
+            .expect("first live admission")
+            .admission()
+            .outcome()
+        {
+            AdmissionOutcome::Accepted(ticket) => *ticket,
+            outcome => panic!("unexpected first outcome: {outcome:?}"),
+        };
+        let second_ticket = match lifecycle
+            .admit_live_with_correlation(live_batch(
+                &second.id,
+                second_lane.root_identity(),
+                second_lane.generation(),
+                2,
+            ))
+            .expect("second live admission")
+            .admission()
+            .outcome()
+        {
+            AdmissionOutcome::Accepted(ticket) => *ticket,
+            outcome => panic!("unexpected second outcome: {outcome:?}"),
+        };
+        assert_ne!(first_ticket, second_ticket);
+        assert_eq!(lifecycle.in_flight(), 2);
+
+        assert!(
+            lifecycle
+                .fence_source_if_current(
+                    &first.id,
+                    first_lane.root_identity(),
+                    first_lane.generation(),
+                )
+                .expect("source-local fence")
+        );
+        assert_eq!(lifecycle.in_flight(), 1);
+        assert_eq!(
+            lifecycle.lane(&second.id).expect("second lane remains"),
+            second_lane
+        );
+
+        let dispatched = lifecycle
+            .dispatch_next()
+            .expect("second ticket remains queued");
+        assert_eq!(dispatched.ticket(), second_ticket);
+        lifecycle
+            .mark_dispatched(second_ticket)
+            .expect("second ticket dispatched");
+        lifecycle
+            .mark_applied(second_ticket)
+            .expect("second ticket applied");
+        assert_eq!(lifecycle.in_flight(), 1);
+
+        lifecycle
+            .reconcile(&sources, &watched)
+            .expect("restart first lane");
+        let restarted_first = lifecycle.lane(&first.id).expect("restarted first lane");
+        assert!(restarted_first.generation() > first_lane.generation());
+        assert!(
+            !lifecycle
+                .fence_source_if_current(
+                    &first.id,
+                    first_lane.root_identity(),
+                    first_lane.generation(),
+                )
+                .expect("stale source-local fence")
+        );
+        assert_eq!(
+            lifecycle.lane(&first.id).expect("current first lane"),
+            restarted_first
+        );
     }
 
     #[test]
