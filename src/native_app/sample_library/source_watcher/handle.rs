@@ -1314,6 +1314,13 @@ fn admit_capture_target(
         }
     };
     let outcome = live.admission().outcome().clone();
+    let audit_request_to_queue = match &outcome {
+        AdmissionOutcome::Accepted(_) if live.correlation().is_some() => None,
+        _ => live.audit_request().cloned(),
+    };
+    if let Some(request) = audit_request_to_queue {
+        state.pending_audit_requests.push(request);
+    }
     match outcome {
         AdmissionOutcome::Accepted(ticket) => {
             let source_id = target.source_id.clone();
@@ -2525,10 +2532,7 @@ mod lifecycle_tests {
         assert_eq!(request.root_identity(), &expected_root_identity);
         assert_eq!(request.generation(), expected_generation);
         assert_eq!(request.boundary(), marker.boundary());
-        let receipt = request.complete(42, expected_root_identity);
-        let acknowledgement = admission.acknowledge_source_audit_receipt(&receipt);
-        assert_eq!(acknowledgement.cleared_markers(), 1);
-        assert_eq!(admission.retained_uncertainties().len(), 0);
+        assert_eq!(admission.retained_uncertainties().len(), 1);
         assert_eq!(
             state
                 .pending

@@ -140,6 +140,7 @@ pub struct SourceWriteBatch<'conn> {
     identities_revision_dirty: bool,
     index_revision_dirty: bool,
     manifest_touched_paths: BTreeSet<PathBuf>,
+    manifest_audit_completed: bool,
     telemetry_label: &'static str,
 }
 

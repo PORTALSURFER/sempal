@@ -7,6 +7,9 @@ use std::thread;
 
 use crate::sample_sources::SourceDatabase;
 use crate::sample_sources::db::SourceManifestEntry;
+use wavecrate_library::sample_sources::reconciliation::{
+    RootIdentity, SourceAuditCommit, SourceAuditRequest,
+};
 
 use super::super::scan_capability::SourceRootCapability;
 use super::super::scan_db_sync::{complete_scan_generation, db_sync_phase};
@@ -182,15 +185,14 @@ pub fn audit_source_and_record_with_budget_and_progress_and_writer(
     on_progress: &mut impl FnMut(usize, &Path),
     writer: &impl ScanWriter,
 ) -> Result<ScanStats, ScanError> {
-    match audit_source_and_record_after_scan_outcome(
+    match audit_source_and_record_with_budget_and_progress_and_writer_with_request(
         db,
         cancel,
         budget,
         completed_at,
-        Some(on_progress),
+        on_progress,
         writer,
-        || {},
-        || {},
+        None,
     )? {
         ManifestAuditOutcome::Complete {
             stats,
@@ -212,6 +214,33 @@ pub fn audit_source_and_record_with_budget_and_progress_and_writer(
     }
 }
 
+/// Run a bounded audit with an optional request-bound authority for its complete manifest commit.
+///
+/// A `None` request preserves the public scanner behavior and returns an unbound completion
+/// result. Only the native source-processing path supplies a request, allowing the resulting
+/// commit to mint a clearing receipt for that exact retained boundary.
+pub fn audit_source_and_record_with_budget_and_progress_and_writer_with_request(
+    db: &SourceDatabase,
+    cancel: Option<&AtomicBool>,
+    budget: ContentAuditBudget,
+    completed_at: i64,
+    on_progress: &mut impl FnMut(usize, &Path),
+    writer: &impl ScanWriter,
+    audit_request: Option<&SourceAuditRequest>,
+) -> Result<ManifestAuditOutcome, ScanError> {
+    audit_source_and_record_after_scan_outcome(
+        db,
+        cancel,
+        budget,
+        completed_at,
+        Some(on_progress),
+        writer,
+        audit_request,
+        || {},
+        || {},
+    )
+}
+
 /// Outcome of a source manifest audit with bounded content verification.
 ///
 /// Manifest traversal coverage is represented independently from resumable content
@@ -225,8 +254,8 @@ pub enum ManifestAuditOutcome {
         stats: ScanStats,
         /// Content verification stopped after a durable checkpoint, if applicable.
         content_incomplete: Option<String>,
-        /// Physical root identity revalidated immediately before the manifest commit.
-        root_identity: String,
+        /// Opaque authority from the complete manifest commit and held source-root capability.
+        audit_commit: SourceAuditCommit,
     },
     /// Manifest traversal or reconciliation was uncertain after a committed checkpoint.
     Incomplete {
@@ -255,6 +284,7 @@ pub fn audit_source_and_record_with_budget_and_progress_and_writer_outcome(
         completed_at,
         Some(on_progress),
         writer,
+        None,
         || {},
         || {},
     )
@@ -277,6 +307,7 @@ fn audit_source_and_record_after_scan(
         completed_at,
         on_progress,
         writer,
+        None,
         before_record,
         after_scan,
     )? {
@@ -307,6 +338,7 @@ fn audit_source_and_record_after_scan_outcome(
     completed_at: i64,
     on_progress: Option<&mut dyn FnMut(usize, &Path)>,
     writer: &impl ScanWriter,
+    audit_request: Option<&SourceAuditRequest>,
     before_record: impl FnOnce(),
     after_scan: impl FnOnce(),
 ) -> Result<ManifestAuditOutcome, ScanError> {
@@ -336,14 +368,15 @@ fn audit_source_and_record_after_scan_outcome(
         Err(error) => return Err(error),
     };
     before_record();
-    let committed_root_identity = match record_manifest_audit_completion(
+    let audit_commit = match record_manifest_audit_completion(
         db,
         &mut stats,
         completed_at,
         writer,
         &source_root,
+        audit_request,
     ) {
-        Ok(root_identity) => root_identity,
+        Ok(audit_commit) => audit_commit,
         Err(error) => {
             if stats.committed_delta.revision > 0 {
                 return Ok(ManifestAuditOutcome::Incomplete {
@@ -380,7 +413,7 @@ fn audit_source_and_record_after_scan_outcome(
             return Ok(ManifestAuditOutcome::Incomplete {
                 committed: stats,
                 error: error.to_string(),
-                root_identity: committed_root_identity.clone(),
+                root_identity: held_root_identity,
             });
         }
         Err(error) => return Err(error),
@@ -389,7 +422,7 @@ fn audit_source_and_record_after_scan_outcome(
         return Ok(ManifestAuditOutcome::Complete {
             stats,
             content_incomplete,
-            root_identity: committed_root_identity.clone(),
+            audit_commit: audit_commit.clone(),
         });
     }
     finalize_pending_rename_completion(
@@ -402,7 +435,7 @@ fn audit_source_and_record_after_scan_outcome(
     Ok(ManifestAuditOutcome::Complete {
         stats,
         content_incomplete,
-        root_identity: committed_root_identity,
+        audit_commit,
     })
 }
 
@@ -412,7 +445,8 @@ fn record_manifest_audit_completion(
     completed_at: i64,
     writer: &impl ScanWriter,
     source_root: &SourceRootCapability,
-) -> Result<String, ScanError> {
+    audit_request: Option<&SourceAuditRequest>,
+) -> Result<SourceAuditCommit, ScanError> {
     source_root.ensure_current_generation()?;
     let before = stats.manifest_before.clone();
     let _writer = writer.lock(super::super::scan_writer::ScanWritePhase::Manifest);
@@ -436,9 +470,16 @@ fn record_manifest_audit_completion(
     }
     batch.complete_manifest_audit(completed_at)?;
     source_root.ensure_current_generation()?;
-    let committed = batch.commit_with_manifest_snapshot()?;
-    super::super::manifest::publish_committed_delta(stats, before, committed);
-    Ok(source_root.generation().to_owned())
+    let (audit_commit, committed_manifest) = batch.commit_with_manifest_snapshot_and_audit(
+        RootIdentity::from_bytes(source_root.generation().as_bytes().to_vec()),
+        audit_request,
+    )?;
+    super::super::manifest::publish_committed_delta(
+        stats,
+        before,
+        (audit_commit.committed_source_revision(), committed_manifest),
+    );
+    Ok(audit_commit)
 }
 
 #[cfg(test)]
@@ -476,6 +517,7 @@ pub(crate) fn audit_source_and_record_with_post_scan_hook_outcome(
         completed_at,
         None,
         &UncoordinatedScanWriter,
+        None,
         || {},
         after_scan,
     )

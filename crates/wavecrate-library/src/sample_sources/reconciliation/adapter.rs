@@ -215,13 +215,19 @@ impl LiveAuditCorrelation {
 pub struct LiveAuditAdmission {
     admission: AdapterAdmission,
     correlation: Option<LiveAuditCorrelation>,
+    audit_request: Option<SourceAuditRequest>,
 }
 
 impl LiveAuditAdmission {
-    fn new(admission: AdapterAdmission, correlation: Option<LiveAuditCorrelation>) -> Self {
+    fn new(
+        admission: AdapterAdmission,
+        correlation: Option<LiveAuditCorrelation>,
+        audit_request: Option<SourceAuditRequest>,
+    ) -> Self {
         Self {
             admission,
             correlation,
+            audit_request,
         }
     }
 
@@ -235,6 +241,11 @@ impl LiveAuditAdmission {
         self.correlation.as_ref()
     }
 
+    /// Borrow the retained source-audit request, including marker-only emergency retention.
+    pub const fn audit_request(&self) -> Option<&SourceAuditRequest> {
+        self.audit_request.as_ref()
+    }
+
     /// Consume the wrapper and return the existing adapter admission.
     pub fn into_admission(self) -> AdapterAdmission {
         self.admission
@@ -243,6 +254,11 @@ impl LiveAuditAdmission {
     /// Consume the wrapper and return the optional live-audit correlation.
     pub fn into_correlation(self) -> Option<LiveAuditCorrelation> {
         self.correlation
+    }
+
+    /// Consume the wrapper and return the optional retained source-audit request.
+    pub fn into_audit_request(self) -> Option<SourceAuditRequest> {
+        self.audit_request
     }
 }
 
@@ -351,37 +367,38 @@ impl<'a> ReconciliationAdapter<'a> {
         batch: SyntheticObservationBatch,
     ) -> Result<LiveAuditAdmission, AdapterError> {
         let provenance = batch.provenance().clone();
-        let uncertainty_start = self.supervisor.uncertainties().len();
         let admission = self.admit_live(batch)?;
-        let correlation = match admission.outcome() {
-            AdmissionOutcome::Accepted(ticket) => self
+        let audit_request = match admission.outcome() {
+            AdmissionOutcome::Accepted(_) | AdmissionOutcome::Rejected(_) => {
+                self.supervisor.source_audit_request_for_source(
+                    provenance.source_id(),
+                    UncertaintyReason::LiveUnproven,
+                )
+            }
+            AdmissionOutcome::DuplicateSuppressed(_) => None,
+            AdmissionOutcome::UncertaintyCapacityExhausted(_) => self
                 .supervisor
-                .uncertainties()
-                .get(uncertainty_start..)
-                .and_then(|markers| {
-                    markers.iter().find(|marker| {
-                        marker.source_id() == Some(provenance.source_id())
-                            && marker.root_identity() == provenance.root_identity()
-                            && marker.generation() == Some(provenance.watcher_generation())
-                            && marker.reasons().contains(&UncertaintyReason::LiveUnproven)
-                    })
-                })
-                .and_then(|marker| {
-                    provenance.root_identity().map(|root_identity| {
-                        LiveAuditCorrelation::new(
-                            *ticket,
-                            ReconciliationAcknowledgementIdentity::new(
-                                provenance.source_id().clone(),
-                                root_identity.clone(),
-                                provenance.watcher_generation(),
-                            ),
-                            marker.boundary(),
-                        )
-                    })
-                }),
+                .source_audit_request_for_current_lane(provenance.source_id()),
+        };
+        let correlation = match admission.outcome() {
+            AdmissionOutcome::Accepted(ticket) => audit_request.as_ref().map(|request| {
+                LiveAuditCorrelation::new(
+                    *ticket,
+                    ReconciliationAcknowledgementIdentity::new(
+                        request.source_id().clone(),
+                        request.root_identity().clone(),
+                        request.generation(),
+                    ),
+                    request.boundary(),
+                )
+            }),
             _ => None,
         };
-        Ok(LiveAuditAdmission::new(admission, correlation))
+        Ok(LiveAuditAdmission::new(
+            admission,
+            correlation,
+            audit_request,
+        ))
     }
 
     /// Admit replay after validating its identity and contiguous capture claim.

@@ -9,8 +9,8 @@ use super::{
     RuntimeTask, SourceAuditRequest, SourceDatabase, SourceProcessingActivity,
     SourceProcessingEvent, SourceProcessingLifecycle, SourceProcessingPresentation,
     SourceProcessingProgressEvent,
-    audit_source_and_record_with_budget_and_progress_and_writer_outcome, execute_readiness_target,
-    manifest_audit_source_row_active, now_epoch_seconds,
+    audit_source_and_record_with_budget_and_progress_and_writer_with_request,
+    execute_readiness_target, manifest_audit_source_row_active, now_epoch_seconds,
 };
 
 #[cfg(test)]
@@ -109,25 +109,24 @@ pub(super) fn execute_candidate_with_presentation(
                 ));
                 last_progress_publish_at = Some(Instant::now());
             };
-            let (outcome, manifest_complete, content_incomplete_error, root_identity) =
-                match audit_source_and_record_with_budget_and_progress_and_writer_outcome(
+            let (outcome, manifest_complete, content_incomplete_error, audit_commit) =
+                match audit_source_and_record_with_budget_and_progress_and_writer_with_request(
                     &database,
                     Some(cancel),
                     content_budget,
                     completed_at,
                     &mut publish_progress,
                     database_writer,
+                    audit_request.as_ref(),
                 ) {
                     Ok(ManifestAuditOutcome::Complete {
                         stats,
                         content_incomplete,
-                        root_identity,
-                    }) => (stats, true, content_incomplete, Some(root_identity)),
+                        audit_commit,
+                    }) => (stats, true, content_incomplete, Some(audit_commit)),
                     Ok(ManifestAuditOutcome::Incomplete {
-                        committed,
-                        error,
-                        root_identity,
-                    }) => (committed, false, Some(error), Some(root_identity)),
+                        committed, error, ..
+                    }) => (committed, false, Some(error), None),
                     Err(error) => {
                         publish_event(SourceProcessingEvent::ManifestAuditFinished {
                             lifecycle: SourceProcessingLifecycle::new(
@@ -201,7 +200,7 @@ pub(super) fn execute_candidate_with_presentation(
             let foreground_refresh_owns_reconciliation =
                 browser_refresh_required && audit_published;
             let cancelled = cancel.load(Ordering::Acquire);
-            let execution_outcome = manifest_audit_execution_outcome(
+            let mut execution_outcome = manifest_audit_execution_outcome(
                 foreground_refresh_owns_reconciliation,
                 !manifest_complete,
                 cancelled,
@@ -209,18 +208,27 @@ pub(super) fn execute_candidate_with_presentation(
             let receipt = if matches!(
                 execution_outcome,
                 ExecutionOutcome::Completed | ExecutionOutcome::CompletedAwaitingForegroundRefresh
-            ) && let (Some(request), Some(root_identity)) =
-                (audit_request.as_ref(), root_identity.as_ref())
-            {
-                Some(request.complete(
-                    committed_source_revision,
-                    wavecrate_library::sample_sources::reconciliation::RootIdentity::from_bytes(
-                        root_identity.as_bytes().to_vec(),
-                    ),
-                ))
+            ) {
+                audit_request
+                    .as_ref()
+                    .zip(audit_commit)
+                    .and_then(|(request, audit_commit)| {
+                        request.complete_from_committed_audit(audit_commit)
+                    })
+                    .or_else(|| audit_request.as_ref().map(SourceAuditRequest::incomplete))
             } else {
                 audit_request.as_ref().map(SourceAuditRequest::incomplete)
             };
+            if matches!(
+                execution_outcome,
+                ExecutionOutcome::Completed | ExecutionOutcome::CompletedAwaitingForegroundRefresh
+            ) && audit_request.is_some()
+                && !receipt
+                    .as_ref()
+                    .is_some_and(|receipt| receipt.is_complete())
+            {
+                execution_outcome = ExecutionOutcome::Failed;
+            }
             publish_event(SourceProcessingEvent::ManifestAuditFinished {
                 lifecycle: SourceProcessingLifecycle::new(
                     candidate.source.id.as_str(),

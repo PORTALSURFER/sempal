@@ -1077,7 +1077,7 @@ fn live_audit_handoff_retires_applied_ticket_without_authority_or_marker_loss() 
 }
 
 #[test]
-fn live_adapter_correlation_is_none_for_rejection_and_capacity() {
+fn live_adapter_correlation_is_none_for_rejection_and_retained_coalescing() {
     let rejected_batch = adapter_batch(
         adapter_capture_provenance(
             "unregistered-source",
@@ -1106,7 +1106,7 @@ fn live_adapter_correlation_is_none_for_rejection_and_capacity() {
     let source = SourceId::from_string("source-a");
     let root = RootIdentity::from_bytes(b"root-a".to_vec());
     let mut capacity_supervisor =
-        ReconciliationAdmissionSupervisor::new(adapter_admission_limits(2, 1));
+        ReconciliationAdmissionSupervisor::new(adapter_admission_limits(1, 1));
     let (_lane, generation) = adapter_registered(&mut capacity_supervisor, &source, &root);
     {
         let mut adapter = ReconciliationAdapter::new(&mut capacity_supervisor);
@@ -1141,10 +1141,103 @@ fn live_adapter_correlation_is_none_for_rejection_and_capacity() {
             .expect("capacity live admission result")
     };
     assert!(capacity.correlation().is_none());
+    assert!(capacity.audit_request().is_some());
+    assert!(matches!(
+        capacity.admission().outcome(),
+        AdmissionOutcome::Rejected(_)
+    ));
+}
+
+#[test]
+fn live_capacity_exhaustion_still_returns_current_lane_audit_request() {
+    let mut supervisor = ReconciliationAdmissionSupervisor::new(
+        ReconciliationAdmissionLimits::new(2, limits(), limits(), 2, 64, 1)
+            .expect("capacity limits"),
+    );
+
+    for (source, root) in [
+        ("ordinary-overflow", b"ordinary-root".as_slice()),
+        ("emergency-overflow-a", b"emergency-root-a".as_slice()),
+        ("emergency-overflow-b", b"emergency-root-b".as_slice()),
+        ("emergency-overflow-c", b"emergency-root-c".as_slice()),
+    ] {
+        let outcome = supervisor.admit(
+            RawObservationEnvelope::try_new(
+                adapter_capture_provenance(
+                    source,
+                    Some(root.to_vec()),
+                    Some(b"stream-a".to_vec()),
+                    1,
+                    None,
+                    None,
+                ),
+                vec![adapter_observation(RawEventKind::Overflow, "overflow")],
+                limits(),
+            )
+            .expect("overflow envelope"),
+        );
+        if source == "emergency-overflow-c" {
+            assert!(matches!(
+                outcome,
+                AdmissionOutcome::UncertaintyCapacityExhausted(_)
+            ));
+        } else {
+            assert!(matches!(
+                outcome,
+                AdmissionOutcome::Rejected(AdmissionRejectReason::UnknownLane)
+            ));
+        }
+    }
+    assert_eq!(supervisor.uncertainties().len(), 3);
+    assert!(!supervisor.uncertainties()[0].is_emergency());
+    assert!(
+        supervisor.uncertainties()[1..]
+            .iter()
+            .all(|marker| marker.is_emergency())
+    );
+
+    let source = SourceId::from_string("current-source");
+    let root = RootIdentity::from_bytes(b"current-root".to_vec());
+    let (_lane, generation) = adapter_registered(&mut supervisor, &source, &root);
+    let capacity = {
+        let mut adapter = ReconciliationAdapter::new(&mut supervisor);
+        adapter
+            .admit_live_with_correlation(adapter_batch(
+                adapter_capture_provenance(
+                    source.as_str(),
+                    Some(b"current-root".to_vec()),
+                    Some(b"stream-a".to_vec()),
+                    generation.get(),
+                    Some(4),
+                    Some(4),
+                ),
+                vec![adapter_observation(RawEventKind::Create, "dropped.wav")],
+            ))
+            .expect("capacity exhaustion admission result")
+    };
     assert!(matches!(
         capacity.admission().outcome(),
         AdmissionOutcome::UncertaintyCapacityExhausted(_)
     ));
+    assert!(capacity.correlation().is_none());
+    let request = capacity
+        .audit_request()
+        .expect("capacity exhaustion must retain a typed audit request");
+    assert_eq!(request.source_id(), &source);
+    assert_eq!(request.root_identity(), &root);
+    assert_eq!(request.generation(), generation);
+    assert_eq!(request.boundary().first(), 3);
+    assert_eq!(request.boundary().through(), 3);
+    assert_eq!(
+        request.boundary().through(),
+        supervisor
+            .uncertainties()
+            .iter()
+            .map(RetainedUncertainty::boundary)
+            .map(RetainedUncertaintyBoundary::through)
+            .max()
+            .expect("retained watermark")
+    );
 }
 
 #[test]
@@ -1863,7 +1956,7 @@ fn adapter_error_preserves_original_batch_and_capacity_is_atomic() {
 
     let source = SourceId::from_string("source-a");
     let root = RootIdentity::from_bytes(b"root-a".to_vec());
-    let mut supervisor = ReconciliationAdmissionSupervisor::new(adapter_admission_limits(2, 1));
+    let mut supervisor = ReconciliationAdmissionSupervisor::new(adapter_admission_limits(1, 1));
     adapter_registered(&mut supervisor, &source, &root);
     let first = {
         let mut adapter = ReconciliationAdapter::new(&mut supervisor);
@@ -1893,20 +1986,16 @@ fn adapter_error_preserves_original_batch_and_capacity_is_atomic() {
         ),
         vec![adapter_observation(RawEventKind::Create, "second.wav")],
     );
-    let expected_second = second_batch.clone();
     let second = {
         let mut adapter = ReconciliationAdapter::new(&mut supervisor);
         adapter.admit_live(second_batch).expect("capacity result")
     };
     assert_eq!(
         second.disposition(),
-        AdapterDisposition::UncertaintyCapacityExhausted
+        AdapterDisposition::SourceAuditRequired
     );
     match second.outcome() {
-        AdmissionOutcome::UncertaintyCapacityExhausted(envelope) => {
-            assert_eq!(envelope.proof(), &Proof::Unproven);
-            assert_eq!(envelope.observations(), expected_second.observations());
-        }
+        AdmissionOutcome::Rejected(_) => {}
         outcome => panic!("unexpected capacity outcome: {outcome:?}"),
     }
     assert_eq!(supervisor.in_flight(), 1);
