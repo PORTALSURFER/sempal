@@ -4,7 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::OptionalExtension;
 
-use super::super::util::{map_sql_error, normalize_relative_path};
+use super::super::util::{map_sql_error, normalize_relative_path, parse_source_index_path_from_db};
 use super::super::{
     META_SOURCE_TRAVERSAL_POLICY, SourceDatabase, SourceDbError, SourceDirectoryEntry,
     SourceDirectoryTruthError, SourceDirectoryTruthPublication, SourceIndexEntry,
@@ -247,6 +247,7 @@ impl SourceWriteBatch<'_> {
         };
 
         if status == "active" {
+            validate_generation_entries(&self.tx, generation_sql)?;
             let published_revision = valid_published_revision(published_revision)?;
             validate_generation_counts(
                 &self.tx,
@@ -277,6 +278,7 @@ impl SourceWriteBatch<'_> {
             }
             .into());
         }
+        validate_generation_entries(&self.tx, generation_sql)?;
         validate_generation_counts(
             &self.tx,
             generation_sql,
@@ -662,11 +664,48 @@ fn directory_requires_audit() -> SourceDbError {
     .into()
 }
 
+fn directory_entry_requires_audit() -> SourceDbError {
+    SourceDirectoryTruthError::RequiresAudit {
+        reason: super::super::SourceDirectoryTruthUnavailableReason::AuditRequired,
+    }
+    .into()
+}
+
 fn valid_published_revision(value: Option<i64>) -> Result<u64, SourceDbError> {
     let Some(value) = value.filter(|value| *value > 0) else {
         return Err(directory_requires_audit());
     };
     u64::try_from(value).map_err(|_| directory_requires_audit())
+}
+
+fn validate_generation_entries(
+    connection: &rusqlite::Transaction<'_>,
+    generation: i64,
+) -> Result<(), SourceDbError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT path, path_encoding, directory_identity
+             FROM source_directory_entries
+             WHERE generation = ?1",
+        )
+        .map_err(map_sql_error)?;
+    let mut rows = statement.query([generation]).map_err(map_sql_error)?;
+    while let Some(row) = rows.next().map_err(map_sql_error)? {
+        let path = row
+            .get::<_, String>(0)
+            .map_err(|_| directory_entry_requires_audit())?;
+        let path_encoding = row
+            .get::<_, i64>(1)
+            .map_err(|_| directory_entry_requires_audit())?;
+        let directory_identity = row
+            .get::<_, String>(2)
+            .map_err(|_| directory_entry_requires_audit())?;
+        parse_source_index_path_from_db(&path, path_encoding)
+            .map_err(|_| directory_entry_requires_audit())?;
+        super::super::directories::validate_directory_identity(&directory_identity)
+            .map_err(|_| directory_entry_requires_audit())?;
+    }
+    Ok(())
 }
 
 fn validate_generation_counts(

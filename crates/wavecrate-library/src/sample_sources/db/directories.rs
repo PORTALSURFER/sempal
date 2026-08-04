@@ -704,6 +704,65 @@ mod tests {
                     reason: SourceDirectoryTruthUnavailableReason::AuditRequired,
                 }
             );
+
+            let error = db
+                .finalize_source_directory_truth_generation(1, 0)
+                .unwrap_err();
+            assert_eq!(
+                directory_error(error),
+                SourceDirectoryTruthError::RequiresAudit {
+                    reason: SourceDirectoryTruthUnavailableReason::AuditRequired,
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn finalization_rejects_corrupt_staging_rows_before_publication() {
+        for (path, path_encoding, directory_identity) in [
+            ("valid/~wavecrate-escaped~2f", 1, "dir-valid"),
+            ("valid", 0, "\u{1}"),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let db = SourceDatabase::open_for_source_write(root.path()).unwrap();
+            db.begin_source_directory_truth_generation(1, 1).unwrap();
+            db.stage_source_directory_truth_entries(1, &[directory("valid", "dir-valid")])
+                .unwrap();
+
+            db.connection
+                .execute(
+                    "UPDATE source_directory_entries
+                     SET path = ?1, path_encoding = ?2, directory_identity = ?3
+                     WHERE generation = 1",
+                    rusqlite::params![path, path_encoding, directory_identity],
+                )
+                .unwrap();
+
+            let error = db
+                .finalize_source_directory_truth_generation(1, 0)
+                .unwrap_err();
+            assert_eq!(
+                directory_error(error),
+                SourceDirectoryTruthError::RequiresAudit {
+                    reason: SourceDirectoryTruthUnavailableReason::AuditRequired,
+                }
+            );
+            assert_eq!(db.get_revision().unwrap(), 0);
+            assert_eq!(
+                db.source_directory_truth_state().unwrap(),
+                SourceDirectoryTruthState::Uninitialized
+            );
+            let active_generation_count: i64 = db
+                .connection
+                .query_row(
+                    "SELECT COUNT(*)
+                     FROM source_directory_generations
+                     WHERE status = 'active'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(active_generation_count, 0);
         }
     }
 
