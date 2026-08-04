@@ -98,7 +98,17 @@ pub(super) fn complete_scan_generation(
     }
     source_root.ensure_current_generation()?;
     if context.mode == super::scan::ScanMode::Targeted {
-        context.commit_batch(db, batch)?;
+        let index_projection_is_current = !context.stats.committed_source_index_delta.is_empty()
+            && context.stats.committed_source_index_delta.revision
+                == context.latest_committed_snapshot().0;
+        if index_projection_is_current {
+            // Keep the index-bearing source revision contiguous. The index facts were already
+            // committed through the bounded source write above; completion metadata is auxiliary
+            // and must not create an unrepresentable intermediate browser revision.
+            batch.commit_auxiliary_state()?;
+        } else {
+            context.commit_batch(db, batch)?;
+        }
         Ok(context.latest_committed_snapshot())
     } else {
         Ok(batch.commit_with_manifest_snapshot()?)

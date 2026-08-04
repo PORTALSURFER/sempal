@@ -23,10 +23,10 @@ pub mod scan_state {
 /// Source scanning logic.
 pub mod scanner {
     pub use wavecrate_scan::sample_sources::scanner::{
-        ChangedSample, CommittedSourceDelta, ContentAuditActivity, ContentAuditBudget,
-        ContentAuditStorage, ManifestAuditOutcome, ManifestIdentityDelta, MovedManifestIdentity,
-        RenamedSample, ScanError, ScanMode, ScanStats, UpdatedSample, audit_source,
-        audit_source_and_record, audit_source_and_record_with_budget_and_progress,
+        ChangedSample, CommittedSourceDelta, CommittedSourceIndexDelta, ContentAuditActivity,
+        ContentAuditBudget, ContentAuditStorage, ManifestAuditOutcome, ManifestIdentityDelta,
+        MovedManifestIdentity, RenamedSample, ScanError, ScanMode, ScanStats, UpdatedSample,
+        audit_source, audit_source_and_record, audit_source_and_record_with_budget_and_progress,
         audit_source_and_record_with_budget_and_progress_and_writer,
         audit_source_and_record_with_budget_and_progress_and_writer_outcome,
         audit_source_and_record_with_budget_and_progress_and_writer_with_request,
@@ -109,12 +109,13 @@ pub use wavecrate_library::sample_sources::{
     HarvestMetadataSnapshot, HarvestSourceRange, HarvestState, LIBRARY_DB_FILE_NAME, LibraryError,
     LibraryState, NewHarvestDerivation, Rating, SampleSource, SourceCollectionWrite,
     SourceContentHashWrite, SourceDatabase, SourceDatabaseConnectionRole, SourceDbError,
-    SourceFileWrite, SourceId, SourceMetadataStorage, SourceRole, SourceTagWrite,
-    SourceWriteCommand, WavEntry, database_path_for, default_primary_import_folder, normalize_path,
+    SourceFileWrite, SourceId, SourceIndexClassification, SourceIndexEntry, SourceMetadataStorage,
+    SourceRole, SourceTagWrite, SourceWriteCommand, WavEntry, database_path_for,
+    default_primary_import_folder, normalize_path,
 };
 pub use wavecrate_library::sample_sources::{HiddenDirectoryPolicy, SourceTraversalPolicy};
 pub use wavecrate_scan::sample_sources::ScanTracker;
 pub use wavecrate_scan::sample_sources::{
-    ChangedSample, CommittedSourceDelta, ManifestIdentityDelta, MovedManifestIdentity,
-    RenamedSample, ScanError, ScanMode, ScanStats, UpdatedSample,
+    ChangedSample, CommittedSourceDelta, CommittedSourceIndexDelta, ManifestIdentityDelta,
+    MovedManifestIdentity, RenamedSample, ScanError, ScanMode, ScanStats, UpdatedSample,
 };

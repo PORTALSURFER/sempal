@@ -28,9 +28,9 @@ pub(crate) use runner::{
 };
 pub(crate) use runner::{finish_scan_result, reconcile_scan_renames};
 pub use stats::{
-    ChangedSample, CommittedScanBatch, CommittedSourceDelta, DirectoryRepeatKind,
-    ManifestIdentityDelta, MovedManifestIdentity, RenamedSample, ScanStats, SourceTreeDiagnostic,
-    SourceTreeFile, SourceTreeSnapshot, UpdatedSample,
+    ChangedSample, CommittedScanBatch, CommittedSourceDelta, CommittedSourceIndexDelta,
+    DirectoryRepeatKind, ManifestIdentityDelta, MovedManifestIdentity, RenamedSample, ScanStats,
+    SourceTreeDiagnostic, SourceTreeFile, SourceTreeSnapshot, UpdatedSample,
 };
 
 #[cfg(test)]

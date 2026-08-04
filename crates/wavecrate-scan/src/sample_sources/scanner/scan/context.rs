@@ -416,6 +416,14 @@ impl ScanContext {
             batch.commit_with_manifest_changes(expected_revision)?
         };
         post_commit_hook();
+        if let Some(index_commit) = result.source_index_commit.as_ref() {
+            self.stats.committed_source_index_delta.record_commit(
+                index_commit.source_revision,
+                index_commit.index_revision,
+                index_commit.upserted_entries.clone(),
+                index_commit.removed_paths.clone(),
+            );
+        }
         if let Some(snapshot) = result.authoritative_snapshot {
             self.committed_manifest = snapshot
                 .into_iter()

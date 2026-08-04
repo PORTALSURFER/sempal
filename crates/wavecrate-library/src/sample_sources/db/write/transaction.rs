@@ -4,8 +4,8 @@ use rusqlite::OptionalExtension;
 
 use super::super::util::{map_sql_error, normalize_relative_path};
 use super::super::{
-    META_SOURCE_TRAVERSAL_POLICY, SourceDatabase, SourceDbError, SourceManifestEntry,
-    SourceTraversalPolicy, SourceWriteBatch,
+    META_SOURCE_TRAVERSAL_POLICY, SourceDatabase, SourceDbError, SourceIndexEntry,
+    SourceManifestEntry, SourceTraversalPolicy, SourceWriteBatch,
 };
 use crate::sample_sources::reconciliation::{RootIdentity, SourceAuditCommit, SourceAuditRequest};
 
@@ -17,6 +17,20 @@ pub struct ManifestCommitResult {
     pub touched_path_changes: Vec<(PathBuf, Option<SourceManifestEntry>)>,
     /// Complete manifest captured in the committing transaction when the cached revision was stale.
     pub authoritative_snapshot: Option<Vec<SourceManifestEntry>>,
+    /// Index-only facts committed by this same transaction, when any changed.
+    pub source_index_commit: Option<SourceIndexCommitResult>,
+}
+
+/// Typed index-only facts proven by one committed source-database write.
+pub struct SourceIndexCommitResult {
+    /// Generic source revision assigned by the committing transaction.
+    pub source_revision: u64,
+    /// Index-only revision assigned by the committing transaction.
+    pub index_revision: u64,
+    /// Final typed index rows upserted by the transaction.
+    pub upserted_entries: Vec<SourceIndexEntry>,
+    /// Index rows removed by the transaction.
+    pub removed_paths: Vec<PathBuf>,
 }
 
 impl SourceWriteBatch<'_> {
@@ -165,6 +179,7 @@ impl SourceWriteBatch<'_> {
     ) -> Result<ManifestCommitResult, SourceDbError> {
         self.prepare_commit()?;
         let revision = manifest_revision(&self.tx)?;
+        let source_index_commit = self.source_index_commit(revision)?;
         let (changes, snapshot) = if revision == expected_previous_revision.saturating_add(1) {
             let changes = self
                 .manifest_touched_paths
@@ -190,6 +205,7 @@ impl SourceWriteBatch<'_> {
             revision,
             touched_path_changes: changes,
             authoritative_snapshot: snapshot,
+            source_index_commit,
         })
     }
 
@@ -207,6 +223,7 @@ impl SourceWriteBatch<'_> {
         }
         self.prepare_commit()?;
         let revision = manifest_revision(&self.tx)?;
+        let source_index_commit = self.source_index_commit(revision)?;
         let changes = self
             .manifest_touched_paths
             .iter()
@@ -226,7 +243,43 @@ impl SourceWriteBatch<'_> {
             revision,
             touched_path_changes: changes,
             authoritative_snapshot: None,
+            source_index_commit,
         })
+    }
+
+    fn source_index_commit(
+        &self,
+        source_revision: u64,
+    ) -> Result<Option<SourceIndexCommitResult>, SourceDbError> {
+        if self.source_index_changes.is_empty() {
+            return Ok(None);
+        }
+        let index_revision = self
+            .tx
+            .query_row(
+                "SELECT value FROM metadata WHERE key = 'source_index_revision_v1'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(map_sql_error)?
+            .map(|raw| raw.parse::<u64>().map_err(|_| SourceDbError::Unexpected))
+            .transpose()?
+            .unwrap_or_default();
+        let mut upserted_entries = Vec::new();
+        let mut removed_paths = Vec::new();
+        for (path, entry) in &self.source_index_changes {
+            match entry {
+                Some(entry) => upserted_entries.push(entry.clone()),
+                None => removed_paths.push(path.clone()),
+            }
+        }
+        Ok(Some(SourceIndexCommitResult {
+            source_revision,
+            index_revision,
+            upserted_entries,
+            removed_paths,
+        }))
     }
 
     fn prepare_commit(&self) -> Result<(), SourceDbError> {

@@ -130,7 +130,11 @@ impl SourceWriteBatch<'_> {
                 ],
             )
             .map_err(map_sql_error)?;
-        self.index_revision_dirty |= changed > 0;
+        if changed > 0 {
+            self.index_revision_dirty = true;
+            self.source_index_changes
+                .insert(entry.relative_path.clone(), Some(entry.clone()));
+        }
         Ok(())
     }
 
@@ -141,8 +145,73 @@ impl SourceWriteBatch<'_> {
             .tx
             .execute("DELETE FROM source_index_entries WHERE path = ?1", [path])
             .map_err(map_sql_error)?;
-        self.index_revision_dirty |= changed > 0;
+        if changed > 0 {
+            self.index_revision_dirty = true;
+            self.source_index_changes
+                .insert(relative_path.to_path_buf(), None);
+        }
         Ok(())
+    }
+}
+
+impl SourceDatabase {
+    /// Read a bounded set of index-only entries at one exact committed index revision.
+    ///
+    /// The revision and rows are read from one transaction. This is intended for targeted
+    /// projection hydration and never materializes the source-wide index.
+    pub fn source_index_entries_for_paths_at_revision(
+        &self,
+        expected_revision: u64,
+        paths: &[std::path::PathBuf],
+    ) -> Result<SourceIndexSnapshot, SourceDbError> {
+        if !source_index_schema_available(&self.connection)? {
+            if expected_revision != 0 {
+                return Err(SourceDbError::Unexpected);
+            }
+            return Ok(SourceIndexSnapshot {
+                revision: 0,
+                entries: Vec::new(),
+            });
+        }
+        let transaction = self
+            .connection
+            .unchecked_transaction()
+            .map_err(map_sql_error)?;
+        let revision = read_index_revision(&transaction)?;
+        if revision != expected_revision {
+            return Err(SourceDbError::Unexpected);
+        }
+        let path_encoding_available = source_index_path_encoding_available(&transaction)?;
+        let mut entries = Vec::new();
+        for relative_path in paths {
+            let (normalized, path_encoding) = normalize_source_index_path(relative_path)?;
+            if !path_encoding_available && path_encoding != 0 {
+                return Err(SourceDbError::NonUnicodeRelativePath(relative_path.clone()));
+            }
+            let (sql, params) = if path_encoding_available {
+                (
+                    source_index_select_sql_for_exact_path(true),
+                    ExactIndexPathParams::Encoded(normalized, path_encoding),
+                )
+            } else {
+                (
+                    source_index_select_sql_for_exact_path(false),
+                    ExactIndexPathParams::Plain(normalized),
+                )
+            };
+            entries.extend(match params {
+                ExactIndexPathParams::Encoded(path, encoding) => {
+                    collect_entries(&transaction, &sql, rusqlite::params![path, encoding])?
+                }
+                ExactIndexPathParams::Plain(path) => {
+                    collect_entries(&transaction, &sql, rusqlite::params![path])?
+                }
+            });
+        }
+        entries.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+        entries.dedup_by(|left, right| left.relative_path == right.relative_path);
+        transaction.rollback().map_err(map_sql_error)?;
+        Ok(SourceIndexSnapshot { revision, entries })
     }
 }
 
@@ -175,6 +244,31 @@ fn source_index_select_sql(path_encoding: bool, under_path: bool) -> String {
          {predicate}
          ORDER BY path ASC"
     )
+}
+
+fn source_index_select_sql_for_exact_path(path_encoding: bool) -> String {
+    let encoding = if path_encoding {
+        "path_encoding"
+    } else {
+        "0 AS path_encoding"
+    };
+    let predicate = if path_encoding {
+        "WHERE path = ?1 COLLATE BINARY AND path_encoding = ?2"
+    } else {
+        "WHERE path = ?1 COLLATE BINARY"
+    };
+    format!(
+        "SELECT path, {encoding}, classification, file_size, modified_ns, file_identity,
+                diagnostic, format_policy_version
+         FROM source_index_entries
+         {predicate}
+         ORDER BY path ASC"
+    )
+}
+
+enum ExactIndexPathParams {
+    Encoded(String, i64),
+    Plain(String),
 }
 
 fn read_index_revision(connection: &Connection) -> Result<u64, SourceDbError> {
@@ -303,6 +397,39 @@ mod tests {
             database.get_revision().expect("manifest revision"),
             manifest_revision
         );
+    }
+
+    #[test]
+    fn bounded_source_commit_reports_index_facts_at_its_source_revision() {
+        let directory = tempfile::tempdir().expect("source root");
+        let database =
+            SourceDatabase::open_for_source_write(directory.path()).expect("source database");
+        let expected_revision = database.get_revision().expect("source revision");
+        let entry = SourceIndexEntry {
+            relative_path: PathBuf::from("notes.txt"),
+            classification: SourceIndexClassification::UnsupportedNonAudio,
+            file_size: Some(5),
+            modified_ns: Some(10),
+            file_identity: None,
+            diagnostic: None,
+            format_policy_version: SOURCE_FORMAT_POLICY_VERSION,
+        };
+        let mut batch = database.write_batch().expect("index batch");
+        batch
+            .upsert_source_index_entry(&entry)
+            .expect("upsert index entry");
+        let result = batch
+            .commit_with_bounded_manifest_changes(expected_revision)
+            .expect("bounded source commit");
+        let index_commit = result
+            .source_index_commit
+            .expect("same-transaction index evidence");
+
+        assert_eq!(index_commit.source_revision, result.revision);
+        assert_eq!(index_commit.index_revision, 1);
+        assert_eq!(index_commit.upserted_entries, vec![entry]);
+        assert!(index_commit.removed_paths.is_empty());
+        assert_eq!(result.revision, database.get_revision().unwrap());
     }
 
     #[test]

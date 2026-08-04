@@ -124,11 +124,10 @@ pub(super) fn reconcile_index_entries(
         batch.upsert_source_index_entry(&entry)?;
     }
     source_root.ensure_current_generation()?;
-    if unavailable_manifest_paths.is_empty() {
-        batch.commit_auxiliary_state()?;
-    } else {
-        source_root.ensure_current_generation()?;
-        context.commit_batch(database, batch)?;
-    }
+    source_root.ensure_current_generation()?;
+    // Index-only facts are source projection facts, not auxiliary metadata. Route every
+    // mutation through the bounded source commit so the scanner can publish the exact
+    // revision only after this transaction commits.
+    context.commit_batch(database, batch)?;
     Ok(())
 }
