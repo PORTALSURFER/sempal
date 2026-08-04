@@ -236,6 +236,8 @@ pub enum AdmissionError {
     InvalidLifecycleTransition,
     /// A proof-carrying envelope cannot use the proofless audit handoff.
     UnprovenAuditHandoffRequiresUnprovenEnvelope,
+    /// A replay checkpoint may retire only an envelope carrying watcher continuity proof.
+    ReplayCheckpointRequiresContinuityProof,
     /// The supplied generation is not the lane's current generation.
     GenerationMismatch,
     /// The monotonic generation counter cannot advance.
@@ -1421,6 +1423,30 @@ impl ReconciliationAdmissionSupervisor {
             .ok_or(AdmissionError::UnknownTicket)?;
         if pending.phase != DispatchPhase::Applied {
             return Err(AdmissionError::InvalidLifecycleTransition);
+        }
+        let pending = self.pending.remove(&ticket).expect("ticket checked above");
+        self.release_usage(&pending.lane, pending.usage);
+        Ok(())
+    }
+
+    /// Retire an Applied ticket only when it carries a checked watcher-continuity proof.
+    ///
+    /// This is crate-visible so the source owner can expose a replay-specific terminal seam
+    /// without weakening the existing generic checkpoint path. Removing the pending ticket before
+    /// releasing usage makes duplicate terminal calls and lifecycle-invalidated tickets harmless.
+    pub(crate) fn mark_replay_checkpointed(
+        &mut self,
+        ticket: DispatchTicket,
+    ) -> Result<(), AdmissionError> {
+        let pending = self
+            .pending
+            .get(&ticket)
+            .ok_or(AdmissionError::UnknownTicket)?;
+        if pending.phase != DispatchPhase::Applied {
+            return Err(AdmissionError::InvalidLifecycleTransition);
+        }
+        if pending.envelope.proof().watcher_continuity().is_none() {
+            return Err(AdmissionError::ReplayCheckpointRequiresContinuityProof);
         }
         let pending = self.pending.remove(&ticket).expect("ticket checked above");
         self.release_usage(&pending.lane, pending.usage);
