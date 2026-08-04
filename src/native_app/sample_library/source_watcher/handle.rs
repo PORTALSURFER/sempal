@@ -1928,6 +1928,33 @@ fn request_closed_app_journal_audit(
     });
 }
 
+#[cfg(target_os = "macos")]
+fn handle_closed_app_replay_fallback(
+    state: &mut GuiSourceWatchState,
+    source: &SampleSource,
+    outcome: &AdmissionOutcome,
+    now: Instant,
+) {
+    match outcome {
+        AdmissionOutcome::Rejected(reason) => {
+            tracing::warn!(
+                source_id = source.id.as_str(),
+                ?reason,
+                "Closed-application replay remained conservative uncertainty"
+            );
+        }
+        AdmissionOutcome::UncertaintyCapacityExhausted(envelope) => {
+            tracing::warn!(
+                source_id = source.id.as_str(),
+                observations = envelope.observations().len(),
+                "Closed-application replay exceeded uncertainty capacity"
+            );
+        }
+        outcome => unreachable!("unexpected closed-application replay fallback: {outcome:?}"),
+    }
+    state.mark_source_overflowed(source.id.as_str(), now);
+}
+
 fn publish_closed_app_journal_recovery(
     message_tx: &Sender<GuiMessage>,
     state: &mut GuiSourceWatchState,
@@ -2135,21 +2162,14 @@ fn publish_closed_app_journal_recovery(
                             "Suppressing duplicate closed-application replay"
                         );
                     }
-                    AdmissionOutcome::Rejected(reason) => {
-                        tracing::warn!(
-                            source_id = source.id.as_str(),
-                            ?reason,
-                            "Closed-application replay remained conservative uncertainty"
+                    AdmissionOutcome::Rejected(_)
+                    | AdmissionOutcome::UncertaintyCapacityExhausted(_) => {
+                        handle_closed_app_replay_fallback(
+                            state,
+                            source,
+                            replay_admission.admission().outcome(),
+                            now,
                         );
-                        widen_source(state, &source.root, now);
-                    }
-                    AdmissionOutcome::UncertaintyCapacityExhausted(envelope) => {
-                        tracing::warn!(
-                            source_id = source.id.as_str(),
-                            observations = envelope.observations().len(),
-                            "Closed-application replay exceeded uncertainty capacity"
-                        );
-                        widen_source(state, &source.root, now);
                     }
                 }
             }
@@ -2713,8 +2733,9 @@ mod lifecycle_tests {
     use wavecrate::sample_sources::{SampleSource, SourceId};
     use wavecrate_library::sample_sources::db::META_SOURCE_WATCHER_CHECKPOINT;
     use wavecrate_library::sample_sources::reconciliation::{
-        CaptureBoundary, RawObservationLimits, ReconciliationAdmissionLimits,
-        ReconciliationScopeKind, UncertaintyReason,
+        BackendStreamIdentity, CaptureBoundary, RawEventKind, RawObservation,
+        RawObservationEnvelope, RawObservationLimits, RawObservationProvenance, RawObservedPath,
+        RawPathRole, ReconciliationAdmissionLimits, ReconciliationScopeKind, UncertaintyReason,
     };
 
     static LIFECYCLE_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -4213,6 +4234,224 @@ mod lifecycle_tests {
 
         assert!(pending_replay_checkpoints.is_empty());
         assert_eq!(admission.in_flight(), 0);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn closed_app_replay_fallback_is_source_scoped_for_shared_root() {
+        let directory = tempfile::tempdir().expect("shared source root");
+        let first = source_with_root("closed-replay-fallback-first", directory.path());
+        let second = source_with_root("closed-replay-fallback-second", directory.path());
+        let sources = vec![first.clone(), second.clone()];
+        let mut state = source_watcher_state(sources.clone());
+        state.watched_roots =
+            HashMap::from([(first.root.clone(), Some(String::from("identity-1")))]);
+        let mut admission = limited_admission(&sources, 1);
+        state.set_audit_request_capacity(admission.max_source_audit_request_entries());
+
+        let checkpoint_value = |source: &SampleSource,
+                                lifecycle_generation: u64,
+                                event_id: u64,
+                                backend_device: u64,
+                                watcher_generation: u64,
+                                replay_start_event_id: u64,
+                                replay_end_event_id: u64| {
+            serde_json::json!({
+                "root_identity": "identity-1",
+                "event_id": event_id,
+                "format_version": 3,
+                "source_id": source.id.as_str(),
+                "lifecycle_generation": lifecycle_generation,
+                "source_revision": 1,
+                "cause": "targeted_replay",
+                "continuity_proof": {
+                    "root_identity": "identity-1",
+                    "backend": "fsevents",
+                    "backend_device": backend_device,
+                    "watcher_generation": watcher_generation,
+                    "replay_coverage_start_event_id": replay_start_event_id,
+                    "replay_coverage_end_event_id": replay_end_event_id,
+                    "acknowledged_end_event_id": replay_end_event_id
+                }
+            })
+            .to_string()
+        };
+        let write_checkpoint = |source: &SampleSource, value: String| {
+            let database =
+                SourceDatabase::open_for_source_write(&source.root).expect("source database");
+            database
+                .set_metadata(META_SOURCE_WATCHER_CHECKPOINT, &value)
+                .expect("watcher checkpoint");
+        };
+
+        write_checkpoint(&second, checkpoint_value(&second, 1, 20, 202, 42, 19, 20));
+        let second_lane = admission.lane_for_capture(&second.id).expect("second lane");
+        let (second_observations, second_limits) =
+            fsevents_replay_observations(vec![second.root.join("second.wav")])
+                .expect("second replay observations");
+        let second_replay = {
+            let database = SourceDatabase::open_for_background_job(&second.root)
+                .expect("second replay authority database");
+            admission
+                .admit_fsevents_replay(
+                    &second,
+                    &database,
+                    42,
+                    FseventsReplayEvidence {
+                        source_lifecycle_generation: WatcherGeneration::new(1),
+                        replay_stream_generation: 42,
+                        backend_device: 202,
+                        replay_start_event_id: 20,
+                        replay_end_event_id: 21,
+                        observations: second_observations,
+                        limits: second_limits,
+                    },
+                )
+                .expect("second replay admission")
+        };
+        let second_ticket = match second_replay.admission().outcome() {
+            AdmissionOutcome::Accepted(ticket) => *ticket,
+            outcome => panic!("unexpected second replay outcome: {outcome:?}"),
+        };
+
+        let (first_observations, first_limits) =
+            fsevents_replay_observations(vec![first.root.join("first.wav")])
+                .expect("first replay observations");
+        let first_replay = {
+            let database = SourceDatabase::open_for_background_job(&first.root)
+                .expect("first replay authority database");
+            admission
+                .admit_fsevents_replay(
+                    &first,
+                    &database,
+                    41,
+                    FseventsReplayEvidence {
+                        source_lifecycle_generation: WatcherGeneration::new(1),
+                        replay_stream_generation: 41,
+                        backend_device: 101,
+                        replay_start_event_id: 10,
+                        replay_end_event_id: 11,
+                        observations: first_observations,
+                        limits: first_limits,
+                    },
+                )
+                .expect("first replay admission")
+        };
+        assert!(matches!(
+            first_replay.admission().outcome(),
+            AdmissionOutcome::Rejected(_)
+        ));
+        assert_eq!(admission.in_flight(), 1);
+
+        let dispatched = admission.dispatch_next().expect("second replay dispatch");
+        assert_eq!(dispatched.ticket(), second_ticket);
+        admission
+            .mark_dispatched(second_ticket)
+            .expect("second replay dispatched");
+        admission
+            .mark_applied(second_ticket)
+            .expect("second replay applied");
+
+        let second_proof = WatcherContinuityProof {
+            root_identity: String::from("identity-1"),
+            backend: journal::WatcherBackend::Fsevents,
+            backend_device: 202,
+            watcher_generation: 42,
+            replay_coverage_start_event_id: 20,
+            replay_coverage_end_event_id: 21,
+            acknowledged_end_event_id: 21,
+        };
+        let mut pending_replay_checkpoints = HashMap::from([(
+            second_ticket,
+            PendingReplayCheckpoint {
+                source_id: second.id.clone(),
+                source_root: second.root.clone(),
+                root_identity: second_lane.root_identity().clone(),
+                owner_watcher_generation: second_lane.generation(),
+                proof: second_proof.clone(),
+            },
+        )]);
+
+        handle_closed_app_replay_fallback(
+            &mut state,
+            &first,
+            first_replay.admission().outcome(),
+            Instant::now(),
+        );
+        assert!(
+            state
+                .pending
+                .get(first.id.as_str())
+                .is_some_and(|pending| pending.overflowed)
+        );
+        assert!(state.pending.get(second.id.as_str()).is_none());
+        assert_eq!(admission.in_flight(), 1);
+        assert_eq!(
+            admission.lane_for_capture(&second.id),
+            Some(second_lane.clone())
+        );
+        assert!(pending_replay_checkpoints.contains_key(&second_ticket));
+
+        let first_lane = admission.lane_for_capture(&first.id).expect("first lane");
+        let capacity_envelope = RawObservationEnvelope::try_new(
+            RawObservationProvenance::new(
+                first.id.clone(),
+                Some(first_lane.root_identity().clone()),
+                BackendStreamIdentity::from_fsevents_device(101),
+                first_lane.generation(),
+                CaptureBoundary::try_new(12, None, None).expect("capacity boundary"),
+            ),
+            vec![RawObservation::new(
+                RawEventKind::Create,
+                vec![RawObservedPath::new(
+                    PathBuf::from("first.wav"),
+                    RawPathRole::Subject,
+                )],
+            )],
+            RawObservationLimits::new(8, usize::MAX, usize::MAX).expect("capacity limits"),
+        )
+        .expect("capacity envelope");
+        let capacity_outcome =
+            AdmissionOutcome::UncertaintyCapacityExhausted(Box::new(capacity_envelope));
+        handle_closed_app_replay_fallback(&mut state, &first, &capacity_outcome, Instant::now());
+        assert!(
+            state
+                .pending
+                .get(first.id.as_str())
+                .is_some_and(|pending| pending.overflowed)
+        );
+        assert!(state.pending.get(second.id.as_str()).is_none());
+        assert_eq!(admission.in_flight(), 1);
+        assert!(pending_replay_checkpoints.contains_key(&second_ticket));
+
+        write_checkpoint(&second, checkpoint_value(&second, 2, 21, 202, 42, 20, 21));
+        acknowledge_replay_checkpoint(
+            &mut state,
+            &mut admission,
+            &mut pending_replay_checkpoints,
+            &sources,
+            RevisionBoundCheckpoint {
+                source_id: second.id.as_str().to_string(),
+                lifecycle_generation: 2,
+                source_revision: 1,
+                root_identity: String::from("identity-1"),
+                event_id: 21,
+                cause: CheckpointCause::TargetedReplay,
+                continuity_proof: Some(second_proof),
+            },
+            Instant::now(),
+        );
+
+        assert!(pending_replay_checkpoints.is_empty());
+        assert_eq!(admission.in_flight(), 0);
+        assert_eq!(admission.lane_for_capture(&second.id), Some(second_lane));
+        assert!(
+            state
+                .pending
+                .get(first.id.as_str())
+                .is_some_and(|pending| pending.overflowed)
+        );
+        assert!(state.pending.get(second.id.as_str()).is_none());
     }
 
     #[test]
