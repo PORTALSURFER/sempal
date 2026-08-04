@@ -279,6 +279,27 @@ pub struct ReplayPriorToken {
 }
 
 impl ReplayPriorToken {
+    /// Construct a replay prior from an already validated source-database checkpoint.
+    ///
+    /// This remains crate-private so production callers cannot assemble durable authority from
+    /// scalar or caller-supplied checkpoint fields. The source-database owner is the only
+    /// production boundary that may mint this token.
+    pub(crate) fn from_durable_checkpoint(
+        source_id: SourceId,
+        root_identity: RootIdentity,
+        backend_stream_identity: BackendStreamIdentity,
+        watcher_generation: WatcherGeneration,
+        acknowledged_sequence: u64,
+    ) -> Self {
+        Self {
+            source_id,
+            root_identity,
+            backend_stream_identity,
+            watcher_generation,
+            acknowledged_sequence,
+        }
+    }
+
     /// Construct an identity-bound prior for crate regression tests.
     #[cfg(test)]
     pub(crate) fn new(

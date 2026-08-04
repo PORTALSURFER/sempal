@@ -22,6 +22,7 @@ mod pending_renames;
 pub mod read;
 mod rename_destinations;
 mod rename_metadata;
+mod replay_authority;
 /// SQLite schema management for sample source databases.
 pub mod schema;
 /// Durable per-source tag catalog and sample assignment helpers.
