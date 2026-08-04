@@ -3,7 +3,8 @@
 //! Live observations and replay batches that fail continuity validation remain
 //! `Proof::Unproven` and retain a conservative `SourceAudit` marker. A valid
 //! replay may carry only the checked continuity proof; this adapter never
-//! establishes committed source authority.
+//! establishes committed source authority. It consumes opaque durable authority
+//! supplied by a future owner and never mints native or database tokens.
 
 use std::fmt;
 
@@ -262,12 +263,12 @@ impl LiveAuditAdmission {
     }
 }
 
-/// An opaque identity-bound prior used by the replay adapter.
+/// An opaque identity-bound durable prior consumed by replay admission.
 ///
-/// The constructor is crate-restricted because the acknowledgement sequence is
-/// authority supplied by the owning library boundary, not a bare public `u64`.
-/// A continuity proof made from this token still does not establish committed
-/// source authority.
+/// Production code receives this authority from the future durability owner. This
+/// seam never constructs native or database tokens; the test-only constructor
+/// exists solely for crate regression tests. A continuity proof made from this
+/// token still does not establish committed source authority.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReplayPriorToken {
     source_id: SourceId,
@@ -278,8 +279,8 @@ pub struct ReplayPriorToken {
 }
 
 impl ReplayPriorToken {
-    /// Construct an identity-bound prior for crate-owned replay sources and tests.
-    #[allow(dead_code)]
+    /// Construct an identity-bound prior for crate regression tests.
+    #[cfg(test)]
     pub(crate) fn new(
         source_id: SourceId,
         root_identity: RootIdentity,
