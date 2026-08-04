@@ -1204,6 +1204,8 @@ struct PendingReplayHandoff {
 struct PendingReplayCheckpoint {
     source_id: SourceId,
     source_root: PathBuf,
+    root_identity: RootIdentity,
+    owner_watcher_generation: WatcherGeneration,
     proof: WatcherContinuityProof,
     source_lifecycle_generation: WatcherGeneration,
 }
@@ -1595,6 +1597,7 @@ fn dispatch_pending_capture_contexts_with_replay(
     message_tx: &Sender<GuiMessage>,
     now: Instant,
 ) -> bool {
+    prune_stale_replay_checkpoints(admission, pending_replay_checkpoints);
     let mut root_invalidated = false;
     if admission.in_flight() == 0 && !pending_contexts.is_empty() {
         tracing::error!(
@@ -1680,6 +1683,8 @@ fn dispatch_pending_capture_contexts_with_replay(
                 PendingReplayCheckpoint {
                     source_id: context.source_id.clone(),
                     source_root: context.source_root.clone(),
+                    root_identity: context.root_identity.clone(),
+                    owner_watcher_generation: context.watcher_generation,
                     proof: replay.proof.clone(),
                     source_lifecycle_generation: replay.source_lifecycle_generation,
                 },
@@ -1702,6 +1707,29 @@ fn dispatch_pending_capture_contexts_with_replay(
         }
     }
     root_invalidated
+}
+
+fn prune_stale_replay_checkpoints(
+    admission: &AdmissionLifecycle,
+    pending_replay_checkpoints: &mut HashMap<DispatchTicket, PendingReplayCheckpoint>,
+) {
+    pending_replay_checkpoints.retain(|ticket, pending| {
+        let current_lane = admission.lane_for_capture(&pending.source_id);
+        let current = current_lane.as_ref();
+        let current_matches = current.is_some_and(|lane| {
+            lane.lifecycle() == ReconciliationLifecycle::Capturing
+                && lane.root_identity() == &pending.root_identity
+                && lane.generation() == pending.owner_watcher_generation
+        });
+        if !current_matches {
+            tracing::debug!(
+                ticket = ticket.id(),
+                source_id = pending.source_id.as_str(),
+                "Pruning replay checkpoint from a retired watcher lane"
+            );
+        }
+        current_matches
+    });
 }
 
 #[cfg(test)]
@@ -3773,6 +3801,106 @@ mod lifecycle_tests {
                 .get(source.id.as_str())
                 .is_some_and(|pending| pending.overflowed)
         );
+    }
+
+    #[test]
+    fn source_rebind_prunes_stale_replay_checkpoint_while_other_lane_remains_in_flight() {
+        let first_directory = tempfile::tempdir().expect("first source root");
+        let replacement_directory = tempfile::tempdir().expect("replacement source root");
+        let second_directory = tempfile::tempdir().expect("second source root");
+        let first = source_with_root("replay-prune-first", first_directory.path());
+        let replacement = source_with_root("replay-prune-first", replacement_directory.path());
+        let second = source_with_root("replay-prune-second", second_directory.path());
+        let sources = vec![first.clone(), second.clone()];
+        let mut state = source_watcher_state(sources.clone());
+        let mut admission = configured_admission(&sources);
+        let first_lane = admission
+            .lane_for_capture(&first.id)
+            .expect("first source lane");
+        let mut pending_contexts = HashMap::new();
+
+        let first_capture = notify_capture(&first.root, 401, &["first.wav"]);
+        let first_target = source_capture_targets(&first_capture, &sources)
+            .pop()
+            .expect("first source target");
+        admit_capture_target(
+            &mut state,
+            &mut admission,
+            &first_capture,
+            exact_boundary(401),
+            first_target,
+            &mut pending_contexts,
+            Instant::now(),
+        );
+        let first_ticket = *pending_contexts.keys().next().expect("first source ticket");
+        let dispatched = admission.dispatch_next().expect("first source dispatch");
+        assert_eq!(dispatched.ticket(), first_ticket);
+        admission
+            .mark_dispatched(first_ticket)
+            .expect("first source dispatched");
+        admission
+            .mark_applied(first_ticket)
+            .expect("first source applied");
+        pending_contexts
+            .remove(&first_ticket)
+            .expect("first source handoff context");
+
+        let second_capture = notify_capture(&second.root, 402, &["second.wav"]);
+        let second_target = source_capture_targets(&second_capture, &sources)
+            .pop()
+            .expect("second source target");
+        admit_capture_target(
+            &mut state,
+            &mut admission,
+            &second_capture,
+            exact_boundary(402),
+            second_target,
+            &mut pending_contexts,
+            Instant::now(),
+        );
+        assert_eq!(admission.in_flight(), 2);
+
+        let mut pending_replay_checkpoints = HashMap::from([(
+            first_ticket,
+            PendingReplayCheckpoint {
+                source_id: first.id.clone(),
+                source_root: first.root.clone(),
+                root_identity: first_lane.root_identity().clone(),
+                owner_watcher_generation: first_lane.generation(),
+                proof: journal::WatcherContinuityProof {
+                    root_identity: "identity-0".to_string(),
+                    backend: journal::WatcherBackend::Fsevents,
+                    backend_device: 1,
+                    watcher_generation: 1,
+                    replay_coverage_start_event_id: 1,
+                    replay_coverage_end_event_id: 2,
+                    acknowledged_end_event_id: 2,
+                },
+                source_lifecycle_generation: WatcherGeneration::new(1),
+            },
+        )]);
+
+        admission
+            .reconcile(
+                &[replacement.clone(), second.clone()],
+                &HashMap::from([
+                    (
+                        replacement.root.clone(),
+                        Some("identity-rebound".to_string()),
+                    ),
+                    (second.root.clone(), Some("identity-1".to_string())),
+                ]),
+            )
+            .expect("rebind first source while second remains active");
+        assert_eq!(admission.in_flight(), 1);
+        assert!(admission.lane_for_capture(&second.id).is_some());
+
+        prune_stale_replay_checkpoints(&admission, &mut pending_replay_checkpoints);
+
+        assert!(pending_replay_checkpoints.is_empty());
+        assert_eq!(admission.in_flight(), 1);
+        assert!(admission.lane_for_capture(&second.id).is_some());
+        admission.fence_all().expect("clean up active test lanes");
     }
 
     #[test]
