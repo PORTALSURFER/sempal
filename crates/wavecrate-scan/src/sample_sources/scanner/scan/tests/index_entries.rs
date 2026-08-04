@@ -272,6 +272,71 @@ fn targeted_sync_uses_the_same_index_only_classification_and_reconciliation() {
 }
 
 #[test]
+fn targeted_index_delta_is_bound_to_the_next_source_revision() {
+    let directory = tempdir().unwrap();
+    let database = SourceDatabase::open_for_scan(directory.path()).unwrap();
+    scan_once(&database).unwrap();
+    let initial_revision = database.get_revision().unwrap();
+
+    let path = directory.path().join("visible.flac");
+    std::fs::write(&path, b"one").unwrap();
+    let created = sync_paths(&database, &[PathBuf::from("visible.flac")]).unwrap();
+    assert!(created.committed_delta.is_empty());
+    assert_eq!(
+        created.committed_source_index_delta.revision,
+        initial_revision + 1
+    );
+    assert_eq!(
+        created.committed_source_index_delta.revision,
+        created.committed_delta.revision
+    );
+    assert_eq!(
+        created.committed_delta.revision,
+        database.get_revision().unwrap()
+    );
+    assert_eq!(
+        created.committed_source_index_delta.upserted_entries.len(),
+        1
+    );
+    assert!(
+        created
+            .committed_source_index_delta
+            .removed_paths
+            .is_empty()
+    );
+
+    std::fs::write(&path, b"updated").unwrap();
+    let updated = sync_paths(&database, &[PathBuf::from("visible.flac")]).unwrap();
+    assert!(updated.committed_delta.is_empty());
+    assert_eq!(
+        updated.committed_source_index_delta.revision,
+        updated.committed_delta.revision
+    );
+    assert_eq!(
+        updated.committed_source_index_delta.upserted_entries[0].file_size,
+        Some(7)
+    );
+
+    std::fs::remove_file(path).unwrap();
+    let deleted = sync_paths(&database, &[PathBuf::from("visible.flac")]).unwrap();
+    assert!(deleted.committed_delta.is_empty());
+    assert_eq!(
+        deleted.committed_source_index_delta.revision,
+        deleted.committed_delta.revision
+    );
+    assert_eq!(
+        deleted.committed_source_index_delta.removed_paths,
+        vec![PathBuf::from("visible.flac")]
+    );
+    assert!(
+        deleted
+            .committed_source_index_delta
+            .upserted_entries
+            .is_empty()
+    );
+}
+
+#[test]
 fn uncertain_subtree_does_not_false_delete_index_only_rows() {
     use crate::sample_sources::scanner::scan_fs::force_directory_read_failure;
 

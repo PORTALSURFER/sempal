@@ -1,13 +1,13 @@
 use std::{
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     sync::atomic::{AtomicBool, Ordering},
     thread,
     time::Duration,
 };
 
-use wavecrate::sample_sources::SourceDatabase;
+use wavecrate::sample_sources::{Rating, SourceDatabase, SourceIndexClassification};
 use wavecrate_library::filesystem_identity::stable_filesystem_identity;
-use wavecrate_library::sample_sources::is_supported_audio;
 use wavecrate_scan::sample_sources::scanner::{
     self, ScanWritePhase, ScanWriter, UncoordinatedScanWriter,
 };
@@ -209,7 +209,9 @@ fn sync_source_database_paths_once(
     watcher_continuity_proof: Option<&WatcherContinuityProof>,
     writer: &impl ScanWriter,
 ) -> SourceDatabaseSyncAttempt {
-    let browser_delta_eligible = paths.iter().all(|path| is_supported_audio(path));
+    // Browser IDs are UTF-8 paths. A raw path is still reconciled in the database, but it must
+    // take the existing full-recovery path rather than enter a lossy incremental projection.
+    let browser_delta_eligible = paths.iter().all(|path| path.to_str().is_some());
     let _writer = writer.lock(ScanWritePhase::Open);
     let root_identity = capture_source_root_identity(root);
     if cancel.load(Ordering::Acquire) {
@@ -273,7 +275,12 @@ fn sync_source_database_paths_once(
                 }
             };
             let browser_projection_delta = if browser_delta_eligible && incomplete_error.is_none() {
-                match build_browser_projection_delta(root, &db, &completed.committed_delta) {
+                match build_browser_projection_delta(
+                    root,
+                    &db,
+                    &completed.committed_delta,
+                    &completed.committed_source_index_delta,
+                ) {
                     Ok(Some(projection)) => Some(projection),
                     Ok(None) => {
                         incomplete_error = Some(format!(
@@ -306,6 +313,7 @@ fn sync_source_database_paths_once(
                 renames_reconciled: completed.renames_reconciled,
                 incomplete_error,
                 committed_delta: completed.committed_delta,
+                committed_source_index_delta: completed.committed_source_index_delta,
                 browser_projection_delta,
                 projection_handoff_ticket: None,
             })
@@ -321,7 +329,19 @@ fn build_browser_projection_delta(
     root: &std::path::Path,
     db: &SourceDatabase,
     delta: &scanner::CommittedSourceDelta,
+    index_delta: &scanner::CommittedSourceIndexDelta,
 ) -> Result<Option<BrowserProjectionDelta>, String> {
+    if !index_delta.is_empty()
+        && (index_delta.revision != delta.revision || index_delta.index_revision == 0)
+    {
+        tracing::info!(
+            source_revision = delta.revision,
+            index_source_revision = index_delta.revision,
+            index_revision = index_delta.index_revision,
+            "Source-index projection facts are not bound to the final committed source revision"
+        );
+        return Ok(None);
+    }
     let projection_paths = delta
         .created
         .iter()
@@ -339,6 +359,35 @@ fn build_browser_projection_delta(
                 .map(|entry| entry.new_relative_path.clone()),
         )
         .collect::<Vec<_>>();
+    let mut manifest_upsert_paths = BTreeSet::new();
+    for path in &projection_paths {
+        if !manifest_upsert_paths.insert(path.clone()) {
+            return Err(format!(
+                "duplicate supported browser upsert path {}",
+                path.display()
+            ));
+        }
+        ensure_unicode_projection_path(root, path)?;
+    }
+    let index_paths = index_delta
+        .upserted_entries
+        .iter()
+        .map(|entry| entry.relative_path.clone())
+        .chain(index_delta.removed_paths.iter().cloned())
+        .collect::<BTreeSet<_>>();
+    let index_paths = index_paths.into_iter().collect::<Vec<_>>();
+    for path in &index_paths {
+        ensure_unicode_projection_path(root, path)?;
+    }
+    for entry in &index_delta.upserted_entries {
+        if !manifest_upsert_paths.insert(entry.relative_path.clone()) {
+            return Err(format!(
+                "supported and source-index browser upserts overlap at {}",
+                entry.relative_path.display()
+            ));
+        }
+    }
+
     let snapshot = db
         .browser_metadata_for_paths_at_revision(delta.revision, &projection_paths)
         .map_err(|error| format!("read committed browser projection delta: {error}"))?;
@@ -352,20 +401,17 @@ fn build_browser_projection_delta(
         );
         return Ok(None);
     }
-    let upsert_paths = projection_paths
-        .iter()
-        .cloned()
-        .collect::<std::collections::HashSet<_>>();
     let mut folders = std::collections::BTreeSet::new();
-    let upserted_files = files
-        .into_iter()
-        .filter(|entry| !entry.missing && upsert_paths.contains(&entry.relative_path))
-        .map(|entry| {
+    let mut upserted_files = Vec::new();
+    let mut hydrated_manifest_paths = BTreeSet::new();
+    for entry in files {
+        if !entry.missing && manifest_upsert_paths.contains(&entry.relative_path) {
             let absolute = root.join(&entry.relative_path);
             if let Some(parent) = absolute.parent() {
                 folders.insert(parent.to_path_buf());
             }
-            file_entry_with_snapshot_metadata(
+            hydrated_manifest_paths.insert(entry.relative_path.clone());
+            upserted_files.push(file_entry_with_snapshot_metadata(
                 &absolute,
                 entry.file_size,
                 entry.rating,
@@ -373,30 +419,113 @@ fn build_browser_projection_delta(
                 entry.collections,
                 entry.last_played_at,
                 entry.last_curated_at,
-            )
-        })
-        .collect();
-    let removed_file_ids = delta
+            ));
+        }
+    }
+    if hydrated_manifest_paths.len() != projection_paths.len() {
+        return Err(String::from(
+            "committed supported browser metadata did not hydrate every upsert",
+        ));
+    }
+
+    if !index_delta.is_empty() {
+        let index_snapshot = db
+            .source_index_entries_for_paths_at_revision(index_delta.index_revision, &index_paths)
+            .map_err(|error| format!("read committed source-index projection delta: {error}"))?;
+        let actual = index_snapshot
+            .entries
+            .into_iter()
+            .map(|entry| (entry.relative_path.clone(), entry))
+            .collect::<BTreeMap<_, _>>();
+        let expected = index_delta
+            .upserted_entries
+            .iter()
+            .map(|entry| (entry.relative_path.clone(), entry))
+            .collect::<BTreeMap<_, _>>();
+        if actual.len() != expected.len()
+            || expected
+                .iter()
+                .any(|(path, expected)| actual.get(path) != Some(expected))
+            || index_delta
+                .removed_paths
+                .iter()
+                .any(|path| actual.contains_key(path))
+        {
+            return Err(String::from(
+                "committed source-index projection hydration did not match its write evidence",
+            ));
+        }
+        for entry in &index_delta.upserted_entries {
+            let Some(file_size) = entry.file_size else {
+                return Err(format!(
+                    "source-index upsert has no file size: {}",
+                    entry.relative_path.display()
+                ));
+            };
+            if matches!(
+                entry.classification,
+                SourceIndexClassification::Inaccessible
+            ) {
+                return Err(format!(
+                    "inaccessible source-index row cannot be projected: {}",
+                    entry.relative_path.display()
+                ));
+            }
+            let absolute = root.join(&entry.relative_path);
+            if let Some(parent) = absolute.parent() {
+                folders.insert(parent.to_path_buf());
+            }
+            upserted_files.push(file_entry_with_snapshot_metadata(
+                &absolute,
+                file_size,
+                Rating::NEUTRAL,
+                false,
+                Vec::new(),
+                None,
+                None,
+            ));
+        }
+    }
+    upserted_files.sort_by(|left, right| left.id.cmp(&right.id));
+
+    let mut removed_file_ids = BTreeSet::new();
+    for path in delta
         .deleted
         .iter()
-        .map(|entry| {
-            root.join(&entry.relative_path)
-                .to_string_lossy()
-                .to_string()
-        })
-        .chain(delta.moved.iter().map(|entry| {
-            root.join(&entry.old_relative_path)
-                .to_string_lossy()
-                .to_string()
-        }))
-        .collect();
+        .map(|entry| &entry.relative_path)
+        .chain(delta.moved.iter().map(|entry| &entry.old_relative_path))
+        .chain(index_delta.removed_paths.iter())
+    {
+        removed_file_ids.insert(projected_path_id(root, path)?);
+    }
     Ok(Some(BrowserProjectionDelta {
         manifest_revision: delta.revision,
         snapshot_revision: revision,
         folders: folders.into_iter().collect(),
-        removed_file_ids,
+        removed_file_ids: removed_file_ids.into_iter().collect(),
         upserted_files,
     }))
+}
+
+fn ensure_unicode_projection_path(root: &Path, relative_path: &Path) -> Result<(), String> {
+    let absolute = root.join(relative_path);
+    if absolute.to_str().is_none() {
+        return Err(format!(
+            "non-Unicode source path cannot enter browser projection: {}",
+            relative_path.display()
+        ));
+    }
+    Ok(())
+}
+
+fn projected_path_id(root: &Path, relative_path: &Path) -> Result<String, String> {
+    let absolute = root.join(relative_path);
+    absolute.to_str().map(str::to_owned).ok_or_else(|| {
+        format!(
+            "non-Unicode source path cannot enter browser removal projection: {}",
+            relative_path.display()
+        )
+    })
 }
 
 fn wait_for_retry(cancel: &AtomicBool, delay: Duration) -> bool {
@@ -713,6 +842,168 @@ mod tests {
         );
         assert!(projection.upserted_files.is_empty());
         assert!(projection.removed_file_ids.is_empty());
+    }
+
+    #[test]
+    fn filesystem_sync_projects_visible_unsupported_create_update_and_delete() {
+        let root = tempfile::tempdir().expect("source root");
+        let relative = PathBuf::from("visible.flac");
+        let absolute = root.path().join(&relative);
+        std::fs::write(&absolute, b"one").expect("unsupported file");
+
+        let created = sync_source_database_paths(
+            String::from("source-a"),
+            root.path().to_path_buf(),
+            root.path().to_path_buf(),
+            vec![relative.clone()],
+            1,
+            &AtomicBool::new(false),
+        )
+        .result
+        .expect("unsupported create sync");
+        assert!(created.committed_delta.is_empty());
+        assert_eq!(
+            created.committed_source_index_delta.upserted_entries.len(),
+            1
+        );
+        let created_projection = created
+            .browser_projection_delta
+            .expect("unsupported create projection");
+        assert_eq!(created_projection.upserted_files.len(), 1);
+        assert_eq!(
+            created_projection.upserted_files[0].id,
+            absolute.display().to_string()
+        );
+        assert_eq!(
+            created_projection.upserted_files[0].kind,
+            "Unsupported audio"
+        );
+        assert_eq!(created_projection.upserted_files[0].size_bytes, 3);
+
+        std::fs::write(&absolute, b"updated").expect("unsupported update");
+        let updated = sync_source_database_paths(
+            String::from("source-a"),
+            root.path().to_path_buf(),
+            root.path().to_path_buf(),
+            vec![relative.clone()],
+            1,
+            &AtomicBool::new(false),
+        )
+        .result
+        .expect("unsupported update sync");
+        assert!(updated.committed_delta.is_empty());
+        assert_eq!(
+            updated.committed_source_index_delta.upserted_entries.len(),
+            1
+        );
+        assert_eq!(
+            updated
+                .browser_projection_delta
+                .as_ref()
+                .expect("unsupported update projection")
+                .upserted_files[0]
+                .size_bytes,
+            7
+        );
+
+        std::fs::remove_file(&absolute).expect("unsupported delete");
+        let deleted = sync_source_database_paths(
+            String::from("source-a"),
+            root.path().to_path_buf(),
+            root.path().to_path_buf(),
+            vec![relative.clone()],
+            1,
+            &AtomicBool::new(false),
+        )
+        .result
+        .expect("unsupported delete sync");
+        assert!(deleted.committed_delta.is_empty());
+        assert_eq!(
+            deleted.committed_source_index_delta.removed_paths,
+            vec![relative]
+        );
+        let deleted_projection = deleted
+            .browser_projection_delta
+            .expect("unsupported delete projection");
+        assert_eq!(
+            deleted_projection.removed_file_ids,
+            vec![absolute.display().to_string()]
+        );
+        assert!(deleted_projection.upserted_files.is_empty());
+    }
+
+    #[test]
+    fn filesystem_sync_projects_supported_and_unsupported_transitions_once() {
+        let root = tempfile::tempdir().expect("source root");
+        let supported = root.path().join("transition.wav");
+        let unsupported = root.path().join("transition.flac");
+        std::fs::write(&supported, b"supported").expect("supported file");
+        sync_source_database_paths(
+            String::from("source-a"),
+            root.path().to_path_buf(),
+            root.path().to_path_buf(),
+            vec![PathBuf::from("transition.wav")],
+            1,
+            &AtomicBool::new(false),
+        )
+        .result
+        .expect("initial supported sync");
+
+        std::fs::rename(&supported, &unsupported).expect("supported to unsupported rename");
+        let to_unsupported = sync_source_database_paths(
+            String::from("source-a"),
+            root.path().to_path_buf(),
+            root.path().to_path_buf(),
+            vec![
+                PathBuf::from("transition.wav"),
+                PathBuf::from("transition.flac"),
+            ],
+            2,
+            &AtomicBool::new(false),
+        )
+        .result
+        .expect("supported to unsupported sync");
+        let projection = to_unsupported
+            .browser_projection_delta
+            .expect("supported to unsupported projection");
+        assert_eq!(
+            projection.removed_file_ids,
+            vec![supported.display().to_string()]
+        );
+        assert_eq!(projection.upserted_files.len(), 1);
+        assert_eq!(
+            projection.upserted_files[0].id,
+            unsupported.display().to_string()
+        );
+        assert_eq!(projection.upserted_files[0].kind, "Unsupported audio");
+
+        std::fs::rename(&unsupported, &supported).expect("unsupported to supported rename");
+        let to_supported = sync_source_database_paths(
+            String::from("source-a"),
+            root.path().to_path_buf(),
+            root.path().to_path_buf(),
+            vec![
+                PathBuf::from("transition.flac"),
+                PathBuf::from("transition.wav"),
+            ],
+            2,
+            &AtomicBool::new(false),
+        )
+        .result
+        .expect("unsupported to supported sync");
+        let projection = to_supported
+            .browser_projection_delta
+            .expect("unsupported to supported projection");
+        assert_eq!(
+            projection.removed_file_ids,
+            vec![unsupported.display().to_string()]
+        );
+        assert_eq!(projection.upserted_files.len(), 1);
+        assert_eq!(
+            projection.upserted_files[0].id,
+            supported.display().to_string()
+        );
+        assert_eq!(projection.upserted_files[0].kind, "Audio");
     }
 
     #[test]

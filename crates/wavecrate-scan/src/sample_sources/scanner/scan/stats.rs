@@ -161,6 +161,8 @@ impl SourceTreeSnapshot {
 pub struct ScanStats {
     /// Authoritative identity delta observed at the final committed source revision.
     pub committed_delta: CommittedSourceDelta,
+    /// Typed index-only changes proven by one bounded committed source write.
+    pub committed_source_index_delta: CommittedSourceIndexDelta,
     /// Number of newly discovered files.
     pub added: usize,
     /// Number of files updated in-place.
@@ -241,6 +243,8 @@ impl ScanStats {
         self.updated_samples.append(&mut deferred.updated_samples);
         self.renamed_samples.append(&mut deferred.renamed_samples);
         self.changed_samples.append(&mut deferred.changed_samples);
+        self.committed_source_index_delta
+            .merge(deferred.committed_source_index_delta);
         let has_manifest_snapshot =
             !self.manifest_before.is_empty() || !self.manifest_after.is_empty();
         if !has_manifest_snapshot {
@@ -300,6 +304,59 @@ impl ScanStats {
 
     pub(crate) fn record_rename_candidate(&mut self, path: PathBuf) {
         self.rename_candidate_paths.push(path);
+    }
+}
+
+/// Typed source-index changes published only after their owning source write commits.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct CommittedSourceIndexDelta {
+    /// Generic source revision assigned by the bounded write that changed the index.
+    pub revision: u64,
+    /// Source-index revision assigned by that same bounded write.
+    pub index_revision: u64,
+    /// Visible typed rows upserted by the committed write.
+    pub upserted_entries: Vec<SourceIndexEntry>,
+    /// Visible typed rows removed by the committed write.
+    pub removed_paths: Vec<PathBuf>,
+}
+
+impl CommittedSourceIndexDelta {
+    /// Return true when no source-index projection change was committed.
+    pub fn is_empty(&self) -> bool {
+        self.upserted_entries.is_empty() && self.removed_paths.is_empty()
+    }
+
+    pub(crate) fn record_commit(
+        &mut self,
+        revision: u64,
+        index_revision: u64,
+        upserted_entries: Vec<SourceIndexEntry>,
+        removed_paths: Vec<PathBuf>,
+    ) {
+        if self.is_empty() {
+            self.revision = revision;
+            self.index_revision = index_revision;
+        } else if self.revision != revision || self.index_revision != index_revision {
+            // A single scan must not publish facts from multiple source revisions as one
+            // targeted projection. Preserve the facts for diagnostics, but poison the
+            // authority so the browser worker falls back to full recovery.
+            self.revision = 0;
+            self.index_revision = 0;
+        }
+        self.upserted_entries.extend(upserted_entries);
+        self.removed_paths.extend(removed_paths);
+    }
+
+    fn merge(&mut self, deferred: Self) {
+        if deferred.is_empty() {
+            return;
+        }
+        self.record_commit(
+            deferred.revision,
+            deferred.index_revision,
+            deferred.upserted_entries,
+            deferred.removed_paths,
+        );
     }
 }
 

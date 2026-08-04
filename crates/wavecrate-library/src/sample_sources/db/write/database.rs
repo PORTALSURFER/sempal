@@ -178,6 +178,7 @@ impl SourceDatabase {
             identities_revision_dirty: false,
             index_revision_dirty: false,
             manifest_touched_paths: std::collections::BTreeSet::new(),
+            source_index_changes: std::collections::BTreeMap::new(),
             manifest_audit_completed: false,
             telemetry_label: self.telemetry_label,
         })

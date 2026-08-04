@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::time::Duration;
 use std::{
     collections::BTreeSet,
@@ -65,7 +66,7 @@ pub use types::{
 pub use util::normalize_relative_path;
 pub use write::{
     ManifestCommitResult, SourceCollectionWrite, SourceContentHashWrite, SourceFileWrite,
-    SourceTagWrite, SourceWriteCommand,
+    SourceIndexCommitResult, SourceTagWrite, SourceWriteCommand,
 };
 
 /// Hidden filename used for per-source databases.
@@ -142,6 +143,7 @@ pub struct SourceWriteBatch<'conn> {
     identities_revision_dirty: bool,
     index_revision_dirty: bool,
     manifest_touched_paths: BTreeSet<PathBuf>,
+    source_index_changes: BTreeMap<PathBuf, Option<SourceIndexEntry>>,
     manifest_audit_completed: bool,
     telemetry_label: &'static str,
 }

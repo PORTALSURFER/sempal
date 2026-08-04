@@ -22,9 +22,9 @@ pub use db::{
     BrowserFileMetadata, BrowserMetadataCursor, BrowserMetadataPage, BrowserMetadataSnapshot,
     DB_FILE_NAME, ExistingFileMetadataUpdate, ManifestCommitResult, Rating, SampleCollection,
     SourceCollectionWrite, SourceContentHashWrite, SourceDatabase, SourceDatabaseConnectionRole,
-    SourceDbError, SourceFileWrite, SourceIndexClassification, SourceIndexDiagnostic,
-    SourceIndexEntry, SourceIndexSnapshot, SourceManifestEntry, SourceTag, SourceTagUsage,
-    SourceTagWrite, SourceWriteCommand, WavEntry,
+    SourceDbError, SourceFileWrite, SourceIndexClassification, SourceIndexCommitResult,
+    SourceIndexDiagnostic, SourceIndexEntry, SourceIndexSnapshot, SourceManifestEntry, SourceTag,
+    SourceTagUsage, SourceTagWrite, SourceWriteCommand, WavEntry,
 };
 pub use library::{
     HarvestDerivationOperation, HarvestDerivationRecord, HarvestFileIdentity, HarvestFileKey,

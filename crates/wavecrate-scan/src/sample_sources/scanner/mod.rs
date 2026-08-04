@@ -12,11 +12,11 @@ mod scan_walk;
 mod scan_writer;
 
 pub use scan::{
-    ChangedSample, CommittedScanBatch, CommittedSourceDelta, ContentAuditActivity,
-    ContentAuditBudget, ContentAuditStorage, DirectoryRepeatKind, ManifestAuditOutcome,
-    ManifestIdentityDelta, MovedManifestIdentity, RenamedSample, ScanError, ScanMode, ScanStats,
-    SourceTreeDiagnostic, SourceTreeFile, SourceTreeSnapshot, UpdatedSample, audit_source,
-    audit_source_and_record, audit_source_and_record_with_budget_and_progress,
+    ChangedSample, CommittedScanBatch, CommittedSourceDelta, CommittedSourceIndexDelta,
+    ContentAuditActivity, ContentAuditBudget, ContentAuditStorage, DirectoryRepeatKind,
+    ManifestAuditOutcome, ManifestIdentityDelta, MovedManifestIdentity, RenamedSample, ScanError,
+    ScanMode, ScanStats, SourceTreeDiagnostic, SourceTreeFile, SourceTreeSnapshot, UpdatedSample,
+    audit_source, audit_source_and_record, audit_source_and_record_with_budget_and_progress,
     audit_source_and_record_with_budget_and_progress_and_writer,
     audit_source_and_record_with_budget_and_progress_and_writer_outcome,
     audit_source_and_record_with_budget_and_progress_and_writer_with_request,

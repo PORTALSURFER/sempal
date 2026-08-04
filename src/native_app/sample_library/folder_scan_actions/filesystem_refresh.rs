@@ -944,6 +944,7 @@ mod tests {
                     }],
                     ..CommittedSourceDelta::default()
                 },
+                committed_source_index_delta: Default::default(),
                 browser_projection_delta: projection,
                 projection_handoff_ticket: None,
             }),
@@ -988,6 +989,7 @@ mod tests {
                 renames_reconciled: 0,
                 incomplete_error: None,
                 committed_delta,
+                committed_source_index_delta: Default::default(),
                 browser_projection_delta: Some(BrowserProjectionDelta {
                     manifest_revision: projection_revision,
                     snapshot_revision: projection_revision,

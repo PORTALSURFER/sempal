@@ -256,6 +256,16 @@ fn committed_projection_delta_applies_only_at_the_next_revision() {
         .expect("projection revision");
     let new_file =
         file_entry_with_snapshot_metadata(&new, 12, Rating::KEEP_1, false, Vec::new(), None, None);
+    let unsupported = root.join("nested/new.flac");
+    let unsupported_file = file_entry_with_snapshot_metadata(
+        &unsupported,
+        7,
+        Rating::NEUTRAL,
+        false,
+        Vec::new(),
+        None,
+        None,
+    );
 
     assert!(browser.apply_committed_projection_delta(
         &source_id,
@@ -264,7 +274,7 @@ fn committed_projection_delta_applies_only_at_the_next_revision() {
             snapshot_revision: revision + 1,
             folders: vec![root.join("nested")],
             removed_file_ids: vec![path_id(&old)],
-            upserted_files: vec![new_file],
+            upserted_files: vec![new_file, unsupported_file],
         },
     ));
     assert!(browser.tree.folders[0].find_file(&path_id(&old)).is_none());
@@ -274,6 +284,13 @@ fn committed_projection_delta_applies_only_at_the_next_revision() {
             .expect("incremental file")
             .rating,
         Rating::KEEP_1
+    );
+    assert_eq!(
+        browser.tree.folders[0]
+            .find_file(&path_id(&unsupported))
+            .expect("unsupported incremental file")
+            .kind,
+        "Unsupported audio"
     );
 
     assert!(browser.apply_committed_projection_delta(
