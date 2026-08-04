@@ -651,6 +651,7 @@ fn source_completions_from_previous_readded_epoch_are_ignored() {
             journal_checkpoint_event_id: None,
             watcher_continuity_proof: None,
             cancelled: true,
+            audit_required: None,
             result: Err(String::from("old epoch cancelled")),
         }),
         &mut context,

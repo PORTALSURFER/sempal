@@ -1,5 +1,7 @@
 use std::{collections::BTreeSet, path::PathBuf, time::Instant};
 
+use wavecrate_library::sample_sources::reconciliation::ReconciliationScope;
+
 use crate::native_app::sample_library::source_watcher::WatcherContinuityProof;
 
 pub(super) struct QueuedSourceRefresh {
@@ -13,7 +15,11 @@ pub(super) struct QueuedSourceRefresh {
 
 pub(super) struct QueuedTargetedSourceSync {
     pub(super) source_id: String,
+    /// `Some` is the typed scope lane. Its paths are never reconstructed from the legacy set.
+    pub(super) scopes: Option<Vec<ReconciliationScope>>,
+    /// Compatibility-only paths, valid only while `scopes` is `None`.
     pub(super) paths: BTreeSet<PathBuf>,
+    pub(super) source_root_identity: Option<String>,
     pub(super) lifecycle_generation: Option<u64>,
     pub(super) journal_checkpoint_event_id: Option<u64>,
     pub(super) watcher_continuity_proof: Option<WatcherContinuityProof>,
@@ -92,7 +98,9 @@ pub(in crate::native_app) struct PendingSourceRefresh {
 
 pub(in crate::native_app) struct PendingTargetedSourceSync {
     pub(in crate::native_app) source_id: String,
+    pub(in crate::native_app) scopes: Option<Vec<ReconciliationScope>>,
     pub(in crate::native_app) paths: Vec<PathBuf>,
+    pub(in crate::native_app) source_root_identity: Option<String>,
     pub(in crate::native_app) lifecycle_generation: Option<u64>,
     pub(in crate::native_app) journal_checkpoint_event_id: Option<u64>,
     pub(in crate::native_app) watcher_continuity_proof: Option<WatcherContinuityProof>,

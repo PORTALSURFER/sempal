@@ -8,12 +8,18 @@ use std::{
 
 use wavecrate::sample_sources::{Rating, SourceDatabase, SourceIndexClassification};
 use wavecrate_library::filesystem_identity::stable_filesystem_identity;
+use wavecrate_library::sample_sources::reconciliation::{
+    ReconciliationScope, ReconciliationScopeKind,
+};
 use wavecrate_scan::sample_sources::scanner::{
     self, ScanWritePhase, ScanWriter, UncoordinatedScanWriter,
 };
 
 use crate::native_app::{
-    app::{BrowserProjectionDelta, SourceFilesystemSyncResult, SourceFilesystemSyncSuccess},
+    app::{
+        BrowserProjectionDelta, SourceFilesystemSyncAuditReason, SourceFilesystemSyncResult,
+        SourceFilesystemSyncSuccess,
+    },
     sample_library::folder_browser::model::file_entry_with_snapshot_metadata,
     sample_library::source_watcher::WatcherContinuityProof,
 };
@@ -41,6 +47,7 @@ pub(in crate::native_app) fn recover_source_filesystem_sync(
             journal_checkpoint_event_id: None,
             watcher_continuity_proof: None,
             cancelled: false,
+            audit_required: Some(SourceFilesystemSyncAuditReason::WorkerPanic),
             result: Err(String::from(
                 "Source filesystem sync worker stopped unexpectedly",
             )),
@@ -107,6 +114,7 @@ pub(in crate::native_app) fn run_targeted_sync_after_root_identity_gate(
             journal_checkpoint_event_id,
             watcher_continuity_proof,
             cancelled: false,
+            audit_required: Some(SourceFilesystemSyncAuditReason::RootIdentityUncertain),
             result: Err(String::from(
                 "Targeted source sync rejected because the captured source root identity is unavailable or does not match watcher replay evidence",
             )),
@@ -145,6 +153,7 @@ pub(in crate::native_app) fn sync_source_database_paths_with_writer(
             journal_checkpoint_event_id: None,
             watcher_continuity_proof,
             cancelled: cancel.load(Ordering::Acquire),
+            audit_required: Some(SourceFilesystemSyncAuditReason::RootIdentityUncertain),
             result: Err(String::from(
                 "Targeted source sync rejected because the live source root identity is unavailable or does not match watcher replay evidence",
             )),
@@ -182,6 +191,7 @@ pub(in crate::native_app) fn sync_source_database_paths_with_writer(
             break;
         }
     }
+    let cancelled = cancel.load(Ordering::Acquire);
     SourceFilesystemSyncResult {
         source_id,
         lifecycle_generation: 0,
@@ -189,8 +199,61 @@ pub(in crate::native_app) fn sync_source_database_paths_with_writer(
         root_identity: observed_root_identity,
         journal_checkpoint_event_id: None,
         watcher_continuity_proof,
-        cancelled: cancel.load(Ordering::Acquire),
+        cancelled,
+        audit_required: cancelled.then_some(SourceFilesystemSyncAuditReason::Cancelled),
         result,
+    }
+}
+
+/// Admit typed scopes at the refresh-worker boundary without narrowing them into compatibility
+/// paths. The scanner collection contract is deliberately deferred to the next slice, so every
+/// typed scope is conservatively routed to the existing source-audit owner before any DB work.
+pub(in crate::native_app) fn sync_source_database_scopes_with_writer(
+    source_id: String,
+    root: PathBuf,
+    scopes: Vec<ReconciliationScope>,
+    changed_count: usize,
+    source_root_identity: Option<String>,
+    cancel: &AtomicBool,
+    watcher_continuity_proof: Option<WatcherContinuityProof>,
+    _writer: &impl ScanWriter,
+) -> SourceFilesystemSyncResult {
+    let root_identity = capture_source_root_identity(&root);
+    let cancelled = cancel.load(Ordering::Acquire);
+    let audit_required = if cancelled {
+        SourceFilesystemSyncAuditReason::Cancelled
+    } else if scopes.is_empty() {
+        SourceFilesystemSyncAuditReason::ScopeLost
+    } else if scopes
+        .iter()
+        .any(|scope| scope.kind() == ReconciliationScopeKind::SourceAudit)
+    {
+        SourceFilesystemSyncAuditReason::SourceAuditScope
+    } else if !root_identity_matches_watcher_proof(
+        root_identity.as_deref(),
+        watcher_continuity_proof.as_ref(),
+    ) || source_root_identity.as_deref()
+        != watcher_continuity_proof
+            .as_ref()
+            .map(|proof| proof.root_identity.as_str())
+    {
+        SourceFilesystemSyncAuditReason::RootIdentityUncertain
+    } else {
+        SourceFilesystemSyncAuditReason::TypedScopeDispatchUnavailable
+    };
+    SourceFilesystemSyncResult {
+        source_id,
+        lifecycle_generation: 0,
+        changed_count,
+        root_identity,
+        journal_checkpoint_event_id: None,
+        watcher_continuity_proof,
+        cancelled,
+        audit_required: Some(audit_required),
+        result: Err(format!(
+            "Typed reconciliation scope dispatch requires source audit: {}",
+            audit_required.label()
+        )),
     }
 }
 
@@ -550,6 +613,11 @@ mod tests {
     };
 
     use wavecrate::sample_sources::{Rating, SourceDatabase, scanner};
+    use wavecrate_library::sample_sources::reconciliation::{
+        BackendStreamIdentity, CaptureBoundary, RawEventKind, RawObservation,
+        RawObservationEnvelope, RawObservationLimits, RawObservationProvenance, RawObservedPath,
+        RawPathRole, RootIdentity, WatcherGeneration, normalize_observation,
+    };
     use wavecrate_scan::sample_sources::scanner::{ScanWritePhase, ScanWriter};
 
     use crate::native_app::sample_library::source_watcher::{
@@ -559,7 +627,7 @@ mod tests {
     use super::{
         capture_source_root_identity, recover_source_filesystem_sync,
         run_targeted_sync_after_root_identity_gate, sync_source_database_paths,
-        sync_source_database_paths_with_writer,
+        sync_source_database_paths_with_writer, sync_source_database_scopes_with_writer,
     };
 
     #[derive(Clone)]
@@ -623,6 +691,63 @@ mod tests {
             replay_coverage_end_event_id: event_id,
             acknowledged_end_event_id: event_id,
         }
+    }
+
+    fn exact_scope() -> wavecrate_library::sample_sources::reconciliation::ReconciliationScope {
+        let provenance = RawObservationProvenance::new(
+            wavecrate::sample_sources::SourceId::from_string("source-a"),
+            Some(RootIdentity::from_bytes(vec![1])),
+            Some(BackendStreamIdentity::from_bytes(vec![2])),
+            WatcherGeneration::new(4),
+            CaptureBoundary::try_new(9, Some(8), Some(9)).expect("capture boundary"),
+        );
+        let envelope = RawObservationEnvelope::try_new(
+            provenance,
+            vec![RawObservation::new(
+                RawEventKind::Modify,
+                vec![RawObservedPath::new(
+                    PathBuf::from("exact.wav"),
+                    RawPathRole::Subject,
+                )],
+            )],
+            RawObservationLimits::new(8, usize::MAX, usize::MAX).expect("observation limits"),
+        )
+        .expect("observation envelope");
+        normalize_observation(envelope)
+            .scopes()
+            .first()
+            .cloned()
+            .expect("exact scope")
+    }
+
+    #[test]
+    fn typed_scope_dispatch_routes_to_audit_without_opening_database_or_using_paths() {
+        let root = tempfile::tempdir().expect("source root");
+        let root_identity = capture_source_root_identity(root.path()).expect("root identity");
+        let proof = watcher_proof(&root_identity, 73);
+        let writer = CountingWriter {
+            database_open_started: Arc::new(AtomicBool::new(false)),
+        };
+
+        let result = sync_source_database_scopes_with_writer(
+            String::from("source-a"),
+            root.path().to_path_buf(),
+            vec![exact_scope()],
+            1,
+            Some(root_identity.clone()),
+            &AtomicBool::new(false),
+            Some(proof),
+            &writer,
+        );
+
+        assert_eq!(
+            result.audit_required,
+            Some(
+                crate::native_app::app::SourceFilesystemSyncAuditReason::TypedScopeDispatchUnavailable
+            )
+        );
+        assert!(result.result.is_err());
+        assert!(!writer.database_open_started.load(Ordering::Acquire));
     }
 
     #[test]
@@ -1098,6 +1223,10 @@ mod tests {
         );
 
         assert!(result.cancelled);
+        assert_eq!(
+            result.audit_required,
+            Some(crate::native_app::app::SourceFilesystemSyncAuditReason::Cancelled)
+        );
         assert!(result.result.is_err());
         let db =
             SourceDatabase::open_for_test_fixture_source_write(root.path()).expect("source db");

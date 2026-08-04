@@ -115,9 +115,12 @@ fn foreground_scan_terminal_release_admits_coalesced_watcher_paths() {
     state.launch_folder_scan(request.clone(), &mut context);
     state.refresh_source_after_filesystem_change(
         source_id.clone(),
+        None,
         vec![sample_path],
         false,
         true,
+        None,
+        None,
         Some(11),
         Some(replay_proof(source_root.path(), 11)),
         &mut context,
@@ -269,9 +272,12 @@ fn source_filesystem_change_during_scan_is_refreshed_after_scan_finishes() {
     let mut context = ui::UiUpdateContext::default();
     state.refresh_source_after_filesystem_change(
         source_id.clone(),
+        None,
         Vec::new(),
         true,
         true,
+        None,
+        None,
         None,
         None,
         &mut context,
@@ -280,9 +286,12 @@ fn source_filesystem_change_during_scan_is_refreshed_after_scan_finishes() {
     state.apply_message(
         crate::native_app::test_support::state::GuiMessage::SourceFilesystemChanged {
             source_id: source_id.clone(),
+            scopes: None,
             paths: Vec::new(),
             overflowed: true,
             source_root_available: true,
+            source_root_identity: None,
+            lifecycle_generation: None,
             journal_checkpoint_event_id: None,
             watcher_continuity_proof: None,
         },

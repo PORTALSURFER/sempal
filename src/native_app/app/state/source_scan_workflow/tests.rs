@@ -5,6 +5,12 @@ use crate::native_app::sample_library::folder_browser::scan::{
     FolderScanProgress, FolderScanRequest, scan_source_with_progress,
 };
 use crate::native_app::sample_library::source_watcher::{WatcherBackend, WatcherContinuityProof};
+use wavecrate::sample_sources::SourceId;
+use wavecrate_library::sample_sources::reconciliation::{
+    BackendStreamIdentity, CaptureBoundary, RawEventKind, RawObservation, RawObservationEnvelope,
+    RawObservationLimits, RawObservationProvenance, RawObservedPath, RawPathHint, RawPathRole,
+    ReconciliationScopeKind, RootIdentity, WatcherGeneration, normalize_observation,
+};
 
 fn temp_dir_with_wav() -> tempfile::TempDir {
     let root = tempfile::tempdir().expect("source root");
@@ -22,6 +28,55 @@ fn replay_proof(end_event_id: u64) -> WatcherContinuityProof {
         replay_coverage_end_event_id: end_event_id,
         acknowledged_end_event_id: end_event_id,
     }
+}
+
+fn typed_scopes() -> Vec<ReconciliationScope> {
+    let provenance = RawObservationProvenance::new(
+        SourceId::from_string("source-a"),
+        Some(RootIdentity::from_bytes(vec![1])),
+        Some(BackendStreamIdentity::from_bytes(vec![2])),
+        WatcherGeneration::new(4),
+        CaptureBoundary::try_new(9, Some(8), Some(9)).expect("capture boundary"),
+    );
+    let envelope = RawObservationEnvelope::try_new(
+        provenance,
+        vec![
+            RawObservation::new(
+                RawEventKind::Modify,
+                vec![RawObservedPath::new(
+                    PathBuf::from("file.wav"),
+                    RawPathRole::Subject,
+                )],
+            ),
+            RawObservation::new(
+                RawEventKind::Create,
+                vec![
+                    RawObservedPath::new(PathBuf::from("folder"), RawPathRole::Subject)
+                        .with_hint(RawPathHint::Directory),
+                ],
+            ),
+        ],
+        RawObservationLimits::new(8, usize::MAX, usize::MAX).expect("observation limits"),
+    )
+    .expect("observation envelope");
+    normalize_observation(envelope).scopes().to_vec()
+}
+
+fn source_audit_scope() -> Vec<ReconciliationScope> {
+    let provenance = RawObservationProvenance::new(
+        SourceId::from_string("source-a"),
+        Some(RootIdentity::from_bytes(vec![1])),
+        Some(BackendStreamIdentity::from_bytes(vec![2])),
+        WatcherGeneration::new(4),
+        CaptureBoundary::try_new(9, Some(8), Some(9)).expect("capture boundary"),
+    );
+    let envelope = RawObservationEnvelope::try_new(
+        provenance,
+        vec![RawObservation::new(RawEventKind::RootChanged, Vec::new())],
+        RawObservationLimits::new(8, usize::MAX, usize::MAX).expect("observation limits"),
+    )
+    .expect("observation envelope");
+    normalize_observation(envelope).scopes().to_vec()
 }
 
 #[test]
@@ -1117,6 +1172,89 @@ fn targeted_watcher_hint_does_not_patch_browser_before_commit() {
         1,
         "the watcher path is only a hint until the source database commit completes"
     );
+}
+
+#[test]
+fn typed_scope_plan_preserves_exact_and_subtree_kinds_and_ignores_legacy_paths() {
+    let root = temp_dir_with_wav();
+    let mut browser = FolderBrowserState::load_default();
+    let mut workflow = SourceScanWorkflow::new();
+    let request = workflow
+        .begin_add_source_path(&mut browser, root.path().to_path_buf(), 126)
+        .expect("source scan");
+    let source_id = request.source_id.clone();
+    workflow.start_scan(&request);
+    workflow.finish_scan(
+        &mut browser,
+        scan_source_with_progress(request, |_| {}, |_| {}),
+    );
+
+    let plan = workflow.plan_filesystem_change_with_scopes_for_generation(
+        &mut browser,
+        source_id,
+        Some(&typed_scopes()),
+        &[PathBuf::from("legacy-fallback.wav")],
+        false,
+        true,
+        Some(String::from("root-a")),
+        Some(7),
+        Some(9),
+        Some(replay_proof(9)),
+    );
+
+    let SourceFilesystemChangePlan::SyncScopes {
+        scopes,
+        changed_count,
+        source_root_identity,
+        lifecycle_generation,
+        ..
+    } = plan
+    else {
+        panic!("typed replay should remain in the typed sync plan");
+    };
+    assert_eq!(changed_count, 2);
+    assert_eq!(scopes[0].kind(), ReconciliationScopeKind::ExactEntry);
+    assert_eq!(scopes[1].kind(), ReconciliationScopeKind::Subtree);
+    assert_eq!(source_root_identity.as_deref(), Some("root-a"));
+    assert_eq!(lifecycle_generation, Some(7));
+}
+
+#[test]
+fn typed_source_audit_and_scope_loss_route_before_targeted_dispatch() {
+    for (scopes, reason) in [
+        (source_audit_scope(), "reconciliation_source_audit_scope"),
+        (Vec::new(), "reconciliation_scope_lost"),
+    ] {
+        let root = temp_dir_with_wav();
+        let mut browser = FolderBrowserState::load_default();
+        let mut workflow = SourceScanWorkflow::new();
+        let request = workflow
+            .begin_add_source_path(&mut browser, root.path().to_path_buf(), 127)
+            .expect("source scan");
+        let source_id = request.source_id.clone();
+        workflow.start_scan(&request);
+        workflow.finish_scan(
+            &mut browser,
+            scan_source_with_progress(request, |_| {}, |_| {}),
+        );
+
+        assert!(matches!(
+            workflow.plan_filesystem_change_with_scopes_for_generation(
+                &mut browser,
+                source_id,
+                Some(&scopes),
+                &[PathBuf::from("must-not-be-used.wav")],
+                false,
+                true,
+                Some(String::from("root-a")),
+                Some(7),
+                Some(9),
+                Some(replay_proof(9)),
+            ),
+            SourceFilesystemChangePlan::SourceAuditRequired { reason: actual, .. }
+                if actual == reason
+        ));
+    }
 }
 
 #[test]
