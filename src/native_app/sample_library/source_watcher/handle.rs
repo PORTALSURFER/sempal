@@ -1484,11 +1484,11 @@ fn handoff_dispatched_capture(
             .scopes()
             .iter()
             .any(|scope| scope.kind() == ReconciliationScopeKind::SourceAudit);
-    if source_audit || context.correlation.is_some() {
+    if let Some(correlation) = context.correlation.as_ref() {
+        state.enqueue_audit_request(correlation.audit_request(), true);
+    }
+    if source_audit {
         widen_source(state, &context.source_root, now);
-        if let Some(correlation) = context.correlation.as_ref() {
-            state.enqueue_audit_request(correlation.audit_request(), true);
-        }
         return (true, false);
     }
 
@@ -2638,6 +2638,13 @@ mod lifecycle_tests {
             [Path::new("sample.wav").to_path_buf()]
                 .into_iter()
                 .collect()
+        );
+        assert!(
+            !state
+                .pending
+                .get(source.id.as_str())
+                .expect("compatibility refresh handoff")
+                .overflowed
         );
     }
 
