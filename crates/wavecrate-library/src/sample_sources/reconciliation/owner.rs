@@ -763,6 +763,53 @@ mod tests {
     }
 
     #[test]
+    fn into_supervisor_cannot_generic_checkpoint_continuity_proven_replay() {
+        let source = SourceId::from_string("owner-supervisor-replay");
+        let root_identity = root(b"owner-supervisor-replay-root");
+        let stream = BackendStreamIdentity::from_bytes(b"owner-supervisor-replay-stream".to_vec());
+        let mut owner = owner(1, 1, 8);
+        let lane = owner
+            .begin_source(source.clone(), root_identity.clone())
+            .expect("capturing lane");
+        let prior = replay_prior(&source, &root_identity, &stream, lane.generation(), 10);
+        let admission = owner
+            .admit_replay_with_durable_prior(
+                replay_batch(
+                    &source,
+                    &root_identity,
+                    lane.generation(),
+                    Some(stream.as_bytes()),
+                    Some(11),
+                    Some(11),
+                    RawEventKind::Create,
+                ),
+                Some(&prior),
+                true,
+            )
+            .expect("valid owner replay");
+        let ticket = match admission.admission().outcome() {
+            AdmissionOutcome::Accepted(ticket) => *ticket,
+            outcome => panic!("unexpected owner replay outcome: {outcome:?}"),
+        };
+        owner.dispatch_next().expect("dispatch owner replay");
+        owner.mark_dispatched(ticket).expect("replay dispatched");
+        owner.mark_applied(ticket).expect("replay applied");
+
+        let mut supervisor = owner.into_supervisor();
+        assert_eq!(
+            supervisor.mark_checkpointed(ticket),
+            Err(AdmissionError::ReplayCheckpointRequiresDurableAuthority)
+        );
+        assert_eq!(supervisor.in_flight(), 1);
+
+        let terminal = replay_prior(&source, &root_identity, &stream, lane.generation(), 11);
+        supervisor
+            .mark_replay_checkpointed(ticket, &terminal)
+            .expect("replay checkpoint");
+        assert_eq!(supervisor.in_flight(), 0);
+    }
+
+    #[test]
     fn owner_invalid_replay_stays_unproven_and_returns_current_lane_audit() {
         let cases = [
             (

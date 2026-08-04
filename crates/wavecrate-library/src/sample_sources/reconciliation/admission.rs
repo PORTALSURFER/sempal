@@ -237,6 +237,8 @@ pub enum AdmissionError {
     InvalidLifecycleTransition,
     /// A proof-carrying envelope cannot use the proofless audit handoff.
     UnprovenAuditHandoffRequiresUnprovenEnvelope,
+    /// A continuity-proven replay requires opaque durable checkpoint authority.
+    ReplayCheckpointRequiresDurableAuthority,
     /// A replay checkpoint may retire only an envelope carrying watcher continuity proof.
     ReplayCheckpointRequiresContinuityProof,
     /// The committed replay checkpoint does not match or cover the continuity proof.
@@ -1426,6 +1428,9 @@ impl ReconciliationAdmissionSupervisor {
             .ok_or(AdmissionError::UnknownTicket)?;
         if pending.phase != DispatchPhase::Applied {
             return Err(AdmissionError::InvalidLifecycleTransition);
+        }
+        if pending.envelope.proof().watcher_continuity().is_some() {
+            return Err(AdmissionError::ReplayCheckpointRequiresDurableAuthority);
         }
         let pending = self.pending.remove(&ticket).expect("ticket checked above");
         self.release_usage(&pending.lane, pending.usage);
