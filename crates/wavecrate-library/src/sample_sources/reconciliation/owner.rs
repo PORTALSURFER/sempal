@@ -196,6 +196,17 @@ impl ReconciliationAdmissionOwner {
         self.supervisor.limits().max_in_flight()
     }
 
+    /// Return the bounded number of exact source-audit request entries the watcher may retain.
+    ///
+    /// The request transport mirrors both ordinary and emergency retained-uncertainty capacity;
+    /// it is not an independent source-count or context limit.
+    pub fn max_source_audit_request_entries(&self) -> usize {
+        let limits = self.supervisor.limits();
+        limits
+            .max_retained_uncertainties()
+            .saturating_add(limits.max_emergency_uncertainties())
+    }
+
     /// Register and begin a source, or begin/restart its existing same-root lane.
     ///
     /// A newly registered lane is left in `Starting` if the final `begin_capture` call fails;

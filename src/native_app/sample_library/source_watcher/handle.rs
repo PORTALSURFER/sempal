@@ -489,6 +489,7 @@ fn run_source_watcher(
     let mut state = GuiSourceWatchState::default();
     state.set_sources(initial_sources);
     let mut admission_lifecycle = AdmissionLifecycle::new();
+    state.set_audit_request_capacity(admission_lifecycle.max_source_audit_request_entries());
     let mut pending_capture_contexts = HashMap::<DispatchTicket, PendingCaptureContext>::new();
     let mut next_restart = Instant::now();
     let mut restart_delay = WATCHER_RESTART_MIN;
@@ -986,7 +987,7 @@ fn run_source_watcher(
             &mut pending_capture_contexts,
             now,
         );
-        flush_pending_audit_requests(&mut state, &message_tx);
+        flush_pending_audit_requests(&mut state, &message_tx, now);
 
         if watcher_failed || root_invalidated {
             fence_watcher_admission(&mut admission_lifecycle, "watcher capture retirement");
@@ -1258,8 +1259,10 @@ fn admit_capture_target(
         .max_in_flight()
         .min(super::MAX_PENDING_CAPTURE_CONTEXTS);
     if pending_contexts.len() >= context_limit {
-        if let Some(request) = admission.source_audit_request_for_current_lane(&target.source_id) {
-            state.pending_audit_requests.push(request);
+        if let Some((request, marker_backed)) =
+            admission.source_audit_request_for_current_lane(&target.source_id)
+        {
+            state.enqueue_audit_request(request, marker_backed);
         }
         tracing::warn!(
             source_id = target.source_id.as_str(),
@@ -1319,10 +1322,13 @@ fn admit_capture_target(
     let outcome = live.admission().outcome().clone();
     let audit_request_to_queue = match &outcome {
         AdmissionOutcome::Accepted(_) if live.correlation().is_some() => None,
-        _ => live.audit_request().cloned(),
+        _ => live.audit_request().cloned().map(|request| {
+            let marker_backed = admission.source_audit_request_is_marker_backed(&request);
+            (request, marker_backed)
+        }),
     };
-    if let Some(request) = audit_request_to_queue {
-        state.pending_audit_requests.push(request);
+    if let Some((request, marker_backed)) = audit_request_to_queue {
+        state.enqueue_audit_request(request, marker_backed);
     }
     match outcome {
         AdmissionOutcome::Accepted(ticket) => {
@@ -1417,9 +1423,7 @@ fn handoff_dispatched_capture(
     if source_audit || context.correlation.is_some() {
         widen_source(state, &context.source_root, now);
         if let Some(correlation) = context.correlation.as_ref() {
-            state
-                .pending_audit_requests
-                .push(correlation.audit_request());
+            state.enqueue_audit_request(correlation.audit_request(), true);
         }
         return (true, false);
     }
@@ -1535,8 +1539,18 @@ fn dispatch_pending_capture_contexts(
     root_invalidated
 }
 
-fn flush_pending_audit_requests(state: &mut GuiSourceWatchState, message_tx: &Sender<GuiMessage>) {
-    for request in state.pending_audit_requests.drain(..) {
+fn flush_pending_audit_requests(
+    state: &mut GuiSourceWatchState,
+    message_tx: &Sender<GuiMessage>,
+    now: Instant,
+) {
+    if state.pending_audit_requests.conservative_recovery_latched() {
+        state.mark_all_overflowed(now);
+        state
+            .pending_audit_requests
+            .clear_conservative_recovery_latch();
+    }
+    while let Some(request) = state.pending_audit_requests.front().cloned() {
         if message_tx
             .send(GuiMessage::SourceWatcherManifestAuditRequested { request })
             .is_err()
@@ -1544,6 +1558,7 @@ fn flush_pending_audit_requests(state: &mut GuiSourceWatchState, message_tx: &Se
             tracing::warn!("Source-processing request channel closed before live audit handoff");
             break;
         }
+        state.pending_audit_requests.pop_front();
     }
 }
 
@@ -2465,6 +2480,7 @@ mod lifecycle_tests {
         let source = source_with_root("identity-bound", directory.path());
         let mut state = source_watcher_state(vec![source.clone()]);
         let mut admission = configured_admission(&state.sources);
+        state.set_audit_request_capacity(admission.max_source_audit_request_entries());
         let capture = notify_capture(directory.path(), 17, &["sample.wav"]);
         let boundary = exact_boundary(77);
         let mut targets = source_capture_targets(&capture, &state.sources);
@@ -2530,7 +2546,7 @@ mod lifecycle_tests {
         assert!(marker.reasons().contains(&UncertaintyReason::LiveUnproven));
         let request = state
             .pending_audit_requests
-            .pop()
+            .pop_front()
             .expect("proofless handoff audit request");
         assert_eq!(request.source_id(), &source.id);
         assert_eq!(request.root_identity(), &expected_root_identity);
@@ -2546,6 +2562,100 @@ mod lifecycle_tests {
             [Path::new("sample.wav").to_path_buf()]
                 .into_iter()
                 .collect()
+        );
+    }
+
+    #[test]
+    fn audit_request_queue_coalesces_identity_and_latches_on_fallback_overflow() {
+        let first_directory = tempfile::tempdir().expect("first source root");
+        let second_directory = tempfile::tempdir().expect("second source root");
+        let first = source_with_root("queue-first", first_directory.path());
+        let second = source_with_root("queue-second", second_directory.path());
+        let sources = vec![first.clone(), second.clone()];
+        let mut state = source_watcher_state(sources.clone());
+        let mut admission = limited_admission(&sources, 1);
+        state.set_audit_request_capacity(1);
+        let mut pending_contexts = HashMap::new();
+
+        let capture = notify_capture(&first.root, 301, &["first.wav"]);
+        let target = source_capture_targets(&capture, &state.sources)
+            .pop()
+            .expect("first source target");
+        admit_capture_target(
+            &mut state,
+            &mut admission,
+            &capture,
+            exact_boundary(301),
+            target,
+            &mut pending_contexts,
+            Instant::now(),
+        );
+        dispatch_pending_capture_contexts(
+            &mut state,
+            &mut admission,
+            &mut pending_contexts,
+            Instant::now(),
+        );
+        state.pending_audit_requests.clear();
+
+        let (first_request, marker_backed) = admission
+            .source_audit_request_for_current_lane(&first.id)
+            .expect("first source audit request");
+        assert!(marker_backed);
+        state.enqueue_audit_request(first_request.clone(), true);
+        assert_eq!(state.pending_audit_requests.len(), 1);
+        assert_eq!(
+            state
+                .pending_audit_requests
+                .front()
+                .expect("first queued request")
+                .identity(),
+            first_request.identity()
+        );
+
+        let capture = notify_capture(&first.root, 301, &["second.wav"]);
+        let target = source_capture_targets(&capture, &state.sources)
+            .pop()
+            .expect("second source target");
+        admit_capture_target(
+            &mut state,
+            &mut admission,
+            &capture,
+            exact_boundary(302),
+            target,
+            &mut pending_contexts,
+            Instant::now(),
+        );
+        let (covering_request, marker_backed) = admission
+            .source_audit_request_for_current_lane(&first.id)
+            .expect("covering source audit request");
+        assert!(marker_backed);
+        assert_eq!(covering_request.identity(), first_request.identity());
+        assert!(covering_request.boundary().covers(first_request.boundary()));
+        state.enqueue_audit_request(covering_request.clone(), true);
+        assert_eq!(state.pending_audit_requests.len(), 1);
+        let queued = state
+            .pending_audit_requests
+            .front()
+            .expect("coalesced request");
+        assert_eq!(queued.identity(), first_request.identity());
+        assert_eq!(queued.boundary(), covering_request.boundary());
+
+        let (fallback_request, marker_backed) = admission
+            .source_audit_request_for_current_lane(&second.id)
+            .expect("second source audit request");
+        assert!(!marker_backed);
+        assert_ne!(fallback_request.identity(), first_request.identity());
+        state.enqueue_audit_request(fallback_request, false);
+        assert!(state.pending_audit_requests.len() <= 1);
+        assert!(state.pending_audit_requests.conservative_recovery_latched());
+        assert_eq!(
+            state
+                .pending_audit_requests
+                .front()
+                .expect("marker-backed request retained")
+                .identity(),
+            first_request.identity()
         );
     }
 
@@ -2716,6 +2826,7 @@ mod lifecycle_tests {
         let overflow_source = sources.last().cloned().expect("overflow source");
         let mut state = source_watcher_state(sources.clone());
         let mut admission = configured_admission(&sources);
+        state.set_audit_request_capacity(admission.max_source_audit_request_entries());
         let mut pending_contexts = HashMap::new();
 
         for (index, source) in sources
@@ -2778,7 +2889,7 @@ mod lifecycle_tests {
         );
         let request = state
             .pending_audit_requests
-            .first()
+            .front()
             .expect("full-context source audit request");
         assert_eq!(request.source_id(), &overflow_source.id);
         assert_eq!(request.root_identity(), lane.root_identity());

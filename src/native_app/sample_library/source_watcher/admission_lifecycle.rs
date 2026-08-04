@@ -164,8 +164,27 @@ impl AdmissionLifecycle {
     pub(super) fn source_audit_request_for_current_lane(
         &self,
         source_id: &SourceId,
-    ) -> Option<SourceAuditRequest> {
-        self.owner.source_audit_request_for_current_lane(source_id)
+    ) -> Option<(SourceAuditRequest, bool)> {
+        let request = self
+            .owner
+            .source_audit_request_for_current_lane(source_id)?;
+        let marker_backed = self.source_audit_request_is_marker_backed(&request);
+        Some((request, marker_backed))
+    }
+
+    pub(super) fn source_audit_request_is_marker_backed(
+        &self,
+        request: &SourceAuditRequest,
+    ) -> bool {
+        self.owner
+            .supervisor()
+            .retained_uncertainties()
+            .iter()
+            .any(|marker| {
+                marker.source_id() == Some(request.source_id())
+                    && marker.root_identity() == Some(request.root_identity())
+                    && marker.generation() == Some(request.generation())
+            })
     }
 
     /// Admit live evidence through the existing owner-held adapter.
@@ -219,6 +238,10 @@ impl AdmissionLifecycle {
 
     pub(super) fn max_in_flight(&self) -> usize {
         self.owner.max_in_flight()
+    }
+
+    pub(super) fn max_source_audit_request_entries(&self) -> usize {
+        self.owner.max_source_audit_request_entries()
     }
 
     pub(super) fn in_flight(&self) -> usize {

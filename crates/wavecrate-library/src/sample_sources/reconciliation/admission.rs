@@ -408,6 +408,23 @@ impl SourceAuditRequest {
         self.boundary
     }
 
+    /// Cover two requests for the same source/root/generation identity.
+    ///
+    /// Requests with different identities must remain separate so a later committed audit cannot
+    /// accidentally clear uncertainty from another root or lifecycle generation.
+    pub fn covering(&self, other: &Self) -> Option<Self> {
+        if self.identity() != other.identity() {
+            return None;
+        }
+        Some(Self::new(
+            self.identity.clone(),
+            RetainedUncertaintyBoundary::new(
+                self.boundary.first().min(other.boundary.first()),
+                self.boundary.through().max(other.boundary.through()),
+            ),
+        ))
+    }
+
     /// Borrow the requested source identifier.
     pub fn source_id(&self) -> &SourceId {
         self.identity.source_id()
@@ -2123,6 +2140,30 @@ mod tests {
             scope,
             RetainedUncertaintyBoundary::new(first, through),
         )
+    }
+
+    #[test]
+    fn source_audit_requests_cover_same_identity_only() {
+        let identity = ReconciliationAcknowledgementIdentity::new(
+            SourceId::from_string("source-a"),
+            RootIdentity::from_bytes(b"root-a".to_vec()),
+            WatcherGeneration::new(7),
+        );
+        let first =
+            SourceAuditRequest::new(identity.clone(), RetainedUncertaintyBoundary::new(10, 20));
+        let second = SourceAuditRequest::new(identity, RetainedUncertaintyBoundary::new(5, 30));
+
+        let covered = first.covering(&second).expect("matching request identity");
+        assert_eq!(covered.boundary(), RetainedUncertaintyBoundary::new(5, 30));
+
+        let different_identity = ReconciliationAcknowledgementIdentity::new(
+            SourceId::from_string("source-b"),
+            RootIdentity::from_bytes(b"root-b".to_vec()),
+            WatcherGeneration::new(8),
+        );
+        let different =
+            SourceAuditRequest::new(different_identity, RetainedUncertaintyBoundary::new(5, 30));
+        assert_eq!(first.covering(&different), None);
     }
 
     fn marker_bearing_envelope(
