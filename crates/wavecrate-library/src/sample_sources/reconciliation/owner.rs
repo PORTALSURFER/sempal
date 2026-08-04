@@ -6,7 +6,7 @@ use super::adapter::{
 use super::admission::{
     AdmissionError, AdmissionLaneKey, DispatchTicket, DispatchedObservation,
     ReconciliationAcknowledgementOutcome, ReconciliationAdmissionSupervisor,
-    ReconciliationLifecycle, SourceAuditReceipt,
+    ReconciliationLifecycle, SourceAuditReceipt, SourceAuditRequest,
 };
 use super::model::{RootIdentity, WatcherGeneration};
 use crate::sample_sources::SourceId;
@@ -94,6 +94,18 @@ impl ReconciliationAdmissionOwner {
     /// Borrow the owned supervisor without exposing mutable supervisor state.
     pub fn supervisor(&self) -> &ReconciliationAdmissionSupervisor {
         &self.supervisor
+    }
+
+    /// Build the bounded source-audit request for the currently registered lane.
+    ///
+    /// The supervisor derives the request from the lane's current source/root/generation and
+    /// issued uncertainty watermark without allocating another marker or admission ticket.
+    pub fn source_audit_request_for_current_lane(
+        &self,
+        source_id: &SourceId,
+    ) -> Option<SourceAuditRequest> {
+        self.supervisor
+            .source_audit_request_for_current_lane(source_id)
     }
 
     /// Consume the owner and return its admission supervisor.

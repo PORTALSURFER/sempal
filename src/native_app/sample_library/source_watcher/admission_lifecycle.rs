@@ -7,7 +7,8 @@ use wavecrate_library::sample_sources::reconciliation::{
     AdapterError, AdmissionOwnerError, DispatchTicket, DispatchedObservation, LiveAuditAdmission,
     OwnedAdmissionLane, RawObservationLimits, ReconciliationAcknowledgementOutcome,
     ReconciliationAdmissionLimits, ReconciliationAdmissionOwner, ReconciliationAdmissionSupervisor,
-    ReconciliationLifecycle, RootIdentity, SourceAuditReceipt, SyntheticObservationBatch,
+    ReconciliationLifecycle, RootIdentity, SourceAuditReceipt, SourceAuditRequest,
+    SyntheticObservationBatch,
 };
 
 use super::roots::{WatchedRootIdentities, registered_root_identity};
@@ -157,6 +158,14 @@ impl AdmissionLifecycle {
             return None;
         }
         self.owner.lane(source_id)
+    }
+
+    /// Build the existing bounded request for the current owner-authoritative source lane.
+    pub(super) fn source_audit_request_for_current_lane(
+        &self,
+        source_id: &SourceId,
+    ) -> Option<SourceAuditRequest> {
+        self.owner.source_audit_request_for_current_lane(source_id)
     }
 
     /// Admit live evidence through the existing owner-held adapter.

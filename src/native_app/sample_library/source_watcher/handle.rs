@@ -1236,19 +1236,6 @@ fn admit_capture_target(
     pending_contexts: &mut HashMap<DispatchTicket, PendingCaptureContext>,
     now: Instant,
 ) {
-    let context_limit = admission
-        .max_in_flight()
-        .min(super::MAX_PENDING_CAPTURE_CONTEXTS);
-    if pending_contexts.len() >= context_limit {
-        tracing::warn!(
-            source_id = target.source_id.as_str(),
-            context_limit,
-            "Native watcher admission context pressure widened source"
-        );
-        widen_source(state, &target.source_root, now);
-        return;
-    }
-
     let Some(lane) = admission.lane_for_capture(&target.source_id) else {
         tracing::warn!(
             source_id = target.source_id.as_str(),
@@ -1262,6 +1249,22 @@ fn admit_capture_target(
             source_id = target.source_id.as_str(),
             generation = lane.generation().get(),
             "Native watcher capture arrived outside a capturing admission lane"
+        );
+        widen_source(state, &target.source_root, now);
+        return;
+    }
+
+    let context_limit = admission
+        .max_in_flight()
+        .min(super::MAX_PENDING_CAPTURE_CONTEXTS);
+    if pending_contexts.len() >= context_limit {
+        if let Some(request) = admission.source_audit_request_for_current_lane(&target.source_id) {
+            state.pending_audit_requests.push(request);
+        }
+        tracing::warn!(
+            source_id = target.source_id.as_str(),
+            context_limit,
+            "Native watcher admission context pressure widened source"
         );
         widen_source(state, &target.source_root, now);
         return;
@@ -1984,6 +1987,7 @@ pub(super) fn doubled_backoff(current: Duration) -> Duration {
 
 #[cfg(test)]
 mod lifecycle_tests {
+    use super::super::MAX_PENDING_CAPTURE_CONTEXTS;
     use super::super::capture::MAX_CAPTURE_PATHS;
     use super::*;
     use notify::{Event, EventKind, RecursiveMode, WatcherKind};
@@ -2690,6 +2694,151 @@ mod lifecycle_tests {
         dispatch_pending_capture_contexts(&mut state, &mut admission, &mut pending_contexts, now);
         assert_eq!(admission.in_flight(), 0);
         assert!(pending_contexts.is_empty());
+        assert!(
+            state
+                .pending
+                .get(source.id.as_str())
+                .is_some_and(|pending| pending.overflowed)
+        );
+    }
+
+    #[test]
+    fn full_context_capacity_queues_current_lane_audit_without_extra_ticket_or_context() {
+        let directory = tempfile::tempdir().expect("source root");
+        let sources = (0..=MAX_PENDING_CAPTURE_CONTEXTS)
+            .map(|index| {
+                source_with_root(
+                    &format!("full-context-{index}"),
+                    &directory.path().join(format!("source-{index}")),
+                )
+            })
+            .collect::<Vec<_>>();
+        let overflow_source = sources.last().cloned().expect("overflow source");
+        let mut state = source_watcher_state(sources.clone());
+        let mut admission = configured_admission(&sources);
+        let mut pending_contexts = HashMap::new();
+
+        for (index, source) in sources
+            .iter()
+            .take(MAX_PENDING_CAPTURE_CONTEXTS)
+            .enumerate()
+        {
+            let capture = notify_capture(&source.root, 101, &["sample.wav"]);
+            let target = SourceCaptureTarget {
+                source_id: source.id.clone(),
+                source_root: source.root.clone(),
+                paths: vec![source.root.join("sample.wav")],
+                conservative: false,
+            };
+            admit_capture_target(
+                &mut state,
+                &mut admission,
+                &capture,
+                exact_boundary(index as u64 + 1),
+                target,
+                &mut pending_contexts,
+                Instant::now(),
+            );
+        }
+
+        assert_eq!(pending_contexts.len(), MAX_PENDING_CAPTURE_CONTEXTS);
+        assert_eq!(admission.in_flight(), MAX_PENDING_CAPTURE_CONTEXTS);
+        assert_eq!(
+            admission.retained_uncertainties().len(),
+            MAX_PENDING_CAPTURE_CONTEXTS
+        );
+
+        let lane = admission
+            .lane_for_capture(&overflow_source.id)
+            .expect("overflow source lane");
+        state.pending_audit_requests.clear();
+        let capture = notify_capture(&overflow_source.root, 101, &["sample.wav"]);
+        let target = SourceCaptureTarget {
+            source_id: overflow_source.id.clone(),
+            source_root: overflow_source.root.clone(),
+            paths: vec![overflow_source.root.join("sample.wav")],
+            conservative: false,
+        };
+        admit_capture_target(
+            &mut state,
+            &mut admission,
+            &capture,
+            exact_boundary(258),
+            target,
+            &mut pending_contexts,
+            Instant::now(),
+        );
+
+        assert_eq!(pending_contexts.len(), MAX_PENDING_CAPTURE_CONTEXTS);
+        assert_eq!(admission.in_flight(), MAX_PENDING_CAPTURE_CONTEXTS);
+        assert_eq!(
+            admission.retained_uncertainties().len(),
+            MAX_PENDING_CAPTURE_CONTEXTS,
+            "full-context widening must not retain another marker"
+        );
+        let request = state
+            .pending_audit_requests
+            .first()
+            .expect("full-context source audit request");
+        assert_eq!(request.source_id(), &overflow_source.id);
+        assert_eq!(request.root_identity(), lane.root_identity());
+        assert_eq!(request.generation(), lane.generation());
+        assert!(request.boundary().first() > 0);
+        assert_eq!(request.boundary().first(), request.boundary().through());
+        assert!(
+            state
+                .pending
+                .get(overflow_source.id.as_str())
+                .is_some_and(|pending| pending.overflowed)
+        );
+    }
+
+    #[test]
+    fn full_context_stopped_lane_widens_without_typed_request() {
+        let directory = tempfile::tempdir().expect("source root");
+        let source = source_with_root("full-context-stopped", directory.path());
+        let mut state = source_watcher_state(vec![source.clone()]);
+        let mut admission = limited_admission(&state.sources, 1);
+        let capture = notify_capture(directory.path(), 102, &["first.wav"]);
+        let target = SourceCaptureTarget {
+            source_id: source.id.clone(),
+            source_root: source.root.clone(),
+            paths: vec![source.root.join("first.wav")],
+            conservative: false,
+        };
+        let mut pending_contexts = HashMap::new();
+        admit_capture_target(
+            &mut state,
+            &mut admission,
+            &capture,
+            exact_boundary(259),
+            target,
+            &mut pending_contexts,
+            Instant::now(),
+        );
+        assert_eq!(pending_contexts.len(), 1);
+        admission.fence_all().expect("stop capturing lane");
+        state.pending_audit_requests.clear();
+
+        let capture = notify_capture(directory.path(), 102, &["second.wav"]);
+        let target = SourceCaptureTarget {
+            source_id: source.id.clone(),
+            source_root: source.root.clone(),
+            paths: vec![source.root.join("second.wav")],
+            conservative: false,
+        };
+        admit_capture_target(
+            &mut state,
+            &mut admission,
+            &capture,
+            exact_boundary(260),
+            target,
+            &mut pending_contexts,
+            Instant::now(),
+        );
+
+        assert!(state.pending_audit_requests.is_empty());
+        assert_eq!(pending_contexts.len(), 1);
         assert!(
             state
                 .pending
