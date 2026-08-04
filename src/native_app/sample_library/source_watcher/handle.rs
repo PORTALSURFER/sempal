@@ -2118,7 +2118,7 @@ fn publish_closed_app_journal_recovery(
                             ?reason,
                             "Closed-application replay remained conservative uncertainty"
                         );
-                        state.mark_all_overflowed(now);
+                        widen_source(state, &source.root, now);
                     }
                     AdmissionOutcome::UncertaintyCapacityExhausted(envelope) => {
                         tracing::warn!(
@@ -2126,7 +2126,7 @@ fn publish_closed_app_journal_recovery(
                             observations = envelope.observations().len(),
                             "Closed-application replay exceeded uncertainty capacity"
                         );
-                        state.mark_all_overflowed(now);
+                        widen_source(state, &source.root, now);
                     }
                 }
             }
