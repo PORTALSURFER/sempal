@@ -184,6 +184,27 @@ fn inspect_directory_truth_state(
     }
 
     if inspection == DirectoryTruthInspection::FullIntegrity {
+        {
+            let mut statement = connection
+                .prepare(
+                    "SELECT path, path_encoding, directory_identity
+                     FROM source_directory_entries
+                     WHERE generation = ?1",
+                )
+                .map_err(map_sql_error)?;
+            let mut rows = statement.query([generation]).map_err(map_sql_error)?;
+            while let Some(row) = rows.next().map_err(map_sql_error)? {
+                let raw_path = row.get::<_, String>(0).map_err(map_sql_error)?;
+                let path_encoding = row.get::<_, i64>(1).map_err(map_sql_error)?;
+                let directory_identity = row.get::<_, String>(2).map_err(map_sql_error)?;
+                if active_page_entry(raw_path, path_encoding, directory_identity).is_err() {
+                    return Ok(SourceDirectoryTruthState::Unavailable {
+                        reason: SourceDirectoryTruthUnavailableReason::AuditRequired,
+                    });
+                }
+            }
+        }
+
         let (entry_count, distinct_paths, distinct_identities): (i64, i64, i64) = connection
             .query_row(
                 "SELECT COUNT(*), COUNT(DISTINCT path), COUNT(DISTINCT directory_identity)
@@ -696,6 +717,13 @@ mod tests {
                     [path],
                 )
                 .unwrap_or_else(|error| panic!("persist {expected_description}: {error}"));
+
+            assert_eq!(
+                db.source_directory_truth_state().unwrap(),
+                SourceDirectoryTruthState::Unavailable {
+                    reason: SourceDirectoryTruthUnavailableReason::AuditRequired,
+                }
+            );
 
             let error = db.source_directory_truth_page(None, 1).unwrap_err();
             assert_eq!(
