@@ -204,6 +204,20 @@ impl BackendStreamIdentity {
         Self(bytes)
     }
 
+    /// Construct the canonical opaque identity for one durable FSEvents device stream.
+    ///
+    /// The discriminator prevents a process-local notify stream id from being treated as
+    /// durable FSEvents authority. A zero device is unavailable and cannot identify a stream.
+    pub fn from_fsevents_device(device: u64) -> Option<Self> {
+        if device == 0 {
+            return None;
+        }
+        let mut bytes = Vec::with_capacity(9 + std::mem::size_of::<u64>());
+        bytes.extend_from_slice(b"fsevents:");
+        bytes.extend_from_slice(&device.to_be_bytes());
+        Some(Self::from_bytes(bytes))
+    }
+
     /// Borrow the backend-supplied stream identity bytes without decoding them.
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
