@@ -1546,6 +1546,17 @@ fn handoff_dispatched_capture(
     if let Some(correlation) = context.correlation.as_ref() {
         state.enqueue_audit_request(correlation.audit_request(), true);
     }
+    if let Some(replay) = context.replay.as_ref()
+        && !replay.continuity_proven
+    {
+        tracing::warn!(
+            source_id = context.source_id.as_str(),
+            ticket = dispatched.ticket().id(),
+            "Closed-application replay lacked durable continuity; retaining source-scoped audit fallback"
+        );
+        state.mark_source_overflowed(context.source_id.as_str(), now);
+        return (true, false);
+    }
     if source_audit {
         widen_source(state, &context.source_root, now);
         return (true, false);
@@ -4452,6 +4463,287 @@ mod lifecycle_tests {
                 .is_some_and(|pending| pending.overflowed)
         );
         assert!(state.pending.get(second.id.as_str()).is_none());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn accepted_unproven_replay_uses_source_local_audit_handoff() {
+        let directory = tempfile::tempdir().expect("shared replay root");
+        let first = source_with_root("unproven-replay-first", directory.path());
+        let second = source_with_root("unproven-replay-second", directory.path());
+        let sources = vec![first.clone(), second.clone()];
+        let mut state = source_watcher_state(sources.clone());
+        state.watched_roots =
+            HashMap::from([(first.root.clone(), Some(String::from("identity-1")))]);
+        let mut admission = configured_admission(&sources);
+        state.set_audit_request_capacity(admission.max_source_audit_request_entries());
+
+        let checkpoint_value = |source: &SampleSource,
+                                lifecycle_generation: u64,
+                                event_id: u64,
+                                backend_device: u64,
+                                watcher_generation: u64,
+                                replay_start_event_id: u64,
+                                replay_end_event_id: u64| {
+            serde_json::json!({
+                "root_identity": "identity-1",
+                "event_id": event_id,
+                "format_version": 3,
+                "source_id": source.id.as_str(),
+                "lifecycle_generation": lifecycle_generation,
+                "source_revision": 1,
+                "cause": "targeted_replay",
+                "continuity_proof": {
+                    "root_identity": "identity-1",
+                    "backend": "fsevents",
+                    "backend_device": backend_device,
+                    "watcher_generation": watcher_generation,
+                    "replay_coverage_start_event_id": replay_start_event_id,
+                    "replay_coverage_end_event_id": replay_end_event_id,
+                    "acknowledged_end_event_id": replay_end_event_id
+                }
+            })
+            .to_string()
+        };
+        let write_checkpoint = |source: &SampleSource, value: String| {
+            let database =
+                SourceDatabase::open_for_source_write(&source.root).expect("source database");
+            database
+                .set_metadata(META_SOURCE_WATCHER_CHECKPOINT, &value)
+                .expect("watcher checkpoint");
+        };
+
+        write_checkpoint(&second, checkpoint_value(&second, 1, 20, 202, 42, 19, 20));
+        let first_lane = admission.lane_for_capture(&first.id).expect("first lane");
+        let second_lane = admission.lane_for_capture(&second.id).expect("second lane");
+        let first_boundary =
+            CaptureBoundary::try_new(11, Some(11), Some(11)).expect("first replay boundary");
+        let second_boundary =
+            CaptureBoundary::try_new(21, Some(21), Some(21)).expect("second replay boundary");
+        let first_proof = WatcherContinuityProof {
+            root_identity: String::from("identity-1"),
+            backend: journal::WatcherBackend::Fsevents,
+            backend_device: 101,
+            watcher_generation: 41,
+            replay_coverage_start_event_id: 10,
+            replay_coverage_end_event_id: 11,
+            acknowledged_end_event_id: 11,
+        };
+        let second_proof = WatcherContinuityProof {
+            root_identity: String::from("identity-1"),
+            backend: journal::WatcherBackend::Fsevents,
+            backend_device: 202,
+            watcher_generation: 42,
+            replay_coverage_start_event_id: 20,
+            replay_coverage_end_event_id: 21,
+            acknowledged_end_event_id: 21,
+        };
+
+        let (first_observations, first_limits) =
+            fsevents_replay_observations(vec![PathBuf::from("first.wav")])
+                .expect("first replay observations");
+        let first_replay = {
+            let database = SourceDatabase::open_for_background_job(&first.root)
+                .expect("first replay authority database");
+            admission
+                .admit_fsevents_replay(
+                    &first,
+                    &database,
+                    41,
+                    FseventsReplayEvidence {
+                        source_lifecycle_generation: WatcherGeneration::new(1),
+                        replay_stream_generation: 41,
+                        backend_device: 101,
+                        replay_start_event_id: 10,
+                        replay_end_event_id: 11,
+                        observations: first_observations,
+                        limits: first_limits,
+                    },
+                )
+                .expect("first replay admission")
+        };
+        assert_eq!(
+            first_replay.admission().disposition(),
+            AdapterDisposition::SourceAuditRequired
+        );
+        assert!(matches!(
+            first_replay.admission().outcome(),
+            AdmissionOutcome::Accepted(_)
+        ));
+        let first_ticket = match first_replay.admission().outcome() {
+            AdmissionOutcome::Accepted(ticket) => *ticket,
+            outcome => panic!("unexpected first replay outcome: {outcome:?}"),
+        };
+        let first_request = first_replay
+            .audit_request()
+            .cloned()
+            .expect("first source typed audit request");
+        assert_eq!(first_request.source_id(), &first.id);
+        assert_eq!(first_request.root_identity(), first_lane.root_identity());
+        assert_eq!(first_request.generation(), first_lane.generation());
+        let first_marker_backed = admission.source_audit_request_is_marker_backed(&first_request);
+        assert!(first_marker_backed);
+        state.enqueue_audit_request(first_request.clone(), first_marker_backed);
+
+        let (second_observations, second_limits) =
+            fsevents_replay_observations(vec![PathBuf::from("second.wav")])
+                .expect("second replay observations");
+        let second_replay = {
+            let database = SourceDatabase::open_for_background_job(&second.root)
+                .expect("second replay authority database");
+            admission
+                .admit_fsevents_replay(
+                    &second,
+                    &database,
+                    42,
+                    FseventsReplayEvidence {
+                        source_lifecycle_generation: WatcherGeneration::new(1),
+                        replay_stream_generation: 42,
+                        backend_device: 202,
+                        replay_start_event_id: 20,
+                        replay_end_event_id: 21,
+                        observations: second_observations,
+                        limits: second_limits,
+                    },
+                )
+                .expect("second replay admission")
+        };
+        assert_eq!(
+            second_replay.admission().disposition(),
+            AdapterDisposition::AdmittedWithContinuity
+        );
+        let second_ticket = match second_replay.admission().outcome() {
+            AdmissionOutcome::Accepted(ticket) => *ticket,
+            outcome => panic!("unexpected second replay outcome: {outcome:?}"),
+        };
+
+        let mut pending_contexts = HashMap::from([
+            (
+                first_ticket,
+                PendingCaptureContext {
+                    source_id: first.id.clone(),
+                    source_root: first.root.clone(),
+                    root_identity: first_lane.root_identity().clone(),
+                    stream_id: 0,
+                    watcher_generation: first_lane.generation(),
+                    capture_boundary: first_boundary,
+                    original_event: None,
+                    compatibility_event: None,
+                    conservative: false,
+                    correlation: None,
+                    replay: Some(PendingReplayHandoff {
+                        paths: vec![PathBuf::from("first.wav")],
+                        proof: first_proof,
+                        continuity_proven: false,
+                    }),
+                },
+            ),
+            (
+                second_ticket,
+                PendingCaptureContext {
+                    source_id: second.id.clone(),
+                    source_root: second.root.clone(),
+                    root_identity: second_lane.root_identity().clone(),
+                    stream_id: 0,
+                    watcher_generation: second_lane.generation(),
+                    capture_boundary: second_boundary,
+                    original_event: None,
+                    compatibility_event: None,
+                    conservative: false,
+                    correlation: None,
+                    replay: Some(PendingReplayHandoff {
+                        paths: vec![PathBuf::from("second.wav")],
+                        proof: second_proof.clone(),
+                        continuity_proven: true,
+                    }),
+                },
+            ),
+        ]);
+        let mut pending_replay_checkpoints = HashMap::new();
+        let (message_tx, message_rx) = std::sync::mpsc::channel();
+        let root_invalidated = dispatch_pending_capture_contexts_with_replay(
+            &mut state,
+            &mut admission,
+            &mut pending_contexts,
+            &mut pending_replay_checkpoints,
+            &message_tx,
+            Instant::now(),
+        );
+
+        assert!(!root_invalidated);
+        assert!(pending_contexts.is_empty());
+        assert_eq!(admission.in_flight(), 1);
+        assert!(!pending_replay_checkpoints.contains_key(&first_ticket));
+        let second_checkpoint = pending_replay_checkpoints
+            .get(&second_ticket)
+            .expect("continuity-proven replay checkpoint");
+        assert_eq!(second_checkpoint.proof, second_proof);
+        assert_eq!(state.pending_audit_requests.front(), Some(&first_request));
+        assert!(
+            state
+                .pending
+                .get(first.id.as_str())
+                .is_some_and(|pending| pending.overflowed && pending.paths.is_empty())
+        );
+        assert!(
+            state.pending.get(second.id.as_str()).is_none(),
+            "unexpected source pending state: {:?}",
+            state.pending
+        );
+        assert!(admission.retained_uncertainties().iter().any(|marker| {
+            marker.source_id() == Some(&first.id)
+                && marker.root_identity() == Some(first_lane.root_identity())
+                && marker.generation() == Some(first_lane.generation())
+        }));
+
+        match message_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("continuity-proven replay message")
+        {
+            GuiMessage::SourceFilesystemChanged {
+                source_id,
+                paths,
+                overflowed,
+                source_root_available,
+                journal_checkpoint_event_id,
+                watcher_continuity_proof,
+            } => {
+                assert_eq!(source_id, second.id.as_str());
+                assert_eq!(paths, vec![PathBuf::from("second.wav")]);
+                assert!(!overflowed);
+                assert!(source_root_available);
+                assert_eq!(journal_checkpoint_event_id, Some(21));
+                assert_eq!(watcher_continuity_proof, Some(second_proof.clone()));
+            }
+            message => panic!("unexpected replay handoff message: {message:?}"),
+        }
+        assert!(matches!(
+            message_rx.try_recv(),
+            Err(std::sync::mpsc::TryRecvError::Empty)
+        ));
+
+        write_checkpoint(&second, checkpoint_value(&second, 2, 21, 202, 42, 20, 21));
+        acknowledge_replay_checkpoint(
+            &mut state,
+            &mut admission,
+            &mut pending_replay_checkpoints,
+            &sources,
+            RevisionBoundCheckpoint {
+                source_id: second.id.as_str().to_string(),
+                lifecycle_generation: 2,
+                source_revision: 1,
+                root_identity: String::from("identity-1"),
+                event_id: 21,
+                cause: CheckpointCause::TargetedReplay,
+                continuity_proof: Some(second_proof),
+            },
+            Instant::now(),
+        );
+
+        assert!(pending_replay_checkpoints.is_empty());
+        assert_eq!(admission.in_flight(), 0);
+        assert_eq!(admission.lane_for_capture(&second.id), Some(second_lane));
+        assert_eq!(state.pending_audit_requests.front(), Some(&first_request));
     }
 
     #[test]
