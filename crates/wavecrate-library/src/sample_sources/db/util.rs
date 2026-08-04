@@ -138,6 +138,22 @@ pub(super) fn parse_source_index_path_from_db(
     }
 }
 
+/// Parse a directory path and require its stored key to be the canonical encoding.
+///
+/// The generic source-index decoder remains compatible with every valid lossless spelling. Directory
+/// truth rows need a stronger invariant because their encoded path is also their durable identity.
+pub(super) fn parse_canonical_directory_path_from_db(
+    path: &str,
+    encoding: i64,
+) -> Result<PathBuf, SourceDbError> {
+    let decoded = parse_source_index_path_from_db(path, encoding)?;
+    let (canonical_path, canonical_encoding) = normalize_source_index_path(&decoded)?;
+    if canonical_path != path || canonical_encoding != encoding {
+        return Err(SourceDbError::InvalidRelativePath(PathBuf::from(path)));
+    }
+    Ok(decoded)
+}
+
 #[cfg(unix)]
 fn parse_lossless_index_path(path: &str) -> Result<PathBuf, SourceDbError> {
     if path.is_empty() {
@@ -426,6 +442,47 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(error, SourceDbError::InvalidRelativePath(_)));
+    }
+
+    #[test]
+    fn canonical_directory_path_rejects_noncanonical_aliases() {
+        let escaped_alias = "valid/~wavecrate-escaped~616c696173";
+        assert_eq!(
+            parse_source_index_path_from_db(escaped_alias, INDEX_PATH_ENCODING_LOSSLESS).unwrap(),
+            Path::new("valid/alias")
+        );
+        assert!(
+            parse_canonical_directory_path_from_db(escaped_alias, INDEX_PATH_ENCODING_LOSSLESS)
+                .is_err()
+        );
+
+        let reserved_prefix_plain = "valid/~wavecrate-escaped~616c696173";
+        assert_eq!(
+            parse_source_index_path_from_db(reserved_prefix_plain, INDEX_PATH_ENCODING_PLAIN)
+                .unwrap(),
+            Path::new(reserved_prefix_plain)
+        );
+        assert!(
+            parse_canonical_directory_path_from_db(
+                reserved_prefix_plain,
+                INDEX_PATH_ENCODING_PLAIN
+            )
+            .is_err()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn canonical_directory_path_rejects_noncanonical_hex_case() {
+        let uppercase_hex = "valid/~wavecrate-escaped~6B69636B5C726177";
+        assert_eq!(
+            parse_source_index_path_from_db(uppercase_hex, INDEX_PATH_ENCODING_LOSSLESS).unwrap(),
+            Path::new(r"valid/kick\raw")
+        );
+        assert!(
+            parse_canonical_directory_path_from_db(uppercase_hex, INDEX_PATH_ENCODING_LOSSLESS)
+                .is_err()
+        );
     }
 
     #[test]

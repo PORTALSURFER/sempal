@@ -4,7 +4,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::OptionalExtension;
 
-use super::super::util::{map_sql_error, normalize_relative_path, parse_source_index_path_from_db};
+use super::super::util::{
+    map_sql_error, normalize_relative_path, parse_canonical_directory_path_from_db,
+};
 use super::super::{
     META_SOURCE_TRAVERSAL_POLICY, SourceDatabase, SourceDbError, SourceDirectoryEntry,
     SourceDirectoryTruthError, SourceDirectoryTruthPublication, SourceIndexEntry,
@@ -704,7 +706,7 @@ fn validate_generation_entries(
         let directory_identity = row
             .get::<_, String>(2)
             .map_err(|_| directory_entry_requires_audit())?;
-        parse_source_index_path_from_db(&path, path_encoding)
+        parse_canonical_directory_path_from_db(&path, path_encoding)
             .map_err(|_| directory_entry_requires_audit())?;
         super::super::directories::validate_directory_identity(&directory_identity)
             .map_err(|_| directory_entry_requires_audit())?;

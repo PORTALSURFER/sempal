@@ -4,7 +4,9 @@ use std::path::Path;
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior};
 
 use super::schema;
-use super::util::{map_sql_error, normalize_source_index_path, parse_source_index_path_from_db};
+use super::util::{
+    map_sql_error, normalize_source_index_path, parse_canonical_directory_path_from_db,
+};
 use super::{
     SOURCE_DIRECTORY_TRUTH_BATCH_LIMIT, SOURCE_DIRECTORY_TRUTH_CLEANUP_LIMIT,
     SOURCE_DIRECTORY_TRUTH_MAX_IDENTITY_BYTES, SourceDatabase, SourceDbError, SourceDirectoryEntry,
@@ -236,7 +238,7 @@ fn active_page_entry(
     path_encoding: i64,
     directory_identity: String,
 ) -> Result<SourceDirectoryEntry, SourceDbError> {
-    let relative_path = parse_source_index_path_from_db(&raw_path, path_encoding)
+    let relative_path = parse_canonical_directory_path_from_db(&raw_path, path_encoding)
         .map_err(|_| requires_audit(SourceDirectoryTruthUnavailableReason::AuditRequired))?;
     validate_directory_identity(&directory_identity)
         .map_err(|_| requires_audit(SourceDirectoryTruthUnavailableReason::AuditRequired))?;
@@ -701,6 +703,10 @@ mod tests {
                 "encoded slash inside component",
             ),
             ("valid/~wavecrate-escaped~2e2e", "encoded parent"),
+            (
+                "valid/~wavecrate-escaped~616c696173",
+                "escaped ordinary plain path alias",
+            ),
         ] {
             let root = tempfile::tempdir().unwrap();
             let db = SourceDatabase::open_for_source_write(root.path()).unwrap();
@@ -749,6 +755,7 @@ mod tests {
     fn finalization_rejects_corrupt_staging_rows_before_publication() {
         for (path, path_encoding, directory_identity) in [
             ("valid/~wavecrate-escaped~2f", 1, "dir-valid"),
+            ("valid/~wavecrate-escaped~616c696173", 1, "dir-valid"),
             ("valid", 0, "\u{1}"),
         ] {
             let root = tempfile::tempdir().unwrap();
