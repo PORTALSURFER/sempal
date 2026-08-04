@@ -37,6 +37,7 @@ use wavecrate::sample_sources::{
         complete_pending_deep_hash_for_path, sync_paths_with_progress,
     },
 };
+use wavecrate_library::sample_sources::reconciliation::SourceAuditRequest;
 
 use super::worker::{SourceProcessingFailure, source_database_failure};
 use super::{

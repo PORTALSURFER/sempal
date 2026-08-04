@@ -5,7 +5,8 @@ use super::adapter::{
 };
 use super::admission::{
     AdmissionError, AdmissionLaneKey, DispatchTicket, DispatchedObservation,
-    ReconciliationAdmissionSupervisor, ReconciliationLifecycle,
+    ReconciliationAcknowledgementOutcome, ReconciliationAdmissionSupervisor,
+    ReconciliationLifecycle, SourceAuditReceipt,
 };
 use super::model::{RootIdentity, WatcherGeneration};
 use crate::sample_sources::SourceId;
@@ -142,6 +143,42 @@ impl ReconciliationAdmissionOwner {
         self.supervisor.mark_unproven_audit_handed_off(ticket)
     }
 
+    /// Apply a complete source-audit receipt only while its lane identity is still active.
+    ///
+    /// This is the only native-owner entry point for the existing typed acknowledgement model.
+    /// Stopped lanes and replaced roots/generations reject old receipts without clearing anything.
+    pub fn acknowledge_source_audit_receipt(
+        &mut self,
+        receipt: &SourceAuditReceipt,
+    ) -> ReconciliationAcknowledgementOutcome {
+        let Some(acknowledgement) = receipt.authoritative_acknowledgement() else {
+            return ReconciliationAcknowledgementOutcome::unchanged(
+                self.supervisor.retained_uncertainties().len(),
+            );
+        };
+        let Some(lane) = self
+            .supervisor
+            .lane_for_source(acknowledgement.identity().source_id())
+            .cloned()
+        else {
+            return ReconciliationAcknowledgementOutcome::unchanged(
+                self.supervisor.retained_uncertainties().len(),
+            );
+        };
+        let lane_generation = self.supervisor.generation(&lane).ok();
+        let lane_lifecycle = self.supervisor.lifecycle(&lane).ok();
+        if lane.root_identity() != acknowledgement.identity().root_identity()
+            || lane_generation != Some(acknowledgement.identity().generation())
+            || lane_lifecycle != Some(ReconciliationLifecycle::Capturing)
+        {
+            return ReconciliationAcknowledgementOutcome::unchanged(
+                self.supervisor.retained_uncertainties().len(),
+            );
+        }
+        self.supervisor
+            .acknowledge_committed_authoritative_reconciliation(&acknowledgement)
+    }
+
     /// Return the bounded number of live envelopes the owner can retain.
     pub fn max_in_flight(&self) -> usize {
         self.supervisor.limits().max_in_flight()
@@ -264,7 +301,9 @@ mod tests {
     use crate::sample_sources::reconciliation::{
         AdmissionOutcome, BackendStreamIdentity, CaptureBoundary, RawEventKind, RawObservation,
         RawObservationEnvelope, RawObservationLimits, RawObservationProvenance, RawObservedPath,
-        RawPathRole, ReconciliationAdmissionLimits, SyntheticObservationBatch, UncertaintyReason,
+        RawPathRole, ReconciliationAcknowledgementIdentity, ReconciliationAdmissionLimits,
+        RetainedUncertaintyBoundary, SourceAuditRequest, SyntheticObservationBatch,
+        UncertaintyReason,
     };
 
     fn root(value: &[u8]) -> RootIdentity {
@@ -324,6 +363,31 @@ mod tests {
             RawObservationLimits::new(8, usize::MAX, usize::MAX).expect("envelope limits"),
         )
         .expect("envelope")
+    }
+
+    fn live_batch(
+        source: &SourceId,
+        root_identity: &RootIdentity,
+        generation: WatcherGeneration,
+        captured_at: u64,
+    ) -> SyntheticObservationBatch {
+        SyntheticObservationBatch::new(
+            RawObservationProvenance::new(
+                source.clone(),
+                Some(root_identity.clone()),
+                Some(BackendStreamIdentity::from_bytes(b"stream".to_vec())),
+                generation,
+                CaptureBoundary::try_new(captured_at, None, None).expect("capture boundary"),
+            ),
+            vec![RawObservation::new(
+                RawEventKind::Create,
+                vec![RawObservedPath::new(
+                    "sample.wav".into(),
+                    RawPathRole::Subject,
+                )],
+            )],
+            RawObservationLimits::new(8, usize::MAX, usize::MAX).expect("batch limits"),
+        )
     }
 
     #[test]
@@ -409,6 +473,140 @@ mod tests {
         assert_eq!(marker.generation(), Some(lane.generation()));
         assert_eq!(marker.capture_boundary(), Some(boundary));
         assert!(marker.reasons().contains(&UncertaintyReason::LiveUnproven));
+    }
+
+    #[test]
+    fn source_audit_receipts_require_complete_matching_identity_and_boundary() {
+        let source = SourceId::from_string("receipt-source");
+        let root_identity = root(b"receipt-root");
+        let mut owner = owner(1, 1, 8);
+        let lane = owner
+            .begin_source(source.clone(), root_identity.clone())
+            .expect("capturing lane");
+        let live = owner
+            .admit_live_with_correlation(live_batch(&source, &root_identity, lane.generation(), 11))
+            .expect("live admission");
+        let ticket = match live.admission().outcome() {
+            AdmissionOutcome::Accepted(ticket) => *ticket,
+            outcome => panic!("expected accepted live admission, got {outcome:?}"),
+        };
+        let request = live
+            .correlation()
+            .expect("live audit request correlation")
+            .audit_request();
+        owner.dispatch_next().expect("dispatch live admission");
+        owner.mark_dispatched(ticket).expect("mark dispatched");
+        owner.mark_applied(ticket).expect("mark applied");
+        owner
+            .mark_unproven_audit_handed_off(ticket)
+            .expect("handoff proofless live admission");
+
+        let incomplete = request.incomplete();
+        assert_eq!(
+            owner.acknowledge_source_audit_receipt(&incomplete),
+            ReconciliationAcknowledgementOutcome::unchanged(1)
+        );
+        let insufficient_boundary = SourceAuditReceipt::new(
+            request.clone(),
+            RetainedUncertaintyBoundary::new(0, 0),
+            ReconciliationAcknowledgementIdentity::new(
+                source.clone(),
+                root_identity.clone(),
+                lane.generation(),
+            ),
+            Some(12),
+            Some(root_identity.clone()),
+            true,
+        );
+        assert_eq!(
+            owner.acknowledge_source_audit_receipt(&insufficient_boundary),
+            ReconciliationAcknowledgementOutcome::unchanged(1)
+        );
+        let wrong_identity = SourceAuditReceipt::new(
+            request.clone(),
+            request.boundary(),
+            ReconciliationAcknowledgementIdentity::new(
+                SourceId::from_string("wrong-source"),
+                root_identity.clone(),
+                lane.generation(),
+            ),
+            Some(12),
+            Some(root_identity.clone()),
+            true,
+        );
+        assert_eq!(
+            owner.acknowledge_source_audit_receipt(&wrong_identity),
+            ReconciliationAcknowledgementOutcome::unchanged(1)
+        );
+
+        let complete = request.complete(12, root_identity);
+        let acknowledgement = owner.acknowledge_source_audit_receipt(&complete);
+        assert_eq!(acknowledgement.cleared_markers(), 1);
+        assert_eq!(acknowledgement.remaining_markers(), 0);
+        assert_eq!(
+            owner.acknowledge_source_audit_receipt(&complete),
+            ReconciliationAcknowledgementOutcome::unchanged(0),
+            "duplicate receipt must be idempotent"
+        );
+    }
+
+    #[test]
+    fn audit_receipt_before_capture_and_after_root_rebind_clears_nothing() {
+        let source = SourceId::from_string("receipt-fence");
+        let old_root = root(b"old-root");
+        let new_root = root(b"new-root");
+        let mut owner = owner(1, 1, 8);
+        let pre_capture_request = SourceAuditRequest::new(
+            ReconciliationAcknowledgementIdentity::new(
+                source.clone(),
+                old_root.clone(),
+                WatcherGeneration::new(1),
+            ),
+            RetainedUncertaintyBoundary::new(1, 1),
+        );
+        let pre_capture_receipt = pre_capture_request.complete(1, old_root.clone());
+        assert_eq!(
+            owner.acknowledge_source_audit_receipt(&pre_capture_receipt),
+            ReconciliationAcknowledgementOutcome::unchanged(0)
+        );
+
+        let lane = owner
+            .begin_source(source.clone(), old_root.clone())
+            .expect("old capturing lane");
+        let live = owner
+            .admit_live_with_correlation(live_batch(&source, &old_root, lane.generation(), 21))
+            .expect("live admission");
+        let ticket = match live.admission().outcome() {
+            AdmissionOutcome::Accepted(ticket) => *ticket,
+            outcome => panic!("expected accepted live admission, got {outcome:?}"),
+        };
+        let receipt = live
+            .correlation()
+            .expect("live audit correlation")
+            .audit_request()
+            .complete(2, old_root.clone());
+        owner.dispatch_next().expect("dispatch live admission");
+        owner.mark_dispatched(ticket).expect("mark dispatched");
+        owner.mark_applied(ticket).expect("mark applied");
+        owner
+            .mark_unproven_audit_handed_off(ticket)
+            .expect("handoff live admission");
+
+        owner
+            .rebind_source(&source, new_root.clone())
+            .expect("rebind source root");
+        let fenced_before_restart = owner.acknowledge_source_audit_receipt(&receipt);
+        assert_eq!(fenced_before_restart.cleared_markers(), 0);
+        assert!(fenced_before_restart.remaining_markers() >= 1);
+        owner
+            .begin_source(source, new_root)
+            .expect("restart replacement lane");
+        let fenced_after_restart = owner.acknowledge_source_audit_receipt(&receipt);
+        assert_eq!(fenced_after_restart.cleared_markers(), 0);
+        assert!(
+            fenced_after_restart.remaining_markers() >= 1,
+            "old root/generation receipt must remain fenced after rebind"
+        );
     }
 
     #[test]

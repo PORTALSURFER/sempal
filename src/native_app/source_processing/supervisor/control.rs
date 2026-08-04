@@ -5,6 +5,7 @@ use super::{
 };
 use crate::native_app::sample_library::source_watcher::RevisionBoundCheckpoint;
 use std::collections::VecDeque;
+use wavecrate_library::sample_sources::reconciliation::SourceAuditRequest;
 
 pub(super) struct ControlState {
     pub(super) sources: BTreeMap<String, SampleSource>,
@@ -24,6 +25,8 @@ pub(super) struct ControlState {
     pub(super) accepted_manifest_revisions: BTreeMap<String, AcceptedManifestRevision>,
     pub(super) awaiting_foreground_refresh_sources: BTreeSet<String>,
     pub(super) force_manifest_audit_sources: BTreeSet<String>,
+    pub(super) pending_source_audit_requests: BTreeMap<String, SourceAuditRequest>,
+    pub(super) active_source_audit_requests: BTreeMap<String, SourceAuditRequest>,
     pub(super) force_reanalysis_sources: BTreeSet<String>,
     pub(super) quarantined_sources: BTreeSet<String>,
     pub(super) pending_retirements: BTreeMap<u64, PendingSourceRetirement>,
@@ -72,6 +75,61 @@ impl ControlState {
             self.safety_probe_sources.remove(source_id);
             self.dirty_sources.insert(source_id.to_string());
             self.notify(reason);
+        }
+    }
+
+    fn request_is_newer(existing: &SourceAuditRequest, request: &SourceAuditRequest) -> bool {
+        existing.identity() != request.identity()
+            || existing.boundary().through() < request.boundary().through()
+    }
+
+    pub(super) fn queue_source_audit_request(&mut self, request: SourceAuditRequest) -> bool {
+        let source_id = request.source_id().as_str().to_string();
+        if !self.source_is_active(&source_id) {
+            return false;
+        }
+        let request_is_after_active = self
+            .active_source_audit_requests
+            .get(&source_id)
+            .is_none_or(|active| Self::request_is_newer(active, &request));
+        if request_is_after_active {
+            let pending_new = self
+                .pending_source_audit_requests
+                .get(&source_id)
+                .is_none_or(|existing| Self::request_is_newer(existing, &request));
+            if pending_new {
+                self.pending_source_audit_requests
+                    .insert(source_id.clone(), request);
+            }
+        }
+        self.force_manifest_audit_sources.insert(source_id.clone());
+        self.deferred_lifecycle_audit_sources.remove(&source_id);
+        self.mark_source_dirty(&source_id, "live_unproven_audit_request");
+        true
+    }
+
+    pub(super) fn begin_source_audit_request(
+        &mut self,
+        source_id: &str,
+    ) -> Option<SourceAuditRequest> {
+        let request = self.pending_source_audit_requests.remove(source_id)?;
+        self.active_source_audit_requests
+            .insert(source_id.to_string(), request.clone());
+        Some(request)
+    }
+
+    pub(super) fn finish_source_audit_request(&mut self, source_id: &str, complete: bool) {
+        let Some(active) = self.active_source_audit_requests.remove(source_id) else {
+            return;
+        };
+        if !complete
+            && self
+                .pending_source_audit_requests
+                .get(source_id)
+                .is_none_or(|pending| !Self::request_is_newer(&active, pending))
+        {
+            self.pending_source_audit_requests
+                .insert(source_id.to_string(), active);
         }
     }
 

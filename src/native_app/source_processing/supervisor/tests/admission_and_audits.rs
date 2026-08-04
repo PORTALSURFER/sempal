@@ -186,13 +186,10 @@ fn manifest_audit_is_scheduled_only_when_the_active_source_is_due() {
     else {
         panic!("manifest audit discovery unexpectedly cancelled");
     };
-    assert!(
-        due.iter()
-            .any(|candidate| matches!(
-                candidate.task,
-                RuntimeTask::ManifestAudit { accelerated: false }
-            ))
-    );
+    assert!(due.iter().any(|candidate| matches!(
+        candidate.task,
+        RuntimeTask::ManifestAudit { accelerated: false }
+    )));
 
     db.set_metadata(
         META_LAST_MANIFEST_AUDIT_AT,
@@ -223,14 +220,100 @@ fn manifest_audit_is_scheduled_only_when_the_active_source_is_due() {
     .expect("discover forced startup manifest audit") else {
         panic!("forced manifest audit discovery unexpectedly cancelled");
     };
-    assert!(
-        forced
-            .iter()
-            .any(|candidate| matches!(
-                candidate.task,
-                RuntimeTask::ManifestAudit { accelerated: true }
-            ))
-    );
+    assert!(forced.iter().any(|candidate| matches!(
+        candidate.task,
+        RuntimeTask::ManifestAudit { accelerated: true }
+    )));
+}
+
+#[test]
+fn live_audit_requests_started_and_arriving_during_audit_keep_deferred_boundaries() {
+    use wavecrate_library::sample_sources::reconciliation::{
+        BackendStreamIdentity, CaptureBoundary, RawEventKind, RawObservation, RawObservationLimits,
+        RawObservationProvenance, RawObservedPath, RawPathRole, ReconciliationAdmissionLimits,
+        ReconciliationAdmissionOwner, ReconciliationAdmissionSupervisor, RootIdentity,
+        SyntheticObservationBatch,
+    };
+
+    let (_directory, source) = unhashed_source("live-audit-boundaries");
+    let mut source_admission =
+        ReconciliationAdmissionOwner::new(ReconciliationAdmissionSupervisor::new(
+            ReconciliationAdmissionLimits::new(
+                1,
+                RawObservationLimits::new(8, usize::MAX, usize::MAX).expect("lane limits"),
+                RawObservationLimits::new(16, usize::MAX, usize::MAX).expect("global limits"),
+                2,
+                8,
+                8,
+            )
+            .expect("admission limits"),
+        ));
+    let root = RootIdentity::from_bytes(b"live-audit-root".to_vec());
+    let lane = source_admission
+        .begin_source(source.id.clone(), root.clone())
+        .expect("capturing watcher lane");
+    let batch = |captured_at| {
+        SyntheticObservationBatch::new(
+            RawObservationProvenance::new(
+                source.id.clone(),
+                Some(root.clone()),
+                Some(BackendStreamIdentity::from_bytes(b"stream".to_vec())),
+                lane.generation(),
+                CaptureBoundary::try_new(captured_at, None, None).expect("capture boundary"),
+            ),
+            vec![RawObservation::new(
+                RawEventKind::Create,
+                vec![RawObservedPath::new(
+                    "sample.wav".into(),
+                    RawPathRole::Subject,
+                )],
+            )],
+            RawObservationLimits::new(8, usize::MAX, usize::MAX).expect("batch limits"),
+        )
+    };
+    let first = source_admission
+        .admit_live_with_correlation(batch(1))
+        .expect("first live capture");
+    let first_request = first
+        .correlation()
+        .expect("first live correlation")
+        .audit_request();
+    let second = source_admission
+        .admit_live_with_correlation(batch(2))
+        .expect("second live capture");
+    let second_request = second
+        .correlation()
+        .expect("second live correlation")
+        .audit_request();
+    assert!(second_request.boundary().through() > first_request.boundary().through());
+
+    let shared = Arc::new(Shared::new(vec![source.clone()], None));
+    {
+        let mut control = shared.control();
+        assert!(control.queue_source_audit_request(first_request.clone()));
+        assert_eq!(
+            control.begin_source_audit_request(source.id.as_str()),
+            Some(first_request.clone())
+        );
+        assert!(control.queue_source_audit_request(second_request.clone()));
+        assert_eq!(
+            control
+                .pending_source_audit_requests
+                .get(source.id.as_str()),
+            Some(&second_request)
+        );
+        control.finish_source_audit_request(source.id.as_str(), true);
+        assert!(
+            !control
+                .active_source_audit_requests
+                .contains_key(source.id.as_str())
+        );
+        assert_eq!(
+            control.begin_source_audit_request(source.id.as_str()),
+            Some(second_request),
+            "a request arriving after audit start must remain deferred"
+        );
+    }
 }
 
 #[test]
@@ -374,7 +457,7 @@ fn scheduled_manifest_audit_does_not_recreate_source_removed_after_discovery() {
             ContentAuditActivity::default(),
             &mut |_| false,
         )
-            .expect("unavailable audit is parked"),
+        .expect("unavailable audit is parked"),
         ExecutionOutcome::Parked
     );
     assert!(

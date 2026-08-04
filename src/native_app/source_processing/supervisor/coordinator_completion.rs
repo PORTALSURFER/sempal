@@ -75,6 +75,15 @@ pub(super) fn handle_completion(
         );
         return;
     }
+    if matches!(&candidate.task, RuntimeTask::ManifestAudit { .. }) {
+        let complete = matches!(
+            &result,
+            Ok(ExecutionOutcome::Completed | ExecutionOutcome::CompletedAwaitingForegroundRefresh)
+        );
+        shared
+            .control()
+            .finish_source_audit_request(candidate.source.id.as_str(), complete);
+    }
     if matches!(
         &result,
         Ok(ExecutionOutcome::Completed | ExecutionOutcome::CompletedAwaitingForegroundRefresh)

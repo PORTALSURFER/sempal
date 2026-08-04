@@ -364,6 +364,165 @@ impl ReconciliationAcknowledgementIdentity {
     }
 }
 
+/// An opaque, source-scoped request boundary for one authoritative manifest audit.
+///
+/// The boundary is assigned by the admission supervisor when it retains the live uncertainty
+/// marker. It therefore orders requests without exposing a second mutable request counter.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourceAuditRequest {
+    identity: ReconciliationAcknowledgementIdentity,
+    boundary: RetainedUncertaintyBoundary,
+}
+
+impl SourceAuditRequest {
+    /// Construct a request for crate-owned admission and transport tests.
+    #[allow(dead_code)]
+    pub(crate) fn new(
+        identity: ReconciliationAcknowledgementIdentity,
+        boundary: RetainedUncertaintyBoundary,
+    ) -> Self {
+        Self { identity, boundary }
+    }
+
+    /// Borrow the exact source/root/generation identity requested for audit.
+    pub const fn identity(&self) -> &ReconciliationAcknowledgementIdentity {
+        &self.identity
+    }
+
+    /// Return the monotonic retained-marker boundary covered by this request.
+    pub const fn boundary(&self) -> RetainedUncertaintyBoundary {
+        self.boundary
+    }
+
+    /// Borrow the requested source identifier.
+    pub fn source_id(&self) -> &SourceId {
+        self.identity.source_id()
+    }
+
+    /// Borrow the requested physical root identity.
+    pub fn root_identity(&self) -> &RootIdentity {
+        self.identity.root_identity()
+    }
+
+    /// Return the requested watcher generation.
+    pub const fn generation(&self) -> WatcherGeneration {
+        self.identity.generation()
+    }
+
+    /// Build a complete receipt from a committed source audit.
+    pub fn complete(
+        &self,
+        committed_source_revision: u64,
+        committed_root_identity: RootIdentity,
+    ) -> SourceAuditReceipt {
+        SourceAuditReceipt::new(
+            self.clone(),
+            self.boundary,
+            self.identity.clone(),
+            Some(committed_source_revision),
+            Some(committed_root_identity),
+            true,
+        )
+    }
+
+    /// Build a non-clearing receipt for an audit that did not complete authoritatively.
+    pub fn incomplete(&self) -> SourceAuditReceipt {
+        SourceAuditReceipt::new(
+            self.clone(),
+            self.boundary,
+            self.identity.clone(),
+            None,
+            None,
+            false,
+        )
+    }
+}
+
+/// Typed result of a source manifest audit associated with one audit request.
+///
+/// The watcher admission owner converts a receipt into the existing committed-authoritative
+/// acknowledgement only when every request, boundary, identity, completion, revision, and root
+/// field matches. A receipt is transport evidence, not authority by itself.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourceAuditReceipt {
+    request: SourceAuditRequest,
+    covered_boundary: RetainedUncertaintyBoundary,
+    committed_identity: ReconciliationAcknowledgementIdentity,
+    committed_source_revision: Option<u64>,
+    committed_root_identity: Option<RootIdentity>,
+    complete: bool,
+}
+
+impl SourceAuditReceipt {
+    /// Construct a typed receipt received from the source-processing owner.
+    pub fn new(
+        request: SourceAuditRequest,
+        covered_boundary: RetainedUncertaintyBoundary,
+        committed_identity: ReconciliationAcknowledgementIdentity,
+        committed_source_revision: Option<u64>,
+        committed_root_identity: Option<RootIdentity>,
+        complete: bool,
+    ) -> Self {
+        Self {
+            request,
+            covered_boundary,
+            committed_identity,
+            committed_source_revision,
+            committed_root_identity,
+            complete,
+        }
+    }
+
+    /// Borrow the request whose retained uncertainty this receipt claims to cover.
+    pub const fn request(&self) -> &SourceAuditRequest {
+        &self.request
+    }
+
+    /// Return the request boundary claimed by the committed audit.
+    pub const fn covered_boundary(&self) -> RetainedUncertaintyBoundary {
+        self.covered_boundary
+    }
+
+    /// Borrow the identity observed by the committed audit.
+    pub const fn committed_identity(&self) -> &ReconciliationAcknowledgementIdentity {
+        &self.committed_identity
+    }
+
+    /// Return the committed source revision, when the audit supplied one.
+    pub const fn committed_source_revision(&self) -> Option<u64> {
+        self.committed_source_revision
+    }
+
+    /// Borrow the physical root identity held by the audit, when available.
+    pub fn committed_root_identity(&self) -> Option<&RootIdentity> {
+        self.committed_root_identity.as_ref()
+    }
+
+    /// Return whether the source audit completed authoritatively.
+    pub const fn is_complete(&self) -> bool {
+        self.complete
+    }
+
+    pub(crate) fn authoritative_acknowledgement(
+        &self,
+    ) -> Option<CommittedAuthoritativeReconciliationAcknowledgement> {
+        if !self.complete
+            || self.covered_boundary != self.request.boundary
+            || self.committed_identity != self.request.identity
+            || self.committed_source_revision.is_none()
+            || self.committed_root_identity.as_ref()
+                != Some(self.committed_identity.root_identity())
+        {
+            return None;
+        }
+        Some(CommittedAuthoritativeReconciliationAcknowledgement::new(
+            self.committed_identity.clone(),
+            ReconciliationScopeKind::SourceAudit,
+            self.covered_boundary,
+        ))
+    }
+}
+
 /// A committed authoritative reconciliation acknowledgement.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CommittedAuthoritativeReconciliationAcknowledgement {
@@ -411,6 +570,13 @@ pub struct ReconciliationAcknowledgementOutcome {
 }
 
 impl ReconciliationAcknowledgementOutcome {
+    pub(crate) const fn unchanged(remaining_markers: usize) -> Self {
+        Self {
+            cleared_markers: 0,
+            remaining_markers,
+        }
+    }
+
     /// Return the number of markers cleared by the acknowledgement.
     pub const fn cleared_markers(self) -> usize {
         self.cleared_markers

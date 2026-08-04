@@ -110,6 +110,11 @@ pub(in crate::native_app) enum GuiMessage {
         source_id: String,
         reason: &'static str,
     },
+    /// A proofless live watcher handoff requires a source-scoped authoritative manifest audit.
+    /// The request is opaque typed evidence; the source-processing owner performs the audit.
+    SourceWatcherManifestAuditRequested {
+        request: wavecrate_library::sample_sources::reconciliation::SourceAuditRequest,
+    },
     /// A completed fallback audit produced a barrier that must be persisted by the source
     /// processing owner. This message carries only typed in-memory evidence; it performs no I/O.
     SourceWatcherCheckpointReady(RevisionBoundCheckpoint),
@@ -130,6 +135,7 @@ pub(in crate::native_app) enum GuiMessage {
         lifecycle_generation: u64,
         source_revision: Option<u64>,
         complete: bool,
+        receipt: Option<wavecrate_library::sample_sources::reconciliation::SourceAuditReceipt>,
     },
     NormalizationProgress(NormalizationProgress),
     NormalizationFinished(NormalizationResult),

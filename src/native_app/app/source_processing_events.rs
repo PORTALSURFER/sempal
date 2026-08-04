@@ -59,11 +59,13 @@ fn map_event(event: SourceProcessingEvent) -> GuiMessage {
             lifecycle,
             source_revision,
             complete,
+            receipt,
         } => GuiMessage::SourceManifestAuditFinished {
             source_id: lifecycle.source_id,
             lifecycle_generation: lifecycle.generation,
             source_revision,
             complete,
+            receipt,
         },
         SourceProcessingEvent::Completed => {
             GuiMessage::SourceProcessingProgress(SourceProcessingProgress {
@@ -460,12 +462,14 @@ mod tests {
                 lifecycle: SourceProcessingLifecycle::new("source", 23),
                 source_revision: Some(41),
                 complete: true,
+                receipt: None,
             }),
             GuiMessage::SourceManifestAuditFinished {
                 source_id,
                 lifecycle_generation: 23,
                 source_revision: Some(41),
                 complete: true,
+                receipt: None,
             } if source_id == "source"
         ));
     }

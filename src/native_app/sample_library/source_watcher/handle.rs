@@ -13,7 +13,8 @@ use std::{
 use wavecrate::sample_sources::{SampleSource, SourceId};
 use wavecrate_library::sample_sources::reconciliation::{
     AdmissionOutcome, BackendStreamIdentity, CaptureBoundary, DispatchTicket, LiveAuditCorrelation,
-    ReconciliationLifecycle, ReconciliationScopeKind, RootIdentity, WatcherGeneration,
+    ReconciliationLifecycle, ReconciliationScopeKind, RootIdentity, SourceAuditReceipt,
+    WatcherGeneration,
 };
 
 use super::admission_lifecycle::AdmissionLifecycle;
@@ -350,6 +351,15 @@ impl GuiSourceWatcherHandle {
             });
     }
 
+    pub(in crate::native_app) fn acknowledge_source_audit_receipt(
+        &self,
+        receipt: SourceAuditReceipt,
+    ) {
+        let _ = self
+            .command_tx
+            .send(GuiSourceWatchCommand::AcknowledgeSourceAuditReceipt { receipt });
+    }
+
     #[cfg(test)]
     pub(in crate::native_app) fn request_full_reconciliation(&self) {
         let _ = self
@@ -436,6 +446,9 @@ enum GuiSourceWatchCommand {
         source_id: SourceId,
         echoes: Vec<CommittedWatcherEcho>,
         cursor: RevisionFirstCursor,
+    },
+    AcknowledgeSourceAuditReceipt {
+        receipt: SourceAuditReceipt,
     },
     FinishJournalBarrierAudit {
         source_id: String,
@@ -530,6 +543,15 @@ fn run_source_watcher(
                     &echoes,
                     cursor,
                     Instant::now(),
+                );
+            }
+            Ok(GuiSourceWatchCommand::AcknowledgeSourceAuditReceipt { receipt }) => {
+                let outcome = admission_lifecycle.acknowledge_source_audit_receipt(&receipt);
+                tracing::debug!(
+                    cleared_markers = outcome.cleared_markers(),
+                    remaining_markers = outcome.remaining_markers(),
+                    complete = receipt.is_complete(),
+                    "Applied source manifest audit receipt to retained watcher uncertainty"
                 );
             }
             Ok(GuiSourceWatchCommand::FinishJournalBarrierAudit {
@@ -964,6 +986,7 @@ fn run_source_watcher(
             &mut pending_capture_contexts,
             now,
         );
+        flush_pending_audit_requests(&mut state, &message_tx);
 
         if watcher_failed || root_invalidated {
             fence_watcher_admission(&mut admission_lifecycle, "watcher capture retirement");
@@ -1381,8 +1404,13 @@ fn handoff_dispatched_capture(
             .scopes()
             .iter()
             .any(|scope| scope.kind() == ReconciliationScopeKind::SourceAudit);
-    if source_audit {
+    if source_audit || context.correlation.is_some() {
         widen_source(state, &context.source_root, now);
+        if let Some(correlation) = context.correlation.as_ref() {
+            state
+                .pending_audit_requests
+                .push(correlation.audit_request());
+        }
         return (true, false);
     }
 
@@ -1493,9 +1521,20 @@ fn dispatch_pending_capture_contexts(
             pending_contexts.insert(ticket, context);
             break;
         }
-        let _correlation = context.correlation;
     }
     root_invalidated
+}
+
+fn flush_pending_audit_requests(state: &mut GuiSourceWatchState, message_tx: &Sender<GuiMessage>) {
+    for request in state.pending_audit_requests.drain(..) {
+        if message_tx
+            .send(GuiMessage::SourceWatcherManifestAuditRequested { request })
+            .is_err()
+        {
+            tracing::warn!("Source-processing request channel closed before live audit handoff");
+            break;
+        }
+    }
 }
 
 fn drain_watcher_captures(
@@ -2478,6 +2517,18 @@ mod lifecycle_tests {
         assert_eq!(marker.capture_boundary(), Some(boundary));
         assert_eq!(marker.scope(), ReconciliationScopeKind::SourceAudit);
         assert!(marker.reasons().contains(&UncertaintyReason::LiveUnproven));
+        let request = state
+            .pending_audit_requests
+            .pop()
+            .expect("proofless handoff audit request");
+        assert_eq!(request.source_id(), &source.id);
+        assert_eq!(request.root_identity(), &expected_root_identity);
+        assert_eq!(request.generation(), expected_generation);
+        assert_eq!(request.boundary(), marker.boundary());
+        let receipt = request.complete(42, expected_root_identity);
+        let acknowledgement = admission.acknowledge_source_audit_receipt(&receipt);
+        assert_eq!(acknowledgement.cleared_markers(), 1);
+        assert_eq!(admission.retained_uncertainties().len(), 0);
         assert_eq!(
             state
                 .pending

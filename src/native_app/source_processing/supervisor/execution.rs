@@ -6,8 +6,9 @@ use super::{
 use super::{
     AtomicBool, ContentAuditActivity, ContentAuditBudget, ContentAuditStorage, DatabaseWriterGate,
     Duration, ExecutionOutcome, Instant, ManifestAuditOutcome, Ordering, RuntimeCandidate,
-    RuntimeTask, SourceDatabase, SourceProcessingActivity, SourceProcessingEvent,
-    SourceProcessingLifecycle, SourceProcessingPresentation, SourceProcessingProgressEvent,
+    RuntimeTask, SourceAuditRequest, SourceDatabase, SourceProcessingActivity,
+    SourceProcessingEvent, SourceProcessingLifecycle, SourceProcessingPresentation,
+    SourceProcessingProgressEvent,
     audit_source_and_record_with_budget_and_progress_and_writer_outcome, execute_readiness_target,
     manifest_audit_source_row_active, now_epoch_seconds,
 };
@@ -28,6 +29,7 @@ pub(super) fn execute_candidate(
         database_writer,
         content_audit_activity,
         SourceProcessingPresentation::UserRelevant,
+        None,
         publish_event,
     )
 }
@@ -39,6 +41,7 @@ pub(super) fn execute_candidate_with_presentation(
     database_writer: &DatabaseWriterGate,
     content_audit_activity: ContentAuditActivity,
     presentation: SourceProcessingPresentation,
+    audit_request: Option<SourceAuditRequest>,
     publish_event: &mut dyn FnMut(SourceProcessingEvent) -> bool,
 ) -> Result<ExecutionOutcome, String> {
     let result = match &candidate.task {
@@ -106,7 +109,7 @@ pub(super) fn execute_candidate_with_presentation(
                 ));
                 last_progress_publish_at = Some(Instant::now());
             };
-            let (outcome, manifest_complete, content_incomplete_error) =
+            let (outcome, manifest_complete, content_incomplete_error, root_identity) =
                 match audit_source_and_record_with_budget_and_progress_and_writer_outcome(
                     &database,
                     Some(cancel),
@@ -118,10 +121,13 @@ pub(super) fn execute_candidate_with_presentation(
                     Ok(ManifestAuditOutcome::Complete {
                         stats,
                         content_incomplete,
-                    }) => (stats, true, content_incomplete),
-                    Ok(ManifestAuditOutcome::Incomplete { committed, error }) => {
-                        (committed, false, Some(error))
-                    }
+                        root_identity,
+                    }) => (stats, true, content_incomplete, Some(root_identity)),
+                    Ok(ManifestAuditOutcome::Incomplete {
+                        committed,
+                        error,
+                        root_identity,
+                    }) => (committed, false, Some(error), Some(root_identity)),
                     Err(error) => {
                         publish_event(SourceProcessingEvent::ManifestAuditFinished {
                             lifecycle: SourceProcessingLifecycle::new(
@@ -130,6 +136,7 @@ pub(super) fn execute_candidate_with_presentation(
                             ),
                             source_revision: None,
                             complete: false,
+                            receipt: audit_request.as_ref().map(SourceAuditRequest::incomplete),
                         });
                         return Err(error.to_string());
                     }
@@ -193,6 +200,27 @@ pub(super) fn execute_candidate_with_presentation(
             });
             let foreground_refresh_owns_reconciliation =
                 browser_refresh_required && audit_published;
+            let cancelled = cancel.load(Ordering::Acquire);
+            let execution_outcome = manifest_audit_execution_outcome(
+                foreground_refresh_owns_reconciliation,
+                !manifest_complete,
+                cancelled,
+            );
+            let receipt = if matches!(
+                execution_outcome,
+                ExecutionOutcome::Completed | ExecutionOutcome::CompletedAwaitingForegroundRefresh
+            ) && let (Some(request), Some(root_identity)) =
+                (audit_request.as_ref(), root_identity.as_ref())
+            {
+                Some(request.complete(
+                    committed_source_revision,
+                    wavecrate_library::sample_sources::reconciliation::RootIdentity::from_bytes(
+                        root_identity.as_bytes().to_vec(),
+                    ),
+                ))
+            } else {
+                audit_request.as_ref().map(SourceAuditRequest::incomplete)
+            };
             publish_event(SourceProcessingEvent::ManifestAuditFinished {
                 lifecycle: SourceProcessingLifecycle::new(
                     candidate.source.id.as_str(),
@@ -200,6 +228,7 @@ pub(super) fn execute_candidate_with_presentation(
                 ),
                 source_revision: Some(committed_source_revision),
                 complete: manifest_complete,
+                receipt,
             });
             if let Some(error) = content_incomplete_error {
                 tracing::warn!(
@@ -210,11 +239,7 @@ pub(super) fn execute_candidate_with_presentation(
                     "Manifest audit did not complete all work"
                 );
             }
-            Ok(manifest_audit_execution_outcome(
-                foreground_refresh_owns_reconciliation,
-                !manifest_complete,
-                cancel.load(Ordering::Acquire),
-            ))
+            Ok(execution_outcome)
         }
         RuntimeTask::Readiness(target) => {
             execute_readiness_target(&candidate.source, target, cancel, database_writer)

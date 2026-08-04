@@ -93,6 +93,7 @@ impl NativeAppState {
             | GuiMessage::SourceFilesystemChanged { .. }
             | GuiMessage::SourceWatcherReady { .. }
             | GuiMessage::SourceWatcherJournalGap { .. }
+            | GuiMessage::SourceWatcherManifestAuditRequested { .. }
             | GuiMessage::SourceWatcherCheckpointReady(_)
             | GuiMessage::SourceFilesystemSyncFinished(_)
             | GuiMessage::SourceManifestAuditCommitted { .. }

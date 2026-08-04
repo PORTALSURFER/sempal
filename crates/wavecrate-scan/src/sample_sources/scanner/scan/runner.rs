@@ -195,6 +195,7 @@ pub fn audit_source_and_record_with_budget_and_progress_and_writer(
         ManifestAuditOutcome::Complete {
             stats,
             content_incomplete,
+            ..
         } => match content_incomplete {
             Some(error) => Err(ScanError::Incomplete {
                 committed: Box::new(stats),
@@ -202,7 +203,9 @@ pub fn audit_source_and_record_with_budget_and_progress_and_writer(
             }),
             None => Ok(stats),
         },
-        ManifestAuditOutcome::Incomplete { committed, error } => Err(ScanError::Incomplete {
+        ManifestAuditOutcome::Incomplete {
+            committed, error, ..
+        } => Err(ScanError::Incomplete {
             committed: Box::new(committed),
             error,
         }),
@@ -222,6 +225,8 @@ pub enum ManifestAuditOutcome {
         stats: ScanStats,
         /// Content verification stopped after a durable checkpoint, if applicable.
         content_incomplete: Option<String>,
+        /// Physical root identity revalidated immediately before the manifest commit.
+        root_identity: String,
     },
     /// Manifest traversal or reconciliation was uncertain after a committed checkpoint.
     Incomplete {
@@ -229,6 +234,8 @@ pub enum ManifestAuditOutcome {
         committed: ScanStats,
         /// Diagnostic describing why authoritative coverage remains incomplete.
         error: String,
+        /// Physical root identity held while the partial manifest commit was attempted.
+        root_identity: String,
     },
 }
 
@@ -276,6 +283,7 @@ fn audit_source_and_record_after_scan(
         ManifestAuditOutcome::Complete {
             stats,
             content_incomplete,
+            ..
         } => match content_incomplete {
             Some(error) => Err(ScanError::Incomplete {
                 committed: Box::new(stats),
@@ -283,7 +291,9 @@ fn audit_source_and_record_after_scan(
             }),
             None => Ok(stats),
         },
-        ManifestAuditOutcome::Incomplete { committed, error } => Err(ScanError::Incomplete {
+        ManifestAuditOutcome::Incomplete {
+            committed, error, ..
+        } => Err(ScanError::Incomplete {
             committed: Box::new(committed),
             error,
         }),
@@ -303,6 +313,7 @@ fn audit_source_and_record_after_scan_outcome(
     let root = ensure_root_dir(db)?;
     let source_root = SourceRootCapability::open(&root)?;
     source_root.ensure_current_generation()?;
+    let held_root_identity = source_root.generation().to_owned();
     let mut stats = match scan_with_writer_using_root(
         db,
         &root,
@@ -319,22 +330,31 @@ fn audit_source_and_record_after_scan_outcome(
             return Ok(ManifestAuditOutcome::Incomplete {
                 committed: *committed,
                 error,
+                root_identity: held_root_identity.clone(),
             });
         }
         Err(error) => return Err(error),
     };
     before_record();
-    if let Err(error) =
-        record_manifest_audit_completion(db, &mut stats, completed_at, writer, &source_root)
-    {
-        if stats.committed_delta.revision > 0 {
-            return Ok(ManifestAuditOutcome::Incomplete {
-                committed: stats,
-                error: error.to_string(),
-            });
+    let committed_root_identity = match record_manifest_audit_completion(
+        db,
+        &mut stats,
+        completed_at,
+        writer,
+        &source_root,
+    ) {
+        Ok(root_identity) => root_identity,
+        Err(error) => {
+            if stats.committed_delta.revision > 0 {
+                return Ok(ManifestAuditOutcome::Incomplete {
+                    committed: stats,
+                    error: error.to_string(),
+                    root_identity: held_root_identity,
+                });
+            }
+            return Err(error);
         }
-        return Err(error);
-    }
+    };
     after_scan();
     let verification = super::super::scan_hash::verify_content_batch_with_source_root(
         db,
@@ -360,6 +380,7 @@ fn audit_source_and_record_after_scan_outcome(
             return Ok(ManifestAuditOutcome::Incomplete {
                 committed: stats,
                 error: error.to_string(),
+                root_identity: committed_root_identity.clone(),
             });
         }
         Err(error) => return Err(error),
@@ -368,6 +389,7 @@ fn audit_source_and_record_after_scan_outcome(
         return Ok(ManifestAuditOutcome::Complete {
             stats,
             content_incomplete,
+            root_identity: committed_root_identity.clone(),
         });
     }
     finalize_pending_rename_completion(
@@ -380,6 +402,7 @@ fn audit_source_and_record_after_scan_outcome(
     Ok(ManifestAuditOutcome::Complete {
         stats,
         content_incomplete,
+        root_identity: committed_root_identity,
     })
 }
 
@@ -389,7 +412,7 @@ fn record_manifest_audit_completion(
     completed_at: i64,
     writer: &impl ScanWriter,
     source_root: &SourceRootCapability,
-) -> Result<(), ScanError> {
+) -> Result<String, ScanError> {
     source_root.ensure_current_generation()?;
     let before = stats.manifest_before.clone();
     let _writer = writer.lock(super::super::scan_writer::ScanWritePhase::Manifest);
@@ -415,7 +438,7 @@ fn record_manifest_audit_completion(
     source_root.ensure_current_generation()?;
     let committed = batch.commit_with_manifest_snapshot()?;
     super::super::manifest::publish_committed_delta(stats, before, committed);
-    Ok(())
+    Ok(source_root.generation().to_owned())
 }
 
 #[cfg(test)]

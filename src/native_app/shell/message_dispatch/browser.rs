@@ -165,6 +165,14 @@ impl NativeAppState {
                     .source_processing
                     .request_source_manifest_audit(&source_id, reason);
             }
+            GuiMessage::SourceWatcherManifestAuditRequested { request } => {
+                self.background
+                    .source_processing
+                    .request_source_manifest_audit_for_request(
+                        request,
+                        "live_unproven_audit_request",
+                    );
+            }
             GuiMessage::SourceWatcherCheckpointReady(request) => {
                 if self
                     .library
@@ -204,7 +212,13 @@ impl NativeAppState {
                 lifecycle_generation,
                 source_revision,
                 complete,
+                receipt,
             } => {
+                if let Some(watcher) = self.library.source_watcher.as_ref()
+                    && let Some(receipt) = receipt
+                {
+                    watcher.acknowledge_source_audit_receipt(receipt);
+                }
                 let source_is_current = self.library.folder_browser.source_exists(&source_id)
                     && self.background.source_lifecycle_generations.get(&source_id)
                         == Some(&lifecycle_generation);

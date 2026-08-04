@@ -11,7 +11,8 @@ use crate::sample_sources::SourceId;
 
 use super::admission::{
     AdmissionOutcome, DispatchTicket, ReconciliationAcknowledgementIdentity,
-    ReconciliationAdmissionSupervisor, RetainedUncertaintyBoundary, UncertaintyReason,
+    ReconciliationAdmissionSupervisor, RetainedUncertaintyBoundary, SourceAuditRequest,
+    UncertaintyReason,
 };
 use super::model::{
     BackendStreamIdentity, CaptureSequenceEvidence, CaptureSequenceRange,
@@ -201,6 +202,11 @@ impl LiveAuditCorrelation {
     /// Return the retained source-audit watermark boundary.
     pub const fn boundary(&self) -> RetainedUncertaintyBoundary {
         self.boundary
+    }
+
+    /// Build the source-scoped authoritative manifest-audit request for this live handoff.
+    pub fn audit_request(&self) -> SourceAuditRequest {
+        SourceAuditRequest::new(self.identity.clone(), self.boundary)
     }
 }
 

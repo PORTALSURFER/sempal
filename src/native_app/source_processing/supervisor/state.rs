@@ -153,6 +153,8 @@ impl Shared {
                 accepted_manifest_revisions: BTreeMap::new(),
                 awaiting_foreground_refresh_sources: BTreeSet::new(),
                 force_manifest_audit_sources: BTreeSet::new(),
+                pending_source_audit_requests: BTreeMap::new(),
+                active_source_audit_requests: BTreeMap::new(),
                 force_reanalysis_sources: BTreeSet::new(),
                 quarantined_sources: BTreeSet::new(),
                 pending_retirements,

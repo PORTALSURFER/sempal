@@ -5,9 +5,9 @@ use std::collections::HashSet;
 use wavecrate::sample_sources::{SampleSource, SourceId};
 use wavecrate_library::sample_sources::reconciliation::{
     AdapterError, AdmissionOwnerError, DispatchTicket, DispatchedObservation, LiveAuditAdmission,
-    OwnedAdmissionLane, RawObservationLimits, ReconciliationAdmissionLimits,
-    ReconciliationAdmissionOwner, ReconciliationAdmissionSupervisor, ReconciliationLifecycle,
-    RootIdentity, SyntheticObservationBatch,
+    OwnedAdmissionLane, RawObservationLimits, ReconciliationAcknowledgementOutcome,
+    ReconciliationAdmissionLimits, ReconciliationAdmissionOwner, ReconciliationAdmissionSupervisor,
+    ReconciliationLifecycle, RootIdentity, SourceAuditReceipt, SyntheticObservationBatch,
 };
 
 use super::roots::{WatchedRootIdentities, registered_root_identity};
@@ -195,6 +195,17 @@ impl AdmissionLifecycle {
         ticket: DispatchTicket,
     ) -> Result<(), wavecrate_library::sample_sources::reconciliation::AdmissionError> {
         self.owner.mark_unproven_audit_handed_off(ticket)
+    }
+
+    /// Apply a complete source-audit receipt through the owner-authoritative typed acknowledgement.
+    ///
+    /// Receipts are checked against the currently capturing source/root/generation lane by the
+    /// owner. No receipt can grant continuity or checkpoint authority.
+    pub(super) fn acknowledge_source_audit_receipt(
+        &mut self,
+        receipt: &SourceAuditReceipt,
+    ) -> ReconciliationAcknowledgementOutcome {
+        self.owner.acknowledge_source_audit_receipt(receipt)
     }
 
     pub(super) fn max_in_flight(&self) -> usize {

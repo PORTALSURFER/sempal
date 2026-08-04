@@ -5,6 +5,7 @@ use std::{
     time::{Duration, Instant},
 };
 use wavecrate::sample_sources::SampleSource;
+use wavecrate_library::sample_sources::reconciliation::SourceAuditRequest;
 
 use super::classification::path_is_source_refresh_candidate;
 use super::debounce::{GuiSourceWatchEvent, PendingGuiSourceWatch};
@@ -23,6 +24,7 @@ pub(super) struct GuiSourceWatchState {
     pub(super) sources: Vec<SampleSource>,
     pub(super) pending: HashMap<String, PendingGuiSourceWatch>,
     pub(super) acknowledged_paths: HashMap<(String, PathBuf), (CommittedWatcherPathState, Instant)>,
+    pub(super) pending_audit_requests: Vec<SourceAuditRequest>,
 }
 
 impl GuiSourceWatchState {
@@ -37,6 +39,8 @@ impl GuiSourceWatchState {
             .retain(|source_id, _| allowed.contains(source_id));
         self.acknowledged_paths
             .retain(|(source_id, _), _| allowed.contains(source_id));
+        self.pending_audit_requests
+            .retain(|request| allowed.contains(request.source_id().as_str()));
     }
 
     pub(super) fn apply_root_watch_update(

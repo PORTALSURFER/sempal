@@ -19,7 +19,7 @@ pub use admission::{
     DispatchedObservation, ReconciliationAcknowledgementIdentity,
     ReconciliationAcknowledgementOutcome, ReconciliationAdmissionLimits,
     ReconciliationAdmissionSupervisor, ReconciliationLifecycle, RetainedUncertainty,
-    RetainedUncertaintyBoundary, UncertaintyReason,
+    RetainedUncertaintyBoundary, SourceAuditReceipt, SourceAuditRequest, UncertaintyReason,
 };
 pub use model::{
     BackendStreamIdentity, CaptureBoundary, CaptureSequenceEvidence, CaptureSequenceRange,
