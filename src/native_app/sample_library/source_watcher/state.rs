@@ -106,9 +106,19 @@ impl PendingSourceAuditRequests {
         AuditRequestQueueOutcome::FallbackCouldNotFit
     }
 
-    pub(super) fn retain_source_ids(&mut self, allowed: &HashSet<String>) {
-        self.entries
-            .retain(|entry| allowed.contains(entry.request.source_id().as_str()));
+    pub(super) fn purge_non_matching<F>(&mut self, mut matches: F) -> Vec<SourceAuditRequest>
+    where
+        F: FnMut(&SourceAuditRequest) -> bool,
+    {
+        let mut displaced = Vec::new();
+        self.entries.retain(|entry| {
+            let keep = matches(&entry.request);
+            if !keep {
+                displaced.push(entry.request.clone());
+            }
+            keep
+        });
+        displaced
     }
 
     #[cfg(test)]
@@ -165,7 +175,6 @@ impl GuiSourceWatchState {
             .retain(|source_id, _| allowed.contains(source_id));
         self.acknowledged_paths
             .retain(|(source_id, _), _| allowed.contains(source_id));
-        self.pending_audit_requests.retain_source_ids(&allowed);
     }
 
     pub(super) fn set_audit_request_capacity(&mut self, capacity: usize) {
@@ -178,6 +187,43 @@ impl GuiSourceWatchState {
         marker_backed: bool,
     ) -> AuditRequestQueueOutcome {
         self.pending_audit_requests.insert(request, marker_backed)
+    }
+
+    pub(super) fn purge_non_matching_audit_requests<F>(
+        &mut self,
+        matches: F,
+    ) -> Vec<SourceAuditRequest>
+    where
+        F: FnMut(&SourceAuditRequest) -> bool,
+    {
+        self.pending_audit_requests.purge_non_matching(matches)
+    }
+
+    /// Replace displaced typed work with the existing bounded conservative source recovery.
+    ///
+    /// A request whose source is still configured widens only that source. If its source was
+    /// removed, the old identity cannot be emitted or acknowledged, so the remaining configured
+    /// sources receive the existing all-source conservative recovery instead.
+    pub(super) fn recover_displaced_audit_requests(
+        &mut self,
+        requests: &[SourceAuditRequest],
+        now: Instant,
+    ) {
+        let mut recover_all = false;
+        for request in requests {
+            if self
+                .sources
+                .iter()
+                .any(|source| source.id == *request.source_id())
+            {
+                self.mark_source_overflowed(request.source_id().as_str(), now);
+            } else {
+                recover_all = true;
+            }
+        }
+        if recover_all {
+            self.mark_all_overflowed(now);
+        }
     }
 
     pub(super) fn apply_root_watch_update(

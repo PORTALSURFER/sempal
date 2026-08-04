@@ -300,7 +300,11 @@ fn live_audit_requests_started_and_arriving_during_audit_keep_deferred_boundarie
             control
                 .pending_source_audit_requests
                 .get(source.id.as_str()),
-            Some(&second_request)
+            Some(
+                &first_request
+                    .covering(&second_request)
+                    .expect("same-identity deferred union"),
+            )
         );
         control.finish_source_audit_request(source.id.as_str(), true);
         assert!(
@@ -310,10 +314,270 @@ fn live_audit_requests_started_and_arriving_during_audit_keep_deferred_boundarie
         );
         assert_eq!(
             control.begin_source_audit_request(source.id.as_str()),
-            Some(second_request),
+            Some(
+                first_request
+                    .covering(&second_request)
+                    .expect("same-identity deferred union"),
+            ),
             "a request arriving after audit start must remain deferred"
         );
     }
+}
+
+fn test_live_audit_requests(
+    source_id: &SourceId,
+    root: &wavecrate_library::sample_sources::reconciliation::RootIdentity,
+) -> Vec<SourceAuditRequest> {
+    use wavecrate_library::sample_sources::reconciliation::{
+        BackendStreamIdentity, CaptureBoundary, RawEventKind, RawObservation, RawObservationLimits,
+        RawObservationProvenance, RawObservedPath, RawPathRole, ReconciliationAdmissionLimits,
+        ReconciliationAdmissionOwner, ReconciliationAdmissionSupervisor, SyntheticObservationBatch,
+    };
+
+    let mut admission = ReconciliationAdmissionOwner::new(ReconciliationAdmissionSupervisor::new(
+        ReconciliationAdmissionLimits::new(
+            1,
+            RawObservationLimits::new(8, usize::MAX, usize::MAX).expect("lane limits"),
+            RawObservationLimits::new(16, usize::MAX, usize::MAX).expect("global limits"),
+            4,
+            8,
+            8,
+        )
+        .expect("admission limits"),
+    ));
+    let lane = admission
+        .begin_source(source_id.clone(), root.clone())
+        .expect("test source lane");
+    let batch = |captured_at| {
+        SyntheticObservationBatch::new(
+            RawObservationProvenance::new(
+                source_id.clone(),
+                Some(root.clone()),
+                Some(BackendStreamIdentity::from_bytes(b"test-stream".to_vec())),
+                lane.generation(),
+                CaptureBoundary::try_new(captured_at, None, None).expect("capture boundary"),
+            ),
+            vec![RawObservation::new(
+                RawEventKind::Create,
+                vec![RawObservedPath::new(
+                    "sample.wav".into(),
+                    RawPathRole::Subject,
+                )],
+            )],
+            RawObservationLimits::new(8, usize::MAX, usize::MAX).expect("batch limits"),
+        )
+    };
+
+    (1..=3)
+        .map(|captured_at| {
+            admission
+                .admit_live_with_correlation(batch(captured_at))
+                .expect("test live admission")
+                .correlation()
+                .expect("test live correlation")
+                .audit_request()
+                .clone()
+        })
+        .collect()
+}
+
+#[test]
+fn audit_request_union_preserves_active_range_and_deferred_completion() {
+    let (_directory, source) = unhashed_source("exact-range-union");
+    let shared = Arc::new(Shared::new(vec![source.clone()], None));
+    let requests = test_live_audit_requests(
+        &source.id,
+        &wavecrate_library::sample_sources::reconciliation::RootIdentity::from_bytes(
+            b"root-a".to_vec(),
+        ),
+    );
+    let earliest = &requests[0];
+    let active = requests[1].clone();
+    let earlier = earliest
+        .covering(&active)
+        .expect("same-identity earlier request");
+    let extending = active
+        .covering(&requests[2])
+        .expect("same-identity extending request");
+
+    let mut control = shared.control();
+    control.dirty_sources.clear();
+    control.force_manifest_audit_sources.clear();
+    assert!(control.queue_source_audit_request(active.clone()));
+    assert_eq!(
+        control.begin_source_audit_request(source.id.as_str()),
+        Some(active.clone())
+    );
+
+    assert!(control.queue_source_audit_request(earlier.clone()));
+    assert_eq!(
+        control.active_source_audit_requests.get(source.id.as_str()),
+        Some(&active),
+        "active audit identity and boundary must remain immutable"
+    );
+    assert_eq!(
+        control
+            .pending_source_audit_requests
+            .get(source.id.as_str()),
+        Some(&earlier),
+        "an earlier equal-through boundary must remain deferred"
+    );
+
+    assert!(control.queue_source_audit_request(extending.clone()));
+    assert_eq!(
+        control
+            .pending_source_audit_requests
+            .get(source.id.as_str())
+            .expect("deferred union"),
+        &earlier
+            .covering(&extending)
+            .expect("deferred covering union")
+    );
+
+    control.finish_source_audit_request(source.id.as_str(), true);
+    assert_eq!(
+        control.begin_source_audit_request(source.id.as_str()),
+        Some(
+            earlier
+                .covering(&extending)
+                .expect("deferred covering union"),
+        ),
+        "completed active work must leave the deferred union available"
+    );
+    control.finish_source_audit_request(source.id.as_str(), true);
+    assert!(
+        !control
+            .pending_source_audit_requests
+            .contains_key(source.id.as_str())
+    );
+    assert!(
+        !control
+            .active_source_audit_requests
+            .contains_key(source.id.as_str())
+    );
+}
+
+#[test]
+fn incomplete_audit_requeues_without_overwriting_an_earlier_deferred_request() {
+    let (_directory, source) = unhashed_source("incomplete-exact-range");
+    let shared = Arc::new(Shared::new(vec![source.clone()], None));
+    let requests = test_live_audit_requests(
+        &source.id,
+        &wavecrate_library::sample_sources::reconciliation::RootIdentity::from_bytes(
+            b"root-a".to_vec(),
+        ),
+    );
+    let active = requests[1].clone();
+    let earlier = requests[0]
+        .covering(&active)
+        .expect("same-identity earlier request");
+
+    let mut control = shared.control();
+    control.dirty_sources.clear();
+    control.force_manifest_audit_sources.clear();
+    assert!(control.queue_source_audit_request(active.clone()));
+    assert_eq!(
+        control.begin_source_audit_request(source.id.as_str()),
+        Some(active)
+    );
+    assert!(control.queue_source_audit_request(earlier.clone()));
+    let wake_before_finish = control.wake_generation;
+
+    control.finish_source_audit_request(source.id.as_str(), false);
+
+    assert!(
+        !control
+            .active_source_audit_requests
+            .contains_key(source.id.as_str())
+    );
+    assert_eq!(
+        control
+            .pending_source_audit_requests
+            .get(source.id.as_str()),
+        Some(&earlier),
+        "incomplete active work must not overwrite the earlier deferred boundary"
+    );
+    assert!(
+        control
+            .force_manifest_audit_sources
+            .contains(source.id.as_str())
+    );
+    assert!(control.dirty_sources.contains(source.id.as_str()));
+    assert!(
+        control.wake_generation > wake_before_finish,
+        "deferred incomplete work must wake source processing"
+    );
+}
+
+#[test]
+fn audit_requests_with_different_root_or_generation_stay_separate_and_fenced() {
+    use wavecrate_library::sample_sources::reconciliation::{
+        RawObservationLimits, ReconciliationAdmissionLimits, ReconciliationAdmissionOwner,
+        ReconciliationAdmissionSupervisor,
+    };
+
+    let (_directory, source) = unhashed_source("identity-separated-audit");
+    let shared = Arc::new(Shared::new(vec![source.clone()], None));
+    let mut old_requests = test_live_audit_requests(
+        &source.id,
+        &wavecrate_library::sample_sources::reconciliation::RootIdentity::from_bytes(
+            b"root-a".to_vec(),
+        ),
+    );
+    let old = old_requests.remove(0);
+    let mut replacement_owner =
+        ReconciliationAdmissionOwner::new(ReconciliationAdmissionSupervisor::new(
+            ReconciliationAdmissionLimits::new(
+                1,
+                RawObservationLimits::new(8, usize::MAX, usize::MAX).expect("lane limits"),
+                RawObservationLimits::new(16, usize::MAX, usize::MAX).expect("global limits"),
+                1,
+                8,
+                8,
+            )
+            .expect("admission limits"),
+        ));
+    let replacement_source_id = source.id.clone();
+    replacement_owner
+        .begin_source(
+            replacement_source_id.clone(),
+            wavecrate_library::sample_sources::reconciliation::RootIdentity::from_bytes(
+                b"root-b".to_vec(),
+            ),
+        )
+        .expect("replacement lane");
+    let replacement = replacement_owner
+        .source_audit_request_for_current_lane(&replacement_source_id)
+        .expect("replacement request");
+
+    let mut control = shared.control();
+    assert!(control.queue_source_audit_request(old.clone()));
+    assert_eq!(
+        control.begin_source_audit_request(source.id.as_str()),
+        Some(old.clone())
+    );
+    assert!(control.queue_source_audit_request(replacement.clone()));
+
+    assert_eq!(
+        control.active_source_audit_requests.get(source.id.as_str()),
+        Some(&old),
+        "a replacement identity must not mutate the active request"
+    );
+    assert_eq!(
+        control
+            .pending_source_audit_requests
+            .get(source.id.as_str()),
+        Some(&replacement),
+        "different root/generation requests must not be unioned"
+    );
+    control.finish_source_audit_request(source.id.as_str(), false);
+    assert_eq!(
+        control
+            .pending_source_audit_requests
+            .get(source.id.as_str()),
+        Some(&replacement),
+        "an incomplete stale identity must not overwrite the replacement request"
+    );
 }
 
 #[test]

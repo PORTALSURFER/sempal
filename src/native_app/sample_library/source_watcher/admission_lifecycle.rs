@@ -160,6 +160,23 @@ impl AdmissionLifecycle {
         self.owner.lane(source_id)
     }
 
+    /// Check a queued audit request against the owner-held current capturing lane.
+    ///
+    /// This is deliberately pure: it observes only the in-memory source, root, generation, and
+    /// lifecycle identity owned by the admission supervisor. A request from a stopped lane or a
+    /// replaced root/generation is never eligible for watcher transport.
+    pub(super) fn request_matches_current_capturing_lane(
+        &self,
+        request: &SourceAuditRequest,
+    ) -> bool {
+        self.lane_for_capture(request.source_id())
+            .is_some_and(|lane| {
+                lane.lifecycle() == ReconciliationLifecycle::Capturing
+                    && lane.root_identity() == request.root_identity()
+                    && lane.generation() == request.generation()
+            })
+    }
+
     /// Build the existing bounded request for the current owner-authoritative source lane.
     pub(super) fn source_audit_request_for_current_lane(
         &self,
@@ -468,6 +485,54 @@ mod tests {
         assert!(new.generation() > old.generation());
         assert_eq!(new.lifecycle(), ReconciliationLifecycle::Capturing);
         assert_eq!(lifecycle.owner.supervisor().in_flight(), 0);
+    }
+
+    #[test]
+    fn audit_request_matches_only_the_current_capturing_root_and_generation() {
+        let initial_source = source("request-fence", "root-a");
+        let mut lifecycle = AdmissionLifecycle::with_limits(limits(1, 1, 16));
+        lifecycle
+            .reconcile(
+                std::slice::from_ref(&initial_source),
+                &watched(&[("root-a", Some(b"identity-a"))]),
+            )
+            .expect("old binding");
+        let old_request = lifecycle
+            .source_audit_request_for_current_lane(&initial_source.id)
+            .expect("old lane request")
+            .0;
+        assert!(lifecycle.request_matches_current_capturing_lane(&old_request));
+
+        let replacement = source("request-fence", "root-b");
+        lifecycle
+            .reconcile(
+                std::slice::from_ref(&replacement),
+                &watched(&[("root-b", Some(b"identity-b"))]),
+            )
+            .expect("root rebind");
+        let rebound_request = lifecycle
+            .source_audit_request_for_current_lane(&replacement.id)
+            .expect("rebound lane request")
+            .0;
+        assert!(!lifecycle.request_matches_current_capturing_lane(&old_request));
+        assert!(lifecycle.request_matches_current_capturing_lane(&rebound_request));
+        assert!(rebound_request.generation() > old_request.generation());
+
+        lifecycle.fence_all().expect("stop current lane");
+        assert!(!lifecycle.request_matches_current_capturing_lane(&rebound_request));
+        lifecycle
+            .reconcile(
+                std::slice::from_ref(&replacement),
+                &watched(&[("root-b", Some(b"identity-b"))]),
+            )
+            .expect("restart current lane");
+        let restarted_request = lifecycle
+            .source_audit_request_for_current_lane(&replacement.id)
+            .expect("restarted lane request")
+            .0;
+        assert!(!lifecycle.request_matches_current_capturing_lane(&rebound_request));
+        assert!(lifecycle.request_matches_current_capturing_lane(&restarted_request));
+        assert!(restarted_request.generation() > rebound_request.generation());
     }
 
     #[test]

@@ -510,9 +510,8 @@ fn run_source_watcher(
                     desired_watched_roots(&sources) != desired_watched_roots(&state.sources);
                 state.set_sources(sources);
                 if !reconcile_watcher_admission(
+                    &mut state,
                     &mut admission_lifecycle,
-                    &state.sources,
-                    &state.watched_roots,
                     "source-list replacement",
                 ) {
                     retire_source_watcher(&mut watcher, &mut teardown);
@@ -525,7 +524,12 @@ fn run_source_watcher(
                     next_restart = now + restart_delay;
                     restart_delay = doubled_backoff(restart_delay);
                 } else if roots_changed {
-                    fence_watcher_admission(&mut admission_lifecycle, "source-list watcher reset");
+                    fence_watcher_admission(
+                        &mut state,
+                        &mut admission_lifecycle,
+                        "source-list watcher reset",
+                        now,
+                    );
                     retire_source_watcher(&mut watcher, &mut teardown);
                     cancel_pending_source_watcher(&mut pending_watcher, &mut retired_initializers);
                     state.reset_watches(now);
@@ -578,11 +582,17 @@ fn run_source_watcher(
             }
             #[cfg(test)]
             Ok(GuiSourceWatchCommand::ForceRestart) => {
-                fence_watcher_admission(&mut admission_lifecycle, "forced watcher restart");
+                let now = Instant::now();
+                fence_watcher_admission(
+                    &mut state,
+                    &mut admission_lifecycle,
+                    "forced watcher restart",
+                    now,
+                );
                 retire_source_watcher(&mut watcher, &mut teardown);
                 cancel_pending_source_watcher(&mut pending_watcher, &mut retired_initializers);
-                state.reset_watches(Instant::now());
-                next_restart = Instant::now();
+                state.reset_watches(now);
+                next_restart = now;
                 restart_delay = WATCHER_RESTART_MIN;
             }
             #[cfg(test)]
@@ -637,14 +647,26 @@ fn run_source_watcher(
                 let _ = status_tx.send(is_live);
             }
             Ok(GuiSourceWatchCommand::Shutdown) => {
-                fence_watcher_admission(&mut admission_lifecycle, "watcher shutdown");
+                let now = Instant::now();
+                fence_watcher_admission(
+                    &mut state,
+                    &mut admission_lifecycle,
+                    "watcher shutdown",
+                    now,
+                );
                 cancel_pending_source_watcher(&mut pending_watcher, &mut retired_initializers);
                 retire_source_watcher_on_shutdown(&mut watcher, &mut teardown);
                 break;
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                fence_watcher_admission(&mut admission_lifecycle, "watcher command disconnect");
+                let now = Instant::now();
+                fence_watcher_admission(
+                    &mut state,
+                    &mut admission_lifecycle,
+                    "watcher command disconnect",
+                    now,
+                );
                 cancel_pending_source_watcher(&mut pending_watcher, &mut retired_initializers);
                 retire_source_watcher_on_shutdown(&mut watcher, &mut teardown);
                 break;
@@ -709,8 +731,10 @@ fn run_source_watcher(
                         state.apply_root_watch_update(update, now, false);
                     if watch_failed {
                         fence_watcher_admission(
+                            &mut state,
                             &mut admission_lifecycle,
                             "partial watcher installation",
+                            now,
                         );
                         if let Err(restarted) =
                             retire_source_watcher_value(restarted, &mut teardown)
@@ -742,9 +766,8 @@ fn run_source_watcher(
                         }
                     } else {
                         let lifecycle_ready = reconcile_watcher_admission(
+                            &mut state,
                             &mut admission_lifecycle,
-                            &state.sources,
-                            &state.watched_roots,
                             "successful watcher installation",
                         );
                         if !lifecycle_ready {
@@ -807,8 +830,10 @@ fn run_source_watcher(
                 Ok(Err(error)) => {
                     let _ = pending.join_handle.join();
                     fence_watcher_admission(
+                        &mut state,
                         &mut admission_lifecycle,
                         "watcher initialization failure",
+                        now,
                     );
                     tracing::warn!(
                         ?backend,
@@ -850,8 +875,10 @@ fn run_source_watcher(
                 }
                 Err(TryRecvError::Empty) => {
                     fence_watcher_admission(
+                        &mut state,
                         &mut admission_lifecycle,
                         "watcher initialization timeout",
+                        now,
                     );
                     pending.ingress_enabled.store(false, Ordering::Release);
                     debug_assert!(
@@ -902,8 +929,10 @@ fn run_source_watcher(
                 Err(TryRecvError::Disconnected) => {
                     let _ = pending.join_handle.join();
                     fence_watcher_admission(
+                        &mut state,
                         &mut admission_lifecycle,
                         "watcher initializer disconnect",
+                        now,
                     );
                     tracing::warn!(
                         ?backend,
@@ -959,7 +988,12 @@ fn run_source_watcher(
                     "Source root availability or filesystem identity changed; restarting watcher"
                 );
                 state.mark_roots_overflowed(&invalidated_roots, now);
-                fence_watcher_admission(&mut admission_lifecycle, "root identity refresh");
+                fence_watcher_admission(
+                    &mut state,
+                    &mut admission_lifecycle,
+                    "root identity refresh",
+                    now,
+                );
                 retire_source_watcher(&mut watcher, &mut teardown);
                 cancel_pending_source_watcher(&mut pending_watcher, &mut retired_initializers);
                 state.clear_watches();
@@ -987,10 +1021,14 @@ fn run_source_watcher(
             &mut pending_capture_contexts,
             now,
         );
-        flush_pending_audit_requests(&mut state, &message_tx, now);
 
         if watcher_failed || root_invalidated {
-            fence_watcher_admission(&mut admission_lifecycle, "watcher capture retirement");
+            fence_watcher_admission(
+                &mut state,
+                &mut admission_lifecycle,
+                "watcher capture retirement",
+                now,
+            );
             retire_source_watcher(&mut watcher, &mut teardown);
             cancel_pending_source_watcher(&mut pending_watcher, &mut retired_initializers);
             if watcher_failed {
@@ -1003,6 +1041,8 @@ fn run_source_watcher(
                 restart_delay = WATCHER_RESTART_MIN;
             }
         }
+
+        flush_pending_audit_requests(&mut state, &admission_lifecycle, &message_tx, now);
 
         for event in state.drain_ready_sources(now, SOURCE_CHANGE_DEBOUNCE) {
             tracing::debug!(
@@ -1044,7 +1084,12 @@ fn run_source_watcher(
     }
 }
 
-fn fence_watcher_admission(admission: &mut AdmissionLifecycle, boundary: &'static str) {
+fn fence_watcher_admission(
+    state: &mut GuiSourceWatchState,
+    admission: &mut AdmissionLifecycle,
+    boundary: &'static str,
+    now: Instant,
+) {
     if let Err(error) = admission.fence_all() {
         tracing::error!(
             boundary,
@@ -1052,15 +1097,17 @@ fn fence_watcher_admission(admission: &mut AdmissionLifecycle, boundary: &'stati
             "Could not fully fence native watcher admission; keeping backend ingress closed"
         );
     }
+    purge_stale_audit_requests(state, admission, now);
 }
 
 fn reconcile_watcher_admission(
+    state: &mut GuiSourceWatchState,
     admission: &mut AdmissionLifecycle,
-    sources: &[SampleSource],
-    watched_roots: &WatchedRootIdentities,
     boundary: &'static str,
 ) -> bool {
-    match admission.reconcile(sources, watched_roots) {
+    let result = admission.reconcile(&state.sources, &state.watched_roots);
+    purge_stale_audit_requests(state, admission, Instant::now());
+    match result {
         Ok(()) => true,
         Err(error) => {
             tracing::error!(
@@ -1068,9 +1115,26 @@ fn reconcile_watcher_admission(
                 ?error,
                 "Native watcher admission lifecycle failed closed"
             );
-            fence_watcher_admission(admission, boundary);
+            fence_watcher_admission(state, admission, boundary, Instant::now());
             false
         }
+    }
+}
+
+fn purge_stale_audit_requests(
+    state: &mut GuiSourceWatchState,
+    admission: &AdmissionLifecycle,
+    now: Instant,
+) {
+    let displaced = state.purge_non_matching_audit_requests(|request| {
+        admission.request_matches_current_capturing_lane(request)
+    });
+    if !displaced.is_empty() {
+        tracing::warn!(
+            request_count = displaced.len(),
+            "Purged watcher audit requests from a stopped or replaced admission lane"
+        );
+        state.recover_displaced_audit_requests(&displaced, now);
     }
 }
 
@@ -1541,16 +1605,28 @@ fn dispatch_pending_capture_contexts(
 
 fn flush_pending_audit_requests(
     state: &mut GuiSourceWatchState,
+    admission: &AdmissionLifecycle,
     message_tx: &Sender<GuiMessage>,
     now: Instant,
 ) {
+    purge_stale_audit_requests(state, admission, now);
     if state.pending_audit_requests.conservative_recovery_latched() {
         state.mark_all_overflowed(now);
         state
             .pending_audit_requests
             .clear_conservative_recovery_latch();
     }
-    while let Some(request) = state.pending_audit_requests.front().cloned() {
+    while state.pending_audit_requests.front().is_some() {
+        // Revalidate immediately before each send. A lifecycle boundary can leave a retained
+        // request in the queue until this exact transport point; stale identities must never be
+        // emitted, while a failed send below deliberately leaves the request at the front.
+        purge_stale_audit_requests(state, admission, now);
+        let Some(request) = state.pending_audit_requests.front().cloned() else {
+            break;
+        };
+        if !admission.request_matches_current_capturing_lane(&request) {
+            continue;
+        }
         if message_tx
             .send(GuiMessage::SourceWatcherManifestAuditRequested { request })
             .is_err()
@@ -2657,6 +2733,123 @@ mod lifecycle_tests {
                 .identity(),
             first_request.identity()
         );
+    }
+
+    #[test]
+    fn root_rebind_drops_old_typed_requests_and_widens_the_replacement_source() {
+        let old_directory = tempfile::tempdir().expect("old source root");
+        let new_directory = tempfile::tempdir().expect("replacement source root");
+        let old_source = source_with_root("root-rebind-request", old_directory.path());
+        let replacement = source_with_root("root-rebind-request", new_directory.path());
+        let mut state = source_watcher_state(vec![old_source.clone()]);
+        let mut admission = configured_admission(&state.sources);
+        state.set_audit_request_capacity(admission.max_source_audit_request_entries());
+
+        let old_request = admission
+            .source_audit_request_for_current_lane(&old_source.id)
+            .expect("old typed request")
+            .0;
+        state.enqueue_audit_request(old_request.clone(), true);
+
+        state.set_sources(vec![replacement.clone()]);
+        state.watched_roots = HashMap::from([(
+            replacement.root.clone(),
+            Some(String::from("replacement-identity")),
+        )]);
+        admission
+            .reconcile(&state.sources, &state.watched_roots)
+            .expect("replacement admission lane");
+
+        let (message_tx, message_rx) = std::sync::mpsc::channel();
+        purge_stale_audit_requests(&mut state, &admission, Instant::now());
+        flush_pending_audit_requests(&mut state, &admission, &message_tx, Instant::now());
+
+        assert!(matches!(
+            message_rx.try_recv(),
+            Err(std::sync::mpsc::TryRecvError::Empty)
+        ));
+        assert!(
+            state
+                .pending
+                .get(replacement.id.as_str())
+                .is_some_and(|pending| pending.overflowed)
+        );
+        assert!(
+            !state
+                .pending_audit_requests
+                .front()
+                .is_some_and(|request| request == &old_request)
+        );
+    }
+
+    #[test]
+    fn stop_restart_drops_old_typed_requests_then_emits_only_restarted_identity() {
+        let directory = tempfile::tempdir().expect("source root");
+        let source = source_with_root("stop-restart-request", directory.path());
+        let mut state = source_watcher_state(vec![source.clone()]);
+        let mut admission = configured_admission(&state.sources);
+        state.watched_roots =
+            HashMap::from([(source.root.clone(), Some(String::from("identity-0")))]);
+        state.set_audit_request_capacity(admission.max_source_audit_request_entries());
+
+        let old_request = admission
+            .source_audit_request_for_current_lane(&source.id)
+            .expect("old typed request")
+            .0;
+        state.enqueue_audit_request(old_request.clone(), true);
+        admission.fence_all().expect("stop watcher lane");
+
+        let (message_tx, message_rx) = std::sync::mpsc::channel();
+        purge_stale_audit_requests(&mut state, &admission, Instant::now());
+        flush_pending_audit_requests(&mut state, &admission, &message_tx, Instant::now());
+        assert!(matches!(
+            message_rx.try_recv(),
+            Err(std::sync::mpsc::TryRecvError::Empty)
+        ));
+        assert!(
+            state
+                .pending
+                .get(source.id.as_str())
+                .is_some_and(|pending| pending.overflowed)
+        );
+
+        admission
+            .reconcile(&state.sources, &state.watched_roots)
+            .expect("restart watcher lane");
+        let restarted_request = admission
+            .source_audit_request_for_current_lane(&source.id)
+            .expect("restarted typed request")
+            .0;
+        assert!(restarted_request.generation() > old_request.generation());
+        state.enqueue_audit_request(restarted_request.clone(), true);
+        flush_pending_audit_requests(&mut state, &admission, &message_tx, Instant::now());
+
+        let emitted = match message_rx.recv().expect("restarted audit request") {
+            GuiMessage::SourceWatcherManifestAuditRequested { request } => request,
+            message => panic!("expected restarted audit request, got {message:?}"),
+        };
+        assert_eq!(emitted, restarted_request);
+        assert_ne!(emitted, old_request);
+    }
+
+    #[test]
+    fn failed_audit_handoff_retains_the_current_request_for_retry() {
+        let directory = tempfile::tempdir().expect("source root");
+        let source = source_with_root("failed-audit-handoff", directory.path());
+        let mut state = source_watcher_state(vec![source.clone()]);
+        let admission = configured_admission(&state.sources);
+        state.set_audit_request_capacity(admission.max_source_audit_request_entries());
+        let request = admission
+            .source_audit_request_for_current_lane(&source.id)
+            .expect("current typed request")
+            .0;
+        state.enqueue_audit_request(request.clone(), true);
+
+        let (message_tx, message_rx) = std::sync::mpsc::channel();
+        drop(message_rx);
+        flush_pending_audit_requests(&mut state, &admission, &message_tx, Instant::now());
+
+        assert_eq!(state.pending_audit_requests.front(), Some(&request));
     }
 
     #[test]
