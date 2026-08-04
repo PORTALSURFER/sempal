@@ -279,6 +279,26 @@ pub struct ReplayPriorToken {
 }
 
 impl ReplayPriorToken {
+    /// Mint replay authority from the source-database module's unforgeable validation capability.
+    pub(crate) fn from_validated_durable_authority(
+        authority: crate::sample_sources::db::ValidatedReplayAuthority,
+    ) -> Self {
+        let (
+            source_id,
+            root_identity,
+            backend_stream_identity,
+            watcher_generation,
+            acknowledged_sequence,
+        ) = authority.into_parts();
+        Self {
+            source_id,
+            root_identity,
+            backend_stream_identity,
+            watcher_generation,
+            acknowledged_sequence,
+        }
+    }
+
     /// Construct an identity-bound prior for crate regression tests.
     #[cfg(test)]
     pub(crate) fn new(
