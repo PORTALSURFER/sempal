@@ -190,6 +190,21 @@ impl NativeAppState {
                         .submit_watcher_checkpoint(request);
                 }
             }
+            GuiMessage::SourceWatcherCheckpointCommitted(request) => {
+                if self
+                    .library
+                    .folder_browser
+                    .source_exists(&request.source_id)
+                    && self
+                        .background
+                        .source_lifecycle_generations
+                        .get(&request.source_id)
+                        == Some(&request.lifecycle_generation)
+                    && let Some(watcher) = self.library.source_watcher.as_ref()
+                {
+                    watcher.acknowledge_replay_checkpoint(request);
+                }
+            }
             GuiMessage::SourceFilesystemSyncFinished(result) => {
                 self.finish_source_filesystem_sync(result, context);
             }

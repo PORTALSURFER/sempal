@@ -4,9 +4,9 @@ use std::collections::HashSet;
 
 use wavecrate::sample_sources::{SampleSource, SourceId};
 use wavecrate_library::sample_sources::reconciliation::{
-    AdapterError, AdmissionOwnerError, BackendStreamIdentity, CaptureBoundary, DispatchTicket,
-    DispatchedObservation, LiveAuditAdmission, OwnedAdmissionLane, OwnerReplayAdmission,
-    RawObservation, RawObservationLimits, RawObservationProvenance,
+    AdapterError, AdmissionError, AdmissionOwnerError, BackendStreamIdentity, CaptureBoundary,
+    DispatchTicket, DispatchedObservation, LiveAuditAdmission, OwnedAdmissionLane,
+    OwnerReplayAdmission, RawObservation, RawObservationLimits, RawObservationProvenance,
     ReconciliationAcknowledgementOutcome, ReconciliationAdmissionLimits,
     ReconciliationAdmissionOwner, ReconciliationAdmissionSupervisor, ReconciliationLifecycle,
     RootIdentity, SourceAuditReceipt, SourceAuditRequest, SyntheticObservationBatch,
@@ -52,6 +52,31 @@ pub(super) enum FseventsReplayAdmissionError {
     Database(SourceDbError),
     NoCapturingLane,
     Adapter(AdapterError),
+}
+
+#[derive(Debug)]
+pub(super) enum FseventsReplayCheckpointError {
+    Database(SourceDbError),
+    NoCapturingLane,
+    MissingDurableAuthority,
+    Adapter(AdmissionError),
+}
+
+impl FseventsReplayCheckpointError {
+    pub(super) fn category(&self) -> &'static str {
+        match self {
+            Self::Database(error) => {
+                let _ = error;
+                "database"
+            }
+            Self::NoCapturingLane => "no_capturing_lane",
+            Self::MissingDurableAuthority => "missing_durable_authority",
+            Self::Adapter(error) => {
+                let _ = error;
+                "adapter"
+            }
+        }
+    }
 }
 
 /// Owns the one admission owner used by a native source-watcher coordinator.
@@ -302,6 +327,32 @@ impl AdmissionLifecycle {
         self.owner
             .admit_replay_with_durable_prior(batch, prior.as_ref(), true)
             .map_err(FseventsReplayAdmissionError::Adapter)
+    }
+
+    /// Retire an applied replay only with the opaque authority reread after the source owner has
+    /// durably committed the matching revision-bound checkpoint.
+    pub(super) fn mark_fsevents_replay_checkpointed(
+        &mut self,
+        source_id: &SourceId,
+        database: &SourceDatabase,
+        source_lifecycle_generation: WatcherGeneration,
+        ticket: DispatchTicket,
+    ) -> Result<(), FseventsReplayCheckpointError> {
+        let lane = self
+            .lane_for_capture(source_id)
+            .ok_or(FseventsReplayCheckpointError::NoCapturingLane)?;
+        let prior = database
+            .read_durable_replay_prior(
+                source_id,
+                lane.root_identity(),
+                source_lifecycle_generation,
+                lane.generation(),
+            )
+            .map_err(FseventsReplayCheckpointError::Database)?
+            .ok_or(FseventsReplayCheckpointError::MissingDurableAuthority)?;
+        self.owner
+            .mark_replay_checkpointed(ticket, &prior)
+            .map_err(FseventsReplayCheckpointError::Adapter)
     }
 
     /// Select the next owner-scheduled live envelope.

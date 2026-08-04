@@ -67,6 +67,9 @@ fn map_event(event: SourceProcessingEvent) -> GuiMessage {
             complete,
             receipt,
         },
+        SourceProcessingEvent::WatcherCheckpointCommitted { request, .. } => {
+            GuiMessage::SourceWatcherCheckpointCommitted(request)
+        }
         SourceProcessingEvent::Completed => {
             GuiMessage::SourceProcessingProgress(SourceProcessingProgress {
                 source_id: String::new(),
