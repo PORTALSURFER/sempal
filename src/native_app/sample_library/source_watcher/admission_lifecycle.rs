@@ -31,8 +31,8 @@ const NATIVE_ADMISSION_MAX_EVENTS_PER_LANE: usize = 512;
 ///
 /// The source lifecycle generation, history worker generation, and owner lane generation are
 /// intentionally separate. Only the owner lane generation is allowed into reconciliation
-/// provenance; the history worker generation is validated as replay-stream evidence and is not
-/// promoted into owner authority.
+/// provenance; the history worker generation must match the coordinator's active stream
+/// generation before any durable prior can be used, and is never promoted into owner authority.
 #[allow(dead_code)]
 #[derive(Debug)]
 pub(super) struct FseventsReplayEvidence {
@@ -249,19 +249,21 @@ impl AdmissionLifecycle {
     ///
     /// The database supplies only an opaque prior after validating the persisted source
     /// lifecycle. The owner independently binds that prior to the current root, FSEvents device
-    /// stream, and reconciliation-lane generation. Any stale, missing, gapped, or mismatched
-    /// evidence therefore remains an unproven replay and retains the existing bounded audit path.
+    /// stream, and reconciliation-lane generation. The coordinator's active replay-stream
+    /// generation fences stale asynchronous history completions before the database is read;
+    /// mismatches therefore receive no durable prior and retain the existing bounded audit path.
     #[allow(dead_code)]
     pub(super) fn admit_fsevents_replay(
         &mut self,
         source: &SampleSource,
         database: &SourceDatabase,
+        active_replay_stream_generation: u64,
         evidence: FseventsReplayEvidence,
     ) -> Result<OwnerReplayAdmission, FseventsReplayAdmissionError> {
         let lane = self
             .lane_for_capture(&source.id)
             .ok_or(FseventsReplayAdmissionError::NoCapturingLane)?;
-        if evidence.replay_stream_generation == 0 {
+        if active_replay_stream_generation == 0 || evidence.replay_stream_generation == 0 {
             return Err(FseventsReplayAdmissionError::InvalidReplayStreamGeneration);
         }
         let stream_identity = BackendStreamIdentity::from_fsevents_device(evidence.backend_device)
@@ -287,14 +289,18 @@ impl AdmissionLifecycle {
             evidence.observations,
             evidence.limits,
         );
-        let prior = database
-            .read_durable_replay_prior(
-                &source.id,
-                lane.root_identity(),
-                evidence.source_lifecycle_generation,
-                lane.generation(),
-            )
-            .map_err(FseventsReplayAdmissionError::Database)?;
+        let prior = if evidence.replay_stream_generation == active_replay_stream_generation {
+            database
+                .read_durable_replay_prior(
+                    &source.id,
+                    lane.root_identity(),
+                    evidence.source_lifecycle_generation,
+                    lane.generation(),
+                )
+                .map_err(FseventsReplayAdmissionError::Database)?
+        } else {
+            None
+        };
         self.owner
             .admit_replay_with_durable_prior(batch, prior.as_ref(), true)
             .map_err(FseventsReplayAdmissionError::Adapter)
@@ -477,6 +483,8 @@ mod tests {
     fn admit_unproven_replay(
         checkpoint_value: &str,
         source_lifecycle_generation: u64,
+        replay_stream_generation: u64,
+        active_replay_stream_generation: u64,
         backend_device: u64,
         replay_start_event_id: u64,
         replay_end_event_id: u64,
@@ -503,11 +511,12 @@ mod tests {
             .admit_fsevents_replay(
                 &source,
                 &database,
+                active_replay_stream_generation,
                 FseventsReplayEvidence {
                     source_lifecycle_generation: WatcherGeneration::new(
                         source_lifecycle_generation,
                     ),
-                    replay_stream_generation: 42,
+                    replay_stream_generation,
                     backend_device,
                     replay_start_event_id,
                     replay_end_event_id,
@@ -573,6 +582,7 @@ mod tests {
             .admit_fsevents_replay(
                 &source,
                 &database,
+                42,
                 FseventsReplayEvidence {
                     source_lifecycle_generation: WatcherGeneration::new(7),
                     replay_stream_generation: 42,
@@ -618,6 +628,21 @@ mod tests {
     }
 
     #[test]
+    fn stale_nonzero_replay_worker_generation_remains_a_bounded_audit() {
+        let source_id = SourceId::from_string("replay-source");
+        let checkpoint_value = checkpoint(&source_id, "identity-a", 7, 99, 7, 17);
+        let (disposition, has_audit_request, retained_uncertainty) =
+            admit_unproven_replay(&checkpoint_value, 7, 41, 42, 99, 17, 18);
+
+        assert!(matches!(
+            disposition,
+            AdapterDisposition::AdmittedUnproven | AdapterDisposition::SourceAuditRequired
+        ));
+        assert!(has_audit_request);
+        assert!(retained_uncertainty);
+    }
+
+    #[test]
     fn stale_malformed_root_device_and_gapped_checkpoints_remain_bounded_audits() {
         let source_id = SourceId::from_string("replay-source");
         let cases = [
@@ -641,6 +666,8 @@ mod tests {
             let (disposition, has_audit_request, retained_uncertainty) = admit_unproven_replay(
                 checkpoint_value,
                 source_lifecycle_generation,
+                42,
+                42,
                 backend_device,
                 start,
                 end,
