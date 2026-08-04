@@ -50,9 +50,6 @@ pub(super) struct FseventsReplayEvidence {
 #[derive(Debug)]
 pub(super) enum FseventsReplayAdmissionError {
     Database(SourceDbError),
-    InvalidBackendDevice,
-    InvalidReplayRange,
-    InvalidReplayStreamGeneration,
     NoCapturingLane,
     Adapter(AdapterError),
 }
@@ -263,33 +260,34 @@ impl AdmissionLifecycle {
         let lane = self
             .lane_for_capture(&source.id)
             .ok_or(FseventsReplayAdmissionError::NoCapturingLane)?;
-        if active_replay_stream_generation == 0 || evidence.replay_stream_generation == 0 {
-            return Err(FseventsReplayAdmissionError::InvalidReplayStreamGeneration);
-        }
-        let stream_identity = BackendStreamIdentity::from_fsevents_device(evidence.backend_device)
-            .ok_or(FseventsReplayAdmissionError::InvalidBackendDevice)?;
+        let stream_identity = BackendStreamIdentity::from_fsevents_device(evidence.backend_device);
         let first_sequence = evidence
             .replay_start_event_id
             .checked_add(1)
-            .ok_or(FseventsReplayAdmissionError::InvalidReplayRange)?;
+            .filter(|first| *first <= evidence.replay_end_event_id);
         let capture_boundary = CaptureBoundary::try_new(
             evidence.replay_end_event_id,
-            Some(first_sequence),
-            Some(evidence.replay_end_event_id),
+            first_sequence,
+            first_sequence.map(|_| evidence.replay_end_event_id),
         )
-        .map_err(|_| FseventsReplayAdmissionError::InvalidReplayRange)?;
+        .expect("replay boundary fallback remains structurally valid");
+        let authority_eligible = active_replay_stream_generation != 0
+            && evidence.replay_stream_generation != 0
+            && evidence.replay_stream_generation == active_replay_stream_generation
+            && stream_identity.is_some()
+            && first_sequence.is_some();
         let batch = SyntheticObservationBatch::new(
             RawObservationProvenance::new(
                 source.id.clone(),
                 Some(lane.root_identity().clone()),
-                Some(stream_identity),
+                stream_identity,
                 lane.generation(),
                 capture_boundary,
             ),
             evidence.observations,
             evidence.limits,
         );
-        let prior = if evidence.replay_stream_generation == active_replay_stream_generation {
+        let prior = if authority_eligible {
             database
                 .read_durable_replay_prior(
                     &source.id,
@@ -640,6 +638,34 @@ mod tests {
         ));
         assert!(has_audit_request);
         assert!(retained_uncertainty);
+    }
+
+    #[test]
+    fn malformed_native_replay_fields_remain_bounded_audits() {
+        let source_id = SourceId::from_string("replay-source");
+        let checkpoint_value = checkpoint(&source_id, "identity-a", 7, 99, 7, 17);
+        for (replay_stream_generation, active_generation, backend_device, start, end) in [
+            (42, 42, 0, 17, 18),
+            (42, 42, 99, 18, 18),
+            (0, 42, 99, 17, 18),
+            (42, 0, 99, 17, 18),
+        ] {
+            let (disposition, has_audit_request, retained_uncertainty) = admit_unproven_replay(
+                &checkpoint_value,
+                7,
+                replay_stream_generation,
+                active_generation,
+                backend_device,
+                start,
+                end,
+            );
+            assert!(matches!(
+                disposition,
+                AdapterDisposition::AdmittedUnproven | AdapterDisposition::SourceAuditRequired
+            ));
+            assert!(has_audit_request);
+            assert!(retained_uncertainty);
+        }
     }
 
     #[test]
