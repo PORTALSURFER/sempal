@@ -25,6 +25,12 @@ const GENERATION_COLUMNS: [&str; 7] = [
 const ENTRY_COLUMNS: [&str; 4] = ["generation", "path", "path_encoding", "directory_identity"];
 const CLEANUP_ENTRY_LIMIT: usize = SOURCE_DIRECTORY_TRUTH_BATCH_LIMIT;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DirectoryTruthInspection {
+    FullIntegrity,
+    BoundedPage,
+}
+
 /// Encode one source-relative directory path using the lossless source-index representation.
 pub(crate) fn encode_directory_path(path: &Path) -> Result<(String, i64), SourceDbError> {
     normalize_source_index_path(path).map_err(|_| {
@@ -83,18 +89,28 @@ fn source_revision(connection: &rusqlite::Connection) -> Result<u64, SourceDbErr
 
 fn inspect_directory_truth_state(
     connection: &rusqlite::Connection,
+    inspection: DirectoryTruthInspection,
 ) -> Result<SourceDirectoryTruthState, SourceDbError> {
     let current_source_revision = source_revision(connection)?;
+    let active_query = match inspection {
+        DirectoryTruthInspection::FullIntegrity => {
+            "SELECT generation, expected_entry_count, staged_entry_count, complete,
+                    published_source_revision
+             FROM source_directory_generations
+             WHERE status = 'active'
+             ORDER BY generation ASC"
+        }
+        DirectoryTruthInspection::BoundedPage => {
+            "SELECT generation, expected_entry_count, staged_entry_count, complete,
+                    published_source_revision
+             FROM source_directory_generations
+             WHERE status = 'active'
+             ORDER BY generation ASC
+             LIMIT 2"
+        }
+    };
     let active_rows = {
-        let mut statement = connection
-            .prepare(
-                "SELECT generation, expected_entry_count, staged_entry_count, complete,
-                        published_source_revision
-                 FROM source_directory_generations
-                 WHERE status = 'active'
-                 ORDER BY generation ASC",
-            )
-            .map_err(map_sql_error)?;
+        let mut statement = connection.prepare(active_query).map_err(map_sql_error)?;
         statement
             .query_map([], |row| {
                 Ok((
@@ -118,14 +134,31 @@ fn inspect_directory_truth_state(
     let Some((generation, expected, staged, complete, published_revision)) =
         active_rows.first().copied()
     else {
-        let inactive_count: i64 = connection
-            .query_row(
-                "SELECT COUNT(*) FROM source_directory_generations WHERE status = 'inactive'",
-                [],
-                |row| row.get(0),
-            )
-            .map_err(map_sql_error)?;
-        if inactive_count != 0 {
+        let has_inactive = match inspection {
+            DirectoryTruthInspection::FullIntegrity => connection
+                .query_row(
+                    "SELECT COUNT(*) FROM source_directory_generations WHERE status = 'inactive'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map_err(map_sql_error)?
+                != 0,
+            DirectoryTruthInspection::BoundedPage => {
+                connection
+                    .query_row(
+                        "SELECT EXISTS(
+                        SELECT 1
+                        FROM source_directory_generations
+                        WHERE status = 'inactive'
+                    )",
+                        [],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .map_err(map_sql_error)?
+                    != 0
+            }
+        };
+        if has_inactive {
             return Ok(SourceDirectoryTruthState::Unavailable {
                 reason: SourceDirectoryTruthUnavailableReason::Malformed,
             });
@@ -150,22 +183,24 @@ fn inspect_directory_truth_state(
         });
     }
 
-    let (entry_count, distinct_paths, distinct_identities): (i64, i64, i64) = connection
-        .query_row(
-            "SELECT COUNT(*), COUNT(DISTINCT path), COUNT(DISTINCT directory_identity)
-             FROM source_directory_entries
-             WHERE generation = ?1",
-            [generation],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        )
-        .map_err(map_sql_error)?;
-    if entry_count != expected
-        || entry_count != distinct_paths
-        || entry_count != distinct_identities
-    {
-        return Ok(SourceDirectoryTruthState::Unavailable {
-            reason: SourceDirectoryTruthUnavailableReason::Malformed,
-        });
+    if inspection == DirectoryTruthInspection::FullIntegrity {
+        let (entry_count, distinct_paths, distinct_identities): (i64, i64, i64) = connection
+            .query_row(
+                "SELECT COUNT(*), COUNT(DISTINCT path), COUNT(DISTINCT directory_identity)
+                 FROM source_directory_entries
+                 WHERE generation = ?1",
+                [generation],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .map_err(map_sql_error)?;
+        if entry_count != expected
+            || entry_count != distinct_paths
+            || entry_count != distinct_identities
+        {
+            return Ok(SourceDirectoryTruthState::Unavailable {
+                reason: SourceDirectoryTruthUnavailableReason::Malformed,
+            });
+        }
     }
 
     Ok(SourceDirectoryTruthState::Active {
@@ -234,7 +269,8 @@ impl SourceDatabase {
             .connection
             .unchecked_transaction()
             .map_err(map_sql_error)?;
-        let state = inspect_directory_truth_state(&transaction)?;
+        let state =
+            inspect_directory_truth_state(&transaction, DirectoryTruthInspection::FullIntegrity)?;
         transaction.rollback().map_err(map_sql_error)?;
         Ok(state)
     }
@@ -258,7 +294,8 @@ impl SourceDatabase {
             .connection
             .unchecked_transaction()
             .map_err(map_sql_error)?;
-        let state = inspect_directory_truth_state(&transaction)?;
+        let state =
+            inspect_directory_truth_state(&transaction, DirectoryTruthInspection::BoundedPage)?;
         let SourceDirectoryTruthState::Active {
             generation,
             published_source_revision,
@@ -776,6 +813,67 @@ mod tests {
         assert_eq!(cleanup.deleted_generations, 0);
         assert!(cleanup.more_work);
         assert_eq!(db.get_revision().unwrap(), revision_before_cleanup);
+    }
+
+    #[test]
+    fn small_page_does_not_scan_large_active_generation() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+
+        const PAGE_QUERY_WORK_BUDGET: usize = 2_000;
+
+        let root = tempfile::tempdir().unwrap();
+        let db = SourceDatabase::open_for_source_write(root.path()).unwrap();
+        let entry_count = super::super::SOURCE_DIRECTORY_TRUTH_BATCH_LIMIT * 8;
+        db.begin_source_directory_truth_generation(1, entry_count as u64)
+            .unwrap();
+        for start in (0..entry_count).step_by(super::super::SOURCE_DIRECTORY_TRUTH_BATCH_LIMIT) {
+            let entries = (start..start + super::super::SOURCE_DIRECTORY_TRUTH_BATCH_LIMIT)
+                .map(|index| directory(&format!("large/{index:04}"), &format!("dir-{index}")))
+                .collect::<Vec<_>>();
+            db.stage_source_directory_truth_entries(1, &entries)
+                .unwrap();
+        }
+        db.finalize_source_directory_truth_generation(1, 0).unwrap();
+
+        let full_query_work = Arc::new(AtomicUsize::new(0));
+        db.connection.progress_handler(
+            1,
+            Some({
+                let full_query_work = Arc::clone(&full_query_work);
+                move || {
+                    full_query_work.fetch_add(1, Ordering::Relaxed);
+                    false
+                }
+            }),
+        );
+        db.source_directory_truth_state().unwrap();
+        db.connection.progress_handler(0, None::<fn() -> bool>);
+        assert!(
+            full_query_work.load(Ordering::Relaxed) > PAGE_QUERY_WORK_BUDGET,
+            "the full integrity inspection should exceed the bounded page budget"
+        );
+
+        let query_work = Arc::new(AtomicUsize::new(0));
+        db.connection.progress_handler(
+            1,
+            Some({
+                let query_work = Arc::clone(&query_work);
+                move || query_work.fetch_add(1, Ordering::Relaxed) >= PAGE_QUERY_WORK_BUDGET
+            }),
+        );
+        let page_result = db.source_directory_truth_page(None, 1);
+        db.connection.progress_handler(0, None::<fn() -> bool>);
+
+        let page = page_result.expect("a small page must stay within its query-work budget");
+        assert_eq!(page.entries.len(), 1);
+        assert!(page.next_cursor.is_some());
+        assert!(
+            query_work.load(Ordering::Relaxed) < PAGE_QUERY_WORK_BUDGET,
+            "bounded page exceeded query-work budget"
+        );
     }
 
     #[test]
