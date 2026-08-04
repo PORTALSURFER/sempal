@@ -23,6 +23,7 @@ pub mod read;
 mod rename_destinations;
 mod rename_metadata;
 mod replay_authority;
+pub(crate) use replay_authority::ValidatedReplayAuthority;
 /// SQLite schema management for sample source databases.
 pub mod schema;
 /// Durable per-source tag catalog and sample assignment helpers.

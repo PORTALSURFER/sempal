@@ -279,18 +279,17 @@ pub struct ReplayPriorToken {
 }
 
 impl ReplayPriorToken {
-    /// Construct a replay prior from an already validated source-database checkpoint.
-    ///
-    /// This remains crate-private so production callers cannot assemble durable authority from
-    /// scalar or caller-supplied checkpoint fields. The source-database owner is the only
-    /// production boundary that may mint this token.
-    pub(crate) fn from_durable_checkpoint(
-        source_id: SourceId,
-        root_identity: RootIdentity,
-        backend_stream_identity: BackendStreamIdentity,
-        watcher_generation: WatcherGeneration,
-        acknowledged_sequence: u64,
+    /// Mint replay authority from the source-database module's unforgeable validation capability.
+    pub(crate) fn from_validated_durable_authority(
+        authority: crate::sample_sources::db::ValidatedReplayAuthority,
     ) -> Self {
+        let (
+            source_id,
+            root_identity,
+            backend_stream_identity,
+            watcher_generation,
+            acknowledged_sequence,
+        ) = authority.into_parts();
         Self {
             source_id,
             root_identity,

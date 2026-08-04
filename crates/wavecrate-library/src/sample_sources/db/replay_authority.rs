@@ -1,6 +1,7 @@
 //! Source-owned durable watcher authority for replay admission.
 
-use serde::de::{self, Deserializer, MapAccess, Visitor};
+use serde::Deserialize;
+use serde::de::{self, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde_json::{Map, Value};
 use std::fmt;
 
@@ -32,6 +33,51 @@ const CONTINUITY_PROOF_FIELDS: [&str; 7] = [
     "acknowledged_end_event_id",
 ];
 const FSEVENTS_STREAM_PREFIX: &[u8] = b"fsevents:";
+
+/// A construction capability that can only be created after this module validates DB metadata.
+pub(crate) struct ValidatedReplayAuthority {
+    source_id: SourceId,
+    root_identity: RootIdentity,
+    backend_stream_identity: BackendStreamIdentity,
+    watcher_generation: WatcherGeneration,
+    acknowledged_sequence: u64,
+}
+
+impl ValidatedReplayAuthority {
+    fn new(
+        source_id: SourceId,
+        root_identity: RootIdentity,
+        backend_stream_identity: BackendStreamIdentity,
+        watcher_generation: WatcherGeneration,
+        acknowledged_sequence: u64,
+    ) -> Self {
+        Self {
+            source_id,
+            root_identity,
+            backend_stream_identity,
+            watcher_generation,
+            acknowledged_sequence,
+        }
+    }
+
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        SourceId,
+        RootIdentity,
+        BackendStreamIdentity,
+        WatcherGeneration,
+        u64,
+    ) {
+        (
+            self.source_id,
+            self.root_identity,
+            self.backend_stream_identity,
+            self.watcher_generation,
+            self.acknowledged_sequence,
+        )
+    }
+}
 
 /// Read a durable replay prior from the source database's existing watcher checkpoint.
 impl SourceDatabase {
@@ -108,46 +154,135 @@ fn parse_durable_replay_prior(
         Vec::with_capacity(FSEVENTS_STREAM_PREFIX.len() + std::mem::size_of::<u64>());
     stream_identity.extend_from_slice(FSEVENTS_STREAM_PREFIX);
     stream_identity.extend_from_slice(&backend_device.to_be_bytes());
-    Some(ReplayPriorToken::from_durable_checkpoint(
-        expected_source_id.clone(),
-        expected_root_identity.clone(),
-        BackendStreamIdentity::from_bytes(stream_identity),
-        expected_watcher_generation,
-        event_id,
+    Some(ReplayPriorToken::from_validated_durable_authority(
+        ValidatedReplayAuthority::new(
+            expected_source_id.clone(),
+            expected_root_identity.clone(),
+            BackendStreamIdentity::from_bytes(stream_identity),
+            expected_watcher_generation,
+            event_id,
+        ),
     ))
 }
 
-fn parse_object(value: &str) -> Result<Map<String, Value>, String> {
-    struct ObjectVisitor;
+struct StrictJsonValue(Value);
 
-    impl<'de> Visitor<'de> for ObjectVisitor {
-        type Value = Map<String, Value>;
+impl<'de> Deserialize<'de> for StrictJsonValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_any(StrictJsonValueVisitor)
+    }
+}
 
-        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-            formatter.write_str("a JSON object")
-        }
+struct StrictJsonValueVisitor;
 
-        fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
-        where
-            M: MapAccess<'de>,
-        {
-            let mut object = Map::new();
-            while let Some(key) = map.next_key::<String>()? {
-                if object.contains_key(&key) {
-                    return Err(de::Error::custom("duplicate checkpoint field"));
-                }
-                object.insert(key, map.next_value::<Value>()?);
-            }
-            Ok(object)
-        }
+impl<'de> Visitor<'de> for StrictJsonValueVisitor {
+    type Value = StrictJsonValue;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a JSON value without duplicate object fields")
     }
 
-    let mut deserializer = serde_json::Deserializer::from_str(value);
-    let object = deserializer
-        .deserialize_map(ObjectVisitor)
-        .map_err(|error| error.to_string())?;
-    deserializer.end().map_err(|error| error.to_string())?;
-    Ok(object)
+    fn visit_bool<E>(self, value: bool) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(StrictJsonValue(Value::Bool(value)))
+    }
+
+    fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(StrictJsonValue(Value::Number(value.into())))
+    }
+
+    fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(StrictJsonValue(Value::Number(value.into())))
+    }
+
+    fn visit_f64<E>(self, value: f64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        let number = serde_json::Number::from_f64(value)
+            .ok_or_else(|| E::custom("non-finite JSON number"))?;
+        Ok(StrictJsonValue(Value::Number(number)))
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(StrictJsonValue(Value::String(value.to_owned())))
+    }
+
+    fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(StrictJsonValue(Value::String(value)))
+    }
+
+    fn visit_none<E>(self) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(StrictJsonValue(Value::Null))
+    }
+
+    fn visit_unit<E>(self) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(StrictJsonValue(Value::Null))
+    }
+
+    fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_any(StrictJsonValueVisitor)
+    }
+
+    fn visit_seq<A>(self, mut sequence: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        let mut values = Vec::new();
+        while let Some(value) = sequence.next_element::<StrictJsonValue>()? {
+            values.push(value.0);
+        }
+        Ok(StrictJsonValue(Value::Array(values)))
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        let mut object = Map::new();
+        while let Some(key) = map.next_key::<String>()? {
+            if object.contains_key(&key) {
+                return Err(de::Error::custom("duplicate checkpoint field"));
+            }
+            object.insert(key, map.next_value::<StrictJsonValue>()?.0);
+        }
+        Ok(StrictJsonValue(Value::Object(object)))
+    }
+}
+
+fn parse_object(value: &str) -> Result<Map<String, Value>, String> {
+    let StrictJsonValue(value) =
+        serde_json::from_str::<StrictJsonValue>(value).map_err(|error| error.to_string())?;
+    value
+        .as_object()
+        .cloned()
+        .ok_or_else(|| String::from("checkpoint must be an object"))
 }
 
 fn has_exact_fields(object: &Map<String, Value>, fields: &[&str]) -> bool {
@@ -278,6 +413,10 @@ mod tests {
             checkpoint().replace(
                 "\"continuity_proof\":{",
                 "\"continuity_proof\":{\"unknown\":true,",
+            ),
+            checkpoint().replace(
+                "\"continuity_proof\":{",
+                "\"continuity_proof\":{\"backend\":\"notify\",",
             ),
         ];
         for value in cases {
