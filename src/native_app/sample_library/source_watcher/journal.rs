@@ -624,6 +624,7 @@ pub(super) enum JournalRecovery {
     Changes {
         paths: Vec<PathBuf>,
         proof: WatcherContinuityProof,
+        source_lifecycle_generation: u64,
     },
     FullAudit {
         reason: &'static str,
@@ -650,6 +651,7 @@ fn classify_replayed_paths(
     source: &SampleSource,
     paths: Vec<PathBuf>,
     proof: WatcherContinuityProof,
+    source_lifecycle_generation: u64,
 ) -> JournalRecovery {
     let paths = paths
         .into_iter()
@@ -664,7 +666,11 @@ fn classify_replayed_paths(
             reason: "journal_replay_empty_paths",
         }
     } else {
-        JournalRecovery::Changes { paths, proof }
+        JournalRecovery::Changes {
+            paths,
+            proof,
+            source_lifecycle_generation,
+        }
     }
 }
 
@@ -711,8 +717,13 @@ fn recover_source(source: &SampleSource, native_watcher: bool) -> JournalRecover
 
     #[cfg(target_os = "macos")]
     {
+        let source_lifecycle_generation = checkpoint
+            .revision_bound()
+            .map_or(0, |checkpoint| checkpoint.lifecycle_generation);
         match replay_fsevents(&source.root, root_identity, checkpoint.event_id) {
-            Ok((paths, proof)) => classify_replayed_paths(source, paths, proof),
+            Ok((paths, proof)) => {
+                classify_replayed_paths(source, paths, proof, source_lifecycle_generation)
+            }
             Err(reason) => JournalRecovery::FullAudit { reason },
         }
     }
@@ -853,6 +864,7 @@ mod macos {
     #[derive(Default)]
     struct HistoryState {
         paths: Vec<PathBuf>,
+        path_bytes: usize,
         replay_start_event_id: u64,
         history_done: bool,
         history_lost: bool,
@@ -863,6 +875,7 @@ mod macos {
         fn new(replay_start_event_id: u64) -> Self {
             Self {
                 paths: Vec::new(),
+                path_bytes: 0,
                 replay_start_event_id,
                 history_done: false,
                 history_lost: false,
@@ -1109,7 +1122,24 @@ mod macos {
             let path = unsafe { CStr::from_ptr(*paths.add(index)) };
             let path = PathBuf::from(path.to_string_lossy().into_owned());
             if path.starts_with(&context.root) {
-                state.paths.push(path);
+                let path_bytes = path.as_os_str().as_encoded_bytes().len();
+                let within_limits = state
+                    .paths
+                    .len()
+                    .checked_add(1)
+                    .is_some_and(|count| count <= super::super::capture::MAX_CAPTURE_PATHS)
+                    && state
+                        .path_bytes
+                        .checked_add(path_bytes)
+                        .is_some_and(|bytes| {
+                            bytes <= super::super::capture::MAX_CAPTURE_PATH_BYTES
+                        });
+                if within_limits {
+                    state.path_bytes += path_bytes;
+                    state.paths.push(path);
+                } else {
+                    state.history_lost = true;
+                }
             }
         }
     }
@@ -1172,7 +1202,12 @@ mod tests {
         );
 
         assert_eq!(
-            classify_replayed_paths(&source, Vec::new(), continuity_proof("root-a", 4, 10, 11)),
+            classify_replayed_paths(
+                &source,
+                Vec::new(),
+                continuity_proof("root-a", 4, 10, 11),
+                4,
+            ),
             JournalRecovery::FullAudit {
                 reason: "journal_replay_empty_paths",
             }
@@ -1190,10 +1225,16 @@ mod tests {
 
         let proof = continuity_proof("root-a", 4, 10, 11);
         assert_eq!(
-            classify_replayed_paths(&source, vec![source.root.join("kick.wav")], proof.clone(),),
+            classify_replayed_paths(
+                &source,
+                vec![source.root.join("kick.wav")],
+                proof.clone(),
+                4,
+            ),
             JournalRecovery::Changes {
                 paths: vec![PathBuf::from("kick.wav")],
                 proof,
+                source_lifecycle_generation: 4,
             }
         );
     }

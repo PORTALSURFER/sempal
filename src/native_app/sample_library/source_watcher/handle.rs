@@ -10,20 +10,22 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use wavecrate::sample_sources::{SampleSource, SourceId};
+use wavecrate::sample_sources::{SampleSource, SourceDatabase, SourceId};
 use wavecrate_library::sample_sources::reconciliation::{
-    AdmissionOutcome, BackendStreamIdentity, CaptureBoundary, DispatchTicket, LiveAuditCorrelation,
-    ReconciliationLifecycle, ReconciliationScopeKind, RootIdentity, SourceAuditReceipt,
-    WatcherGeneration,
+    AdapterDisposition, AdmissionOutcome, BackendStreamIdentity, CaptureBoundary, DispatchTicket,
+    LiveAuditCorrelation, ReconciliationLifecycle, ReconciliationScopeKind, RootIdentity,
+    SourceAuditReceipt, WatcherGeneration,
 };
 
-use super::admission_lifecycle::AdmissionLifecycle;
-use super::capture::{SourceWatcherCapture, capture_event, capture_to_observation_batch};
+use super::admission_lifecycle::{AdmissionLifecycle, FseventsReplayEvidence};
+use super::capture::{
+    SourceWatcherCapture, capture_event, capture_to_observation_batch, fsevents_replay_observations,
+};
 use super::classification::retain_source_refresh_candidates;
 use super::journal::{self, JournalRecovery};
 use super::roots::{
-    RootIdentityRecovery, RootWatchUpdate, WatchedRootIdentities, root_watch_status,
-    update_watched_roots,
+    RootIdentityRecovery, RootWatchUpdate, WatchedRootIdentities, registered_root_identity,
+    root_watch_status, update_watched_roots,
 };
 use super::state::GuiSourceWatchState;
 use super::{
@@ -34,6 +36,9 @@ use super::{
 use crate::native_app::app::GuiMessage;
 use crate::native_app::sample_library::committed_file_mutations::{
     CommittedWatcherEcho, RevisionFirstCursor,
+};
+use crate::native_app::sample_library::source_watcher::{
+    RevisionBoundCheckpoint, WatcherContinuityProof,
 };
 
 struct ActiveSourceWatcher {
@@ -360,6 +365,15 @@ impl GuiSourceWatcherHandle {
             .send(GuiSourceWatchCommand::AcknowledgeSourceAuditReceipt { receipt });
     }
 
+    pub(in crate::native_app) fn acknowledge_replay_checkpoint(
+        &self,
+        request: RevisionBoundCheckpoint,
+    ) {
+        let _ = self
+            .command_tx
+            .send(GuiSourceWatchCommand::AcknowledgeReplayCheckpoint { request });
+    }
+
     #[cfg(test)]
     pub(in crate::native_app) fn request_full_reconciliation(&self) {
         let _ = self
@@ -450,6 +464,9 @@ enum GuiSourceWatchCommand {
     AcknowledgeSourceAuditReceipt {
         receipt: SourceAuditReceipt,
     },
+    AcknowledgeReplayCheckpoint {
+        request: RevisionBoundCheckpoint,
+    },
     FinishJournalBarrierAudit {
         source_id: String,
         lifecycle_generation: u64,
@@ -491,6 +508,7 @@ fn run_source_watcher(
     let mut admission_lifecycle = AdmissionLifecycle::new();
     state.set_audit_request_capacity(admission_lifecycle.max_source_audit_request_entries());
     let mut pending_capture_contexts = HashMap::<DispatchTicket, PendingCaptureContext>::new();
+    let mut pending_replay_checkpoints = HashMap::<DispatchTicket, PendingReplayCheckpoint>::new();
     let mut next_restart = Instant::now();
     let mut restart_delay = WATCHER_RESTART_MIN;
     let mut next_root_refresh = Instant::now();
@@ -557,6 +575,17 @@ fn run_source_watcher(
                     remaining_markers = outcome.remaining_markers(),
                     complete = receipt.is_complete(),
                     "Applied source manifest audit receipt to retained watcher uncertainty"
+                );
+            }
+            Ok(GuiSourceWatchCommand::AcknowledgeReplayCheckpoint { request }) => {
+                let sources = state.sources.clone();
+                acknowledge_replay_checkpoint(
+                    &mut state,
+                    &mut admission_lifecycle,
+                    &mut pending_replay_checkpoints,
+                    &sources,
+                    request,
+                    Instant::now(),
                 );
             }
             Ok(GuiSourceWatchCommand::FinishJournalBarrierAudit {
@@ -802,10 +831,14 @@ fn run_source_watcher(
                             // Now that ingress is live, replay the durable macOS journal before
                             // admitting the lifecycle probe. A history gap is scoped to the one
                             // affected source and deliberately falls back to its bounded audit.
+                            let recovery_sources = state.sources.clone();
                             publish_closed_app_journal_recovery(
                                 &message_tx,
-                                &state.sources,
+                                &mut state,
+                                &recovery_sources,
                                 backend == SourceWatcherBackend::Native,
+                                &mut admission_lifecycle,
+                                &mut pending_capture_contexts,
                                 &mut audit_barriers,
                                 &mut deferred_audit_barrier_sources,
                                 recovered_after_unavailability,
@@ -1013,12 +1046,14 @@ fn run_source_watcher(
             state.mark_all_overflowed(now);
         }
 
-        let (watcher_failed, root_invalidated) = drain_watcher_captures(
+        let (watcher_failed, root_invalidated) = drain_watcher_captures_with_replay(
             &mut state,
             &mut admission_lifecycle,
             watcher.as_ref(),
             &event_rx,
             &mut pending_capture_contexts,
+            &mut pending_replay_checkpoints,
+            &message_tx,
             now,
         );
 
@@ -1156,6 +1191,22 @@ struct PendingCaptureContext {
     compatibility_event: Option<Event>,
     conservative: bool,
     correlation: Option<LiveAuditCorrelation>,
+    replay: Option<PendingReplayHandoff>,
+}
+
+struct PendingReplayHandoff {
+    paths: Vec<PathBuf>,
+    proof: WatcherContinuityProof,
+    continuity_proven: bool,
+}
+
+#[derive(Clone)]
+struct PendingReplayCheckpoint {
+    source_id: SourceId,
+    source_root: PathBuf,
+    root_identity: RootIdentity,
+    owner_watcher_generation: WatcherGeneration,
+    proof: WatcherContinuityProof,
 }
 
 fn capture_stream_id(capture: &SourceWatcherCapture) -> u64 {
@@ -1408,6 +1459,7 @@ fn admit_capture_target(
                 compatibility_event,
                 conservative: target.conservative,
                 correlation: live.correlation().cloned(),
+                replay: None,
             };
             if let Some(previous) = pending_contexts.insert(ticket, context) {
                 tracing::error!(
@@ -1451,17 +1503,24 @@ fn admit_capture_target(
 
 fn handoff_dispatched_capture(
     state: &mut GuiSourceWatchState,
+    message_tx: &Sender<GuiMessage>,
     context: &PendingCaptureContext,
     dispatched: &wavecrate_library::sample_sources::reconciliation::DispatchedObservation,
     now: Instant,
 ) -> (bool, bool) {
     let provenance = dispatched.normalized().envelope().provenance();
-    let expected_stream =
-        BackendStreamIdentity::from_bytes(context.stream_id.to_be_bytes().to_vec());
-    let correlation_matches = context
-        .correlation
+    let expected_stream = context
+        .replay
         .as_ref()
-        .is_some_and(|correlation| correlation.ticket() == dispatched.ticket());
+        .and_then(|replay| BackendStreamIdentity::from_fsevents_device(replay.proof.backend_device))
+        .unwrap_or_else(|| {
+            BackendStreamIdentity::from_bytes(context.stream_id.to_be_bytes().to_vec())
+        });
+    let correlation_matches = context.replay.is_some()
+        || context
+            .correlation
+            .as_ref()
+            .is_some_and(|correlation| correlation.ticket() == dispatched.ticket());
     let provenance_matches = provenance.source_id() == &context.source_id
         && provenance.root_identity() == Some(&context.root_identity)
         && provenance.backend_stream_identity() == Some(&expected_stream)
@@ -1487,8 +1546,40 @@ fn handoff_dispatched_capture(
     if let Some(correlation) = context.correlation.as_ref() {
         state.enqueue_audit_request(correlation.audit_request(), true);
     }
+    if let Some(replay) = context.replay.as_ref()
+        && !replay.continuity_proven
+    {
+        tracing::warn!(
+            source_id = context.source_id.as_str(),
+            ticket = dispatched.ticket().id(),
+            "Closed-application replay lacked durable continuity; retaining source-scoped audit fallback"
+        );
+        state.mark_source_overflowed(context.source_id.as_str(), now);
+        return (true, false);
+    }
     if source_audit {
         widen_source(state, &context.source_root, now);
+        return (true, false);
+    }
+
+    if let Some(replay) = context.replay.as_ref() {
+        if message_tx
+            .send(GuiMessage::SourceFilesystemChanged {
+                source_id: context.source_id.as_str().to_string(),
+                paths: replay.paths.clone(),
+                overflowed: false,
+                source_root_available: true,
+                journal_checkpoint_event_id: Some(replay.proof.acknowledged_end_event_id),
+                watcher_continuity_proof: Some(replay.proof.clone()),
+            })
+            .is_err()
+        {
+            tracing::warn!(
+                source_id = context.source_id.as_str(),
+                "Source-processing channel closed before replay handoff"
+            );
+            return (false, true);
+        }
         return (true, false);
     }
 
@@ -1508,12 +1599,15 @@ fn handoff_dispatched_capture(
     (true, state.collect_event(&event, now))
 }
 
-fn dispatch_pending_capture_contexts(
+fn dispatch_pending_capture_contexts_with_replay(
     state: &mut GuiSourceWatchState,
     admission: &mut AdmissionLifecycle,
     pending_contexts: &mut HashMap<DispatchTicket, PendingCaptureContext>,
+    pending_replay_checkpoints: &mut HashMap<DispatchTicket, PendingReplayCheckpoint>,
+    message_tx: &Sender<GuiMessage>,
     now: Instant,
 ) -> bool {
+    prune_stale_replay_checkpoints(admission, pending_replay_checkpoints);
     let mut root_invalidated = false;
     if admission.in_flight() == 0 && !pending_contexts.is_empty() {
         tracing::error!(
@@ -1524,6 +1618,13 @@ fn dispatch_pending_capture_contexts(
             widen_source(state, &context.source_root, now);
         }
     }
+    if admission.in_flight() == 0 && !pending_replay_checkpoints.is_empty() {
+        tracing::error!(
+            checkpoint_count = pending_replay_checkpoints.len(),
+            "Native watcher admission fence retired replay checkpoint contexts"
+        );
+        pending_replay_checkpoints.clear();
+    }
     while let Some(dispatched) = admission.dispatch_next() {
         let ticket = dispatched.ticket();
         let Some(context) = pending_contexts.remove(&ticket) else {
@@ -1532,6 +1633,7 @@ fn dispatch_pending_capture_contexts(
                 "Native watcher dispatch ticket had no retained handoff context"
             );
             state.mark_all_overflowed(now);
+            root_invalidated = true;
             if let Err(error) = admission.mark_dispatched(ticket) {
                 tracing::error!(
                     ticket = ticket.id(),
@@ -1545,14 +1647,6 @@ fn dispatch_pending_capture_contexts(
                     ticket = ticket.id(),
                     ?error,
                     "Could not mark orphaned watcher application"
-                );
-                break;
-            }
-            if let Err(error) = admission.mark_unproven_audit_handed_off(ticket) {
-                tracing::error!(
-                    ticket = ticket.id(),
-                    ?error,
-                    "Could not retire orphaned watcher dispatch"
                 );
                 break;
             }
@@ -1570,7 +1664,7 @@ fn dispatch_pending_capture_contexts(
             break;
         }
         let (handoff_succeeded, invalidated) =
-            handoff_dispatched_capture(state, &context, &dispatched, now);
+            handoff_dispatched_capture(state, message_tx, &context, &dispatched, now);
         root_invalidated |= invalidated;
         if !handoff_succeeded {
             tracing::error!(
@@ -1589,6 +1683,27 @@ fn dispatch_pending_capture_contexts(
             pending_contexts.insert(ticket, context);
             break;
         }
+        if let Some(replay) = context.replay.as_ref()
+            && replay.continuity_proven
+            && handoff_succeeded
+            && !invalidated
+        {
+            pending_replay_checkpoints.insert(
+                ticket,
+                PendingReplayCheckpoint {
+                    source_id: context.source_id.clone(),
+                    source_root: context.source_root.clone(),
+                    root_identity: context.root_identity.clone(),
+                    owner_watcher_generation: context.watcher_generation,
+                    proof: replay.proof.clone(),
+                },
+            );
+            continue;
+        }
+        if context.replay.is_some() && !handoff_succeeded {
+            root_invalidated = true;
+            continue;
+        }
         if let Err(error) = admission.mark_unproven_audit_handed_off(ticket) {
             tracing::error!(
                 ticket = ticket.id(),
@@ -1601,6 +1716,48 @@ fn dispatch_pending_capture_contexts(
         }
     }
     root_invalidated
+}
+
+fn prune_stale_replay_checkpoints(
+    admission: &AdmissionLifecycle,
+    pending_replay_checkpoints: &mut HashMap<DispatchTicket, PendingReplayCheckpoint>,
+) {
+    pending_replay_checkpoints.retain(|ticket, pending| {
+        let current_lane = admission.lane_for_capture(&pending.source_id);
+        let current = current_lane.as_ref();
+        let current_matches = current.is_some_and(|lane| {
+            lane.lifecycle() == ReconciliationLifecycle::Capturing
+                && lane.root_identity() == &pending.root_identity
+                && lane.generation() == pending.owner_watcher_generation
+        });
+        if !current_matches {
+            tracing::debug!(
+                ticket = ticket.id(),
+                source_id = pending.source_id.as_str(),
+                "Pruning replay checkpoint from a retired watcher lane"
+            );
+        }
+        current_matches
+    });
+}
+
+#[cfg(test)]
+fn dispatch_pending_capture_contexts(
+    state: &mut GuiSourceWatchState,
+    admission: &mut AdmissionLifecycle,
+    pending_contexts: &mut HashMap<DispatchTicket, PendingCaptureContext>,
+    now: Instant,
+) -> bool {
+    let mut pending_replay_checkpoints = HashMap::new();
+    let (message_tx, _message_rx) = std::sync::mpsc::channel();
+    dispatch_pending_capture_contexts_with_replay(
+        state,
+        admission,
+        pending_contexts,
+        &mut pending_replay_checkpoints,
+        &message_tx,
+        now,
+    )
 }
 
 fn flush_pending_audit_requests(
@@ -1638,17 +1795,25 @@ fn flush_pending_audit_requests(
     }
 }
 
-fn drain_watcher_captures(
+fn drain_watcher_captures_with_replay(
     state: &mut GuiSourceWatchState,
     admission: &mut AdmissionLifecycle,
     watcher: Option<&ActiveSourceWatcher>,
     event_rx: &Receiver<CapturedSourceWatcherCapture>,
     pending_contexts: &mut HashMap<DispatchTicket, PendingCaptureContext>,
+    pending_replay_checkpoints: &mut HashMap<DispatchTicket, PendingReplayCheckpoint>,
+    message_tx: &Sender<GuiMessage>,
     now: Instant,
 ) -> (bool, bool) {
     let mut watcher_failed = false;
-    let mut root_invalidated =
-        dispatch_pending_capture_contexts(state, admission, pending_contexts, now);
+    let mut root_invalidated = dispatch_pending_capture_contexts_with_replay(
+        state,
+        admission,
+        pending_contexts,
+        pending_replay_checkpoints,
+        message_tx,
+        now,
+    );
     while let Ok(captured) = event_rx.try_recv() {
         let stream_id = capture_stream_id(&captured.capture);
         let current_stream = watcher.is_some_and(|watcher| {
@@ -1677,8 +1842,38 @@ fn drain_watcher_captures(
             );
         }
     }
-    root_invalidated |= dispatch_pending_capture_contexts(state, admission, pending_contexts, now);
+    root_invalidated |= dispatch_pending_capture_contexts_with_replay(
+        state,
+        admission,
+        pending_contexts,
+        pending_replay_checkpoints,
+        message_tx,
+        now,
+    );
     (watcher_failed, root_invalidated)
+}
+
+#[cfg(test)]
+fn drain_watcher_captures(
+    state: &mut GuiSourceWatchState,
+    admission: &mut AdmissionLifecycle,
+    watcher: Option<&ActiveSourceWatcher>,
+    event_rx: &Receiver<CapturedSourceWatcherCapture>,
+    pending_contexts: &mut HashMap<DispatchTicket, PendingCaptureContext>,
+    now: Instant,
+) -> (bool, bool) {
+    let mut pending_replay_checkpoints = HashMap::new();
+    let (message_tx, _message_rx) = std::sync::mpsc::channel();
+    drain_watcher_captures_with_replay(
+        state,
+        admission,
+        watcher,
+        event_rx,
+        pending_contexts,
+        &mut pending_replay_checkpoints,
+        &message_tx,
+        now,
+    )
 }
 
 fn finish_journal_barrier_audit(
@@ -1722,42 +1917,95 @@ fn finish_journal_barrier_audit(
     }
 }
 
-fn publish_closed_app_journal_recovery(
+fn request_closed_app_journal_audit(
     message_tx: &Sender<GuiMessage>,
     sources: &[SampleSource],
+    audit_barriers: &mut HashMap<String, journal::AuditBarrier>,
+    deferred_audit_barrier_sources: &mut HashSet<String>,
+    defer_audit_barriers: bool,
+    source_id: &SourceId,
+    reason: &'static str,
+) {
+    if defer_audit_barriers {
+        deferred_audit_barrier_sources.insert(source_id.as_str().to_string());
+        return;
+    }
+    if let Some(barrier) = journal::capture_audit_barrier(sources, source_id.as_str()) {
+        audit_barriers.insert(source_id.as_str().to_string(), barrier);
+    }
+    let _ = message_tx.send(GuiMessage::SourceWatcherJournalGap {
+        source_id: source_id.as_str().to_string(),
+        reason,
+    });
+}
+
+#[cfg(target_os = "macos")]
+fn handle_closed_app_replay_fallback(
+    state: &mut GuiSourceWatchState,
+    source: &SampleSource,
+    outcome: &AdmissionOutcome,
+    now: Instant,
+) {
+    match outcome {
+        AdmissionOutcome::Rejected(reason) => {
+            tracing::warn!(
+                source_id = source.id.as_str(),
+                ?reason,
+                "Closed-application replay remained conservative uncertainty"
+            );
+        }
+        AdmissionOutcome::UncertaintyCapacityExhausted(envelope) => {
+            tracing::warn!(
+                source_id = source.id.as_str(),
+                observations = envelope.observations().len(),
+                "Closed-application replay exceeded uncertainty capacity"
+            );
+        }
+        outcome => unreachable!("unexpected closed-application replay fallback: {outcome:?}"),
+    }
+    state.mark_source_overflowed(source.id.as_str(), now);
+}
+
+fn publish_closed_app_journal_recovery(
+    message_tx: &Sender<GuiMessage>,
+    state: &mut GuiSourceWatchState,
+    sources: &[SampleSource],
     native_watcher: bool,
+    admission: &mut AdmissionLifecycle,
+    pending_contexts: &mut HashMap<DispatchTicket, PendingCaptureContext>,
     audit_barriers: &mut HashMap<String, journal::AuditBarrier>,
     deferred_audit_barrier_sources: &mut HashSet<String>,
     defer_audit_barriers: bool,
 ) {
+    let now = Instant::now();
     for (source, recovery) in sources
         .iter()
         .zip(journal::recover_sources(sources, native_watcher))
     {
         match recovery {
             #[cfg(target_os = "macos")]
-            JournalRecovery::Changes { paths, proof } if paths.is_empty() => {
+            JournalRecovery::Changes { paths, proof, .. } if paths.is_empty() => {
                 tracing::info!(
                     source_id = source.id.as_str(),
                     replay_end_event_id = proof.replay_coverage_end_event_id,
                     "Empty closed-application source watcher replay requires a bounded manifest audit"
                 );
-                if defer_audit_barriers {
-                    deferred_audit_barrier_sources.insert(source.id.as_str().to_string());
-                } else {
-                    if let Some(barrier) =
-                        journal::capture_audit_barrier(sources, source.id.as_str())
-                    {
-                        audit_barriers.insert(source.id.as_str().to_string(), barrier);
-                    }
-                    let _ = message_tx.send(GuiMessage::SourceWatcherJournalGap {
-                        source_id: source.id.as_str().to_string(),
-                        reason: "journal_replay_empty_paths",
-                    });
-                }
+                request_closed_app_journal_audit(
+                    message_tx,
+                    sources,
+                    audit_barriers,
+                    deferred_audit_barrier_sources,
+                    defer_audit_barriers,
+                    &source.id,
+                    "journal_replay_empty_paths",
+                );
             }
             #[cfg(target_os = "macos")]
-            JournalRecovery::Changes { paths, proof } => {
+            JournalRecovery::Changes {
+                paths,
+                proof,
+                source_lifecycle_generation,
+            } => {
                 tracing::info!(
                     source_id = source.id.as_str(),
                     path_count = paths.len(),
@@ -1767,14 +2015,174 @@ fn publish_closed_app_journal_recovery(
                     watcher_generation = proof.watcher_generation,
                     "Replaying closed-application source watcher changes"
                 );
-                let _ = message_tx.send(GuiMessage::SourceFilesystemChanged {
-                    source_id: source.id.as_str().to_string(),
-                    paths,
-                    overflowed: false,
-                    source_root_available: true,
-                    journal_checkpoint_event_id: Some(proof.acknowledged_end_event_id),
-                    watcher_continuity_proof: Some(proof),
-                });
+                let (observations, limits) = match fsevents_replay_observations(paths.clone()) {
+                    Ok(evidence) => evidence,
+                    Err(error) => {
+                        tracing::warn!(
+                            source_id = source.id.as_str(),
+                            ?error,
+                            "Closed-application replay evidence exceeded native bounds"
+                        );
+                        request_closed_app_journal_audit(
+                            message_tx,
+                            sources,
+                            audit_barriers,
+                            deferred_audit_barrier_sources,
+                            defer_audit_barriers,
+                            &source.id,
+                            "journal_replay_raw_evidence_unbounded",
+                        );
+                        continue;
+                    }
+                };
+                let Some(lane) = admission.lane_for_capture(&source.id) else {
+                    tracing::warn!(
+                        source_id = source.id.as_str(),
+                        "Closed-application replay has no current owner lane"
+                    );
+                    request_closed_app_journal_audit(
+                        message_tx,
+                        sources,
+                        audit_barriers,
+                        deferred_audit_barrier_sources,
+                        defer_audit_barriers,
+                        &source.id,
+                        "journal_replay_owner_lane_unavailable",
+                    );
+                    continue;
+                };
+                let database_root = match source.database_root() {
+                    Ok(root) => root,
+                    Err(error) => {
+                        tracing::warn!(
+                            source_id = source.id.as_str(),
+                            ?error,
+                            "Closed-application replay authority database root unavailable"
+                        );
+                        request_closed_app_journal_audit(
+                            message_tx,
+                            sources,
+                            audit_barriers,
+                            deferred_audit_barrier_sources,
+                            defer_audit_barriers,
+                            &source.id,
+                            "journal_replay_authority_unavailable",
+                        );
+                        continue;
+                    }
+                };
+                let database = match SourceDatabase::open_for_background_job_with_database_root(
+                    &source.root,
+                    database_root,
+                ) {
+                    Ok(database) => database,
+                    Err(error) => {
+                        tracing::warn!(
+                            source_id = source.id.as_str(),
+                            ?error,
+                            "Closed-application replay authority database unavailable"
+                        );
+                        request_closed_app_journal_audit(
+                            message_tx,
+                            sources,
+                            audit_barriers,
+                            deferred_audit_barrier_sources,
+                            defer_audit_barriers,
+                            &source.id,
+                            "journal_replay_authority_unavailable",
+                        );
+                        continue;
+                    }
+                };
+                let first_sequence = proof
+                    .replay_coverage_start_event_id
+                    .checked_add(1)
+                    .filter(|first| *first <= proof.replay_coverage_end_event_id);
+                let capture_boundary = CaptureBoundary::try_new(
+                    proof.replay_coverage_end_event_id,
+                    first_sequence,
+                    first_sequence.map(|_| proof.replay_coverage_end_event_id),
+                )
+                .expect("closed-application replay boundary remains ordered");
+                let replay_admission = admission.admit_fsevents_replay(
+                    source,
+                    &database,
+                    proof.watcher_generation,
+                    FseventsReplayEvidence {
+                        source_lifecycle_generation: WatcherGeneration::new(
+                            source_lifecycle_generation,
+                        ),
+                        replay_stream_generation: proof.watcher_generation,
+                        backend_device: proof.backend_device,
+                        replay_start_event_id: proof.replay_coverage_start_event_id,
+                        replay_end_event_id: proof.replay_coverage_end_event_id,
+                        observations,
+                        limits,
+                    },
+                );
+                let replay_admission = match replay_admission {
+                    Ok(admission) => admission,
+                    Err(error) => {
+                        tracing::warn!(
+                            source_id = source.id.as_str(),
+                            ?error,
+                            "Closed-application replay admission failed closed"
+                        );
+                        request_closed_app_journal_audit(
+                            message_tx,
+                            sources,
+                            audit_barriers,
+                            deferred_audit_barrier_sources,
+                            defer_audit_barriers,
+                            &source.id,
+                            "journal_replay_admission_unavailable",
+                        );
+                        continue;
+                    }
+                };
+                if let Some(request) = replay_admission.audit_request().cloned() {
+                    let marker_backed = admission.source_audit_request_is_marker_backed(&request);
+                    state.enqueue_audit_request(request, marker_backed);
+                }
+                let continuity_proven = replay_admission.admission().disposition()
+                    == AdapterDisposition::AdmittedWithContinuity;
+                match replay_admission.admission().outcome() {
+                    AdmissionOutcome::Accepted(ticket) => {
+                        let context = PendingCaptureContext {
+                            source_id: source.id.clone(),
+                            source_root: source.root.clone(),
+                            root_identity: lane.root_identity().clone(),
+                            stream_id: 0,
+                            watcher_generation: lane.generation(),
+                            capture_boundary,
+                            original_event: None,
+                            compatibility_event: None,
+                            conservative: false,
+                            correlation: None,
+                            replay: Some(PendingReplayHandoff {
+                                paths,
+                                proof,
+                                continuity_proven,
+                            }),
+                        };
+                        pending_contexts.insert(*ticket, context);
+                    }
+                    AdmissionOutcome::DuplicateSuppressed(_) => {
+                        tracing::debug!(
+                            source_id = source.id.as_str(),
+                            "Suppressing duplicate closed-application replay"
+                        );
+                    }
+                    AdmissionOutcome::Rejected(_)
+                    | AdmissionOutcome::UncertaintyCapacityExhausted(_) => {
+                        handle_closed_app_replay_fallback(
+                            state,
+                            source,
+                            replay_admission.admission().outcome(),
+                            now,
+                        );
+                    }
+                }
             }
             JournalRecovery::FullAudit { reason } => {
                 tracing::info!(
@@ -1782,25 +2190,267 @@ fn publish_closed_app_journal_recovery(
                     reason,
                     "Durable source watcher coverage requires a bounded manifest audit"
                 );
-                if defer_audit_barriers {
-                    // An unavailable-watcher fallback may already be auditing this source.
-                    // Wait for that completion command before capturing the barrier and emitting
-                    // the replacement audit request; otherwise the replacement could start
-                    // before its fence exists.
-                    deferred_audit_barrier_sources.insert(source.id.as_str().to_string());
-                } else {
-                    if let Some(barrier) =
-                        journal::capture_audit_barrier(sources, source.id.as_str())
-                    {
-                        audit_barriers.insert(source.id.as_str().to_string(), barrier);
-                    }
-                    let _ = message_tx.send(GuiMessage::SourceWatcherJournalGap {
-                        source_id: source.id.as_str().to_string(),
-                        reason,
-                    });
-                }
+                request_closed_app_journal_audit(
+                    message_tx,
+                    sources,
+                    audit_barriers,
+                    deferred_audit_barrier_sources,
+                    defer_audit_barriers,
+                    &source.id,
+                    reason,
+                );
             }
         }
+    }
+}
+
+fn acknowledge_replay_checkpoint(
+    state: &mut GuiSourceWatchState,
+    admission: &mut AdmissionLifecycle,
+    pending_replay_checkpoints: &mut HashMap<DispatchTicket, PendingReplayCheckpoint>,
+    sources: &[SampleSource],
+    request: RevisionBoundCheckpoint,
+    now: Instant,
+) {
+    let Some(proof) = request.continuity_proof.as_ref() else {
+        tracing::warn!(
+            source_id = request.source_id.as_str(),
+            "Replay checkpoint acknowledgement had no continuity proof"
+        );
+        return;
+    };
+    if !journal::targeted_replay_request_has_valid_proof(&request) {
+        tracing::warn!(
+            source_id = request.source_id.as_str(),
+            event_id = request.event_id,
+            "Replay checkpoint acknowledgement proof was malformed"
+        );
+        return;
+    }
+    let request_root_identity = RootIdentity::from_bytes(request.root_identity.as_bytes().to_vec());
+    let Some(ticket) = pending_replay_checkpoints
+        .iter()
+        .find_map(|(ticket, pending)| {
+            (pending.source_id.as_str() == request.source_id
+                && pending.root_identity == request_root_identity
+                && pending.proof == *proof)
+                .then_some(*ticket)
+        })
+    else {
+        tracing::debug!(
+            source_id = request.source_id.as_str(),
+            event_id = request.event_id,
+            "Ignoring replay checkpoint acknowledgement without a matching applied ticket"
+        );
+        return;
+    };
+    let Some(pending) = pending_replay_checkpoints.get(&ticket).cloned() else {
+        return;
+    };
+    let source_id = pending.source_id.clone();
+    let current_source_lifecycle_generation = WatcherGeneration::new(request.lifecycle_generation);
+    let Some(source) = sources.iter().find(|source| source.id == source_id) else {
+        tracing::warn!(
+            source_id = source_id.as_str(),
+            "Replay checkpoint acknowledgement named a removed source"
+        );
+        pending_replay_checkpoints.remove(&ticket);
+        return;
+    };
+    let database_root = match source.database_root() {
+        Ok(root) => root,
+        Err(error) => {
+            tracing::warn!(
+                source_id = source_id.as_str(),
+                ?error,
+                "Replay checkpoint authority database root was unavailable"
+            );
+            fail_closed_replay_checkpoint(
+                state,
+                admission,
+                pending_replay_checkpoints,
+                source,
+                ticket,
+                &pending,
+                now,
+            );
+            return;
+        }
+    };
+    let database = match SourceDatabase::open_for_background_job_with_database_root(
+        &source.root,
+        database_root,
+    ) {
+        Ok(database) => database,
+        Err(error) => {
+            tracing::warn!(
+                source_id = source_id.as_str(),
+                ?error,
+                "Replay checkpoint authority database was unavailable"
+            );
+            fail_closed_replay_checkpoint(
+                state,
+                admission,
+                pending_replay_checkpoints,
+                source,
+                ticket,
+                &pending,
+                now,
+            );
+            return;
+        }
+    };
+    match admission.mark_fsevents_replay_checkpointed(
+        &source_id,
+        &database,
+        current_source_lifecycle_generation,
+        ticket,
+    ) {
+        Ok(()) => {
+            pending_replay_checkpoints.remove(&ticket);
+            tracing::debug!(
+                source_id = source_id.as_str(),
+                ticket = ticket.id(),
+                event_id = request.event_id,
+                "Retired replay admission after durable watcher checkpoint"
+            );
+        }
+        Err(error) => {
+            tracing::warn!(
+                source_id = source_id.as_str(),
+                ticket = ticket.id(),
+                category = error.category(),
+                ?error,
+                "Replay checkpoint authority did not match the applied admission"
+            );
+            fail_closed_replay_checkpoint(
+                state,
+                admission,
+                pending_replay_checkpoints,
+                source,
+                ticket,
+                &pending,
+                now,
+            );
+        }
+    }
+}
+
+fn fail_closed_replay_checkpoint(
+    state: &mut GuiSourceWatchState,
+    admission: &mut AdmissionLifecycle,
+    pending_replay_checkpoints: &mut HashMap<DispatchTicket, PendingReplayCheckpoint>,
+    source: &SampleSource,
+    ticket: DispatchTicket,
+    pending: &PendingReplayCheckpoint,
+    now: Instant,
+) {
+    if source.id != pending.source_id || source.root != pending.source_root {
+        pending_replay_checkpoints.remove(&ticket);
+        tracing::debug!(
+            source_id = pending.source_id.as_str(),
+            ticket = ticket.id(),
+            "Ignoring replay checkpoint failure from a stale source identity"
+        );
+        return;
+    }
+    let fenced = match admission.fence_source_if_current(
+        &pending.source_id,
+        &pending.root_identity,
+        pending.owner_watcher_generation,
+    ) {
+        Ok(fenced) => fenced,
+        Err(error) => {
+            tracing::error!(
+                source_id = pending.source_id.as_str(),
+                ticket = ticket.id(),
+                ?error,
+                "Could not safely fence source-local replay failure; using degraded global fail-closed fallback"
+            );
+            return global_fail_closed_replay_checkpoint(
+                state,
+                admission,
+                pending_replay_checkpoints,
+                &pending.source_id,
+                &pending.source_root,
+                now,
+            );
+        }
+    };
+    if !fenced {
+        pending_replay_checkpoints.remove(&ticket);
+        tracing::debug!(
+            source_id = pending.source_id.as_str(),
+            ticket = ticket.id(),
+            "Ignoring replay checkpoint failure from a stale source lane"
+        );
+        return;
+    }
+
+    state.mark_source_overflowed(pending.source_id.as_str(), now);
+    let Some(root_identity) = registered_root_identity(&state.watched_roots, &source.root) else {
+        tracing::warn!(
+            source_id = pending.source_id.as_str(),
+            ticket = ticket.id(),
+            "Source-local replay recovery is waiting for a currently installed watched-root identity"
+        );
+        pending_replay_checkpoints.remove(&ticket);
+        return;
+    };
+    if let Err(error) = admission.reconcile_source(source, root_identity) {
+        tracing::error!(
+            source_id = pending.source_id.as_str(),
+            ticket = ticket.id(),
+            ?error,
+            "Could not restart source-local replay lane; using degraded global fail-closed fallback"
+        );
+        return global_fail_closed_replay_checkpoint(
+            state,
+            admission,
+            pending_replay_checkpoints,
+            &pending.source_id,
+            &pending.source_root,
+            now,
+        );
+    }
+
+    let Some((request, marker_backed)) =
+        admission.source_audit_request_for_current_lane(&pending.source_id)
+    else {
+        tracing::error!(
+            source_id = pending.source_id.as_str(),
+            ticket = ticket.id(),
+            "Source-local replay recovery restarted without a current typed audit request; using degraded global fail-closed fallback"
+        );
+        return global_fail_closed_replay_checkpoint(
+            state,
+            admission,
+            pending_replay_checkpoints,
+            &pending.source_id,
+            &pending.source_root,
+            now,
+        );
+    };
+    pending_replay_checkpoints.remove(&ticket);
+    state.enqueue_audit_request(request, marker_backed);
+}
+
+fn global_fail_closed_replay_checkpoint(
+    state: &mut GuiSourceWatchState,
+    admission: &mut AdmissionLifecycle,
+    pending_replay_checkpoints: &mut HashMap<DispatchTicket, PendingReplayCheckpoint>,
+    source_id: &SourceId,
+    source_root: &PathBuf,
+    now: Instant,
+) {
+    widen_source(state, source_root, now);
+    fence_watcher_admission(state, admission, "degraded replay checkpoint failure", now);
+    pending_replay_checkpoints.clear();
+    if reconcile_watcher_admission(state, admission, "degraded replay checkpoint recovery")
+        && let Some((request, marker_backed)) =
+            admission.source_audit_request_for_current_lane(source_id)
+    {
+        state.enqueue_audit_request(request, marker_backed);
     }
 }
 
@@ -2078,6 +2728,7 @@ pub(super) fn doubled_backoff(current: Duration) -> Duration {
 
 #[cfg(test)]
 mod lifecycle_tests {
+    use super::super::CheckpointCause;
     use super::super::MAX_PENDING_CAPTURE_CONTEXTS;
     use super::super::capture::MAX_CAPTURE_PATHS;
     use super::*;
@@ -2091,9 +2742,11 @@ mod lifecycle_tests {
         },
     };
     use wavecrate::sample_sources::{SampleSource, SourceId};
+    use wavecrate_library::sample_sources::db::META_SOURCE_WATCHER_CHECKPOINT;
     use wavecrate_library::sample_sources::reconciliation::{
-        CaptureBoundary, RawObservationLimits, ReconciliationAdmissionLimits,
-        ReconciliationScopeKind, UncertaintyReason,
+        BackendStreamIdentity, CaptureBoundary, RawEventKind, RawObservation,
+        RawObservationEnvelope, RawObservationLimits, RawObservationProvenance, RawObservedPath,
+        RawPathRole, ReconciliationAdmissionLimits, ReconciliationScopeKind, UncertaintyReason,
     };
 
     static LIFECYCLE_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -3279,6 +3932,1125 @@ mod lifecycle_tests {
                 .get(source.id.as_str())
                 .is_some_and(|pending| pending.overflowed)
         );
+    }
+
+    #[test]
+    fn source_rebind_prunes_stale_replay_checkpoint_while_other_lane_remains_in_flight() {
+        let first_directory = tempfile::tempdir().expect("first source root");
+        let replacement_directory = tempfile::tempdir().expect("replacement source root");
+        let second_directory = tempfile::tempdir().expect("second source root");
+        let first = source_with_root("replay-prune-first", first_directory.path());
+        let replacement = source_with_root("replay-prune-first", replacement_directory.path());
+        let second = source_with_root("replay-prune-second", second_directory.path());
+        let sources = vec![first.clone(), second.clone()];
+        let mut state = source_watcher_state(sources.clone());
+        let mut admission = configured_admission(&sources);
+        let first_lane = admission
+            .lane_for_capture(&first.id)
+            .expect("first source lane");
+        let mut pending_contexts = HashMap::new();
+
+        let first_capture = notify_capture(&first.root, 401, &["first.wav"]);
+        let first_target = source_capture_targets(&first_capture, &sources)
+            .pop()
+            .expect("first source target");
+        admit_capture_target(
+            &mut state,
+            &mut admission,
+            &first_capture,
+            exact_boundary(401),
+            first_target,
+            &mut pending_contexts,
+            Instant::now(),
+        );
+        let first_ticket = *pending_contexts.keys().next().expect("first source ticket");
+        let dispatched = admission.dispatch_next().expect("first source dispatch");
+        assert_eq!(dispatched.ticket(), first_ticket);
+        admission
+            .mark_dispatched(first_ticket)
+            .expect("first source dispatched");
+        admission
+            .mark_applied(first_ticket)
+            .expect("first source applied");
+        pending_contexts
+            .remove(&first_ticket)
+            .expect("first source handoff context");
+
+        let second_capture = notify_capture(&second.root, 402, &["second.wav"]);
+        let second_target = source_capture_targets(&second_capture, &sources)
+            .pop()
+            .expect("second source target");
+        admit_capture_target(
+            &mut state,
+            &mut admission,
+            &second_capture,
+            exact_boundary(402),
+            second_target,
+            &mut pending_contexts,
+            Instant::now(),
+        );
+        assert_eq!(admission.in_flight(), 2);
+
+        let mut pending_replay_checkpoints = HashMap::from([(
+            first_ticket,
+            PendingReplayCheckpoint {
+                source_id: first.id.clone(),
+                source_root: first.root.clone(),
+                root_identity: first_lane.root_identity().clone(),
+                owner_watcher_generation: first_lane.generation(),
+                proof: journal::WatcherContinuityProof {
+                    root_identity: "identity-0".to_string(),
+                    backend: journal::WatcherBackend::Fsevents,
+                    backend_device: 1,
+                    watcher_generation: 1,
+                    replay_coverage_start_event_id: 1,
+                    replay_coverage_end_event_id: 2,
+                    acknowledged_end_event_id: 2,
+                },
+            },
+        )]);
+
+        admission
+            .reconcile(
+                &[replacement.clone(), second.clone()],
+                &HashMap::from([
+                    (
+                        replacement.root.clone(),
+                        Some("identity-rebound".to_string()),
+                    ),
+                    (second.root.clone(), Some("identity-1".to_string())),
+                ]),
+            )
+            .expect("rebind first source while second remains active");
+        assert_eq!(admission.in_flight(), 1);
+        assert!(admission.lane_for_capture(&second.id).is_some());
+
+        let stale_root_pending = pending_replay_checkpoints
+            .get(&first_ticket)
+            .cloned()
+            .expect("stale root checkpoint context");
+        fail_closed_replay_checkpoint(
+            &mut state,
+            &mut admission,
+            &mut pending_replay_checkpoints,
+            &replacement,
+            first_ticket,
+            &stale_root_pending,
+            Instant::now(),
+        );
+        assert!(
+            !pending_replay_checkpoints.contains_key(&first_ticket),
+            "a stale root context is removed immediately"
+        );
+        assert_eq!(admission.in_flight(), 1);
+        assert!(admission.lane_for_capture(&second.id).is_some());
+
+        let rebound_root_identity = RootIdentity::from_bytes(b"identity-rebound".to_vec());
+        admission
+            .reconcile_source(&replacement, rebound_root_identity.clone())
+            .expect("start rebound source lane");
+        let rebound_lane = admission
+            .lane_for_capture(&replacement.id)
+            .expect("rebound source lane");
+        let stopped_generation = rebound_lane.generation();
+        assert!(
+            admission
+                .fence_source_if_current(
+                    &replacement.id,
+                    rebound_lane.root_identity(),
+                    stopped_generation,
+                )
+                .expect("stop rebound source lane")
+        );
+        admission
+            .reconcile_source(&replacement, rebound_root_identity.clone())
+            .expect("restart rebound source lane");
+        let restarted_lane = admission
+            .lane_for_capture(&replacement.id)
+            .expect("restarted rebound source lane");
+        assert!(restarted_lane.generation() > stopped_generation);
+
+        let stale_lane_pending = PendingReplayCheckpoint {
+            source_id: replacement.id.clone(),
+            source_root: replacement.root.clone(),
+            root_identity: rebound_root_identity,
+            owner_watcher_generation: stopped_generation,
+            proof: stale_root_pending.proof.clone(),
+        };
+        pending_replay_checkpoints.insert(first_ticket, stale_lane_pending.clone());
+        fail_closed_replay_checkpoint(
+            &mut state,
+            &mut admission,
+            &mut pending_replay_checkpoints,
+            &replacement,
+            first_ticket,
+            &stale_lane_pending,
+            Instant::now(),
+        );
+        assert!(
+            !pending_replay_checkpoints.contains_key(&first_ticket),
+            "a stale lane context is removed immediately"
+        );
+        assert_eq!(admission.in_flight(), 1);
+        assert!(admission.lane_for_capture(&second.id).is_some());
+        assert_eq!(
+            admission
+                .lane_for_capture(&replacement.id)
+                .expect("current rebound lane")
+                .generation(),
+            restarted_lane.generation()
+        );
+
+        prune_stale_replay_checkpoints(&admission, &mut pending_replay_checkpoints);
+
+        assert!(pending_replay_checkpoints.is_empty());
+        assert_eq!(admission.in_flight(), 1);
+        assert!(admission.lane_for_capture(&second.id).is_some());
+        admission.fence_all().expect("clean up active test lanes");
+    }
+
+    #[test]
+    fn replay_checkpoint_ack_uses_current_terminal_lifecycle_generation() {
+        let directory = tempfile::tempdir().expect("source root");
+        let source = source_with_root("replay-generation", directory.path());
+        let source_id = source.id.clone();
+        let root_identity = "identity-0";
+        let replay_stream_generation = 42;
+        let backend_device = 99;
+        let replay_start_event_id = 17;
+        let replay_end_event_id = 18;
+        let checkpoint_value = |lifecycle_generation: u64, event_id: u64| {
+            serde_json::json!({
+                "root_identity": root_identity,
+                "event_id": event_id,
+                "format_version": 3,
+                "source_id": source_id.as_str(),
+                "lifecycle_generation": lifecycle_generation,
+                "source_revision": 1,
+                "cause": "targeted_replay",
+                "continuity_proof": {
+                    "root_identity": root_identity,
+                    "backend": "fsevents",
+                    "backend_device": backend_device,
+                    "watcher_generation": replay_stream_generation,
+                    "replay_coverage_start_event_id": event_id - 1,
+                    "replay_coverage_end_event_id": event_id,
+                    "acknowledged_end_event_id": event_id
+                }
+            })
+            .to_string()
+        };
+
+        {
+            let database =
+                SourceDatabase::open_for_source_write(&source.root).expect("source database");
+            database
+                .set_metadata(
+                    META_SOURCE_WATCHER_CHECKPOINT,
+                    &checkpoint_value(1, replay_start_event_id),
+                )
+                .expect("historical replay checkpoint");
+        }
+
+        let mut state = source_watcher_state(vec![source.clone()]);
+        let mut admission = configured_admission(&state.sources);
+        let lane = admission
+            .lane_for_capture(&source_id)
+            .expect("replay source lane");
+        let (observations, limits) =
+            fsevents_replay_observations(vec![source.root.join("replayed.wav")])
+                .expect("bounded replay observations");
+        let replay_admission = {
+            let database = SourceDatabase::open_for_background_job(&source.root)
+                .expect("replay authority database");
+            admission
+                .admit_fsevents_replay(
+                    &source,
+                    &database,
+                    replay_stream_generation,
+                    FseventsReplayEvidence {
+                        source_lifecycle_generation: WatcherGeneration::new(1),
+                        replay_stream_generation,
+                        backend_device,
+                        replay_start_event_id,
+                        replay_end_event_id,
+                        observations,
+                        limits,
+                    },
+                )
+                .expect("replay admission")
+        };
+        assert_eq!(
+            replay_admission.admission().disposition(),
+            AdapterDisposition::AdmittedWithContinuity
+        );
+        let ticket = match replay_admission.admission().outcome() {
+            AdmissionOutcome::Accepted(ticket) => *ticket,
+            outcome => panic!("expected accepted replay, got {outcome:?}"),
+        };
+        let dispatched = admission.dispatch_next().expect("replay dispatch");
+        assert_eq!(dispatched.ticket(), ticket);
+        admission
+            .mark_dispatched(ticket)
+            .expect("replay dispatched");
+        admission.mark_applied(ticket).expect("replay applied");
+
+        let proof = journal::WatcherContinuityProof {
+            root_identity: root_identity.to_string(),
+            backend: journal::WatcherBackend::Fsevents,
+            backend_device,
+            watcher_generation: replay_stream_generation,
+            replay_coverage_start_event_id: replay_start_event_id,
+            replay_coverage_end_event_id: replay_end_event_id,
+            acknowledged_end_event_id: replay_end_event_id,
+        };
+        let mut pending_replay_checkpoints = HashMap::from([(
+            ticket,
+            PendingReplayCheckpoint {
+                source_id: source_id.clone(),
+                source_root: source.root.clone(),
+                root_identity: lane.root_identity().clone(),
+                owner_watcher_generation: lane.generation(),
+                proof: proof.clone(),
+            },
+        )]);
+
+        {
+            let database = SourceDatabase::open_for_source_write(&source.root)
+                .expect("terminal checkpoint database");
+            database
+                .set_metadata(
+                    META_SOURCE_WATCHER_CHECKPOINT,
+                    &checkpoint_value(2, replay_end_event_id),
+                )
+                .expect("current terminal replay checkpoint");
+        }
+
+        acknowledge_replay_checkpoint(
+            &mut state,
+            &mut admission,
+            &mut pending_replay_checkpoints,
+            std::slice::from_ref(&source),
+            RevisionBoundCheckpoint {
+                source_id: source_id.as_str().to_string(),
+                lifecycle_generation: 2,
+                source_revision: 1,
+                root_identity: root_identity.to_string(),
+                event_id: replay_end_event_id,
+                cause: CheckpointCause::TargetedReplay,
+                continuity_proof: Some(proof),
+            },
+            Instant::now(),
+        );
+
+        assert!(pending_replay_checkpoints.is_empty());
+        assert_eq!(admission.in_flight(), 0);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn closed_app_replay_fallback_is_source_scoped_for_shared_root() {
+        let directory = tempfile::tempdir().expect("shared source root");
+        let first = source_with_root("closed-replay-fallback-first", directory.path());
+        let second = source_with_root("closed-replay-fallback-second", directory.path());
+        let sources = vec![first.clone(), second.clone()];
+        let mut state = source_watcher_state(sources.clone());
+        state.watched_roots =
+            HashMap::from([(first.root.clone(), Some(String::from("identity-1")))]);
+        let mut admission = limited_admission(&sources, 1);
+        state.set_audit_request_capacity(admission.max_source_audit_request_entries());
+
+        let checkpoint_value = |source: &SampleSource,
+                                lifecycle_generation: u64,
+                                event_id: u64,
+                                backend_device: u64,
+                                watcher_generation: u64,
+                                replay_start_event_id: u64,
+                                replay_end_event_id: u64| {
+            serde_json::json!({
+                "root_identity": "identity-1",
+                "event_id": event_id,
+                "format_version": 3,
+                "source_id": source.id.as_str(),
+                "lifecycle_generation": lifecycle_generation,
+                "source_revision": 1,
+                "cause": "targeted_replay",
+                "continuity_proof": {
+                    "root_identity": "identity-1",
+                    "backend": "fsevents",
+                    "backend_device": backend_device,
+                    "watcher_generation": watcher_generation,
+                    "replay_coverage_start_event_id": replay_start_event_id,
+                    "replay_coverage_end_event_id": replay_end_event_id,
+                    "acknowledged_end_event_id": replay_end_event_id
+                }
+            })
+            .to_string()
+        };
+        let write_checkpoint = |source: &SampleSource, value: String| {
+            let database =
+                SourceDatabase::open_for_source_write(&source.root).expect("source database");
+            database
+                .set_metadata(META_SOURCE_WATCHER_CHECKPOINT, &value)
+                .expect("watcher checkpoint");
+        };
+
+        write_checkpoint(&second, checkpoint_value(&second, 1, 20, 202, 42, 19, 20));
+        let second_lane = admission.lane_for_capture(&second.id).expect("second lane");
+        let (second_observations, second_limits) =
+            fsevents_replay_observations(vec![second.root.join("second.wav")])
+                .expect("second replay observations");
+        let second_replay = {
+            let database = SourceDatabase::open_for_background_job(&second.root)
+                .expect("second replay authority database");
+            admission
+                .admit_fsevents_replay(
+                    &second,
+                    &database,
+                    42,
+                    FseventsReplayEvidence {
+                        source_lifecycle_generation: WatcherGeneration::new(1),
+                        replay_stream_generation: 42,
+                        backend_device: 202,
+                        replay_start_event_id: 20,
+                        replay_end_event_id: 21,
+                        observations: second_observations,
+                        limits: second_limits,
+                    },
+                )
+                .expect("second replay admission")
+        };
+        let second_ticket = match second_replay.admission().outcome() {
+            AdmissionOutcome::Accepted(ticket) => *ticket,
+            outcome => panic!("unexpected second replay outcome: {outcome:?}"),
+        };
+
+        let (first_observations, first_limits) =
+            fsevents_replay_observations(vec![first.root.join("first.wav")])
+                .expect("first replay observations");
+        let first_replay = {
+            let database = SourceDatabase::open_for_background_job(&first.root)
+                .expect("first replay authority database");
+            admission
+                .admit_fsevents_replay(
+                    &first,
+                    &database,
+                    41,
+                    FseventsReplayEvidence {
+                        source_lifecycle_generation: WatcherGeneration::new(1),
+                        replay_stream_generation: 41,
+                        backend_device: 101,
+                        replay_start_event_id: 10,
+                        replay_end_event_id: 11,
+                        observations: first_observations,
+                        limits: first_limits,
+                    },
+                )
+                .expect("first replay admission")
+        };
+        assert!(matches!(
+            first_replay.admission().outcome(),
+            AdmissionOutcome::Rejected(_)
+        ));
+        assert_eq!(admission.in_flight(), 1);
+
+        let dispatched = admission.dispatch_next().expect("second replay dispatch");
+        assert_eq!(dispatched.ticket(), second_ticket);
+        admission
+            .mark_dispatched(second_ticket)
+            .expect("second replay dispatched");
+        admission
+            .mark_applied(second_ticket)
+            .expect("second replay applied");
+
+        let second_proof = WatcherContinuityProof {
+            root_identity: String::from("identity-1"),
+            backend: journal::WatcherBackend::Fsevents,
+            backend_device: 202,
+            watcher_generation: 42,
+            replay_coverage_start_event_id: 20,
+            replay_coverage_end_event_id: 21,
+            acknowledged_end_event_id: 21,
+        };
+        let mut pending_replay_checkpoints = HashMap::from([(
+            second_ticket,
+            PendingReplayCheckpoint {
+                source_id: second.id.clone(),
+                source_root: second.root.clone(),
+                root_identity: second_lane.root_identity().clone(),
+                owner_watcher_generation: second_lane.generation(),
+                proof: second_proof.clone(),
+            },
+        )]);
+
+        handle_closed_app_replay_fallback(
+            &mut state,
+            &first,
+            first_replay.admission().outcome(),
+            Instant::now(),
+        );
+        assert!(
+            state
+                .pending
+                .get(first.id.as_str())
+                .is_some_and(|pending| pending.overflowed)
+        );
+        assert!(state.pending.get(second.id.as_str()).is_none());
+        assert_eq!(admission.in_flight(), 1);
+        assert_eq!(
+            admission.lane_for_capture(&second.id),
+            Some(second_lane.clone())
+        );
+        assert!(pending_replay_checkpoints.contains_key(&second_ticket));
+
+        let first_lane = admission.lane_for_capture(&first.id).expect("first lane");
+        let capacity_envelope = RawObservationEnvelope::try_new(
+            RawObservationProvenance::new(
+                first.id.clone(),
+                Some(first_lane.root_identity().clone()),
+                BackendStreamIdentity::from_fsevents_device(101),
+                first_lane.generation(),
+                CaptureBoundary::try_new(12, None, None).expect("capacity boundary"),
+            ),
+            vec![RawObservation::new(
+                RawEventKind::Create,
+                vec![RawObservedPath::new(
+                    PathBuf::from("first.wav"),
+                    RawPathRole::Subject,
+                )],
+            )],
+            RawObservationLimits::new(8, usize::MAX, usize::MAX).expect("capacity limits"),
+        )
+        .expect("capacity envelope");
+        let capacity_outcome =
+            AdmissionOutcome::UncertaintyCapacityExhausted(Box::new(capacity_envelope));
+        handle_closed_app_replay_fallback(&mut state, &first, &capacity_outcome, Instant::now());
+        assert!(
+            state
+                .pending
+                .get(first.id.as_str())
+                .is_some_and(|pending| pending.overflowed)
+        );
+        assert!(state.pending.get(second.id.as_str()).is_none());
+        assert_eq!(admission.in_flight(), 1);
+        assert!(pending_replay_checkpoints.contains_key(&second_ticket));
+
+        write_checkpoint(&second, checkpoint_value(&second, 2, 21, 202, 42, 20, 21));
+        acknowledge_replay_checkpoint(
+            &mut state,
+            &mut admission,
+            &mut pending_replay_checkpoints,
+            &sources,
+            RevisionBoundCheckpoint {
+                source_id: second.id.as_str().to_string(),
+                lifecycle_generation: 2,
+                source_revision: 1,
+                root_identity: String::from("identity-1"),
+                event_id: 21,
+                cause: CheckpointCause::TargetedReplay,
+                continuity_proof: Some(second_proof),
+            },
+            Instant::now(),
+        );
+
+        assert!(pending_replay_checkpoints.is_empty());
+        assert_eq!(admission.in_flight(), 0);
+        assert_eq!(admission.lane_for_capture(&second.id), Some(second_lane));
+        assert!(
+            state
+                .pending
+                .get(first.id.as_str())
+                .is_some_and(|pending| pending.overflowed)
+        );
+        assert!(state.pending.get(second.id.as_str()).is_none());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn accepted_unproven_replay_uses_source_local_audit_handoff() {
+        let directory = tempfile::tempdir().expect("shared replay root");
+        let first = source_with_root("unproven-replay-first", directory.path());
+        let second = source_with_root("unproven-replay-second", directory.path());
+        let sources = vec![first.clone(), second.clone()];
+        let mut state = source_watcher_state(sources.clone());
+        state.watched_roots =
+            HashMap::from([(first.root.clone(), Some(String::from("identity-1")))]);
+        let mut admission = configured_admission(&sources);
+        state.set_audit_request_capacity(admission.max_source_audit_request_entries());
+
+        let checkpoint_value = |source: &SampleSource,
+                                lifecycle_generation: u64,
+                                event_id: u64,
+                                backend_device: u64,
+                                watcher_generation: u64,
+                                replay_start_event_id: u64,
+                                replay_end_event_id: u64| {
+            serde_json::json!({
+                "root_identity": "identity-1",
+                "event_id": event_id,
+                "format_version": 3,
+                "source_id": source.id.as_str(),
+                "lifecycle_generation": lifecycle_generation,
+                "source_revision": 1,
+                "cause": "targeted_replay",
+                "continuity_proof": {
+                    "root_identity": "identity-1",
+                    "backend": "fsevents",
+                    "backend_device": backend_device,
+                    "watcher_generation": watcher_generation,
+                    "replay_coverage_start_event_id": replay_start_event_id,
+                    "replay_coverage_end_event_id": replay_end_event_id,
+                    "acknowledged_end_event_id": replay_end_event_id
+                }
+            })
+            .to_string()
+        };
+        let write_checkpoint = |source: &SampleSource, value: String| {
+            let database =
+                SourceDatabase::open_for_source_write(&source.root).expect("source database");
+            database
+                .set_metadata(META_SOURCE_WATCHER_CHECKPOINT, &value)
+                .expect("watcher checkpoint");
+        };
+
+        write_checkpoint(&second, checkpoint_value(&second, 1, 20, 202, 42, 19, 20));
+        let first_lane = admission.lane_for_capture(&first.id).expect("first lane");
+        let second_lane = admission.lane_for_capture(&second.id).expect("second lane");
+        let first_boundary =
+            CaptureBoundary::try_new(11, Some(11), Some(11)).expect("first replay boundary");
+        let second_boundary =
+            CaptureBoundary::try_new(21, Some(21), Some(21)).expect("second replay boundary");
+        let first_proof = WatcherContinuityProof {
+            root_identity: String::from("identity-1"),
+            backend: journal::WatcherBackend::Fsevents,
+            backend_device: 101,
+            watcher_generation: 41,
+            replay_coverage_start_event_id: 10,
+            replay_coverage_end_event_id: 11,
+            acknowledged_end_event_id: 11,
+        };
+        let second_proof = WatcherContinuityProof {
+            root_identity: String::from("identity-1"),
+            backend: journal::WatcherBackend::Fsevents,
+            backend_device: 202,
+            watcher_generation: 42,
+            replay_coverage_start_event_id: 20,
+            replay_coverage_end_event_id: 21,
+            acknowledged_end_event_id: 21,
+        };
+
+        let (first_observations, first_limits) =
+            fsevents_replay_observations(vec![PathBuf::from("first.wav")])
+                .expect("first replay observations");
+        let first_replay = {
+            let database = SourceDatabase::open_for_background_job(&first.root)
+                .expect("first replay authority database");
+            admission
+                .admit_fsevents_replay(
+                    &first,
+                    &database,
+                    41,
+                    FseventsReplayEvidence {
+                        source_lifecycle_generation: WatcherGeneration::new(1),
+                        replay_stream_generation: 41,
+                        backend_device: 101,
+                        replay_start_event_id: 10,
+                        replay_end_event_id: 11,
+                        observations: first_observations,
+                        limits: first_limits,
+                    },
+                )
+                .expect("first replay admission")
+        };
+        assert_eq!(
+            first_replay.admission().disposition(),
+            AdapterDisposition::SourceAuditRequired
+        );
+        assert!(matches!(
+            first_replay.admission().outcome(),
+            AdmissionOutcome::Accepted(_)
+        ));
+        let first_ticket = match first_replay.admission().outcome() {
+            AdmissionOutcome::Accepted(ticket) => *ticket,
+            outcome => panic!("unexpected first replay outcome: {outcome:?}"),
+        };
+        let first_request = first_replay
+            .audit_request()
+            .cloned()
+            .expect("first source typed audit request");
+        assert_eq!(first_request.source_id(), &first.id);
+        assert_eq!(first_request.root_identity(), first_lane.root_identity());
+        assert_eq!(first_request.generation(), first_lane.generation());
+        let first_marker_backed = admission.source_audit_request_is_marker_backed(&first_request);
+        assert!(first_marker_backed);
+        state.enqueue_audit_request(first_request.clone(), first_marker_backed);
+
+        let (second_observations, second_limits) =
+            fsevents_replay_observations(vec![PathBuf::from("second.wav")])
+                .expect("second replay observations");
+        let second_replay = {
+            let database = SourceDatabase::open_for_background_job(&second.root)
+                .expect("second replay authority database");
+            admission
+                .admit_fsevents_replay(
+                    &second,
+                    &database,
+                    42,
+                    FseventsReplayEvidence {
+                        source_lifecycle_generation: WatcherGeneration::new(1),
+                        replay_stream_generation: 42,
+                        backend_device: 202,
+                        replay_start_event_id: 20,
+                        replay_end_event_id: 21,
+                        observations: second_observations,
+                        limits: second_limits,
+                    },
+                )
+                .expect("second replay admission")
+        };
+        assert_eq!(
+            second_replay.admission().disposition(),
+            AdapterDisposition::AdmittedWithContinuity
+        );
+        let second_ticket = match second_replay.admission().outcome() {
+            AdmissionOutcome::Accepted(ticket) => *ticket,
+            outcome => panic!("unexpected second replay outcome: {outcome:?}"),
+        };
+
+        let mut pending_contexts = HashMap::from([
+            (
+                first_ticket,
+                PendingCaptureContext {
+                    source_id: first.id.clone(),
+                    source_root: first.root.clone(),
+                    root_identity: first_lane.root_identity().clone(),
+                    stream_id: 0,
+                    watcher_generation: first_lane.generation(),
+                    capture_boundary: first_boundary,
+                    original_event: None,
+                    compatibility_event: None,
+                    conservative: false,
+                    correlation: None,
+                    replay: Some(PendingReplayHandoff {
+                        paths: vec![PathBuf::from("first.wav")],
+                        proof: first_proof,
+                        continuity_proven: false,
+                    }),
+                },
+            ),
+            (
+                second_ticket,
+                PendingCaptureContext {
+                    source_id: second.id.clone(),
+                    source_root: second.root.clone(),
+                    root_identity: second_lane.root_identity().clone(),
+                    stream_id: 0,
+                    watcher_generation: second_lane.generation(),
+                    capture_boundary: second_boundary,
+                    original_event: None,
+                    compatibility_event: None,
+                    conservative: false,
+                    correlation: None,
+                    replay: Some(PendingReplayHandoff {
+                        paths: vec![PathBuf::from("second.wav")],
+                        proof: second_proof.clone(),
+                        continuity_proven: true,
+                    }),
+                },
+            ),
+        ]);
+        let mut pending_replay_checkpoints = HashMap::new();
+        let (message_tx, message_rx) = std::sync::mpsc::channel();
+        let root_invalidated = dispatch_pending_capture_contexts_with_replay(
+            &mut state,
+            &mut admission,
+            &mut pending_contexts,
+            &mut pending_replay_checkpoints,
+            &message_tx,
+            Instant::now(),
+        );
+
+        assert!(!root_invalidated);
+        assert!(pending_contexts.is_empty());
+        assert_eq!(admission.in_flight(), 1);
+        assert!(!pending_replay_checkpoints.contains_key(&first_ticket));
+        let second_checkpoint = pending_replay_checkpoints
+            .get(&second_ticket)
+            .expect("continuity-proven replay checkpoint");
+        assert_eq!(second_checkpoint.proof, second_proof);
+        assert_eq!(state.pending_audit_requests.front(), Some(&first_request));
+        assert!(
+            state
+                .pending
+                .get(first.id.as_str())
+                .is_some_and(|pending| pending.overflowed && pending.paths.is_empty())
+        );
+        assert!(
+            state.pending.get(second.id.as_str()).is_none(),
+            "unexpected source pending state: {:?}",
+            state.pending
+        );
+        assert!(admission.retained_uncertainties().iter().any(|marker| {
+            marker.source_id() == Some(&first.id)
+                && marker.root_identity() == Some(first_lane.root_identity())
+                && marker.generation() == Some(first_lane.generation())
+        }));
+
+        match message_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("continuity-proven replay message")
+        {
+            GuiMessage::SourceFilesystemChanged {
+                source_id,
+                paths,
+                overflowed,
+                source_root_available,
+                journal_checkpoint_event_id,
+                watcher_continuity_proof,
+            } => {
+                assert_eq!(source_id, second.id.as_str());
+                assert_eq!(paths, vec![PathBuf::from("second.wav")]);
+                assert!(!overflowed);
+                assert!(source_root_available);
+                assert_eq!(journal_checkpoint_event_id, Some(21));
+                assert_eq!(watcher_continuity_proof, Some(second_proof.clone()));
+            }
+            message => panic!("unexpected replay handoff message: {message:?}"),
+        }
+        assert!(matches!(
+            message_rx.try_recv(),
+            Err(std::sync::mpsc::TryRecvError::Empty)
+        ));
+
+        write_checkpoint(&second, checkpoint_value(&second, 2, 21, 202, 42, 20, 21));
+        acknowledge_replay_checkpoint(
+            &mut state,
+            &mut admission,
+            &mut pending_replay_checkpoints,
+            &sources,
+            RevisionBoundCheckpoint {
+                source_id: second.id.as_str().to_string(),
+                lifecycle_generation: 2,
+                source_revision: 1,
+                root_identity: String::from("identity-1"),
+                event_id: 21,
+                cause: CheckpointCause::TargetedReplay,
+                continuity_proof: Some(second_proof),
+            },
+            Instant::now(),
+        );
+
+        assert!(pending_replay_checkpoints.is_empty());
+        assert_eq!(admission.in_flight(), 0);
+        assert_eq!(admission.lane_for_capture(&second.id), Some(second_lane));
+        assert_eq!(state.pending_audit_requests.front(), Some(&first_request));
+    }
+
+    #[test]
+    fn replay_checkpoint_failure_is_source_scoped_and_other_source_retires() {
+        let first_directory = tempfile::tempdir().expect("first source root");
+        let second_directory = tempfile::tempdir().expect("second source root");
+        let first = source_with_root("replay-failure-first", first_directory.path());
+        let second = source_with_root("replay-failure-second", second_directory.path());
+        let sources = vec![first.clone(), second.clone()];
+        let mut state = source_watcher_state(sources.clone());
+        state.watched_roots = HashMap::from([
+            (first.root.clone(), Some(String::from("identity-0"))),
+            (second.root.clone(), Some(String::from("identity-1"))),
+        ]);
+        let mut admission = configured_admission(&sources);
+        state.set_audit_request_capacity(admission.max_source_audit_request_entries());
+
+        let checkpoint_value = |source: &SampleSource,
+                                root_identity: &str,
+                                backend_device: u64,
+                                watcher_generation: u64,
+                                lifecycle_generation: u64,
+                                event_id: u64| {
+            serde_json::json!({
+                "root_identity": root_identity,
+                "event_id": event_id,
+                "format_version": 3,
+                "source_id": source.id.as_str(),
+                "lifecycle_generation": lifecycle_generation,
+                "source_revision": 1,
+                "cause": "targeted_replay",
+                "continuity_proof": {
+                    "root_identity": root_identity,
+                    "backend": "fsevents",
+                    "backend_device": backend_device,
+                    "watcher_generation": watcher_generation,
+                    "replay_coverage_start_event_id": event_id - 1,
+                    "replay_coverage_end_event_id": event_id,
+                    "acknowledged_end_event_id": event_id
+                }
+            })
+            .to_string()
+        };
+        let write_checkpoint = |source: &SampleSource, value: String| {
+            let database =
+                SourceDatabase::open_for_source_write(&source.root).expect("source database");
+            database
+                .set_metadata(META_SOURCE_WATCHER_CHECKPOINT, &value)
+                .expect("watcher checkpoint");
+        };
+
+        write_checkpoint(
+            &first,
+            checkpoint_value(&first, "identity-0", 101, 41, 1, 10),
+        );
+        write_checkpoint(
+            &second,
+            checkpoint_value(&second, "identity-1", 202, 42, 1, 20),
+        );
+
+        let first_lane = admission.lane_for_capture(&first.id).expect("first lane");
+        let second_lane = admission.lane_for_capture(&second.id).expect("second lane");
+        let (first_observations, first_limits) =
+            fsevents_replay_observations(vec![first.root.join("first.wav")])
+                .expect("first replay observations");
+        let first_ticket = {
+            let database = SourceDatabase::open_for_background_job(&first.root)
+                .expect("first replay authority database");
+            let replay = admission
+                .admit_fsevents_replay(
+                    &first,
+                    &database,
+                    41,
+                    FseventsReplayEvidence {
+                        source_lifecycle_generation: WatcherGeneration::new(1),
+                        replay_stream_generation: 41,
+                        backend_device: 101,
+                        replay_start_event_id: 10,
+                        replay_end_event_id: 11,
+                        observations: first_observations,
+                        limits: first_limits,
+                    },
+                )
+                .expect("first replay admission");
+            match replay.admission().outcome() {
+                AdmissionOutcome::Accepted(ticket) => *ticket,
+                outcome => panic!("unexpected first replay outcome: {outcome:?}"),
+            }
+        };
+        let (second_observations, second_limits) =
+            fsevents_replay_observations(vec![second.root.join("second.wav")])
+                .expect("second replay observations");
+        let second_ticket = {
+            let database = SourceDatabase::open_for_background_job(&second.root)
+                .expect("second replay authority database");
+            let replay = admission
+                .admit_fsevents_replay(
+                    &second,
+                    &database,
+                    42,
+                    FseventsReplayEvidence {
+                        source_lifecycle_generation: WatcherGeneration::new(1),
+                        replay_stream_generation: 42,
+                        backend_device: 202,
+                        replay_start_event_id: 20,
+                        replay_end_event_id: 21,
+                        observations: second_observations,
+                        limits: second_limits,
+                    },
+                )
+                .expect("second replay admission");
+            match replay.admission().outcome() {
+                AdmissionOutcome::Accepted(ticket) => *ticket,
+                outcome => panic!("unexpected second replay outcome: {outcome:?}"),
+            }
+        };
+
+        for _ in 0..2 {
+            let dispatched = admission.dispatch_next().expect("replay dispatch");
+            assert!(dispatched.ticket() == first_ticket || dispatched.ticket() == second_ticket);
+            admission
+                .mark_dispatched(dispatched.ticket())
+                .expect("replay dispatched");
+            admission
+                .mark_applied(dispatched.ticket())
+                .expect("replay applied");
+        }
+        assert_eq!(admission.in_flight(), 2);
+
+        let first_proof = WatcherContinuityProof {
+            root_identity: String::from("identity-0"),
+            backend: journal::WatcherBackend::Fsevents,
+            backend_device: 101,
+            watcher_generation: 41,
+            replay_coverage_start_event_id: 10,
+            replay_coverage_end_event_id: 11,
+            acknowledged_end_event_id: 11,
+        };
+        let second_proof = WatcherContinuityProof {
+            root_identity: String::from("identity-1"),
+            backend: journal::WatcherBackend::Fsevents,
+            backend_device: 202,
+            watcher_generation: 42,
+            replay_coverage_start_event_id: 20,
+            replay_coverage_end_event_id: 21,
+            acknowledged_end_event_id: 21,
+        };
+        let mut pending_replay_checkpoints = HashMap::from([
+            (
+                first_ticket,
+                PendingReplayCheckpoint {
+                    source_id: first.id.clone(),
+                    source_root: first.root.clone(),
+                    root_identity: first_lane.root_identity().clone(),
+                    owner_watcher_generation: first_lane.generation(),
+                    proof: first_proof.clone(),
+                },
+            ),
+            (
+                second_ticket,
+                PendingReplayCheckpoint {
+                    source_id: second.id.clone(),
+                    source_root: second.root.clone(),
+                    root_identity: second_lane.root_identity().clone(),
+                    owner_watcher_generation: second_lane.generation(),
+                    proof: second_proof.clone(),
+                },
+            ),
+        ]);
+
+        // First source has only its pre-terminal authority, while the second source has reached
+        // the replay terminal event. The failure must not retire the second applied ticket.
+        write_checkpoint(
+            &first,
+            checkpoint_value(&first, "identity-0", 101, 41, 2, 10),
+        );
+        write_checkpoint(
+            &second,
+            checkpoint_value(&second, "identity-1", 202, 42, 2, 21),
+        );
+
+        acknowledge_replay_checkpoint(
+            &mut state,
+            &mut admission,
+            &mut pending_replay_checkpoints,
+            &sources,
+            RevisionBoundCheckpoint {
+                source_id: first.id.as_str().to_string(),
+                lifecycle_generation: 2,
+                source_revision: 1,
+                root_identity: String::from("identity-0"),
+                event_id: 11,
+                cause: CheckpointCause::TargetedReplay,
+                continuity_proof: Some(first_proof.clone()),
+            },
+            Instant::now(),
+        );
+
+        let restarted_first = admission
+            .lane_for_capture(&first.id)
+            .expect("restarted first lane");
+        assert_eq!(restarted_first.root_identity(), first_lane.root_identity());
+        assert!(restarted_first.generation() > first_lane.generation());
+        assert_eq!(
+            restarted_first.lifecycle(),
+            ReconciliationLifecycle::Capturing
+        );
+        assert_eq!(
+            admission.lane_for_capture(&second.id),
+            Some(second_lane.clone())
+        );
+        assert_eq!(admission.in_flight(), 1);
+        assert!(!pending_replay_checkpoints.contains_key(&first_ticket));
+        assert!(pending_replay_checkpoints.contains_key(&second_ticket));
+        assert!(
+            state
+                .pending
+                .get(first.id.as_str())
+                .is_some_and(|pending| pending.overflowed)
+        );
+        assert!(state.pending.get(second.id.as_str()).is_none());
+        let first_request = state
+            .pending_audit_requests
+            .front()
+            .expect("first source typed audit request");
+        assert_eq!(first_request.source_id(), &first.id);
+        assert_eq!(first_request.generation(), restarted_first.generation());
+
+        let stopped_first_pending = PendingReplayCheckpoint {
+            source_id: first.id.clone(),
+            source_root: first.root.clone(),
+            root_identity: restarted_first.root_identity().clone(),
+            owner_watcher_generation: restarted_first.generation(),
+            proof: first_proof.clone(),
+        };
+        pending_replay_checkpoints.insert(first_ticket, stopped_first_pending.clone());
+        state.watched_roots.remove(&first.root);
+        fail_closed_replay_checkpoint(
+            &mut state,
+            &mut admission,
+            &mut pending_replay_checkpoints,
+            &first,
+            first_ticket,
+            &stopped_first_pending,
+            Instant::now(),
+        );
+
+        assert!(!pending_replay_checkpoints.contains_key(&first_ticket));
+        let stopped_first = admission
+            .lane_for_capture(&first.id)
+            .expect("first lane remains owned while root is unavailable");
+        assert_eq!(stopped_first.lifecycle(), ReconciliationLifecycle::Stopped);
+        assert_eq!(admission.in_flight(), 1);
+        assert_eq!(
+            admission.lane_for_capture(&second.id),
+            Some(second_lane.clone())
+        );
+        let second_pending = pending_replay_checkpoints
+            .get(&second_ticket)
+            .expect("second checkpoint context remains pending");
+        assert_eq!(
+            second_pending.owner_watcher_generation,
+            second_lane.generation()
+        );
+        assert_eq!(second_pending.root_identity, *second_lane.root_identity());
+
+        state
+            .watched_roots
+            .insert(first.root.clone(), Some(String::from("identity-0")));
+        admission
+            .reconcile_source(&first, RootIdentity::from_bytes(b"identity-0".to_vec()))
+            .expect("restart first lane after root installation");
+        let installed_first = admission
+            .lane_for_capture(&first.id)
+            .expect("reinstalled first lane");
+        assert!(installed_first.generation() > stopped_first.generation());
+        assert_eq!(
+            installed_first.lifecycle(),
+            ReconciliationLifecycle::Capturing
+        );
+        let (request, _) = admission
+            .source_audit_request_for_current_lane(&first.id)
+            .expect("typed audit request after root installation");
+        assert_eq!(request.source_id(), &first.id);
+        assert_eq!(request.generation(), installed_first.generation());
+
+        acknowledge_replay_checkpoint(
+            &mut state,
+            &mut admission,
+            &mut pending_replay_checkpoints,
+            &sources,
+            RevisionBoundCheckpoint {
+                source_id: second.id.as_str().to_string(),
+                lifecycle_generation: 2,
+                source_revision: 1,
+                root_identity: String::from("identity-1"),
+                event_id: 21,
+                cause: CheckpointCause::TargetedReplay,
+                continuity_proof: Some(second_proof),
+            },
+            Instant::now(),
+        );
+
+        assert!(pending_replay_checkpoints.is_empty());
+        assert_eq!(admission.in_flight(), 0);
+        assert_eq!(admission.lane_for_capture(&second.id), Some(second_lane));
+        assert!(admission.lane_for_capture(&first.id).is_some());
     }
 
     #[test]

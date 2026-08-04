@@ -118,6 +118,9 @@ pub(in crate::native_app) enum GuiMessage {
     /// A completed fallback audit produced a barrier that must be persisted by the source
     /// processing owner. This message carries only typed in-memory evidence; it performs no I/O.
     SourceWatcherCheckpointReady(RevisionBoundCheckpoint),
+    /// The source-processing owner durably committed a replay checkpoint. The watcher may now
+    /// reread opaque authority and retire the matching applied admission ticket.
+    SourceWatcherCheckpointCommitted(RevisionBoundCheckpoint),
     SourceFilesystemSyncFinished(SourceFilesystemSyncResult),
     CommittedFileMutationRequested(FileMutationWork),
     CommittedFileMutationFinished(FileMutationOutcome),

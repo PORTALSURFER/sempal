@@ -45,6 +45,12 @@ pub(super) enum CaptureAdmissionError {
         field: &'static str,
         value: usize,
     },
+    ReplayPathCountExceeded {
+        value: usize,
+    },
+    ReplayPathBytesExceeded {
+        value: usize,
+    },
 }
 
 pub(super) fn capture_event(event: notify::Result<Event>) -> SourceWatcherCapture {
@@ -361,6 +367,40 @@ fn native_raw_observation_limits() -> RawObservationLimits {
     .expect("native raw observation limits")
 }
 
+/// Convert bounded FSEvents path history into one conservative raw observation.
+///
+/// FSEvents history recovery retains paths and coverage, but this adapter deliberately does not
+/// invent create/delete/rename semantics from path-only evidence. The source synchronizer observes
+/// current truth for every retained path, while the owner admission layer supplies continuity.
+pub(super) fn fsevents_replay_observations(
+    paths: Vec<PathBuf>,
+) -> Result<(Vec<RawObservation>, RawObservationLimits), CaptureAdmissionError> {
+    if paths.len() > MAX_CAPTURE_PATHS {
+        return Err(CaptureAdmissionError::ReplayPathCountExceeded { value: paths.len() });
+    }
+    let mut path_bytes = 0usize;
+    let mut observed_paths = Vec::with_capacity(paths.len());
+    for path in paths {
+        if path.as_os_str().is_empty() {
+            continue;
+        }
+        path_bytes = path_bytes
+            .checked_add(path.as_os_str().as_encoded_bytes().len())
+            .ok_or(CaptureAdmissionError::ReplayPathBytesExceeded { value: usize::MAX })?;
+        if path_bytes > MAX_CAPTURE_PATH_BYTES {
+            return Err(CaptureAdmissionError::ReplayPathBytesExceeded { value: path_bytes });
+        }
+        observed_paths.push(RawObservedPath::new(path, RawPathRole::Subject));
+    }
+    if observed_paths.is_empty() {
+        return Err(CaptureAdmissionError::ReplayPathCountExceeded { value: 0 });
+    }
+    Ok((
+        vec![RawObservation::new(RawEventKind::Modify, observed_paths)],
+        native_raw_observation_limits(),
+    ))
+}
+
 #[derive(Clone, Copy)]
 struct EventMapping {
     kind: RawEventKind,
@@ -523,7 +563,7 @@ mod tests {
         CaptureAdmissionError, MAX_CAPTURE_METADATA_BYTES, MAX_CAPTURE_PATH_BYTES,
         MAX_CAPTURE_PATHS, RAW_PATH_ROLE_AND_HINT_METADATA_BYTES, SourceWatcherCapture,
         capture_event, capture_to_observation_batch, event_observation_with_metadata,
-        event_to_observation_batch, observation_metadata_from_values,
+        event_to_observation_batch, fsevents_replay_observations, observation_metadata_from_values,
     };
     use notify::event::{
         AccessKind, AccessMode, CreateKind, DataChange, EventAttributes, Flag, ModifyKind,
@@ -669,6 +709,31 @@ mod tests {
         assert!(matches!(
             capture_event(Ok(event)),
             SourceWatcherCapture::Overflow { .. }
+        ));
+    }
+
+    #[test]
+    fn fsevents_replay_is_one_conservative_modify_observation() {
+        let (observations, limits) = fsevents_replay_observations(vec![
+            PathBuf::from("kick.wav"),
+            PathBuf::from("drums/snare.wav"),
+        ])
+        .expect("bounded replay observation");
+        assert_eq!(observations.len(), 1);
+        assert_eq!(observations[0].kind(), RawEventKind::Modify);
+        assert_eq!(observations[0].paths().len(), 2);
+        assert_eq!(observations[0].paths()[0].role(), RawPathRole::Subject);
+        assert_eq!(limits.max_events(), 1);
+    }
+
+    #[test]
+    fn oversized_fsevents_replay_is_rejected_before_owner_admission() {
+        let paths = (0..=MAX_CAPTURE_PATHS)
+            .map(|index| PathBuf::from(format!("{index}.wav")))
+            .collect();
+        assert!(matches!(
+            fsevents_replay_observations(paths),
+            Err(CaptureAdmissionError::ReplayPathCountExceeded { .. })
         ));
     }
 

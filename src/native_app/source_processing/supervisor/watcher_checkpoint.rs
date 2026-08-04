@@ -6,6 +6,7 @@ use crate::native_app::sample_library::source_watcher::{
     CheckpointAdvanceOutcome, CheckpointCause, RevisionBoundCheckpoint,
     targeted_replay_request_has_valid_proof, write_revision_bound_checkpoint,
 };
+use crate::native_app::source_processing::{SourceProcessingEvent, SourceProcessingLifecycle};
 use wavecrate_library::filesystem_identity::stable_filesystem_identity;
 
 /// Drain and execute checkpoint requests on the source-processing coordinator thread.
@@ -97,18 +98,22 @@ fn process_watcher_checkpoint(shared: &Arc<Shared>, request: RevisionBoundCheckp
         )
     };
     match outcome {
-        CheckpointAdvanceOutcome::Applied => tracing::debug!(
-            source_id = request.source_id.as_str(),
-            event_id = request.event_id,
-            "Committed revision-bound watcher checkpoint"
-        ),
+        CheckpointAdvanceOutcome::Applied => {
+            tracing::debug!(
+                source_id = request.source_id.as_str(),
+                event_id = request.event_id,
+                "Committed revision-bound watcher checkpoint"
+            );
+            publish_checkpoint_commit(shared, request);
+        }
         CheckpointAdvanceOutcome::AlreadyApplied | CheckpointAdvanceOutcome::Superseded => {
             tracing::debug!(
                 source_id = request.source_id.as_str(),
                 event_id = request.event_id,
                 ?outcome,
                 "Watcher checkpoint did not advance"
-            )
+            );
+            publish_checkpoint_commit(shared, request);
         }
         CheckpointAdvanceOutcome::AuditRequired => {
             tracing::debug!(
@@ -137,6 +142,13 @@ fn process_watcher_checkpoint(shared: &Arc<Shared>, request: RevisionBoundCheckp
             );
         }
     }
+}
+
+fn publish_checkpoint_commit(shared: &Shared, request: RevisionBoundCheckpoint) {
+    let lifecycle =
+        SourceProcessingLifecycle::new(request.source_id.clone(), request.lifecycle_generation);
+    let _ = shared
+        .publish_event(SourceProcessingEvent::WatcherCheckpointCommitted { lifecycle, request });
 }
 
 fn configured_source_for_request(
@@ -280,7 +292,11 @@ mod tests {
     fn queue_commits_valid_checkpoint_and_preserves_root_mismatch_bytes() {
         let directory = tempfile::tempdir().expect("source directory");
         let source = source(directory.path(), "source-a");
-        let shared = Arc::new(Shared::new(vec![source.clone()], None));
+        let (event_sender, event_receiver) = std::sync::mpsc::channel();
+        let shared = Arc::new(Shared::new(
+            vec![source.clone()],
+            Some(Arc::new(event_sender)),
+        ));
         let generation = shared.control().source_lifecycle_generations["source-a"];
         let root_identity = root_identity(&source);
         seed_checkpoint(&source, generation, &root_identity);
@@ -294,6 +310,11 @@ mod tests {
             serde_json::from_str::<serde_json::Value>(&committed).expect("checkpoint JSON")["event_id"],
             8
         );
+        assert!(matches!(
+            event_receiver.try_recv(),
+            Ok(SourceProcessingEvent::WatcherCheckpointCommitted { request, .. })
+                if request.event_id == 8
+        ));
 
         handle.submit_watcher_checkpoint(request(
             &source,

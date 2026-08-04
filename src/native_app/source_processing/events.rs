@@ -5,6 +5,8 @@ use wavecrate::sample_sources::{
     scanner::CommittedSourceDelta,
 };
 
+use crate::native_app::sample_library::source_watcher::RevisionBoundCheckpoint;
+
 /// Identifies one configured lifetime of a source.
 ///
 /// Source identifiers may be reused after removal, so consumers must use the
@@ -121,6 +123,10 @@ pub(in crate::native_app) enum SourceProcessingEvent {
         complete: bool,
         receipt: Option<wavecrate_library::sample_sources::reconciliation::SourceAuditReceipt>,
     },
+    WatcherCheckpointCommitted {
+        lifecycle: SourceProcessingLifecycle,
+        request: RevisionBoundCheckpoint,
+    },
     Completed,
 }
 
@@ -131,7 +137,8 @@ impl SourceProcessingEvent {
             Self::Health(health) => Some(&health.lifecycle),
             Self::SimilarityReadinessAdvanced { lifecycle }
             | Self::ManifestAuditCommitted { lifecycle, .. }
-            | Self::ManifestAuditFinished { lifecycle, .. } => Some(lifecycle),
+            | Self::ManifestAuditFinished { lifecycle, .. }
+            | Self::WatcherCheckpointCommitted { lifecycle, .. } => Some(lifecycle),
             Self::Completed => None,
         }
     }

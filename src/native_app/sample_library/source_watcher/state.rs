@@ -281,7 +281,7 @@ impl GuiSourceWatchState {
         }
     }
 
-    fn mark_source_overflowed(&mut self, source_id: &str, now: Instant) {
+    pub(super) fn mark_source_overflowed(&mut self, source_id: &str, now: Instant) {
         self.pending
             .entry(source_id.to_string())
             .and_modify(|pending| {
@@ -463,4 +463,35 @@ fn root_event_can_replace_identity(kind: notify::EventKind) -> bool {
             | notify::EventKind::Remove(_)
             | notify::EventKind::Modify(notify::event::ModifyKind::Name(_))
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wavecrate::sample_sources::{SampleSource, SourceId};
+
+    #[test]
+    fn source_id_overflow_does_not_widen_shared_root_source() {
+        let shared_root = PathBuf::from("/shared-source-root");
+        let first = SampleSource::new_with_id(
+            SourceId::from_string("shared-root-first"),
+            shared_root.clone(),
+        );
+        let second =
+            SampleSource::new_with_id(SourceId::from_string("shared-root-second"), shared_root);
+        let mut state = GuiSourceWatchState {
+            sources: vec![first.clone(), second.clone()],
+            ..Default::default()
+        };
+
+        state.mark_source_overflowed(first.id.as_str(), Instant::now());
+
+        assert!(
+            state
+                .pending
+                .get(first.id.as_str())
+                .is_some_and(|pending| { pending.overflowed })
+        );
+        assert!(!state.pending.contains_key(second.id.as_str()));
+    }
 }
