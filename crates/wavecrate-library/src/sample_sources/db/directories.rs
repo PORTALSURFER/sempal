@@ -767,6 +767,43 @@ mod tests {
     }
 
     #[test]
+    fn idempotent_finalization_rejects_active_revision_ahead_of_metadata() {
+        let root = tempfile::tempdir().unwrap();
+        let db = SourceDatabase::open_for_source_write(root.path()).unwrap();
+        db.begin_source_directory_truth_generation(1, 1).unwrap();
+        db.stage_source_directory_truth_entries(1, &[directory("valid", "dir-valid")])
+            .unwrap();
+        db.finalize_source_directory_truth_generation(1, 0).unwrap();
+
+        db.connection
+            .execute(
+                "UPDATE source_directory_generations
+                 SET published_source_revision = 2
+                 WHERE generation = 1",
+                [],
+            )
+            .unwrap();
+
+        let revision_before = db.get_revision().unwrap();
+        let error = db
+            .finalize_source_directory_truth_generation(1, 0)
+            .unwrap_err();
+        assert_eq!(
+            directory_error(error),
+            SourceDirectoryTruthError::RequiresAudit {
+                reason: SourceDirectoryTruthUnavailableReason::Malformed,
+            }
+        );
+        assert_eq!(db.get_revision().unwrap(), revision_before);
+        assert_eq!(
+            db.source_directory_truth_state().unwrap(),
+            SourceDirectoryTruthState::Unavailable {
+                reason: SourceDirectoryTruthUnavailableReason::Malformed,
+            }
+        );
+    }
+
+    #[test]
     fn reopening_source_database_preserves_active_state_and_pages() {
         let root = tempfile::tempdir().unwrap();
         let expected = vec![

@@ -249,6 +249,10 @@ impl SourceWriteBatch<'_> {
         if status == "active" {
             validate_generation_entries(&self.tx, generation_sql)?;
             let published_revision = valid_published_revision(published_revision)?;
+            let current_source_revision = manifest_revision(&self.tx)?;
+            if published_revision > current_source_revision {
+                return Err(directory_requires_audit());
+            }
             validate_generation_counts(
                 &self.tx,
                 generation_sql,
