@@ -118,19 +118,6 @@ impl SourceWriteBatch<'_> {
         if staged_entry_count > expected_entry_count {
             return Err(SourceDirectoryTruthError::EntryCountExceeded { generation }.into());
         }
-        let actual_entry_count = self
-            .tx
-            .query_row(
-                "SELECT COUNT(*)
-                 FROM source_directory_entries
-                 WHERE generation = ?1",
-                [generation_sql],
-                |row| row.get::<_, i64>(0),
-            )
-            .map_err(map_sql_error)?;
-        if actual_entry_count != staged_entry_count {
-            return Err(directory_requires_audit());
-        }
 
         let mut encoded_paths = HashSet::with_capacity(entries.len());
         let mut identities = HashSet::with_capacity(entries.len());

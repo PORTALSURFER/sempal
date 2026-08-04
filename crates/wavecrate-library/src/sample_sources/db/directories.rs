@@ -427,39 +427,8 @@ impl SourceDatabase {
         let mut deleted_generations = 0usize;
         let mut remaining_entry_budget = CLEANUP_ENTRY_LIMIT;
         for generation in candidates {
-            let count: i64 = transaction
-                .query_row(
-                    "SELECT COUNT(*) FROM source_directory_entries WHERE generation = ?1",
-                    [generation],
-                    |row| row.get(0),
-                )
-                .map_err(map_sql_error)?;
-            let entry_count = usize::try_from(count).map_err(|_| SourceDbError::Unexpected)?;
-            if entry_count == 0 {
-                let deleted = transaction
-                    .execute(
-                        "DELETE FROM source_directory_generations
-                         WHERE generation = ?1 AND status = 'inactive'",
-                        [generation],
-                    )
-                    .map_err(map_sql_error)?;
-                if deleted == 1 {
-                    deleted_generations = deleted_generations.saturating_add(1);
-                }
-                continue;
-            }
-            if remaining_entry_budget == 0 {
-                break;
-            }
-
-            let delete_count = entry_count.min(remaining_entry_budget);
-            let deleted = if delete_count == entry_count {
-                transaction
-                    .execute(
-                        "DELETE FROM source_directory_entries WHERE generation = ?1",
-                        [generation],
-                    )
-                    .map_err(map_sql_error)?
+            let deleted = if remaining_entry_budget == 0 {
+                0
             } else {
                 transaction
                     .execute(
@@ -474,7 +443,8 @@ impl SourceDatabase {
                            )",
                         rusqlite::params![
                             generation,
-                            i64::try_from(delete_count).map_err(|_| SourceDbError::Unexpected)?
+                            i64::try_from(remaining_entry_budget)
+                                .map_err(|_| SourceDbError::Unexpected)?
                         ],
                     )
                     .map_err(map_sql_error)?
@@ -482,7 +452,20 @@ impl SourceDatabase {
             deleted_entries = deleted_entries.saturating_add(deleted);
             remaining_entry_budget = remaining_entry_budget.saturating_sub(deleted);
 
-            if delete_count == entry_count {
+            let exhausted = transaction
+                .query_row(
+                    "SELECT 1
+                     FROM source_directory_entries
+                     WHERE generation = ?1
+                     ORDER BY path ASC
+                     LIMIT 1",
+                    [generation],
+                    |row| row.get::<_, i64>(0),
+                )
+                .optional()
+                .map_err(map_sql_error)?
+                .is_none();
+            if exhausted {
                 let removed_generation = transaction
                     .execute(
                         "DELETE FROM source_directory_generations
@@ -493,9 +476,6 @@ impl SourceDatabase {
                 if removed_generation == 1 {
                     deleted_generations = deleted_generations.saturating_add(1);
                 }
-            }
-            if remaining_entry_budget == 0 {
-                break;
             }
         }
         let more_work = transaction
@@ -695,6 +675,10 @@ mod tests {
     fn malformed_persisted_lossless_directory_paths_require_audit() {
         for (path, expected_description) in [
             ("valid/~wavecrate-escaped~2f", "encoded slash/root"),
+            (
+                "valid/~wavecrate-escaped~612f62",
+                "encoded slash inside component",
+            ),
             ("valid/~wavecrate-escaped~2e2e", "encoded parent"),
         ] {
             let root = tempfile::tempdir().unwrap();
@@ -787,12 +771,61 @@ mod tests {
     }
 
     #[test]
-    fn cleanup_bounds_large_inactive_generation_without_advancing_revision() {
+    fn staging_does_not_scan_large_generation() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+
+        const STAGING_QUERY_WORK_BUDGET: usize = 2_000;
+
         let root = tempfile::tempdir().unwrap();
         let db = SourceDatabase::open_for_source_write(root.path()).unwrap();
-        let entry_count = super::CLEANUP_ENTRY_LIMIT + 1;
+        let entry_count = super::super::SOURCE_DIRECTORY_TRUTH_BATCH_LIMIT * 8;
+        let existing_entries = (0..entry_count - 1)
+            .map(|index| directory(&format!("large/{index:04}"), &format!("dir-{index}")))
+            .collect::<Vec<_>>();
+
+        db.begin_source_directory_truth_generation(1, entry_count as u64)
+            .unwrap();
+        for batch in existing_entries.chunks(super::super::SOURCE_DIRECTORY_TRUTH_BATCH_LIMIT) {
+            db.stage_source_directory_truth_entries(1, batch).unwrap();
+        }
+
+        let query_work = Arc::new(AtomicUsize::new(0));
+        db.connection.progress_handler(
+            1,
+            Some({
+                let query_work = Arc::clone(&query_work);
+                move || query_work.fetch_add(1, Ordering::Relaxed) >= STAGING_QUERY_WORK_BUDGET
+            }),
+        );
+        let stage_result = db.stage_source_directory_truth_entries(
+            1,
+            &[directory(
+                &format!("large/{:04}", entry_count - 1),
+                &format!("dir-{}", entry_count - 1),
+            )],
+        );
+        db.connection.progress_handler(0, None::<fn() -> bool>);
+
+        stage_result.expect("staging one bounded batch must not scan the generation");
+        assert!(
+            query_work.load(Ordering::Relaxed) < STAGING_QUERY_WORK_BUDGET,
+            "bounded staging exceeded query-work budget"
+        );
+        db.finalize_source_directory_truth_generation(1, 0).unwrap();
+    }
+
+    #[test]
+    fn cleanup_bounds_large_inactive_generation_without_advancing_revision() {
+        const CLEANUP_QUERY_WORK_BUDGET: usize = 8_000;
+
+        let root = tempfile::tempdir().unwrap();
+        let db = SourceDatabase::open_for_source_write(root.path()).unwrap();
+        let entry_count = super::CLEANUP_ENTRY_LIMIT * 32;
         let entries = (0..entry_count)
-            .map(|index| directory(&format!("large/{index:03}"), &format!("dir-{index}")))
+            .map(|index| directory(&format!("large/{index:04}"), &format!("dir-{index}")))
             .collect::<Vec<_>>();
 
         db.begin_source_directory_truth_generation(1, entry_count as u64)
@@ -808,11 +841,73 @@ mod tests {
         db.finalize_source_directory_truth_generation(2, 1).unwrap();
         let revision_before_cleanup = db.get_revision().unwrap();
 
-        let cleanup = db.cleanup_source_directory_truth(1).unwrap();
+        let query_work = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        db.connection.progress_handler(
+            1,
+            Some({
+                let query_work = std::sync::Arc::clone(&query_work);
+                move || {
+                    query_work.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                        >= CLEANUP_QUERY_WORK_BUDGET
+                }
+            }),
+        );
+        let cleanup_result = db.cleanup_source_directory_truth(1);
+        db.connection.progress_handler(0, None::<fn() -> bool>);
+
+        let cleanup = cleanup_result.expect("cleanup must stay bounded for a large generation");
         assert_eq!(cleanup.deleted_entries, super::CLEANUP_ENTRY_LIMIT);
         assert_eq!(cleanup.deleted_generations, 0);
         assert!(cleanup.more_work);
         assert_eq!(db.get_revision().unwrap(), revision_before_cleanup);
+        assert!(
+            query_work.load(std::sync::atomic::Ordering::Relaxed) < CLEANUP_QUERY_WORK_BUDGET,
+            "bounded cleanup exceeded query-work budget"
+        );
+    }
+
+    #[test]
+    fn cleanup_probes_empty_candidates_after_entry_budget_is_exhausted() {
+        let root = tempfile::tempdir().unwrap();
+        let db = SourceDatabase::open_for_source_write(root.path()).unwrap();
+        let entry_count = super::CLEANUP_ENTRY_LIMIT + 1;
+        let entries = (0..entry_count)
+            .map(|index| directory(&format!("large/{index:03}"), &format!("dir-{index}")))
+            .collect::<Vec<_>>();
+
+        db.begin_source_directory_truth_generation(1, entry_count as u64)
+            .unwrap();
+        for batch in entries.chunks(super::super::SOURCE_DIRECTORY_TRUTH_BATCH_LIMIT) {
+            db.stage_source_directory_truth_entries(1, batch).unwrap();
+        }
+        db.finalize_source_directory_truth_generation(1, 0).unwrap();
+
+        db.begin_source_directory_truth_generation(2, 0).unwrap();
+        db.finalize_source_directory_truth_generation(2, 1).unwrap();
+
+        db.begin_source_directory_truth_generation(3, 1).unwrap();
+        db.stage_source_directory_truth_entries(3, &[directory("current", "dir-current")])
+            .unwrap();
+        db.finalize_source_directory_truth_generation(3, 2).unwrap();
+
+        let cleanup = db.cleanup_source_directory_truth(2).unwrap();
+        assert_eq!(cleanup.deleted_entries, super::CLEANUP_ENTRY_LIMIT);
+        assert_eq!(cleanup.deleted_generations, 1);
+        assert!(cleanup.more_work);
+        let generation_two_exists: bool = db
+            .connection
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1
+                    FROM source_directory_generations
+                    WHERE generation = 2
+                )",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap()
+            != 0;
+        assert!(!generation_two_exists);
     }
 
     #[test]

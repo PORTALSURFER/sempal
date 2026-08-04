@@ -1,4 +1,3 @@
-#[cfg(unix)]
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
@@ -149,19 +148,19 @@ fn parse_lossless_index_path(path: &str) -> Result<PathBuf, SourceDbError> {
         if component.is_empty() {
             return Err(SourceDbError::InvalidRelativePath(PathBuf::from(path)));
         }
-        let value = if let Some(hex) = component.strip_prefix(INDEX_NON_UNICODE_COMPONENT_PREFIX) {
-            OsString::from_vec(
+        if let Some(hex) = component.strip_prefix(INDEX_NON_UNICODE_COMPONENT_PREFIX) {
+            let value = OsString::from_vec(
                 decode_hex(hex)
                     .ok_or_else(|| SourceDbError::InvalidRelativePath(PathBuf::from(path)))?,
-            )
+            );
+            append_lossless_decoded_component(&mut decoded, value, path)?;
         } else if let Some(hex) = component.strip_prefix(INDEX_ESCAPED_COMPONENT_PREFIX) {
             let bytes = decode_hex(hex)
                 .ok_or_else(|| SourceDbError::InvalidRelativePath(PathBuf::from(path)))?;
-            OsString::from_vec(bytes)
+            append_lossless_decoded_component(&mut decoded, OsString::from_vec(bytes), path)?;
         } else {
-            OsString::from(component)
-        };
-        decoded.push(value);
+            decoded.push(component);
+        }
     }
     sanitize_relative_path(&decoded)
 }
@@ -178,7 +177,7 @@ fn parse_lossless_index_path(path: &str) -> Result<PathBuf, SourceDbError> {
                 .ok_or_else(|| SourceDbError::InvalidRelativePath(PathBuf::from(path)))?;
             let value = String::from_utf8(bytes)
                 .map_err(|_| SourceDbError::InvalidRelativePath(PathBuf::from(path)))?;
-            decoded.push(value);
+            append_lossless_decoded_component(&mut decoded, OsString::from(value), path)?;
         } else {
             // A non-Unicode source key can only be authored on Unix. Preserve
             // that component's encoded projection on platforms that cannot
@@ -187,6 +186,31 @@ fn parse_lossless_index_path(path: &str) -> Result<PathBuf, SourceDbError> {
         }
     }
     sanitize_relative_path(&decoded)
+}
+
+fn append_lossless_decoded_component(
+    decoded: &mut PathBuf,
+    value: OsString,
+    encoded_path: &str,
+) -> Result<(), SourceDbError> {
+    #[cfg(unix)]
+    let contains_separator = value.as_os_str().as_bytes().contains(&b'/');
+    #[cfg(not(unix))]
+    let contains_separator = value
+        .to_string_lossy()
+        .chars()
+        .any(|character| matches!(character, '/' | '\\'));
+    let mut components = Path::new(&value).components();
+    if contains_separator
+        || !matches!(components.next(), Some(Component::Normal(_)))
+        || components.next().is_some()
+    {
+        return Err(SourceDbError::InvalidRelativePath(PathBuf::from(
+            encoded_path,
+        )));
+    }
+    decoded.push(value);
+    Ok(())
 }
 
 fn encode_hex(bytes: &[u8]) -> String {
@@ -392,6 +416,16 @@ mod tests {
             parse_source_index_path_from_db(&raw_key, raw_encoding).unwrap(),
             raw
         );
+    }
+
+    #[test]
+    fn lossless_path_rejects_encoded_separator_inside_component() {
+        let error = parse_source_index_path_from_db(
+            "valid/~wavecrate-escaped~612f62",
+            INDEX_PATH_ENCODING_LOSSLESS,
+        )
+        .unwrap_err();
+        assert!(matches!(error, SourceDbError::InvalidRelativePath(_)));
     }
 
     #[test]
