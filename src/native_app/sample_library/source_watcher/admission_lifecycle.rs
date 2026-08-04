@@ -4,12 +4,15 @@ use std::collections::HashSet;
 
 use wavecrate::sample_sources::{SampleSource, SourceId};
 use wavecrate_library::sample_sources::reconciliation::{
-    AdapterError, AdmissionOwnerError, DispatchTicket, DispatchedObservation, LiveAuditAdmission,
-    OwnedAdmissionLane, RawObservationLimits, ReconciliationAcknowledgementOutcome,
-    ReconciliationAdmissionLimits, ReconciliationAdmissionOwner, ReconciliationAdmissionSupervisor,
-    ReconciliationLifecycle, RootIdentity, SourceAuditReceipt, SourceAuditRequest,
-    SyntheticObservationBatch,
+    AdapterError, AdmissionOwnerError, BackendStreamIdentity, CaptureBoundary, DispatchTicket,
+    DispatchedObservation, LiveAuditAdmission, OwnedAdmissionLane, OwnerReplayAdmission,
+    RawObservation, RawObservationLimits, RawObservationProvenance,
+    ReconciliationAcknowledgementOutcome, ReconciliationAdmissionLimits,
+    ReconciliationAdmissionOwner, ReconciliationAdmissionSupervisor, ReconciliationLifecycle,
+    RootIdentity, SourceAuditReceipt, SourceAuditRequest, SyntheticObservationBatch,
+    WatcherGeneration,
 };
+use wavecrate_library::sample_sources::{SourceDatabase, SourceDbError};
 
 use super::roots::{WatchedRootIdentities, registered_root_identity};
 
@@ -23,6 +26,36 @@ const NATIVE_ADMISSION_MAX_IN_FLIGHT_PER_LANE: usize = 1;
 const NATIVE_ADMISSION_MAX_RECENT_SEQUENCES_PER_LANE: usize = 64;
 const NATIVE_ADMISSION_MAX_RETAINED_UNCERTAINTIES: usize = 4096;
 const NATIVE_ADMISSION_MAX_EVENTS_PER_LANE: usize = 512;
+
+/// Bounded FSEvents history evidence awaiting owner admission.
+///
+/// The source lifecycle generation, history worker generation, and owner lane generation are
+/// intentionally separate. Only the owner lane generation is allowed into reconciliation
+/// provenance; the history worker generation is validated as replay-stream evidence and is not
+/// promoted into owner authority.
+#[allow(dead_code)]
+#[derive(Debug)]
+pub(super) struct FseventsReplayEvidence {
+    pub(super) source_lifecycle_generation: WatcherGeneration,
+    pub(super) replay_stream_generation: u64,
+    pub(super) backend_device: u64,
+    pub(super) replay_start_event_id: u64,
+    pub(super) replay_end_event_id: u64,
+    pub(super) observations: Vec<RawObservation>,
+    pub(super) limits: RawObservationLimits,
+}
+
+/// Fail-closed result for the dormant native replay admission seam.
+#[allow(dead_code)]
+#[derive(Debug)]
+pub(super) enum FseventsReplayAdmissionError {
+    Database(SourceDbError),
+    InvalidBackendDevice,
+    InvalidReplayRange,
+    InvalidReplayStreamGeneration,
+    NoCapturingLane,
+    Adapter(AdapterError),
+}
 
 /// Owns the one admission owner used by a native source-watcher coordinator.
 pub(super) struct AdmissionLifecycle {
@@ -212,6 +245,61 @@ impl AdmissionLifecycle {
         self.owner.admit_live_with_correlation(batch)
     }
 
+    /// Admit one bounded FSEvents history replay through the current owner lane.
+    ///
+    /// The database supplies only an opaque prior after validating the persisted source
+    /// lifecycle. The owner independently binds that prior to the current root, FSEvents device
+    /// stream, and reconciliation-lane generation. Any stale, missing, gapped, or mismatched
+    /// evidence therefore remains an unproven replay and retains the existing bounded audit path.
+    #[allow(dead_code)]
+    pub(super) fn admit_fsevents_replay(
+        &mut self,
+        source: &SampleSource,
+        database: &SourceDatabase,
+        evidence: FseventsReplayEvidence,
+    ) -> Result<OwnerReplayAdmission, FseventsReplayAdmissionError> {
+        let lane = self
+            .lane_for_capture(&source.id)
+            .ok_or(FseventsReplayAdmissionError::NoCapturingLane)?;
+        if evidence.replay_stream_generation == 0 {
+            return Err(FseventsReplayAdmissionError::InvalidReplayStreamGeneration);
+        }
+        let stream_identity = BackendStreamIdentity::from_fsevents_device(evidence.backend_device)
+            .ok_or(FseventsReplayAdmissionError::InvalidBackendDevice)?;
+        let first_sequence = evidence
+            .replay_start_event_id
+            .checked_add(1)
+            .ok_or(FseventsReplayAdmissionError::InvalidReplayRange)?;
+        let capture_boundary = CaptureBoundary::try_new(
+            evidence.replay_end_event_id,
+            Some(first_sequence),
+            Some(evidence.replay_end_event_id),
+        )
+        .map_err(|_| FseventsReplayAdmissionError::InvalidReplayRange)?;
+        let batch = SyntheticObservationBatch::new(
+            RawObservationProvenance::new(
+                source.id.clone(),
+                Some(lane.root_identity().clone()),
+                Some(stream_identity),
+                lane.generation(),
+                capture_boundary,
+            ),
+            evidence.observations,
+            evidence.limits,
+        );
+        let prior = database
+            .read_durable_replay_prior(
+                &source.id,
+                lane.root_identity(),
+                evidence.source_lifecycle_generation,
+                lane.generation(),
+            )
+            .map_err(FseventsReplayAdmissionError::Database)?;
+        self.owner
+            .admit_replay_with_durable_prior(batch, prior.as_ref(), true)
+            .map_err(FseventsReplayAdmissionError::Adapter)
+    }
+
     /// Select the next owner-scheduled live envelope.
     pub(super) fn dispatch_next(&mut self) -> Option<DispatchedObservation> {
         if self.admission_closed {
@@ -274,7 +362,7 @@ impl AdmissionLifecycle {
 
     #[cfg(test)]
     fn lane(&self, source_id: &SourceId) -> Option<OwnedAdmissionLane> {
-        self.lane_for_capture(source_id)
+        self.owner.lane(source_id)
     }
 }
 
@@ -303,6 +391,11 @@ fn native_admission_limits() -> ReconciliationAdmissionLimits {
 mod tests {
     use super::*;
     use std::{collections::HashMap, path::PathBuf};
+    use tempfile::tempdir;
+    use wavecrate_library::sample_sources::db::META_SOURCE_WATCHER_CHECKPOINT;
+    use wavecrate_library::sample_sources::reconciliation::{
+        AdapterDisposition, AdmissionOutcome, Proof, RawEventKind, RawObservedPath, RawPathRole,
+    };
 
     fn source(id: &str, root: &str) -> SampleSource {
         SampleSource::new_with_id(SourceId::from_string(id), PathBuf::from(root))
@@ -340,6 +433,225 @@ mod tests {
             max_retained_uncertainties,
         )
         .expect("admission limits")
+    }
+
+    fn checkpoint(
+        source_id: &SourceId,
+        root_identity: &str,
+        source_lifecycle_generation: u64,
+        backend_device: u64,
+        replay_start_event_id: u64,
+        replay_end_event_id: u64,
+    ) -> String {
+        serde_json::json!({
+            "root_identity": root_identity,
+            "event_id": replay_end_event_id,
+            "format_version": 3,
+            "source_id": source_id.as_str(),
+            "lifecycle_generation": source_lifecycle_generation,
+            "source_revision": 12,
+            "cause": "targeted_replay",
+            "continuity_proof": {
+                "root_identity": root_identity,
+                "backend": "fsevents",
+                "backend_device": backend_device,
+                "watcher_generation": 41,
+                "replay_coverage_start_event_id": replay_start_event_id,
+                "replay_coverage_end_event_id": replay_end_event_id,
+                "acknowledged_end_event_id": replay_end_event_id
+            }
+        })
+        .to_string()
+    }
+
+    fn replay_observation() -> RawObservation {
+        RawObservation::new(
+            RawEventKind::Create,
+            vec![RawObservedPath::new(
+                PathBuf::from("replayed.wav"),
+                RawPathRole::Subject,
+            )],
+        )
+    }
+
+    fn admit_unproven_replay(
+        checkpoint_value: &str,
+        source_lifecycle_generation: u64,
+        backend_device: u64,
+        replay_start_event_id: u64,
+        replay_end_event_id: u64,
+    ) -> (AdapterDisposition, bool, bool) {
+        let directory = tempdir().expect("source root");
+        let source = source(
+            "replay-source",
+            directory.path().to_str().expect("source path"),
+        );
+        let database =
+            SourceDatabase::open_for_source_write(directory.path()).expect("source database");
+        database
+            .set_metadata(META_SOURCE_WATCHER_CHECKPOINT, checkpoint_value)
+            .expect("checkpoint metadata");
+
+        let mut lifecycle = AdmissionLifecycle::with_limits(limits(1, 1, 8));
+        lifecycle
+            .reconcile(
+                std::slice::from_ref(&source),
+                &HashMap::from([(source.root.clone(), Some("identity-a".to_string()))]),
+            )
+            .expect("lifecycle binding");
+        let admission = lifecycle
+            .admit_fsevents_replay(
+                &source,
+                &database,
+                FseventsReplayEvidence {
+                    source_lifecycle_generation: WatcherGeneration::new(
+                        source_lifecycle_generation,
+                    ),
+                    replay_stream_generation: 42,
+                    backend_device,
+                    replay_start_event_id,
+                    replay_end_event_id,
+                    observations: vec![replay_observation()],
+                    limits: RawObservationLimits::new(8, usize::MAX, usize::MAX)
+                        .expect("replay limits"),
+                },
+            )
+            .expect("replay admission");
+        let disposition = admission.admission().disposition();
+        let has_audit_request = admission.audit_request().is_some();
+        let ticket = match admission.admission().outcome() {
+            AdmissionOutcome::Accepted(ticket) => *ticket,
+            outcome => panic!("expected accepted unproven replay, got {outcome:?}"),
+        };
+        let dispatched = lifecycle.dispatch_next().expect("unproven replay dispatch");
+        assert_eq!(dispatched.ticket(), ticket);
+        assert_eq!(dispatched.normalized().proof(), &Proof::Unproven);
+        lifecycle
+            .mark_dispatched(ticket)
+            .expect("unproven replay dispatched");
+        lifecycle
+            .mark_applied(ticket)
+            .expect("unproven replay applied");
+        lifecycle
+            .mark_unproven_audit_handed_off(ticket)
+            .expect("unproven replay audit handed off");
+        (
+            disposition,
+            has_audit_request,
+            !lifecycle.retained_uncertainties().is_empty(),
+        )
+    }
+
+    #[test]
+    fn fsevents_replay_admission_binds_distinct_lifecycle_generations() {
+        let directory = tempdir().expect("source root");
+        let source = source(
+            "replay-source",
+            directory.path().to_str().expect("source path"),
+        );
+        let database =
+            SourceDatabase::open_for_source_write(directory.path()).expect("source database");
+        database
+            .set_metadata(
+                META_SOURCE_WATCHER_CHECKPOINT,
+                &checkpoint(&source.id, "identity-a", 7, 99, 7, 17),
+            )
+            .expect("checkpoint metadata");
+
+        let mut lifecycle = AdmissionLifecycle::with_limits(limits(1, 1, 8));
+        lifecycle
+            .reconcile(
+                std::slice::from_ref(&source),
+                &HashMap::from([(source.root.clone(), Some("identity-a".to_string()))]),
+            )
+            .expect("lifecycle binding");
+        let owner_lane = lifecycle.lane(&source.id).expect("owner lane");
+        assert_ne!(owner_lane.generation(), WatcherGeneration::new(7));
+        assert_ne!(owner_lane.generation().get(), 42);
+
+        let admission = lifecycle
+            .admit_fsevents_replay(
+                &source,
+                &database,
+                FseventsReplayEvidence {
+                    source_lifecycle_generation: WatcherGeneration::new(7),
+                    replay_stream_generation: 42,
+                    backend_device: 99,
+                    replay_start_event_id: 17,
+                    replay_end_event_id: 18,
+                    observations: vec![replay_observation()],
+                    limits: RawObservationLimits::new(8, usize::MAX, usize::MAX)
+                        .expect("replay limits"),
+                },
+            )
+            .expect("valid replay admission");
+
+        assert_eq!(
+            admission.admission().disposition(),
+            AdapterDisposition::AdmittedWithContinuity
+        );
+        assert!(admission.audit_request().is_none());
+        let ticket = match admission.admission().outcome() {
+            AdmissionOutcome::Accepted(ticket) => *ticket,
+            outcome => panic!("expected accepted replay, got {outcome:?}"),
+        };
+        let dispatched = lifecycle.dispatch_next().expect("replay dispatch");
+        assert_eq!(dispatched.ticket(), ticket);
+        assert_eq!(dispatched.generation(), owner_lane.generation());
+        assert_eq!(
+            dispatched
+                .normalized()
+                .envelope()
+                .provenance()
+                .watcher_generation(),
+            owner_lane.generation()
+        );
+        let proof = dispatched
+            .normalized()
+            .proof()
+            .watcher_continuity()
+            .expect("continuity proof");
+        assert_eq!(
+            proof.backend_stream_identity(),
+            &BackendStreamIdentity::from_fsevents_device(99).expect("FSEvents stream")
+        );
+    }
+
+    #[test]
+    fn stale_malformed_root_device_and_gapped_checkpoints_remain_bounded_audits() {
+        let source_id = SourceId::from_string("replay-source");
+        let cases = [
+            checkpoint(&source_id, "identity-a", 6, 99, 7, 17),
+            checkpoint(&source_id, "identity-b", 7, 99, 7, 17),
+            checkpoint(&source_id, "identity-a", 7, 99, 7, 17),
+            checkpoint(&source_id, "identity-a", 7, 99, 7, 17),
+            String::from("not-json"),
+        ];
+        let evidence = [
+            (7, 99, 17, 18),
+            (7, 99, 17, 18),
+            (7, 100, 17, 18),
+            (7, 99, 18, 19),
+            (7, 99, 17, 18),
+        ];
+
+        for (checkpoint_value, (source_lifecycle_generation, backend_device, start, end)) in
+            cases.iter().zip(evidence)
+        {
+            let (disposition, has_audit_request, retained_uncertainty) = admit_unproven_replay(
+                checkpoint_value,
+                source_lifecycle_generation,
+                backend_device,
+                start,
+                end,
+            );
+            assert!(matches!(
+                disposition,
+                AdapterDisposition::AdmittedUnproven | AdapterDisposition::SourceAuditRequired
+            ));
+            assert!(has_audit_request);
+            assert!(retained_uncertainty);
+        }
     }
 
     #[test]

@@ -32,7 +32,6 @@ const CONTINUITY_PROOF_FIELDS: [&str; 7] = [
     "replay_coverage_end_event_id",
     "acknowledged_end_event_id",
 ];
-const FSEVENTS_STREAM_PREFIX: &[u8] = b"fsevents:";
 
 /// A construction capability that can only be created after this module validates DB metadata.
 pub(crate) struct ValidatedReplayAuthority {
@@ -86,11 +85,15 @@ impl SourceDatabase {
     /// The checkpoint parser is intentionally strict and fail-closed. In particular, legacy,
     /// proofless, malformed, unknown, duplicated, or identity-mismatched metadata returns
     /// `Ok(None)`, while database access failures retain their original `SourceDbError`.
+    /// `expected_source_lifecycle_generation` belongs to the persisted source lifecycle; the
+    /// separate `owner_watcher_generation` is the current in-memory reconciliation-owner lane
+    /// generation that the returned opaque authority must bind to.
     pub fn read_durable_replay_prior(
         &self,
         expected_source_id: &SourceId,
         expected_root_identity: &RootIdentity,
-        expected_watcher_generation: WatcherGeneration,
+        expected_source_lifecycle_generation: WatcherGeneration,
+        owner_watcher_generation: WatcherGeneration,
     ) -> Result<Option<ReplayPriorToken>, SourceDbError> {
         let Some(value) = self.get_metadata(META_SOURCE_WATCHER_CHECKPOINT)? else {
             return Ok(None);
@@ -99,7 +102,8 @@ impl SourceDatabase {
             &value,
             expected_source_id,
             expected_root_identity,
-            expected_watcher_generation,
+            expected_source_lifecycle_generation,
+            owner_watcher_generation,
         ))
     }
 }
@@ -108,7 +112,8 @@ fn parse_durable_replay_prior(
     value: &str,
     expected_source_id: &SourceId,
     expected_root_identity: &RootIdentity,
-    expected_watcher_generation: WatcherGeneration,
+    expected_source_lifecycle_generation: WatcherGeneration,
+    owner_watcher_generation: WatcherGeneration,
 ) -> Option<ReplayPriorToken> {
     let object = parse_object(value).ok()?;
     if !has_exact_fields(&object, &CHECKPOINT_FIELDS) {
@@ -120,7 +125,7 @@ fn parse_durable_replay_prior(
     if u64_field(&object, "format_version")? != CHECKPOINT_FORMAT_VERSION
         || string_field(&object, "source_id")? != expected_source_id.as_str()
         || root_identity.as_bytes() != expected_root_identity.as_bytes()
-        || u64_field(&object, "lifecycle_generation")? != expected_watcher_generation.get()
+        || u64_field(&object, "lifecycle_generation")? != expected_source_lifecycle_generation.get()
         || u64_field(&object, "source_revision").is_none()
         || string_field(&object, "cause")? != "targeted_replay"
     {
@@ -150,16 +155,13 @@ fn parse_durable_replay_prior(
 
     // Keep the backend discriminator in the opaque identity so a future native replay adapter
     // cannot accidentally treat a notify/process-local stream id as FSEvents authority.
-    let mut stream_identity =
-        Vec::with_capacity(FSEVENTS_STREAM_PREFIX.len() + std::mem::size_of::<u64>());
-    stream_identity.extend_from_slice(FSEVENTS_STREAM_PREFIX);
-    stream_identity.extend_from_slice(&backend_device.to_be_bytes());
+    let stream_identity = BackendStreamIdentity::from_fsevents_device(backend_device)?;
     Some(ReplayPriorToken::from_validated_durable_authority(
         ValidatedReplayAuthority::new(
             expected_source_id.clone(),
             expected_root_identity.clone(),
-            BackendStreamIdentity::from_bytes(stream_identity),
-            expected_watcher_generation,
+            stream_identity,
+            owner_watcher_generation,
             event_id,
         ),
     ))
@@ -332,7 +334,11 @@ mod tests {
         .to_string()
     }
 
-    fn read(value: &str) -> Option<ReplayPriorToken> {
+    fn read_with_generations(
+        value: &str,
+        source_lifecycle_generation: u64,
+        owner_watcher_generation: u64,
+    ) -> Option<ReplayPriorToken> {
         let directory = tempdir().expect("source root");
         let database = SourceDatabase::open_for_test_fixture_source_write(directory.path())
             .expect("source database");
@@ -340,16 +346,25 @@ mod tests {
             .set_metadata(META_SOURCE_WATCHER_CHECKPOINT, value)
             .expect("checkpoint metadata");
         database
-            .read_durable_replay_prior(&source_id(), &root(), WatcherGeneration::new(4))
+            .read_durable_replay_prior(
+                &source_id(),
+                &root(),
+                WatcherGeneration::new(source_lifecycle_generation),
+                WatcherGeneration::new(owner_watcher_generation),
+            )
             .expect("authority read")
+    }
+
+    fn read(value: &str) -> Option<ReplayPriorToken> {
+        read_with_generations(value, 4, 4)
     }
 
     #[test]
     fn valid_checkpoint_produces_durable_opaque_authority() {
-        let token = read(&checkpoint()).expect("valid token");
+        let token = read_with_generations(&checkpoint(), 4, 9).expect("valid token");
         assert_eq!(token.source_id(), &source_id());
         assert_eq!(token.root_identity(), &root());
-        assert_eq!(token.watcher_generation(), WatcherGeneration::new(4));
+        assert_eq!(token.watcher_generation(), WatcherGeneration::new(9));
         assert_eq!(token.acknowledged_sequence(), 17);
         assert_eq!(
             token.backend_stream_identity().as_bytes(),
@@ -370,7 +385,12 @@ mod tests {
         let database = SourceDatabase::open_for_test_fixture_source_write(directory.path())
             .expect("reopened source database");
         let token = database
-            .read_durable_replay_prior(&source_id(), &root(), WatcherGeneration::new(4))
+            .read_durable_replay_prior(
+                &source_id(),
+                &root(),
+                WatcherGeneration::new(4),
+                WatcherGeneration::new(4),
+            )
             .expect("authority read")
             .expect("valid token");
         assert_eq!(token.acknowledged_sequence(), 17);
