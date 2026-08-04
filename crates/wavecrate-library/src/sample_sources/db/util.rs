@@ -78,7 +78,16 @@ pub(super) fn normalize_source_index_path(path: &Path) -> Result<(String, i64), 
                 || value.starts_with(INDEX_ESCAPED_COMPONENT_PREFIX)
         })
     });
-    if cleaned.to_str().is_some() && !has_reserved_component {
+    if cleaned.to_str().is_some()
+        && !has_reserved_component
+        && !cleaned.components().any(|component| {
+            let Component::Normal(part) = component else {
+                return false;
+            };
+            part.to_str()
+                .is_some_and(|value| cfg!(unix) && value.contains('\\'))
+        })
+    {
         return normalize_relative_path(&cleaned).map(|value| (value, INDEX_PATH_ENCODING_PLAIN));
     }
 
@@ -90,7 +99,8 @@ pub(super) fn normalize_source_index_path(path: &Path) -> Result<(String, i64), 
         let encoded = match part.to_str() {
             Some(value)
                 if !value.starts_with(INDEX_NON_UNICODE_COMPONENT_PREFIX)
-                    && !value.starts_with(INDEX_ESCAPED_COMPONENT_PREFIX) =>
+                    && !value.starts_with(INDEX_ESCAPED_COMPONENT_PREFIX)
+                    && !(cfg!(unix) && value.contains('\\')) =>
             {
                 value.to_owned()
             }
@@ -153,7 +163,7 @@ fn parse_lossless_index_path(path: &str) -> Result<PathBuf, SourceDbError> {
         };
         decoded.push(value);
     }
-    Ok(decoded)
+    sanitize_relative_path(&decoded)
 }
 
 #[cfg(not(unix))]
@@ -176,7 +186,7 @@ fn parse_lossless_index_path(path: &str) -> Result<PathBuf, SourceDbError> {
             decoded.push(component);
         }
     }
-    Ok(decoded)
+    sanitize_relative_path(&decoded)
 }
 
 fn encode_hex(bytes: &[u8]) -> String {
@@ -343,6 +353,22 @@ mod tests {
         ]);
         let (encoded, encoding) = normalize_source_index_path(&path).unwrap();
         assert_eq!(encoding, INDEX_PATH_ENCODING_LOSSLESS);
+        assert_eq!(
+            parse_source_index_path_from_db(&encoded, encoding).unwrap(),
+            path
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn source_index_path_encoding_round_trips_unicode_literal_backslashes() {
+        let path = PathBuf::from_iter([
+            std::ffi::OsString::from("folder"),
+            std::ffi::OsString::from(r"kick\raw.wav"),
+        ]);
+        let (encoded, encoding) = normalize_source_index_path(&path).unwrap();
+        assert_eq!(encoding, INDEX_PATH_ENCODING_LOSSLESS);
+        assert!(encoded.contains(INDEX_ESCAPED_COMPONENT_PREFIX));
         assert_eq!(
             parse_source_index_path_from_db(&encoded, encoding).unwrap(),
             path

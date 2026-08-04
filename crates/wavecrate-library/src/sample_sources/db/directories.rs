@@ -503,7 +503,7 @@ mod tests {
 
     use super::super::{
         SourceDatabase, SourceDbError, SourceDirectoryEntry, SourceDirectoryTruthError,
-        SourceDirectoryTruthState,
+        SourceDirectoryTruthState, SourceDirectoryTruthUnavailableReason,
     };
 
     fn directory(path: &str, identity: &str) -> SourceDirectoryEntry {
@@ -627,6 +627,63 @@ mod tests {
             page.entries[0].relative_path.as_os_str().as_bytes(),
             expected.relative_path.as_os_str().as_bytes()
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_unicode_literal_backslash_directory_path_round_trips_through_storage() {
+        use std::ffi::OsString;
+        use std::path::PathBuf;
+
+        let root = tempfile::tempdir().unwrap();
+        let db = SourceDatabase::open_for_source_write(root.path()).unwrap();
+        let mut path = PathBuf::from("samples");
+        path.push(OsString::from(r"kick\raw"));
+        let expected = SourceDirectoryEntry {
+            relative_path: path,
+            directory_identity: "dir-unicode-backslash".to_owned(),
+        };
+
+        db.begin_source_directory_truth_generation(1, 1).unwrap();
+        db.stage_source_directory_truth_entries(1, std::slice::from_ref(&expected))
+            .unwrap();
+        db.finalize_source_directory_truth_generation(1, 0).unwrap();
+
+        let page = db.source_directory_truth_page(None, 1).unwrap();
+        assert_eq!(page.entries, vec![expected]);
+        assert!(page.next_cursor.is_none());
+    }
+
+    #[test]
+    fn malformed_persisted_lossless_directory_paths_require_audit() {
+        for (path, expected_description) in [
+            ("valid/~wavecrate-escaped~2f", "encoded slash/root"),
+            ("valid/~wavecrate-escaped~2e2e", "encoded parent"),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let db = SourceDatabase::open_for_source_write(root.path()).unwrap();
+            db.begin_source_directory_truth_generation(1, 1).unwrap();
+            db.stage_source_directory_truth_entries(1, &[directory("valid", "dir-valid")])
+                .unwrap();
+            db.finalize_source_directory_truth_generation(1, 0).unwrap();
+
+            db.connection
+                .execute(
+                    "UPDATE source_directory_entries
+                     SET path = ?1, path_encoding = 1
+                     WHERE generation = 1",
+                    [path],
+                )
+                .unwrap_or_else(|error| panic!("persist {expected_description}: {error}"));
+
+            let error = db.source_directory_truth_page(None, 1).unwrap_err();
+            assert_eq!(
+                directory_error(error),
+                SourceDirectoryTruthError::RequiresAudit {
+                    reason: SourceDirectoryTruthUnavailableReason::AuditRequired,
+                }
+            );
+        }
     }
 
     #[test]
