@@ -1,7 +1,8 @@
 //! Source-scoped ownership over the pure reconciliation admission supervisor.
 
 use super::adapter::{
-    AdapterError, LiveAuditAdmission, ReconciliationAdapter, SyntheticObservationBatch,
+    AdapterAdmission, AdapterDisposition, AdapterError, LiveAuditAdmission, ReconciliationAdapter,
+    ReplayPriorToken, SyntheticObservationBatch,
 };
 use super::admission::{
     AdmissionError, AdmissionLaneKey, DispatchTicket, DispatchedObservation,
@@ -77,6 +78,47 @@ impl OwnedAdmissionLane {
     }
 }
 
+/// An immutable owner-level replay admission and its conservative audit fallback.
+///
+/// The adapter admission remains the source of truth for disposition and ticket identity. The
+/// optional request is derived from the owner's current lane after invalid, rejected, or
+/// capacity-exhausted replay evidence remains unproven. A valid continuity admission and an exact
+/// duplicate therefore carry no new audit request.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OwnerReplayAdmission {
+    admission: AdapterAdmission,
+    audit_request: Option<SourceAuditRequest>,
+}
+
+impl OwnerReplayAdmission {
+    fn new(admission: AdapterAdmission, audit_request: Option<SourceAuditRequest>) -> Self {
+        Self {
+            admission,
+            audit_request,
+        }
+    }
+
+    /// Borrow the unchanged adapter-level replay admission.
+    pub const fn admission(&self) -> &AdapterAdmission {
+        &self.admission
+    }
+
+    /// Borrow the current-lane audit request retained for an unproven replay, if any.
+    pub const fn audit_request(&self) -> Option<&SourceAuditRequest> {
+        self.audit_request.as_ref()
+    }
+
+    /// Consume the owner wrapper and return the unchanged adapter admission.
+    pub fn into_admission(self) -> AdapterAdmission {
+        self.admission
+    }
+
+    /// Consume the owner wrapper and return its optional current-lane audit request.
+    pub fn into_audit_request(self) -> Option<SourceAuditRequest> {
+        self.audit_request
+    }
+}
+
 /// Owns a caller-supplied reconciliation admission supervisor for source-scoped lifecycle work.
 ///
 /// The owner keeps no parallel lane registry. Every source lookup and snapshot is resolved from
@@ -132,6 +174,38 @@ impl ReconciliationAdmissionOwner {
         ReconciliationAdapter::new(&mut self.supervisor).admit_live_with_correlation(batch)
     }
 
+    /// Admit replay using optional opaque durable authority through the current source lane.
+    ///
+    /// The owner consumes, but never constructs, native or database tokens. It independently
+    /// forwards the caller's prior only when the batch source has a capturing lane and the prior's
+    /// source/root/generation/backend-stream identity matches that current lane and batch stream.
+    /// Otherwise it passes no prior so the adapter retains unproven uncertainty. Missing or
+    /// ambiguous sequence evidence, a non-contiguous history claim, disqualifying raw evidence,
+    /// or any current-lane fence remains at the existing adapter/supervisor boundary. Such
+    /// outcomes carry the supervisor's bounded current-lane audit request when one can be derived.
+    pub fn admit_replay_with_durable_prior(
+        &mut self,
+        batch: SyntheticObservationBatch,
+        prior: Option<&ReplayPriorToken>,
+        contiguous: bool,
+    ) -> Result<OwnerReplayAdmission, AdapterError> {
+        let source_id = batch.provenance().source_id().clone();
+        let prior = self.validated_replay_prior(&batch, prior);
+        let admission = ReconciliationAdapter::new(&mut self.supervisor)
+            .admit_replay(batch, prior, contiguous)?;
+        let audit_request = match admission.disposition() {
+            AdapterDisposition::AdmittedWithContinuity
+            | AdapterDisposition::DuplicateSuppressed => None,
+            AdapterDisposition::AdmittedUnproven
+            | AdapterDisposition::SourceAuditRequired
+            | AdapterDisposition::UncertaintyCapacityExhausted => self
+                .supervisor
+                .source_audit_request_for_current_lane(&source_id),
+        };
+
+        Ok(OwnerReplayAdmission::new(admission, audit_request))
+    }
+
     /// Select the next admitted envelope using the supervisor's fair lane scheduler.
     pub fn dispatch_next(&mut self) -> Option<DispatchedObservation> {
         self.supervisor.dispatch_next()
@@ -145,6 +219,23 @@ impl ReconciliationAdmissionOwner {
     /// Advance one handed-off envelope to the applied phase.
     pub fn mark_applied(&mut self, ticket: DispatchTicket) -> Result<(), AdmissionError> {
         self.supervisor.mark_applied(ticket)
+    }
+
+    /// Retire an Applied replay ticket with an opaque, durably committed checkpoint token.
+    ///
+    /// The supervisor checks that the ticket carries continuity proof, that the committed token
+    /// matches its source/root/generation/backend stream, and that it reaches the replay coverage
+    /// terminal sequence. This seam consumes authority returned by a future durability owner; it
+    /// does not reuse the admission prior or mint a native/database token. Proofless tickets,
+    /// mismatches, duplicate terminal calls, and tickets invalidated by stop, rebind, removal, or
+    /// generation replacement remain fenced and do not release accounting twice.
+    pub fn mark_replay_checkpointed(
+        &mut self,
+        ticket: DispatchTicket,
+        committed_checkpoint: &ReplayPriorToken,
+    ) -> Result<(), AdmissionError> {
+        self.supervisor
+            .mark_replay_checkpointed(ticket, committed_checkpoint)
     }
 
     /// Retire one proofless live envelope after its conservative audit handoff.
@@ -305,6 +396,30 @@ impl ReconciliationAdmissionOwner {
             .ok_or(AdmissionOwnerError::UnknownSource)
     }
 
+    fn validated_replay_prior<'a>(
+        &self,
+        batch: &SyntheticObservationBatch,
+        prior: Option<&'a ReplayPriorToken>,
+    ) -> Option<&'a ReplayPriorToken> {
+        let prior = prior?;
+        let lane = self
+            .supervisor
+            .lane_for_source(batch.provenance().source_id())?;
+        let generation = self.supervisor.generation(lane).ok()?;
+        if self.supervisor.lifecycle(lane).ok()? != ReconciliationLifecycle::Capturing {
+            return None;
+        }
+        let backend_stream_identity = batch.provenance().backend_stream_identity()?.clone();
+        if prior.source_id() != lane.source_id()
+            || prior.root_identity() != lane.root_identity()
+            || prior.watcher_generation() != generation
+            || prior.backend_stream_identity() != &backend_stream_identity
+        {
+            return None;
+        }
+        Some(prior)
+    }
+
     fn snapshot(&self, lane: &AdmissionLaneKey) -> Result<OwnedAdmissionLane, AdmissionOwnerError> {
         let generation = self
             .supervisor
@@ -325,7 +440,7 @@ mod tests {
         AdmissionOutcome, AdmissionRejectReason, BackendStreamIdentity, CaptureBoundary,
         RawEventKind, RawObservation, RawObservationEnvelope, RawObservationLimits,
         RawObservationProvenance, RawObservedPath, RawPathRole,
-        ReconciliationAcknowledgementIdentity, ReconciliationAdmissionLimits,
+        ReconciliationAcknowledgementIdentity, ReconciliationAdmissionLimits, ReplayPriorToken,
         RetainedUncertaintyBoundary, SourceAuditCommit, SourceAuditRequest,
         SyntheticObservationBatch, UncertaintyReason,
     };
@@ -438,6 +553,59 @@ mod tests {
         )
     }
 
+    fn replay_batch(
+        source: &SourceId,
+        root_identity: &RootIdentity,
+        generation: WatcherGeneration,
+        stream: Option<&[u8]>,
+        first_sequence: Option<u64>,
+        last_sequence: Option<u64>,
+        kind: RawEventKind,
+    ) -> SyntheticObservationBatch {
+        let paths = if matches!(
+            kind,
+            RawEventKind::Overflow
+                | RawEventKind::Error
+                | RawEventKind::Unsupported
+                | RawEventKind::RootChanged
+        ) {
+            Vec::new()
+        } else {
+            vec![RawObservedPath::new(
+                "replayed.wav".into(),
+                RawPathRole::Subject,
+            )]
+        };
+        SyntheticObservationBatch::new(
+            RawObservationProvenance::new(
+                source.clone(),
+                Some(root_identity.clone()),
+                stream.map(|bytes| BackendStreamIdentity::from_bytes(bytes.to_vec())),
+                generation,
+                CaptureBoundary::try_new(20, first_sequence, last_sequence)
+                    .expect("replay boundary"),
+            ),
+            vec![RawObservation::new(kind, paths)],
+            RawObservationLimits::new(8, usize::MAX, usize::MAX).expect("batch limits"),
+        )
+    }
+
+    fn replay_prior(
+        source: &SourceId,
+        root_identity: &RootIdentity,
+        stream: &BackendStreamIdentity,
+        generation: WatcherGeneration,
+        acknowledged_sequence: u64,
+    ) -> ReplayPriorToken {
+        ReplayPriorToken::new(
+            source.clone(),
+            root_identity.clone(),
+            stream.clone(),
+            generation,
+            acknowledged_sequence,
+        )
+    }
+
     #[test]
     fn wrapping_existing_supervisor_and_lookup_use_authoritative_lane() {
         let source = SourceId::from_string("source-a");
@@ -521,6 +689,699 @@ mod tests {
         assert_eq!(marker.generation(), Some(lane.generation()));
         assert_eq!(marker.capture_boundary(), Some(boundary));
         assert!(marker.reasons().contains(&UncertaintyReason::LiveUnproven));
+    }
+
+    #[test]
+    fn owner_replay_binds_current_lane_and_checkpoint_releases_exactly_once() {
+        let source = SourceId::from_string("owner-replay");
+        let root_identity = root(b"owner-replay-root");
+        let stream = BackendStreamIdentity::from_bytes(b"owner-replay-stream".to_vec());
+        let mut owner = owner(1, 1, 8);
+        let lane = owner
+            .begin_source(source.clone(), root_identity.clone())
+            .expect("capturing lane");
+        let prior = replay_prior(&source, &root_identity, &stream, lane.generation(), 10);
+
+        let admission = owner
+            .admit_replay_with_durable_prior(
+                replay_batch(
+                    &source,
+                    &root_identity,
+                    lane.generation(),
+                    Some(stream.as_bytes()),
+                    Some(11),
+                    Some(12),
+                    RawEventKind::Create,
+                ),
+                Some(&prior),
+                true,
+            )
+            .expect("valid owner replay");
+        assert_eq!(
+            admission.admission().disposition(),
+            AdapterDisposition::AdmittedWithContinuity
+        );
+        assert_eq!(admission.audit_request(), None);
+        let ticket = match admission.admission().outcome() {
+            AdmissionOutcome::Accepted(ticket) => *ticket,
+            outcome => panic!("unexpected owner replay outcome: {outcome:?}"),
+        };
+        assert!(owner.supervisor().retained_uncertainties().is_empty());
+
+        let dispatched = owner.dispatch_next().expect("dispatch owner replay");
+        let proof = dispatched
+            .normalized()
+            .proof()
+            .watcher_continuity()
+            .expect("owner replay continuity proof");
+        assert_eq!(proof.source_id(), &source);
+        assert_eq!(proof.root_identity(), &root_identity);
+        assert_eq!(proof.backend_stream_identity(), &stream);
+        assert_eq!(proof.watcher_generation(), lane.generation());
+        assert_eq!(proof.prior_acknowledgement().sequence(), 10);
+        assert_eq!(proof.replay_coverage().after_sequence(), 10);
+        assert_eq!(proof.replay_coverage().through_sequence(), 12);
+        assert!(proof.replay_coverage().is_contiguous());
+        let terminal = replay_prior(&source, &root_identity, &stream, lane.generation(), 12);
+        assert_eq!(
+            owner.mark_replay_checkpointed(ticket, &terminal),
+            Err(AdmissionError::InvalidLifecycleTransition)
+        );
+        assert_eq!(owner.supervisor().in_flight(), 1);
+
+        owner.mark_dispatched(ticket).expect("replay dispatched");
+        owner.mark_applied(ticket).expect("replay applied");
+        owner
+            .mark_replay_checkpointed(ticket, &terminal)
+            .expect("replay checkpointed");
+        assert_eq!(owner.supervisor().in_flight(), 0);
+        assert_eq!(
+            owner.mark_replay_checkpointed(ticket, &terminal),
+            Err(AdmissionError::UnknownTicket)
+        );
+        assert_eq!(owner.supervisor().in_flight(), 0);
+    }
+
+    #[test]
+    fn into_supervisor_cannot_generic_checkpoint_continuity_proven_replay() {
+        let source = SourceId::from_string("owner-supervisor-replay");
+        let root_identity = root(b"owner-supervisor-replay-root");
+        let stream = BackendStreamIdentity::from_bytes(b"owner-supervisor-replay-stream".to_vec());
+        let mut owner = owner(1, 1, 8);
+        let lane = owner
+            .begin_source(source.clone(), root_identity.clone())
+            .expect("capturing lane");
+        let prior = replay_prior(&source, &root_identity, &stream, lane.generation(), 10);
+        let admission = owner
+            .admit_replay_with_durable_prior(
+                replay_batch(
+                    &source,
+                    &root_identity,
+                    lane.generation(),
+                    Some(stream.as_bytes()),
+                    Some(11),
+                    Some(11),
+                    RawEventKind::Create,
+                ),
+                Some(&prior),
+                true,
+            )
+            .expect("valid owner replay");
+        let ticket = match admission.admission().outcome() {
+            AdmissionOutcome::Accepted(ticket) => *ticket,
+            outcome => panic!("unexpected owner replay outcome: {outcome:?}"),
+        };
+        owner.dispatch_next().expect("dispatch owner replay");
+        owner.mark_dispatched(ticket).expect("replay dispatched");
+        owner.mark_applied(ticket).expect("replay applied");
+
+        let mut supervisor = owner.into_supervisor();
+        assert_eq!(
+            supervisor.mark_checkpointed(ticket),
+            Err(AdmissionError::ReplayCheckpointRequiresDurableAuthority)
+        );
+        assert_eq!(supervisor.in_flight(), 1);
+
+        let terminal = replay_prior(&source, &root_identity, &stream, lane.generation(), 11);
+        supervisor
+            .mark_replay_checkpointed(ticket, &terminal)
+            .expect("replay checkpoint");
+        assert_eq!(supervisor.in_flight(), 0);
+    }
+
+    #[test]
+    fn owner_invalid_replay_stays_unproven_and_returns_current_lane_audit() {
+        let cases = [
+            (
+                false,
+                true,
+                Some(11),
+                Some(12),
+                Some(b"owner-stream".as_slice()),
+                RawEventKind::Create,
+            ),
+            (
+                true,
+                false,
+                Some(11),
+                Some(12),
+                Some(b"owner-stream".as_slice()),
+                RawEventKind::Create,
+            ),
+            (
+                true,
+                true,
+                None,
+                None,
+                Some(b"owner-stream".as_slice()),
+                RawEventKind::Create,
+            ),
+            (true, true, Some(11), Some(12), None, RawEventKind::Create),
+            (
+                true,
+                true,
+                Some(12),
+                Some(13),
+                Some(b"owner-stream".as_slice()),
+                RawEventKind::Create,
+            ),
+            (
+                true,
+                true,
+                Some(11),
+                Some(12),
+                Some(b"owner-stream".as_slice()),
+                RawEventKind::Overflow,
+            ),
+        ];
+
+        for (has_prior, contiguous, first_sequence, last_sequence, stream, kind) in cases {
+            let source = SourceId::from_string("owner-invalid-replay");
+            let root_identity = root(b"owner-invalid-root");
+            let mut owner = owner(1, 2, 8);
+            let lane = owner
+                .begin_source(source.clone(), root_identity.clone())
+                .expect("capturing lane");
+            let prior_stream = BackendStreamIdentity::from_bytes(b"owner-stream".to_vec());
+            let prior = has_prior.then(|| {
+                replay_prior(
+                    &source,
+                    &root_identity,
+                    &prior_stream,
+                    lane.generation(),
+                    10,
+                )
+            });
+            let admission = owner
+                .admit_replay_with_durable_prior(
+                    replay_batch(
+                        &source,
+                        &root_identity,
+                        lane.generation(),
+                        stream,
+                        first_sequence,
+                        last_sequence,
+                        kind,
+                    ),
+                    prior.as_ref(),
+                    contiguous,
+                )
+                .expect("invalid replay remains an adapter result");
+            assert_ne!(
+                admission.admission().disposition(),
+                AdapterDisposition::AdmittedWithContinuity
+            );
+            let audit_request = admission
+                .audit_request()
+                .expect("invalid current-lane replay audit request");
+            assert_eq!(audit_request.source_id(), &source);
+            assert_eq!(audit_request.root_identity(), &root_identity);
+            assert_eq!(audit_request.generation(), lane.generation());
+
+            let outcome = admission.admission().outcome();
+            match outcome {
+                AdmissionOutcome::Accepted(ticket) => {
+                    let ticket = *ticket;
+                    let dispatched = owner.dispatch_next().expect("unproven replay dispatch");
+                    assert_eq!(dispatched.ticket(), ticket);
+                    assert!(dispatched.normalized().proof().is_unproven());
+                    owner
+                        .mark_dispatched(ticket)
+                        .expect("invalid replay dispatched");
+                    owner.mark_applied(ticket).expect("invalid replay applied");
+                    owner
+                        .mark_unproven_audit_handed_off(ticket)
+                        .expect("invalid replay audit handed off");
+                }
+                AdmissionOutcome::Rejected(_) => {
+                    assert_eq!(owner.dispatch_next(), None);
+                }
+                outcome => panic!("unexpected invalid replay outcome: {outcome:?}"),
+            }
+            assert_eq!(owner.supervisor().in_flight(), 0);
+        }
+    }
+
+    #[test]
+    fn owner_replay_duplicate_is_suppressed_without_audit_or_extra_accounting() {
+        let source = SourceId::from_string("owner-replay-duplicate");
+        let root_identity = root(b"owner-replay-duplicate-root");
+        let mut owner = owner(1, 1, 8);
+        let lane = owner
+            .begin_source(source.clone(), root_identity.clone())
+            .expect("capturing lane");
+        let batch = replay_batch(
+            &source,
+            &root_identity,
+            lane.generation(),
+            Some(b"owner-replay-duplicate-stream"),
+            Some(11),
+            Some(11),
+            RawEventKind::Create,
+        );
+        let stream = BackendStreamIdentity::from_bytes(b"owner-replay-duplicate-stream".to_vec());
+        let prior = replay_prior(&source, &root_identity, &stream, lane.generation(), 10);
+
+        let first = owner
+            .admit_replay_with_durable_prior(batch.clone(), Some(&prior), true)
+            .expect("first replay");
+        let second = owner
+            .admit_replay_with_durable_prior(batch, Some(&prior), true)
+            .expect("duplicate replay");
+        assert_eq!(
+            first.admission().disposition(),
+            AdapterDisposition::AdmittedWithContinuity
+        );
+        assert_eq!(
+            second.admission().disposition(),
+            AdapterDisposition::DuplicateSuppressed
+        );
+        assert_eq!(second.audit_request(), None);
+        assert!(matches!(
+            second.admission().outcome(),
+            AdmissionOutcome::DuplicateSuppressed(_)
+        ));
+        assert_eq!(owner.supervisor().in_flight(), 1);
+    }
+
+    #[test]
+    fn owner_replay_terminal_rejects_proofless_tickets_and_lifecycle_fences_old_tickets() {
+        let source = SourceId::from_string("owner-replay-fence");
+        let root_identity = root(b"owner-replay-fence-root");
+        let mut owner = owner(1, 1, 8);
+        let lane = owner
+            .begin_source(source.clone(), root_identity.clone())
+            .expect("capturing lane");
+        let live = owner
+            .admit_live_with_correlation(live_batch(&source, &root_identity, lane.generation(), 30))
+            .expect("live admission");
+        let live_ticket = match live.admission().outcome() {
+            AdmissionOutcome::Accepted(ticket) => *ticket,
+            outcome => panic!("unexpected live outcome: {outcome:?}"),
+        };
+        owner.dispatch_next().expect("live dispatch");
+        owner.mark_dispatched(live_ticket).expect("live dispatched");
+        owner.mark_applied(live_ticket).expect("live applied");
+        let live_checkpoint = replay_prior(
+            &source,
+            &root_identity,
+            &BackendStreamIdentity::from_bytes(b"live-checkpoint".to_vec()),
+            lane.generation(),
+            30,
+        );
+        assert_eq!(
+            owner.mark_replay_checkpointed(live_ticket, &live_checkpoint),
+            Err(AdmissionError::ReplayCheckpointRequiresContinuityProof)
+        );
+        assert_eq!(owner.supervisor().in_flight(), 1);
+        owner
+            .mark_unproven_audit_handed_off(live_ticket)
+            .expect("live audit handed off");
+
+        let replay_stream =
+            BackendStreamIdentity::from_bytes(b"owner-replay-fence-stream".to_vec());
+        let admission_prior = replay_prior(
+            &source,
+            &root_identity,
+            &replay_stream,
+            lane.generation(),
+            40,
+        );
+        let replay = owner
+            .admit_replay_with_durable_prior(
+                replay_batch(
+                    &source,
+                    &root_identity,
+                    lane.generation(),
+                    Some(b"owner-replay-fence-stream"),
+                    Some(41),
+                    Some(41),
+                    RawEventKind::Create,
+                ),
+                Some(&admission_prior),
+                true,
+            )
+            .expect("replay admission");
+        let replay_ticket = match replay.admission().outcome() {
+            AdmissionOutcome::Accepted(ticket) => *ticket,
+            outcome => panic!("unexpected replay outcome: {outcome:?}"),
+        };
+        owner
+            .stop_source(&source)
+            .expect("stop invalidates old replay ticket");
+        assert_eq!(owner.supervisor().in_flight(), 0);
+        assert_eq!(
+            owner.mark_replay_checkpointed(replay_ticket, &admission_prior),
+            Err(AdmissionError::UnknownTicket)
+        );
+
+        let replacement_root = root(b"owner-replay-fence-replacement");
+        let restarted = owner
+            .begin_source(source.clone(), root_identity)
+            .expect("restart lane");
+        let replacement_prior = replay_prior(
+            &source,
+            restarted.root_identity(),
+            &BackendStreamIdentity::from_bytes(b"owner-replay-rebind-stream".to_vec()),
+            restarted.generation(),
+            50,
+        );
+        let replacement_replay = owner
+            .admit_replay_with_durable_prior(
+                replay_batch(
+                    &source,
+                    restarted.root_identity(),
+                    restarted.generation(),
+                    Some(b"owner-replay-rebind-stream"),
+                    Some(51),
+                    Some(51),
+                    RawEventKind::Create,
+                ),
+                Some(&replacement_prior),
+                true,
+            )
+            .expect("replacement replay admission");
+        let replacement_ticket = match replacement_replay.admission().outcome() {
+            AdmissionOutcome::Accepted(ticket) => *ticket,
+            outcome => panic!("unexpected replacement replay outcome: {outcome:?}"),
+        };
+        let rebound = owner
+            .rebind_source(&source, replacement_root)
+            .expect("rebind lane");
+        assert_eq!(rebound.lifecycle(), ReconciliationLifecycle::Starting);
+        assert_eq!(
+            owner.mark_replay_checkpointed(replacement_ticket, &replacement_prior),
+            Err(AdmissionError::UnknownTicket)
+        );
+        owner.stop_source(&source).expect("stop rebound lane");
+        owner
+            .remove_source(&source)
+            .expect("remove stopped rebound");
+        assert_eq!(
+            owner.mark_replay_checkpointed(replacement_ticket, &replacement_prior),
+            Err(AdmissionError::UnknownTicket)
+        );
+    }
+
+    #[test]
+    fn owner_replay_prior_identity_mismatches_are_dropped_before_adapter_admission() {
+        let source = SourceId::from_string("owner-replay-identity");
+        let root_identity = root(b"owner-replay-identity-root");
+        let stream_a = BackendStreamIdentity::from_bytes(b"owner-stream-a".to_vec());
+        let stream_b = BackendStreamIdentity::from_bytes(b"owner-stream-b".to_vec());
+        let mut owner = owner(1, 2, 8);
+        let lane = owner
+            .begin_source(source.clone(), root_identity.clone())
+            .expect("capturing lane");
+        let mismatched_priors = [
+            replay_prior(
+                &SourceId::from_string("other-source"),
+                &root_identity,
+                &stream_b,
+                lane.generation(),
+                10,
+            ),
+            replay_prior(
+                &source,
+                &root(b"other-root"),
+                &stream_b,
+                lane.generation(),
+                10,
+            ),
+            replay_prior(
+                &source,
+                &root_identity,
+                &stream_b,
+                WatcherGeneration::new(lane.generation().get() + 1),
+                10,
+            ),
+            replay_prior(&source, &root_identity, &stream_a, lane.generation(), 10),
+        ];
+
+        for (index, prior) in mismatched_priors.iter().enumerate() {
+            let sequence = 11 + index as u64;
+            let admission = owner
+                .admit_replay_with_durable_prior(
+                    replay_batch(
+                        &source,
+                        &root_identity,
+                        lane.generation(),
+                        Some(stream_b.as_bytes()),
+                        Some(sequence),
+                        Some(sequence),
+                        RawEventKind::Create,
+                    ),
+                    Some(prior),
+                    true,
+                )
+                .expect("identity mismatch remains an adapter result");
+            assert_eq!(
+                admission.admission().disposition(),
+                AdapterDisposition::SourceAuditRequired
+            );
+            let audit_request = admission
+                .audit_request()
+                .expect("mismatch retains current-lane audit request");
+            assert_eq!(audit_request.source_id(), &source);
+            assert_eq!(audit_request.root_identity(), &root_identity);
+            assert_eq!(audit_request.generation(), lane.generation());
+            match admission.admission().outcome() {
+                AdmissionOutcome::Accepted(ticket) => {
+                    let ticket = *ticket;
+                    let dispatched = owner.dispatch_next().expect("unproven dispatch");
+                    assert!(dispatched.normalized().proof().is_unproven());
+                    owner.mark_dispatched(ticket).expect("mismatch dispatched");
+                    owner.mark_applied(ticket).expect("mismatch applied");
+                    owner
+                        .mark_unproven_audit_handed_off(ticket)
+                        .expect("mismatch audit handed off");
+                }
+                outcome => panic!("unexpected identity mismatch outcome: {outcome:?}"),
+            }
+        }
+        assert_eq!(owner.supervisor().in_flight(), 0);
+    }
+
+    #[test]
+    fn owner_replay_terminal_rejects_old_or_wrong_authority_without_releasing_accounting() {
+        let source = SourceId::from_string("owner-replay-terminal");
+        let root_identity = root(b"owner-replay-terminal-root");
+        let stream = BackendStreamIdentity::from_bytes(b"owner-replay-terminal-stream".to_vec());
+        let mut owner = owner(1, 1, 8);
+        let lane = owner
+            .begin_source(source.clone(), root_identity.clone())
+            .expect("capturing lane");
+        let admission_prior = replay_prior(&source, &root_identity, &stream, lane.generation(), 10);
+        let admission = owner
+            .admit_replay_with_durable_prior(
+                replay_batch(
+                    &source,
+                    &root_identity,
+                    lane.generation(),
+                    Some(stream.as_bytes()),
+                    Some(11),
+                    Some(12),
+                    RawEventKind::Create,
+                ),
+                Some(&admission_prior),
+                true,
+            )
+            .expect("replay admission");
+        let ticket = match admission.admission().outcome() {
+            AdmissionOutcome::Accepted(ticket) => *ticket,
+            outcome => panic!("unexpected replay outcome: {outcome:?}"),
+        };
+        owner.dispatch_next().expect("replay dispatch");
+        owner.mark_dispatched(ticket).expect("replay dispatched");
+        owner.mark_applied(ticket).expect("replay applied");
+
+        let insufficient = replay_prior(&source, &root_identity, &stream, lane.generation(), 11);
+        let wrong_tokens = [
+            replay_prior(
+                &SourceId::from_string("other-source"),
+                &root_identity,
+                &stream,
+                lane.generation(),
+                12,
+            ),
+            replay_prior(
+                &source,
+                &root(b"other-root"),
+                &stream,
+                lane.generation(),
+                12,
+            ),
+            replay_prior(
+                &source,
+                &root_identity,
+                &stream,
+                WatcherGeneration::new(lane.generation().get() + 1),
+                12,
+            ),
+            replay_prior(
+                &source,
+                &root_identity,
+                &BackendStreamIdentity::from_bytes(b"other-stream".to_vec()),
+                lane.generation(),
+                12,
+            ),
+        ];
+        assert_eq!(
+            owner.mark_replay_checkpointed(ticket, &insufficient),
+            Err(AdmissionError::ReplayCheckpointAuthorityMismatch)
+        );
+        assert_eq!(owner.supervisor().in_flight(), 1);
+        for wrong in &wrong_tokens {
+            assert_eq!(
+                owner.mark_replay_checkpointed(ticket, wrong),
+                Err(AdmissionError::ReplayCheckpointAuthorityMismatch)
+            );
+            assert_eq!(owner.supervisor().in_flight(), 1);
+        }
+
+        let terminal = replay_prior(&source, &root_identity, &stream, lane.generation(), 12);
+        owner
+            .mark_replay_checkpointed(ticket, &terminal)
+            .expect("matching terminal checkpoint");
+        assert_eq!(owner.supervisor().in_flight(), 0);
+        assert_eq!(
+            owner.mark_replay_checkpointed(ticket, &terminal),
+            Err(AdmissionError::UnknownTicket)
+        );
+    }
+
+    #[test]
+    fn owner_replay_capacity_exhaustion_keeps_current_lane_audit_fallback() {
+        let mut owner = owner(1, 1, 1);
+        for index in 0..2 {
+            let source = SourceId::from_string(format!("unknown-capacity-{index}"));
+            let root_identity = root(format!("unknown-capacity-root-{index}").as_bytes());
+            let admission = owner
+                .admit_replay_with_durable_prior(
+                    replay_batch(
+                        &source,
+                        &root_identity,
+                        WatcherGeneration::new(1),
+                        Some(b"unknown-capacity-stream"),
+                        Some(1),
+                        Some(1),
+                        RawEventKind::Create,
+                    ),
+                    None,
+                    true,
+                )
+                .expect("unknown source admission remains bounded");
+            assert_eq!(
+                admission.admission().disposition(),
+                AdapterDisposition::SourceAuditRequired
+            );
+            assert_eq!(admission.audit_request(), None);
+        }
+
+        let source = SourceId::from_string("capacity-current");
+        let root_identity = root(b"capacity-current-root");
+        let lane = owner
+            .begin_source(source.clone(), root_identity.clone())
+            .expect("current capturing lane");
+        let admission = owner
+            .admit_replay_with_durable_prior(
+                replay_batch(
+                    &source,
+                    &root_identity,
+                    lane.generation(),
+                    Some(b"capacity-current-stream"),
+                    Some(11),
+                    Some(11),
+                    RawEventKind::Create,
+                ),
+                None,
+                true,
+            )
+            .expect("capacity-exhausted replay remains bounded");
+        assert!(matches!(
+            admission.admission().outcome(),
+            AdmissionOutcome::UncertaintyCapacityExhausted(_)
+        ));
+        let audit_request = admission
+            .audit_request()
+            .expect("capacity exhaustion current-lane audit request");
+        assert_eq!(audit_request.source_id(), &source);
+        assert_eq!(audit_request.root_identity(), &root_identity);
+        assert_eq!(audit_request.generation(), lane.generation());
+        assert_eq!(owner.supervisor().in_flight(), 0);
+    }
+
+    #[test]
+    fn owner_replay_unknown_and_stopped_sources_fail_closed_without_inventing_lanes() {
+        let source = SourceId::from_string("unknown-replay-source");
+        let root_identity = root(b"unknown-replay-root");
+        let stream = BackendStreamIdentity::from_bytes(b"unknown-replay-stream".to_vec());
+        let mut owner = owner(1, 1, 8);
+        let prior = replay_prior(
+            &source,
+            &root_identity,
+            &stream,
+            WatcherGeneration::new(1),
+            10,
+        );
+        let unknown = owner
+            .admit_replay_with_durable_prior(
+                replay_batch(
+                    &source,
+                    &root_identity,
+                    WatcherGeneration::new(1),
+                    Some(stream.as_bytes()),
+                    Some(11),
+                    Some(11),
+                    RawEventKind::Create,
+                ),
+                Some(&prior),
+                true,
+            )
+            .expect("unknown source remains an adapter result");
+        assert_eq!(
+            unknown.admission().outcome(),
+            &AdmissionOutcome::Rejected(AdmissionRejectReason::UnknownLane)
+        );
+        assert_eq!(unknown.audit_request(), None);
+        assert_eq!(owner.lane(&source), None);
+        assert_eq!(owner.supervisor().in_flight(), 0);
+
+        let lane = owner
+            .begin_source(source.clone(), root_identity.clone())
+            .expect("capturing source");
+        owner.stop_source(&source).expect("stopped source");
+        let stopped_prior = replay_prior(&source, &root_identity, &stream, lane.generation(), 10);
+        let stopped = owner
+            .admit_replay_with_durable_prior(
+                replay_batch(
+                    &source,
+                    &root_identity,
+                    lane.generation(),
+                    Some(stream.as_bytes()),
+                    Some(11),
+                    Some(11),
+                    RawEventKind::Create,
+                ),
+                Some(&stopped_prior),
+                true,
+            )
+            .expect("stopped source remains an adapter result");
+        assert_eq!(
+            stopped.admission().outcome(),
+            &AdmissionOutcome::Rejected(AdmissionRejectReason::NotCapturing)
+        );
+        let audit_request = stopped
+            .audit_request()
+            .expect("existing stopped lane audit request");
+        assert_eq!(audit_request.source_id(), &source);
+        assert_eq!(audit_request.root_identity(), &root_identity);
+        assert_eq!(audit_request.generation(), lane.generation());
+        assert_eq!(
+            owner.lane(&source).expect("stopped lane").lifecycle(),
+            ReconciliationLifecycle::Stopped
+        );
+        assert_eq!(owner.supervisor().in_flight(), 0);
     }
 
     #[test]

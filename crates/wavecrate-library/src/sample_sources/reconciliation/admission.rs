@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::sample_sources::SourceId;
 
+use super::adapter::ReplayPriorToken;
 use super::model::{
     BackendStreamIdentity, CaptureBoundary, CaptureSequenceEvidence, CaptureSequenceRange,
     RawEventKind, RawObservationAccounting, RawObservationEnvelope, RawObservationLimits,
@@ -236,6 +237,12 @@ pub enum AdmissionError {
     InvalidLifecycleTransition,
     /// A proof-carrying envelope cannot use the proofless audit handoff.
     UnprovenAuditHandoffRequiresUnprovenEnvelope,
+    /// A continuity-proven replay requires opaque durable checkpoint authority.
+    ReplayCheckpointRequiresDurableAuthority,
+    /// A replay checkpoint may retire only an envelope carrying watcher continuity proof.
+    ReplayCheckpointRequiresContinuityProof,
+    /// The committed replay checkpoint does not match or cover the continuity proof.
+    ReplayCheckpointAuthorityMismatch,
     /// The supplied generation is not the lane's current generation.
     GenerationMismatch,
     /// The monotonic generation counter cannot advance.
@@ -1421,6 +1428,50 @@ impl ReconciliationAdmissionSupervisor {
             .ok_or(AdmissionError::UnknownTicket)?;
         if pending.phase != DispatchPhase::Applied {
             return Err(AdmissionError::InvalidLifecycleTransition);
+        }
+        if pending.envelope.proof().watcher_continuity().is_some() {
+            return Err(AdmissionError::ReplayCheckpointRequiresDurableAuthority);
+        }
+        let pending = self.pending.remove(&ticket).expect("ticket checked above");
+        self.release_usage(&pending.lane, pending.usage);
+        Ok(())
+    }
+
+    /// Retire an Applied ticket only with a matching durably committed replay checkpoint.
+    ///
+    /// This is crate-visible so the source owner can expose a replay-specific terminal seam that
+    /// consumes opaque durability authority without minting a token. The committed token must
+    /// match the proof identity and cover its exact replay terminal sequence. Removing the pending
+    /// ticket before releasing usage makes duplicate terminal calls and lifecycle-invalidated
+    /// tickets harmless.
+    pub(crate) fn mark_replay_checkpointed(
+        &mut self,
+        ticket: DispatchTicket,
+        committed_checkpoint: &ReplayPriorToken,
+    ) -> Result<(), AdmissionError> {
+        let pending = self
+            .pending
+            .get(&ticket)
+            .ok_or(AdmissionError::UnknownTicket)?;
+        if pending.phase != DispatchPhase::Applied {
+            return Err(AdmissionError::InvalidLifecycleTransition);
+        }
+        if pending.envelope.proof().watcher_continuity().is_none() {
+            return Err(AdmissionError::ReplayCheckpointRequiresContinuityProof);
+        }
+        let proof = pending
+            .envelope
+            .proof()
+            .watcher_continuity()
+            .expect("continuity proof checked above");
+        if proof.source_id() != committed_checkpoint.source_id()
+            || proof.root_identity() != committed_checkpoint.root_identity()
+            || proof.watcher_generation() != committed_checkpoint.watcher_generation()
+            || proof.backend_stream_identity() != committed_checkpoint.backend_stream_identity()
+            || committed_checkpoint.acknowledged_sequence()
+                < proof.replay_coverage().through_sequence()
+        {
+            return Err(AdmissionError::ReplayCheckpointAuthorityMismatch);
         }
         let pending = self.pending.remove(&ticket).expect("ticket checked above");
         self.release_usage(&pending.lane, pending.usage);

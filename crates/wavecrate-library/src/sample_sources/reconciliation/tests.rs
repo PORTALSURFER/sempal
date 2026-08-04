@@ -1384,9 +1384,16 @@ fn continuity_proven_replay_cannot_use_unproven_audit_handoff() {
     );
     assert_eq!(supervisor.in_flight(), 1);
 
+    assert_eq!(
+        supervisor.mark_checkpointed(ticket),
+        Err(AdmissionError::ReplayCheckpointRequiresDurableAuthority)
+    );
+    assert_eq!(supervisor.in_flight(), 1);
+
+    let terminal = replay_prior("source-a", b"root-a", b"stream-a", generation.get(), 11);
     supervisor
-        .mark_checkpointed(ticket)
-        .expect("normal replay checkpoint");
+        .mark_replay_checkpointed(ticket, &terminal)
+        .expect("replay checkpoint");
     assert_eq!(supervisor.in_flight(), 0);
 }
 
