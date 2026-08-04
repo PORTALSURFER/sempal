@@ -447,6 +447,130 @@ pub struct SourceIndexSnapshot {
     pub entries: Vec<SourceIndexEntry>,
 }
 
+/// One directory observed relative to a source root.
+///
+/// The source root itself is implicit and is therefore never represented by an entry. The path
+/// can use the same lossless storage encoding as index-only source paths, including raw Unix
+/// names that are not valid Unicode.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceDirectoryEntry {
+    /// Directory path relative to the source root.
+    pub relative_path: PathBuf,
+    /// Stable filesystem identity for the directory.
+    pub directory_identity: String,
+}
+
+/// Why persisted directory truth cannot currently be trusted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SourceDirectoryTruthUnavailableReason {
+    /// The additive directory-truth schema is absent from a read-only database.
+    SchemaUnavailable,
+    /// The persisted generation metadata is structurally inconsistent.
+    Malformed,
+    /// A stored path or identity requires an audit before it can be exposed.
+    AuditRequired,
+}
+
+/// Coherent source-directory state published by the source database.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SourceDirectoryTruthState {
+    /// No directory generation has ever been published.
+    Uninitialized,
+    /// One complete directory generation is active at this source revision.
+    Active {
+        /// Stable source-local generation number.
+        generation: u64,
+        /// Generic source revision assigned by the publication transaction.
+        published_source_revision: u64,
+    },
+    /// Directory truth exists but is not safe to expose.
+    Unavailable {
+        /// Reason the state failed closed.
+        reason: SourceDirectoryTruthUnavailableReason,
+    },
+}
+
+impl SourceDirectoryTruthState {
+    /// Return the active generation, if one is published and trusted.
+    pub fn active_generation(self) -> Option<u64> {
+        match self {
+            Self::Active { generation, .. } => Some(generation),
+            Self::Uninitialized | Self::Unavailable { .. } => None,
+        }
+    }
+
+    /// Return the exact source revision at which the active generation was published.
+    pub fn published_source_revision(self) -> Option<u64> {
+        match self {
+            Self::Active {
+                published_source_revision,
+                ..
+            } => Some(published_source_revision),
+            Self::Uninitialized | Self::Unavailable { .. } => None,
+        }
+    }
+}
+
+/// Opaque keyset cursor for bounded directory-truth reads.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceDirectoryTruthCursor {
+    pub(crate) generation: u64,
+    pub(crate) published_source_revision: u64,
+    pub(crate) raw_path: String,
+}
+
+impl SourceDirectoryTruthCursor {
+    pub(crate) fn from_parts(
+        generation: u64,
+        published_source_revision: u64,
+        raw_path: String,
+    ) -> Self {
+        Self {
+            generation,
+            published_source_revision,
+            raw_path,
+        }
+    }
+
+    /// Borrow the exact encoded SQLite path key represented by this cursor.
+    pub fn as_str(&self) -> &str {
+        &self.raw_path
+    }
+}
+
+/// One bounded page of the active directory-truth generation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceDirectoryTruthPage {
+    /// Directory-truth state observed by the page.
+    pub state: SourceDirectoryTruthState,
+    /// Entries in deterministic encoded-path order.
+    pub entries: Vec<SourceDirectoryEntry>,
+    /// Cursor for the next bounded page, if more entries remain.
+    pub next_cursor: Option<SourceDirectoryTruthCursor>,
+}
+
+/// Result of a directory-generation publication attempt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SourceDirectoryTruthPublication {
+    /// Generation made active by this publication.
+    pub generation: u64,
+    /// Generic source revision assigned to the active generation.
+    pub source_revision: u64,
+    /// True when this call observed the same generation already published.
+    pub idempotent: bool,
+}
+
+/// Bounded result from deleting inactive directory generations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SourceDirectoryTruthCleanup {
+    /// Number of entry rows deleted by the cleanup transaction.
+    pub deleted_entries: usize,
+    /// Number of inactive generation rows deleted by the cleanup transaction.
+    pub deleted_generations: usize,
+    /// Whether another bounded cleanup pass is needed.
+    pub more_work: bool,
+}
+
 /// One normal library tag stored in a source database.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceTag {

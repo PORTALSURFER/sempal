@@ -46,6 +46,22 @@ pub(super) const SOURCE_DB_SCHEMA_CONTRACT: &[TableContract] = &[
         ],
     },
     TableContract {
+        name: "source_directory_generations",
+        columns: &[
+            "generation",
+            "status",
+            "expected_entry_count",
+            "staged_entry_count",
+            "complete",
+            "published_source_revision",
+            "created_at",
+        ],
+    },
+    TableContract {
+        name: "source_directory_entries",
+        columns: &["generation", "path", "path_encoding", "directory_identity"],
+    },
+    TableContract {
         name: "source_tags",
         columns: &["id", "normalized_text", "display_label"],
     },
