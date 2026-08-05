@@ -23,7 +23,10 @@ impl LivenessHarness {
                 .protected();
         source.open_db().expect("create liveness source database");
         let (watcher_tx, watcher_rx) = std::sync::mpsc::channel();
-        let watcher = GuiSourceWatcherHandle::spawn(vec![source.clone()], watcher_tx);
+        let watcher = GuiSourceWatcherHandle::spawn(
+            vec![SourceProcessingRegistration::new(source.clone(), 1)],
+            watcher_tx,
+        );
         watcher.wait_until_ready_for_tests();
         let supervisor = SourceProcessingSupervisor::start(vec![source.clone()]);
         Self {
@@ -181,7 +184,7 @@ impl LivenessHarness {
     pub(super) fn restart_runtime(&mut self) {
         let (watcher_tx, watcher_rx) = std::sync::mpsc::channel();
         self.watcher = Some(GuiSourceWatcherHandle::spawn(
-            vec![self.source.clone()],
+            vec![SourceProcessingRegistration::new(self.source.clone(), 1)],
             watcher_tx,
         ));
         self.watcher

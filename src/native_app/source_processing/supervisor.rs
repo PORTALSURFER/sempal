@@ -100,6 +100,7 @@ pub(in crate::native_app) use admission::{
 };
 use cache_ownership::*;
 pub(in crate::native_app) use commands::SourceAuditLifecycleCause;
+pub(in crate::native_app) use control::SourceProcessingRegistration;
 use control::*;
 use coordination::*;
 use coordinator::*;

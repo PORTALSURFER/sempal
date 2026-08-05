@@ -7,6 +7,25 @@ use crate::native_app::sample_library::source_watcher::RevisionBoundCheckpoint;
 use std::collections::VecDeque;
 use wavecrate_library::sample_sources::reconciliation::SourceAuditRequest;
 
+/// The supervisor-owned source descriptor and its current source-processing lifecycle epoch.
+///
+/// This pair is the only runtime transport for source lifecycle authority. Consumers may retain
+/// it, but they must not reconstruct it by pairing descriptors with a later generation snapshot.
+#[derive(Clone, Debug)]
+pub(in crate::native_app) struct SourceProcessingRegistration {
+    pub(in crate::native_app) source: SampleSource,
+    pub(in crate::native_app) lifecycle_generation: u64,
+}
+
+impl SourceProcessingRegistration {
+    pub(in crate::native_app) fn new(source: SampleSource, lifecycle_generation: u64) -> Self {
+        Self {
+            source,
+            lifecycle_generation,
+        }
+    }
+}
+
 pub(super) struct ControlState {
     pub(super) sources: BTreeMap<String, SampleSource>,
     pub(super) source_work_cancels: BTreeMap<String, Arc<AtomicBool>>,
@@ -44,6 +63,20 @@ pub(super) struct ControlState {
 }
 
 impl ControlState {
+    pub(super) fn source_registrations(&self) -> Vec<SourceProcessingRegistration> {
+        self.sources
+            .iter()
+            .filter_map(|(source_id, source)| {
+                self.source_lifecycle_generations
+                    .get(source_id)
+                    .copied()
+                    .map(|lifecycle_generation| {
+                        SourceProcessingRegistration::new(source.clone(), lifecycle_generation)
+                    })
+            })
+            .collect()
+    }
+
     pub(super) fn source_is_configured(&self, source_id: &str) -> bool {
         self.sources.contains_key(source_id) && !self.quarantined_sources.contains(source_id)
     }

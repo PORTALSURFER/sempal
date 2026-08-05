@@ -28,7 +28,9 @@ use crate::native_app::sample_library::harvest_tracking::{
 use crate::native_app::sample_library::sample_ratings::{
     RatingPersistRequest, persist_rating_requests,
 };
-use crate::native_app::source_processing::SourceProcessingSupervisor;
+use crate::native_app::source_processing::{
+    SourceProcessingRegistration, SourceProcessingSupervisor,
+};
 use crate::native_app::waveform::WaveformPreservedMarks;
 
 pub(in crate::native_app) struct BackgroundTaskState {
@@ -398,44 +400,56 @@ mod rating_persist_owner_tests {
 }
 
 impl BackgroundTaskState {
-    pub(in crate::native_app) fn new(
+    pub(in crate::native_app) fn new_with_registrations(
         worker_sender: Sender<GuiMessage>,
         worker_receiver: Option<Receiver<GuiMessage>>,
         sources: Vec<wavecrate::sample_sources::SampleSource>,
-    ) -> Self {
+    ) -> (Self, Vec<SourceProcessingRegistration>) {
         #[cfg(test)]
         let recovery_root = sources.first().map(|source| source.root.join(".wavecrate"));
         #[cfg(not(test))]
         let recovery_root = None;
         #[cfg(not(test))]
-        let source_processing = Self::start_source_processing(&worker_sender, sources);
+        let (source_processing, registrations) =
+            Self::start_source_processing(&worker_sender, sources);
         #[cfg(test)]
-        let source_processing = {
-            drop(sources);
-            SourceProcessingSupervisor::dormant()
-        };
-        Self::with_source_processing(
+        let (source_processing, registrations) =
+            SourceProcessingSupervisor::dormant_with_sources(sources);
+        let state = Self::with_source_processing(
             worker_sender,
             worker_receiver,
             source_processing,
+            registrations.clone(),
             recovery_root,
-        )
+        );
+        (state, registrations)
     }
 
     #[cfg(any(test, feature = "legacy-controller"))]
-    pub(in crate::native_app) fn new_runtime(
+    pub(in crate::native_app) fn new_runtime_with_registrations(
         worker_sender: Sender<GuiMessage>,
         worker_receiver: Option<Receiver<GuiMessage>>,
         sources: Vec<wavecrate::sample_sources::SampleSource>,
-    ) -> Self {
-        let source_processing = Self::start_source_processing(&worker_sender, sources);
-        Self::with_source_processing(worker_sender, worker_receiver, source_processing, None)
+    ) -> (Self, Vec<SourceProcessingRegistration>) {
+        let (source_processing, registrations) =
+            Self::start_source_processing(&worker_sender, sources);
+        let state = Self::with_source_processing(
+            worker_sender,
+            worker_receiver,
+            source_processing,
+            registrations.clone(),
+            None,
+        );
+        (state, registrations)
     }
 
     fn start_source_processing(
         worker_sender: &Sender<GuiMessage>,
         sources: Vec<wavecrate::sample_sources::SampleSource>,
-    ) -> SourceProcessingSupervisor {
+    ) -> (
+        SourceProcessingSupervisor,
+        Vec<SourceProcessingRegistration>,
+    ) {
         SourceProcessingSupervisor::start_with_event_sink(
             sources,
             GuiSourceProcessingEventSink::new(worker_sender.clone()),
@@ -446,9 +460,18 @@ impl BackgroundTaskState {
         worker_sender: Sender<GuiMessage>,
         worker_receiver: Option<Receiver<GuiMessage>>,
         source_processing: SourceProcessingSupervisor,
+        registrations: Vec<SourceProcessingRegistration>,
         recovery_root: Option<PathBuf>,
     ) -> Self {
-        let source_lifecycle_generations = source_processing.lifecycle_generations();
+        let source_lifecycle_generations: BTreeMap<String, u64> = registrations
+            .iter()
+            .map(|registration| {
+                (
+                    registration.source.id.to_string(),
+                    registration.lifecycle_generation,
+                )
+            })
+            .collect();
         let waveform_recovery_root = recovery_root.map(|path| {
             let file = std::fs::File::open(&path).expect("test recovery root");
             let identity =
@@ -521,7 +544,7 @@ impl BackgroundTaskState {
 
     #[cfg(test)]
     pub(in crate::native_app) fn for_tests() -> Self {
-        Self::new(std::sync::mpsc::channel().0, None, Vec::new())
+        Self::new_with_registrations(std::sync::mpsc::channel().0, None, Vec::new()).0
     }
 
     pub(in crate::native_app) fn take_operation_journal_status(

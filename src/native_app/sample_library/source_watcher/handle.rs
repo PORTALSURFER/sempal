@@ -40,6 +40,7 @@ use crate::native_app::sample_library::committed_file_mutations::{
 use crate::native_app::sample_library::source_watcher::{
     RevisionBoundCheckpoint, WatcherContinuityProof,
 };
+use crate::native_app::source_processing::SourceProcessingRegistration;
 
 struct ActiveSourceWatcher {
     _watcher: Box<dyn Watcher + Send>,
@@ -293,7 +294,7 @@ pub(in crate::native_app) struct GuiSourceWatcherHandle {
 
 impl GuiSourceWatcherHandle {
     pub(in crate::native_app) fn spawn(
-        sources: Vec<SampleSource>,
+        registrations: Vec<SourceProcessingRegistration>,
         message_tx: Sender<GuiMessage>,
     ) -> Self {
         let (command_tx, command_rx) = std::sync::mpsc::channel();
@@ -308,7 +309,9 @@ impl GuiSourceWatcherHandle {
         };
         let coordinator_lifecycle_tx = lifecycle_tx.clone();
         let handle = thread::spawn(move || match coordinator_lifecycle_tx {
-            Some(lifecycle_tx) => run_source_watcher(command_rx, message_tx, sources, lifecycle_tx),
+            Some(lifecycle_tx) => {
+                run_source_watcher(command_rx, message_tx, registrations, lifecycle_tx)
+            }
             None => run_source_watcher_without_lifecycle(command_rx),
         });
         Self {
@@ -318,10 +321,13 @@ impl GuiSourceWatcherHandle {
         }
     }
 
-    pub(in crate::native_app) fn replace_sources(&self, sources: Vec<SampleSource>) {
+    pub(in crate::native_app) fn replace_sources(
+        &self,
+        registrations: Vec<SourceProcessingRegistration>,
+    ) {
         let _ = self
             .command_tx
-            .send(GuiSourceWatchCommand::ReplaceSources(sources));
+            .send(GuiSourceWatchCommand::ReplaceSources(registrations));
     }
 
     pub(in crate::native_app) fn acknowledge_committed_paths(
@@ -453,7 +459,7 @@ impl Drop for GuiSourceWatcherHandle {
 
 #[derive(Debug)]
 enum GuiSourceWatchCommand {
-    ReplaceSources(Vec<SampleSource>),
+    ReplaceSources(Vec<SourceProcessingRegistration>),
     #[cfg(test)]
     ReconcileAllSources,
     AcknowledgeCommittedPaths {
@@ -491,7 +497,7 @@ enum GuiSourceWatchCommand {
 fn run_source_watcher(
     command_rx: Receiver<GuiSourceWatchCommand>,
     message_tx: Sender<GuiMessage>,
-    initial_sources: Vec<SampleSource>,
+    initial_registrations: Vec<SourceProcessingRegistration>,
     lifecycle_tx: Sender<SourceWatcherLifecycle>,
 ) {
     let (event_tx, event_rx) =
@@ -504,7 +510,7 @@ fn run_source_watcher(
         workers: Vec::new(),
     };
     let mut state = GuiSourceWatchState::default();
-    state.set_sources(initial_sources);
+    state.set_registrations(initial_registrations);
     let mut admission_lifecycle = AdmissionLifecycle::new();
     state.set_audit_request_capacity(admission_lifecycle.max_source_audit_request_entries());
     let mut pending_capture_contexts = HashMap::<DispatchTicket, PendingCaptureContext>::new();
@@ -522,11 +528,15 @@ fn run_source_watcher(
 
     loop {
         match command_rx.recv_timeout(WATCHER_POLL_INTERVAL) {
-            Ok(GuiSourceWatchCommand::ReplaceSources(sources)) => {
+            Ok(GuiSourceWatchCommand::ReplaceSources(registrations)) => {
                 let now = Instant::now();
+                let sources = registrations
+                    .iter()
+                    .map(|registration| registration.source.clone())
+                    .collect::<Vec<_>>();
                 let roots_changed =
                     desired_watched_roots(&sources) != desired_watched_roots(&state.sources);
-                state.set_sources(sources);
+                state.set_registrations(registrations);
                 if !reconcile_watcher_admission(
                     &mut state,
                     &mut admission_lifecycle,
@@ -1203,6 +1213,7 @@ struct PendingReplayHandoff {
     paths: Vec<PathBuf>,
     proof: WatcherContinuityProof,
     continuity_proven: bool,
+    source_processing_lifecycle_generation: u64,
 }
 
 #[derive(Clone)]
@@ -1211,7 +1222,23 @@ struct PendingReplayCheckpoint {
     source_root: PathBuf,
     root_identity: RootIdentity,
     owner_watcher_generation: WatcherGeneration,
+    source_processing_lifecycle_generation: u64,
     proof: WatcherContinuityProof,
+}
+
+fn replay_registration_matches_current(
+    state: &GuiSourceWatchState,
+    source_id: &SourceId,
+    source_root: &PathBuf,
+    lifecycle_generation: u64,
+) -> bool {
+    state
+        .registration_for_source(source_id.as_str())
+        .is_some_and(|registration| {
+            registration.source.id == *source_id
+                && registration.source.root == *source_root
+                && registration.lifecycle_generation == lifecycle_generation
+        })
 }
 
 fn capture_stream_id(capture: &SourceWatcherCapture) -> u64 {
@@ -1561,6 +1588,23 @@ fn handoff_dispatched_capture(
         state.mark_source_overflowed(context.source_id.as_str(), now);
         return (true, false);
     }
+    if let Some(replay) = context.replay.as_ref()
+        && !replay_registration_matches_current(
+            state,
+            &context.source_id,
+            &context.source_root,
+            replay.source_processing_lifecycle_generation,
+        )
+    {
+        tracing::warn!(
+            source_id = context.source_id.as_str(),
+            ticket = dispatched.ticket().id(),
+            lifecycle_generation = replay.source_processing_lifecycle_generation,
+            "Closed-application replay registration was replaced before typed handoff; retaining source audit fallback"
+        );
+        state.mark_source_overflowed(context.source_id.as_str(), now);
+        return (false, false);
+    }
     if source_audit && context.replay.is_none() {
         widen_source(state, &context.source_root, now);
         return (true, false);
@@ -1575,10 +1619,7 @@ fn handoff_dispatched_capture(
                 overflowed: false,
                 source_root_available: true,
                 source_root_identity: Some(replay.proof.root_identity.clone()),
-                // The replay/checkpoint generation is historical watcher authority, not the
-                // current source-processing lifecycle generation. This lane has no current-token
-                // transport yet; leave it unset so typed scopes fail closed at the GUI boundary.
-                lifecycle_generation: None,
+                lifecycle_generation: Some(replay.source_processing_lifecycle_generation),
                 journal_checkpoint_event_id: Some(replay.proof.acknowledged_end_event_id),
                 watcher_continuity_proof: Some(replay.proof.clone()),
             })
@@ -1705,6 +1746,8 @@ fn dispatch_pending_capture_contexts_with_replay(
                     source_root: context.source_root.clone(),
                     root_identity: context.root_identity.clone(),
                     owner_watcher_generation: context.watcher_generation,
+                    source_processing_lifecycle_generation: replay
+                        .source_processing_lifecycle_generation,
                     proof: replay.proof.clone(),
                 },
             );
@@ -2014,8 +2057,26 @@ fn publish_closed_app_journal_recovery(
             JournalRecovery::Changes {
                 paths,
                 proof,
-                source_lifecycle_generation,
+                historical_source_lifecycle_generation,
             } => {
+                let Some(registration) = state.registration_for_source(source.id.as_str()).cloned()
+                else {
+                    tracing::warn!(
+                        source_id = source.id.as_str(),
+                        "Closed-application replay has no current source-processing registration"
+                    );
+                    request_closed_app_journal_audit(
+                        message_tx,
+                        sources,
+                        audit_barriers,
+                        deferred_audit_barrier_sources,
+                        defer_audit_barriers,
+                        &source.id,
+                        "journal_replay_source_registration_unavailable",
+                    );
+                    continue;
+                };
+                let source = &registration.source;
                 tracing::info!(
                     source_id = source.id.as_str(),
                     path_count = paths.len(),
@@ -2120,7 +2181,7 @@ fn publish_closed_app_journal_recovery(
                     proof.watcher_generation,
                     FseventsReplayEvidence {
                         source_lifecycle_generation: WatcherGeneration::new(
-                            source_lifecycle_generation,
+                            historical_source_lifecycle_generation,
                         ),
                         replay_stream_generation: proof.watcher_generation,
                         backend_device: proof.backend_device,
@@ -2173,6 +2234,8 @@ fn publish_closed_app_journal_recovery(
                                 paths,
                                 proof,
                                 continuity_proven,
+                                source_processing_lifecycle_generation: registration
+                                    .lifecycle_generation,
                             }),
                         };
                         pending_contexts.insert(*ticket, context);
@@ -2218,7 +2281,7 @@ fn acknowledge_replay_checkpoint(
     state: &mut GuiSourceWatchState,
     admission: &mut AdmissionLifecycle,
     pending_replay_checkpoints: &mut HashMap<DispatchTicket, PendingReplayCheckpoint>,
-    sources: &[SampleSource],
+    _sources: &[SampleSource],
     request: RevisionBoundCheckpoint,
     now: Instant,
 ) {
@@ -2258,15 +2321,34 @@ fn acknowledge_replay_checkpoint(
         return;
     };
     let source_id = pending.source_id.clone();
-    let current_source_lifecycle_generation = WatcherGeneration::new(request.lifecycle_generation);
-    let Some(source) = sources.iter().find(|source| source.id == source_id) else {
+    let Some(registration) = state.registration_for_source(source_id.as_str()).cloned() else {
         tracing::warn!(
             source_id = source_id.as_str(),
-            "Replay checkpoint acknowledgement named a removed source"
+            "Replay checkpoint acknowledgement has no current source-processing registration"
         );
         pending_replay_checkpoints.remove(&ticket);
+        state.mark_source_overflowed(source_id.as_str(), now);
         return;
     };
+    if registration.source.root != pending.source_root
+        || registration.lifecycle_generation != pending.source_processing_lifecycle_generation
+        || request.lifecycle_generation != registration.lifecycle_generation
+    {
+        tracing::warn!(
+            source_id = source_id.as_str(),
+            ticket = ticket.id(),
+            captured_lifecycle_generation = pending.source_processing_lifecycle_generation,
+            current_lifecycle_generation = registration.lifecycle_generation,
+            requested_lifecycle_generation = request.lifecycle_generation,
+            "Replay checkpoint acknowledgement crossed a source-processing lifecycle boundary; retaining source audit fallback"
+        );
+        pending_replay_checkpoints.remove(&ticket);
+        state.mark_source_overflowed(source_id.as_str(), now);
+        return;
+    }
+    let source = &registration.source;
+    let current_source_lifecycle_generation =
+        WatcherGeneration::new(registration.lifecycle_generation);
     let database_root = match source.database_root() {
         Ok(root) => root,
         Err(error) => {
@@ -3183,10 +3265,54 @@ mod lifecycle_tests {
     }
 
     fn source_watcher_state(sources: Vec<SampleSource>) -> GuiSourceWatchState {
+        let registrations = sources
+            .iter()
+            .cloned()
+            .map(|source| SourceProcessingRegistration::new(source, 1))
+            .collect();
         GuiSourceWatchState {
+            registrations,
             sources,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn replay_registration_revalidation_rejects_replaced_source_generation() {
+        let first_root = tempfile::tempdir().expect("first source root");
+        let replacement_root = tempfile::tempdir().expect("replacement source root");
+        let first = source_with_root("replay-registration-race", first_root.path());
+        let replacement = source_with_root("replay-registration-race", replacement_root.path());
+        let mut state = source_watcher_state(vec![first.clone()]);
+
+        assert!(replay_registration_matches_current(
+            &state,
+            &first.id,
+            &first.root,
+            1,
+        ));
+        state.set_registrations(vec![SourceProcessingRegistration::new(
+            replacement.clone(),
+            2,
+        )]);
+        assert!(!replay_registration_matches_current(
+            &state,
+            &first.id,
+            &first.root,
+            1,
+        ));
+        assert!(!replay_registration_matches_current(
+            &state,
+            &replacement.id,
+            &replacement.root,
+            1,
+        ));
+        assert!(replay_registration_matches_current(
+            &state,
+            &replacement.id,
+            &replacement.root,
+            2,
+        ));
     }
 
     fn notify_capture(root: &Path, stream_id: u64, paths: &[&str]) -> SourceWatcherCapture {
@@ -4008,6 +4134,7 @@ mod lifecycle_tests {
                 source_root: first.root.clone(),
                 root_identity: first_lane.root_identity().clone(),
                 owner_watcher_generation: first_lane.generation(),
+                source_processing_lifecycle_generation: 1,
                 proof: journal::WatcherContinuityProof {
                     root_identity: "identity-0".to_string(),
                     backend: journal::WatcherBackend::Fsevents,
@@ -4085,6 +4212,7 @@ mod lifecycle_tests {
             source_root: replacement.root.clone(),
             root_identity: rebound_root_identity,
             owner_watcher_generation: stopped_generation,
+            source_processing_lifecycle_generation: 1,
             proof: stale_root_pending.proof.clone(),
         };
         pending_replay_checkpoints.insert(first_ticket, stale_lane_pending.clone());
@@ -4163,6 +4291,7 @@ mod lifecycle_tests {
         }
 
         let mut state = source_watcher_state(vec![source.clone()]);
+        state.set_registrations(vec![SourceProcessingRegistration::new(source.clone(), 2)]);
         let mut admission = configured_admission(&state.sources);
         let lane = admission
             .lane_for_capture(&source_id)
@@ -4221,6 +4350,7 @@ mod lifecycle_tests {
                 source_root: source.root.clone(),
                 root_identity: lane.root_identity().clone(),
                 owner_watcher_generation: lane.generation(),
+                source_processing_lifecycle_generation: 2,
                 proof: proof.clone(),
             },
         )]);
@@ -4265,6 +4395,10 @@ mod lifecycle_tests {
         let second = source_with_root("closed-replay-fallback-second", directory.path());
         let sources = vec![first.clone(), second.clone()];
         let mut state = source_watcher_state(sources.clone());
+        state.set_registrations(vec![
+            SourceProcessingRegistration::new(first.clone(), 1),
+            SourceProcessingRegistration::new(second.clone(), 2),
+        ]);
         state.watched_roots =
             HashMap::from([(first.root.clone(), Some(String::from("identity-1")))]);
         let mut admission = limited_admission(&sources, 1);
@@ -4389,6 +4523,7 @@ mod lifecycle_tests {
                 source_root: second.root.clone(),
                 root_identity: second_lane.root_identity().clone(),
                 owner_watcher_generation: second_lane.generation(),
+                source_processing_lifecycle_generation: 2,
                 proof: second_proof.clone(),
             },
         )]);
@@ -4483,6 +4618,10 @@ mod lifecycle_tests {
         let second = source_with_root("unproven-replay-second", directory.path());
         let sources = vec![first.clone(), second.clone()];
         let mut state = source_watcher_state(sources.clone());
+        state.set_registrations(vec![
+            SourceProcessingRegistration::new(first.clone(), 1),
+            SourceProcessingRegistration::new(second.clone(), 2),
+        ]);
         state.watched_roots =
             HashMap::from([(first.root.clone(), Some(String::from("identity-1")))]);
         let mut admission = configured_admission(&sources);
@@ -4645,6 +4784,7 @@ mod lifecycle_tests {
                         paths: vec![PathBuf::from("first.wav")],
                         proof: first_proof,
                         continuity_proven: false,
+                        source_processing_lifecycle_generation: 1,
                     }),
                 },
             ),
@@ -4665,6 +4805,7 @@ mod lifecycle_tests {
                         paths: vec![PathBuf::from("second.wav")],
                         proof: second_proof.clone(),
                         continuity_proven: true,
+                        source_processing_lifecycle_generation: 2,
                     }),
                 },
             ),
@@ -4730,7 +4871,7 @@ mod lifecycle_tests {
                     source_root_identity,
                     Some(second_proof.root_identity.clone())
                 );
-                assert_eq!(lifecycle_generation, None);
+                assert_eq!(lifecycle_generation, Some(2));
                 assert_eq!(journal_checkpoint_event_id, Some(21));
                 assert_eq!(watcher_continuity_proof, Some(second_proof.clone()));
             }
@@ -4773,6 +4914,10 @@ mod lifecycle_tests {
         let second = source_with_root("replay-failure-second", second_directory.path());
         let sources = vec![first.clone(), second.clone()];
         let mut state = source_watcher_state(sources.clone());
+        state.set_registrations(vec![
+            SourceProcessingRegistration::new(first.clone(), 2),
+            SourceProcessingRegistration::new(second.clone(), 2),
+        ]);
         state.watched_roots = HashMap::from([
             (first.root.clone(), Some(String::from("identity-0"))),
             (second.root.clone(), Some(String::from("identity-1"))),
@@ -4918,6 +5063,7 @@ mod lifecycle_tests {
                     source_root: first.root.clone(),
                     root_identity: first_lane.root_identity().clone(),
                     owner_watcher_generation: first_lane.generation(),
+                    source_processing_lifecycle_generation: 2,
                     proof: first_proof.clone(),
                 },
             ),
@@ -4928,6 +5074,7 @@ mod lifecycle_tests {
                     source_root: second.root.clone(),
                     root_identity: second_lane.root_identity().clone(),
                     owner_watcher_generation: second_lane.generation(),
+                    source_processing_lifecycle_generation: 2,
                     proof: second_proof.clone(),
                 },
             ),
@@ -4996,6 +5143,7 @@ mod lifecycle_tests {
             source_root: first.root.clone(),
             root_identity: restarted_first.root_identity().clone(),
             owner_watcher_generation: restarted_first.generation(),
+            source_processing_lifecycle_generation: 2,
             proof: first_proof.clone(),
         };
         pending_replay_checkpoints.insert(first_ticket, stopped_first_pending.clone());

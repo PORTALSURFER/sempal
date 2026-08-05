@@ -16,6 +16,7 @@ use wavecrate::sample_sources::{SampleSource, SourceDatabase, SourceId};
 use wavecrate_scan::sample_sources::scanner::{scan_once, sync_paths};
 
 use crate::native_app::app::GuiMessage;
+use crate::native_app::source_processing::SourceProcessingRegistration;
 
 #[path = "tests/committed_mutations.rs"]
 mod committed_mutations;
@@ -617,7 +618,13 @@ fn foreground_reconciliation_request_refreshes_every_configured_source() {
         second.id.as_str().to_string(),
     ];
     let (sender, receiver) = std::sync::mpsc::channel();
-    let watcher = GuiSourceWatcherHandle::spawn(vec![first, second], sender);
+    let watcher = GuiSourceWatcherHandle::spawn(
+        vec![
+            SourceProcessingRegistration::new(first, 1),
+            SourceProcessingRegistration::new(second, 1),
+        ],
+        sender,
+    );
     watcher.wait_until_ready_for_tests();
     while !matches!(
         receiver
@@ -675,9 +682,12 @@ fn idempotent_startup_source_sync_does_not_refresh_every_source() {
         root.path().to_path_buf(),
     );
     let (sender, receiver) = std::sync::mpsc::channel();
-    let watcher = GuiSourceWatcherHandle::spawn(vec![source.clone()], sender);
+    let watcher = GuiSourceWatcherHandle::spawn(
+        vec![SourceProcessingRegistration::new(source.clone(), 1)],
+        sender,
+    );
 
-    watcher.replace_sources(vec![source]);
+    watcher.replace_sources(vec![SourceProcessingRegistration::new(source, 1)]);
     watcher.wait_until_ready_for_tests();
     std::thread::sleep(
         super::SOURCE_CHANGE_DEBOUNCE + super::WATCHER_POLL_INTERVAL.saturating_mul(2),
@@ -724,7 +734,8 @@ fn filesystem_event_after_initial_watcher_ready_is_not_suppressed() {
     );
     let source_id = source.id.as_str().to_string();
     let (sender, receiver) = std::sync::mpsc::channel();
-    let watcher = GuiSourceWatcherHandle::spawn(vec![source], sender);
+    let watcher =
+        GuiSourceWatcherHandle::spawn(vec![SourceProcessingRegistration::new(source, 1)], sender);
     watcher.wait_until_ready_for_tests();
     while !matches!(
         receiver
@@ -772,7 +783,8 @@ fn stale_error_and_overflow_widen_without_retiring_current_watcher() {
     );
     let source_id = source.id.as_str().to_string();
     let (sender, receiver) = std::sync::mpsc::channel();
-    let watcher = GuiSourceWatcherHandle::spawn(vec![source], sender);
+    let watcher =
+        GuiSourceWatcherHandle::spawn(vec![SourceProcessingRegistration::new(source, 1)], sender);
     watcher.wait_until_ready_for_tests();
     while !matches!(
         receiver
@@ -844,7 +856,8 @@ fn watcher_restarts_and_overflows_when_a_live_root_is_replaced_at_the_same_path(
     );
     let expected_source_id = source.id.as_str().to_string();
     let (sender, receiver) = std::sync::mpsc::channel();
-    let watcher = GuiSourceWatcherHandle::spawn(vec![source], sender);
+    let watcher =
+        GuiSourceWatcherHandle::spawn(vec![SourceProcessingRegistration::new(source, 1)], sender);
     watcher.wait_until_ready_for_tests();
     while !matches!(
         receiver

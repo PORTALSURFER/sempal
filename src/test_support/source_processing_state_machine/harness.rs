@@ -381,8 +381,7 @@ pub(super) fn start_observed_supervisor(
     source: &SampleSource,
 ) -> (SourceProcessingSupervisor, Receiver<SourceProcessingEvent>) {
     let (event_sender, event_receiver) = mpsc::channel();
-    (
-        SourceProcessingSupervisor::start_with_event_sink(vec![source.clone()], event_sender),
-        event_receiver,
-    )
+    let (supervisor, _) =
+        SourceProcessingSupervisor::start_with_event_sink(vec![source.clone()], event_sender);
+    (supervisor, event_receiver)
 }

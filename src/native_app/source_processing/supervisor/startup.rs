@@ -12,7 +12,7 @@ impl SourceProcessingSupervisor {
     pub(in crate::native_app) fn start_with_event_sink(
         sources: Vec<SampleSource>,
         event_sink: impl SourceProcessingEventSink + 'static,
-    ) -> Self {
+    ) -> (Self, Vec<super::SourceProcessingRegistration>) {
         Self::start_with_options(sources, false, Some(Arc::new(event_sink)), false)
     }
 
@@ -30,7 +30,8 @@ impl SourceProcessingSupervisor {
         playback_active: bool,
         event_sink: Option<Arc<dyn SourceProcessingEventSink>>,
     ) -> Self {
-        Self::start_with_options(sources, playback_active, event_sink, false)
+        let (supervisor, _) = Self::start_with_options(sources, playback_active, event_sink, false);
+        supervisor
     }
 
     fn start_with_options(
@@ -38,11 +39,15 @@ impl SourceProcessingSupervisor {
         playback_active: bool,
         event_sink: Option<Arc<dyn SourceProcessingEventSink>>,
         synthetic_test_execution: bool,
-    ) -> Self {
+    ) -> (Self, Vec<super::SourceProcessingRegistration>) {
         let app_root = wavecrate::app_dirs::app_root_dir()
             .expect("source-processing supervisor should resolve its persistence root");
         let shared = Arc::new(Shared::new(sources, event_sink));
-        shared.control().playback_active = playback_active;
+        let registrations = {
+            let mut control = shared.control();
+            control.playback_active = playback_active;
+            control.source_registrations()
+        };
         shared
             .synthetic_test_execution
             .store(synthetic_test_execution, Ordering::Release);
@@ -64,11 +69,14 @@ impl SourceProcessingSupervisor {
                 run_retirement_worker(retirement_shared);
             })
             .expect("spawn source retirement worker");
-        Self {
-            shared,
-            coordinator: Some(coordinator),
-            retirement_worker: Some(retirement_worker),
-        }
+        (
+            Self {
+                shared,
+                coordinator: Some(coordinator),
+                retirement_worker: Some(retirement_worker),
+            },
+            registrations,
+        )
     }
 
     #[cfg(test)]
@@ -78,6 +86,22 @@ impl SourceProcessingSupervisor {
             coordinator: None,
             retirement_worker: None,
         }
+    }
+
+    #[cfg(test)]
+    pub(in crate::native_app) fn dormant_with_sources(
+        sources: Vec<SampleSource>,
+    ) -> (Self, Vec<super::SourceProcessingRegistration>) {
+        let shared = Arc::new(Shared::new(sources, None));
+        let registrations = shared.control().source_registrations();
+        (
+            Self {
+                shared,
+                coordinator: None,
+                retirement_worker: None,
+            },
+            registrations,
+        )
     }
 
     #[cfg(any(test, feature = "legacy-controller"))]
@@ -90,7 +114,15 @@ impl SourceProcessingSupervisor {
         sources: Vec<SampleSource>,
         playback_active: bool,
     ) -> Self {
-        Self::start_with_options(sources, playback_active, None, true)
+        let (supervisor, _) = Self::start_with_options(sources, playback_active, None, true);
+        supervisor
+    }
+
+    #[cfg(test)]
+    pub(super) fn start_with_registrations(
+        sources: Vec<SampleSource>,
+    ) -> (Self, Vec<super::SourceProcessingRegistration>) {
+        Self::start_with_options(sources, false, None, true)
     }
 
     #[cfg(test)]

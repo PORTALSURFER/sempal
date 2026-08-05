@@ -17,6 +17,7 @@ use super::roots::{
 use crate::native_app::sample_library::committed_file_mutations::{
     CommittedWatcherEcho, CommittedWatcherPathState, RevisionFirstCursor,
 };
+use crate::native_app::source_processing::SourceProcessingRegistration;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum AuditRequestQueueOutcome {
@@ -157,6 +158,7 @@ impl PendingSourceAuditRequests {
 #[derive(Default)]
 pub(super) struct GuiSourceWatchState {
     pub(super) watched_roots: WatchedRootIdentities,
+    pub(super) registrations: Vec<SourceProcessingRegistration>,
     pub(super) sources: Vec<SampleSource>,
     pub(super) pending: HashMap<String, PendingGuiSourceWatch>,
     pub(super) acknowledged_paths: HashMap<(String, PathBuf), (CommittedWatcherPathState, Instant)>,
@@ -164,7 +166,31 @@ pub(super) struct GuiSourceWatchState {
 }
 
 impl GuiSourceWatchState {
+    #[cfg(test)]
     pub(super) fn set_sources(&mut self, sources: Vec<SampleSource>) {
+        self.registrations.clear();
+        self.set_source_list(sources);
+    }
+
+    pub(super) fn set_registrations(&mut self, registrations: Vec<SourceProcessingRegistration>) {
+        let sources = registrations
+            .iter()
+            .map(|registration| registration.source.clone())
+            .collect();
+        self.registrations = registrations;
+        self.set_source_list(sources);
+    }
+
+    pub(super) fn registration_for_source(
+        &self,
+        source_id: &str,
+    ) -> Option<&SourceProcessingRegistration> {
+        self.registrations
+            .iter()
+            .find(|registration| registration.source.id.as_str() == source_id)
+    }
+
+    fn set_source_list(&mut self, sources: Vec<SampleSource>) {
         self.sources = sources;
         let allowed = self
             .sources
@@ -468,7 +494,44 @@ fn root_event_can_replace_identity(kind: notify::EventKind) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::native_app::source_processing::SourceProcessingRegistration;
     use wavecrate::sample_sources::{SampleSource, SourceId};
+
+    #[test]
+    fn registration_transport_replaces_descriptor_and_generation_as_one_pair() {
+        let first = SampleSource::new_with_id(
+            SourceId::from_string("registration-state"),
+            PathBuf::from("/first-root"),
+        );
+        let replacement =
+            SampleSource::new_with_id(first.id.clone(), PathBuf::from("/replacement-root"));
+        let mut state = GuiSourceWatchState::default();
+
+        state.set_registrations(vec![SourceProcessingRegistration::new(first, 7)]);
+        assert_eq!(
+            state
+                .registration_for_source("registration-state")
+                .expect("initial registration")
+                .lifecycle_generation,
+            7
+        );
+
+        state.set_registrations(vec![SourceProcessingRegistration::new(replacement, 8)]);
+        let registration = state
+            .registration_for_source("registration-state")
+            .expect("replacement registration");
+        assert_eq!(registration.lifecycle_generation, 8);
+        assert_eq!(registration.source.root, PathBuf::from("/replacement-root"));
+        assert_eq!(state.sources.len(), 1);
+
+        state.set_registrations(Vec::new());
+        assert!(
+            state
+                .registration_for_source("registration-state")
+                .is_none()
+        );
+        assert!(state.sources.is_empty());
+    }
 
     #[test]
     fn source_id_overflow_does_not_widen_shared_root_source() {

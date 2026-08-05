@@ -8,7 +8,7 @@ impl SourceProcessingSupervisor {
     pub(in crate::native_app) fn replace_sources(
         &self,
         sources: Vec<SampleSource>,
-    ) -> Result<(), String> {
+    ) -> Result<Vec<super::SourceProcessingRegistration>, String> {
         let _replacement = self
             .shared
             .source_replacement
@@ -27,11 +27,13 @@ impl SourceProcessingSupervisor {
                 control.quarantined_sources.clear();
                 control.reset_source_work_tokens();
                 control.mark_all_sources_dirty("configured_sources_reactivated");
+                let registrations = control.source_registrations();
                 drop(control);
                 self.shared.budget_wake.notify_all();
                 self.shared.wake.notify_all();
+                return Ok(registrations);
             }
-            return Ok(());
+            return Ok(control.source_registrations());
         }
         let changed_source_ids = control
             .sources
@@ -231,10 +233,11 @@ impl SourceProcessingSupervisor {
                     == Some(&health.lifecycle.generation)
             });
         control.notify("configured_sources_changed");
+        let registrations = control.source_registrations();
         drop(control);
         self.shared.budget_wake.notify_all();
         self.shared.wake.notify_all();
         self.shared.retirement_wake.notify_all();
-        Ok(())
+        Ok(registrations)
     }
 }
