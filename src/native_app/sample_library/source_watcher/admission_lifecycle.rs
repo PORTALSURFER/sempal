@@ -36,6 +36,8 @@ const NATIVE_ADMISSION_MAX_EVENTS_PER_LANE: usize = 512;
 #[allow(dead_code)]
 #[derive(Debug)]
 pub(super) struct FseventsReplayEvidence {
+    /// Historical checkpoint generation; current source authority is transported separately by
+    /// `SourceProcessingRegistration` and must never be reconstructed from this evidence.
     pub(super) source_lifecycle_generation: WatcherGeneration,
     pub(super) replay_stream_generation: u64,
     pub(super) backend_device: u64,

@@ -249,7 +249,10 @@ fn source_processing_liveness_harness_converges_restart_churn_and_root_recovery(
         .watcher
         .as_ref()
         .expect("active watcher")
-        .replace_sources(vec![harness.source.clone()]);
+        .replace_sources(vec![SourceProcessingRegistration::new(
+            harness.source.clone(),
+            1,
+        )]);
     harness.force_watcher_restart();
     harness.await_fully_ready();
 

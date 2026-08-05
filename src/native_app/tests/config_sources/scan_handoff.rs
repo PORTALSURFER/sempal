@@ -212,6 +212,56 @@ fn typed_replay_without_producer_lifecycle_generation_routes_to_audit() {
 }
 
 #[test]
+fn typed_replay_with_current_generation_reaches_audit_only_scanner_boundary() {
+    let source_root = tempfile::tempdir().expect("source root");
+    let mut state = gui_state_for_span_tests();
+    let request = state
+        .library
+        .folder_browser
+        .begin_add_source_path(source_root.path().to_path_buf(), 107)
+        .expect("new source requests scan");
+    let source_id = request.source_id.clone();
+    let mut context = ui::UiUpdateContext::default();
+    let source = state
+        .library
+        .folder_browser
+        .configured_sample_sources()
+        .into_iter()
+        .find(|source| source.id.as_str() == source_id)
+        .expect("configured typed replay source");
+    let current_generation = state
+        .background
+        .source_processing
+        .register_source_for_scan(source)
+        .expect("register typed replay source");
+    state
+        .background
+        .source_lifecycle_generations
+        .insert(source_id.clone(), current_generation);
+    let proof = replay_proof(source_root.path(), 12);
+
+    state.refresh_source_after_filesystem_change(
+        source_id.clone(),
+        Some(typed_scopes()),
+        vec![PathBuf::from("typed-replay.wav")],
+        false,
+        true,
+        Some(proof.root_identity.clone()),
+        Some(current_generation),
+        Some(12),
+        Some(proof),
+        &mut context,
+    );
+
+    assert!(
+        state
+            .library
+            .targeted_source_sync_active_for_tests(&source_id),
+        "matching producer lifecycle authority must reach the typed worker boundary"
+    );
+}
+
+#[test]
 fn mismatched_folder_scan_registration_cannot_adopt_existing_source_generation() {
     let requested_root = tempfile::tempdir().expect("requested source root");
     let authoritative_root = tempfile::tempdir().expect("authoritative source root");

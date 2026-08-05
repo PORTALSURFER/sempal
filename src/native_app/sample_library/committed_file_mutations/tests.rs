@@ -20,6 +20,7 @@ use super::worker::{
 };
 use super::*;
 use crate::native_app::sample_library::source_watcher::GuiSourceWatcherHandle;
+use crate::native_app::source_processing::SourceProcessingRegistration;
 
 fn request(
     root: &Path,
@@ -480,7 +481,10 @@ fn stale_lifecycle_completion_has_no_committed_mutation_side_effects() {
         .select_file("before.wav".to_string());
 
     let (message_tx, message_rx) = mpsc::channel();
-    let watcher = GuiSourceWatcherHandle::spawn(vec![source.clone()], message_tx);
+    let watcher = GuiSourceWatcherHandle::spawn(
+        vec![SourceProcessingRegistration::new(source.clone(), 1)],
+        message_tx,
+    );
     watcher.wait_until_ready_for_tests();
     while message_rx.try_recv().is_ok() {}
     state.library.source_watcher = Some(watcher);

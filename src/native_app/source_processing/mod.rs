@@ -12,7 +12,8 @@ pub(in crate::native_app) use events::{
 };
 pub(in crate::native_app) use supervisor::{
     ExternalScanHandoff, ProjectionHandoffTicket, SourceAuditLifecycleCause,
-    SourceProcessingBudgetHandle, SourceProcessingSupervisor, SourceScanAdmissionState,
+    SourceProcessingBudgetHandle, SourceProcessingRegistration, SourceProcessingSupervisor,
+    SourceScanAdmissionState,
 };
 pub(in crate::native_app) use worker::run_internal_source_analysis_from_args;
 #[cfg(not(test))]

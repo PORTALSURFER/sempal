@@ -1,4 +1,42 @@
 #[test]
+fn source_registrations_remain_supervisor_owned_across_startup_and_replacement() {
+    let first_root = tempfile::tempdir().expect("first source root");
+    let replacement_root = tempfile::tempdir().expect("replacement source root");
+    let source = SampleSource::new_with_id(
+        SourceId::from_string("registration-owner"),
+        first_root.path().to_path_buf(),
+    );
+    let replacement =
+        SampleSource::new_with_id(source.id.clone(), replacement_root.path().to_path_buf());
+
+    let (mut supervisor, startup_registrations) =
+        SourceProcessingSupervisor::start_with_registrations(vec![source.clone()]);
+    assert_eq!(startup_registrations.len(), 1);
+    assert_eq!(startup_registrations[0].source.root, source.root);
+    let startup_generation = startup_registrations[0].lifecycle_generation;
+
+    let unchanged = supervisor
+        .replace_sources(vec![source.clone()])
+        .expect("unchanged source registration");
+    assert_eq!(unchanged[0].lifecycle_generation, startup_generation);
+    assert_eq!(unchanged[0].source.root, source.root);
+
+    let replaced = supervisor
+        .replace_sources(vec![replacement.clone()])
+        .expect("changed source registration");
+    assert_eq!(replaced[0].source.root, replacement.root);
+    assert_ne!(replaced[0].lifecycle_generation, startup_generation);
+
+    assert!(
+        supervisor
+            .replace_sources(Vec::new())
+            .expect("removed source registration")
+            .is_empty()
+    );
+    assert_eq!(supervisor.shutdown()["joined"], true);
+}
+
+#[test]
 fn playback_active_does_not_block_hash_backlog_and_shutdown_joins() {
     let (_directory, source) = unhashed_source("playing");
     let mut supervisor =
@@ -89,7 +127,10 @@ fn retirement_logging_is_bounded_at_info_and_detailed_at_debug() {
     assert!(info.contains("offline=2"));
     assert!(!info.contains("source_processing.retirement.started"));
     assert!(!info.contains("source_processing.retirement.offline"));
-    assert_eq!(info.matches("source_processing.retirement.sweep").count(), 1);
+    assert_eq!(
+        info.matches("source_processing.retirement.sweep").count(),
+        1
+    );
     assert_eq!(info_supervisor.shutdown()["joined"], true);
 
     let mut debug_supervisor = offline_retirement_supervisor("debug-retirement");
@@ -423,10 +464,12 @@ fn busy_source_discovery_is_rescheduled_after_retry_deadline() {
                     SourceProcessingHealthState::Processing | SourceProcessingHealthState::Ready
                 )
             {
-                assert!(!health
-                    .failure_codes
-                    .iter()
-                    .any(|code| code == "discovery_retry_pending"));
+                assert!(
+                    !health
+                        .failure_codes
+                        .iter()
+                        .any(|code| code == "discovery_retry_pending")
+                );
                 saw_recovered_health = true;
             }
         }

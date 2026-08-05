@@ -26,6 +26,7 @@ use crate::native_app::sample_library::committed_file_mutations::{
 };
 use crate::native_app::sample_library::folder_scan_actions::sync_source_database_paths;
 use crate::native_app::sample_library::source_watcher::GuiSourceWatcherHandle;
+use crate::native_app::source_processing::SourceProcessingRegistration;
 
 mod artifacts;
 mod diagnostics;

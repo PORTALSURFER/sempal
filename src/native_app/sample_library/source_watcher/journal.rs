@@ -624,7 +624,7 @@ pub(super) enum JournalRecovery {
     Changes {
         paths: Vec<PathBuf>,
         proof: WatcherContinuityProof,
-        source_lifecycle_generation: u64,
+        historical_source_lifecycle_generation: u64,
     },
     FullAudit {
         reason: &'static str,
@@ -651,7 +651,7 @@ fn classify_replayed_paths(
     source: &SampleSource,
     paths: Vec<PathBuf>,
     proof: WatcherContinuityProof,
-    source_lifecycle_generation: u64,
+    historical_source_lifecycle_generation: u64,
 ) -> JournalRecovery {
     let paths = paths
         .into_iter()
@@ -669,7 +669,7 @@ fn classify_replayed_paths(
         JournalRecovery::Changes {
             paths,
             proof,
-            source_lifecycle_generation,
+            historical_source_lifecycle_generation,
         }
     }
 }
@@ -717,13 +717,16 @@ fn recover_source(source: &SampleSource, native_watcher: bool) -> JournalRecover
 
     #[cfg(target_os = "macos")]
     {
-        let source_lifecycle_generation = checkpoint
+        let historical_source_lifecycle_generation = checkpoint
             .revision_bound()
             .map_or(0, |checkpoint| checkpoint.lifecycle_generation);
         match replay_fsevents(&source.root, root_identity, checkpoint.event_id) {
-            Ok((paths, proof)) => {
-                classify_replayed_paths(source, paths, proof, source_lifecycle_generation)
-            }
+            Ok((paths, proof)) => classify_replayed_paths(
+                source,
+                paths,
+                proof,
+                historical_source_lifecycle_generation,
+            ),
             Err(reason) => JournalRecovery::FullAudit { reason },
         }
     }
@@ -1234,7 +1237,7 @@ mod tests {
             JournalRecovery::Changes {
                 paths: vec![PathBuf::from("kick.wav")],
                 proof,
-                source_lifecycle_generation: 4,
+                historical_source_lifecycle_generation: 4,
             }
         );
     }

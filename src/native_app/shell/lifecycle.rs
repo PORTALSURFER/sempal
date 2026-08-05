@@ -44,27 +44,36 @@ impl NativeAppState {
         let startup_folder_verify_pending =
             has_configured_sources && folder_browser.selected_source_loaded();
         let (worker_sender, worker_receiver) = mpsc::channel();
-        let source_watcher = has_configured_sources.then(|| {
-            crate::native_app::sample_library::source_watcher::GuiSourceWatcherHandle::spawn(
-                config.sources.clone(),
-                worker_sender.clone(),
-            )
-        });
+        let watcher_message_sender = worker_sender.clone();
         #[cfg(any(test, feature = "legacy-controller"))]
-        let background = if start_runtime_background {
-            BackgroundTaskState::new_runtime(
+        let (background, source_registrations) = if start_runtime_background {
+            BackgroundTaskState::new_runtime_with_registrations(
                 worker_sender,
                 Some(worker_receiver),
                 config.sources.clone(),
             )
         } else {
-            BackgroundTaskState::new(worker_sender, Some(worker_receiver), config.sources.clone())
+            BackgroundTaskState::new_with_registrations(
+                worker_sender,
+                Some(worker_receiver),
+                config.sources.clone(),
+            )
         };
         #[cfg(not(any(test, feature = "legacy-controller")))]
-        let background = {
+        let (background, source_registrations) = {
             let _ = start_runtime_background;
-            BackgroundTaskState::new(worker_sender, Some(worker_receiver), config.sources.clone())
+            BackgroundTaskState::new_with_registrations(
+                worker_sender,
+                Some(worker_receiver),
+                config.sources.clone(),
+            )
         };
+        let source_watcher = has_configured_sources.then(|| {
+            crate::native_app::sample_library::source_watcher::GuiSourceWatcherHandle::spawn(
+                source_registrations,
+                watcher_message_sender,
+            )
+        });
         let audio = AudioAppState::from_settings(&config.core);
         let startup = StartupState::new(
             startup_source_scan_pending,
@@ -131,20 +140,30 @@ impl NativeAppState {
 
     pub(in crate::native_app) fn sync_source_watcher(&mut self) {
         let sources = self.library.folder_browser.configured_sample_sources();
-        if let Err(error) = self
+        let registrations = match self
             .background
             .source_processing
             .replace_sources(sources.clone())
         {
-            tracing::error!(
+            Ok(registrations) => registrations,
+            Err(error) => {
+                tracing::error!(
                 target: "wavecrate::source_processing",
                 error,
                 "Configured sources remain unchanged because retirement fencing failed"
-            );
-            return;
-        }
-        self.background.source_lifecycle_generations =
-            self.background.source_processing.lifecycle_generations();
+                );
+                return;
+            }
+        };
+        self.background.source_lifecycle_generations = registrations
+            .iter()
+            .map(|registration| {
+                (
+                    registration.source.id.to_string(),
+                    registration.lifecycle_generation,
+                )
+            })
+            .collect();
         self.background
             .rating_persist
             .retain_current_lifecycles(&self.background.source_lifecycle_generations);
@@ -168,16 +187,16 @@ impl NativeAppState {
             self.background.source_processing_progress = None;
             self.ui.chrome.job_details_open = false;
         }
-        if sources.is_empty() {
+        if registrations.is_empty() {
             self.library.source_watcher = None;
             return;
         }
         match &self.library.source_watcher {
-            Some(watcher) => watcher.replace_sources(sources),
+            Some(watcher) => watcher.replace_sources(registrations),
             None => {
                 self.library.source_watcher = Some(
                     crate::native_app::sample_library::source_watcher::GuiSourceWatcherHandle::spawn(
-                        sources,
+                        registrations,
                         self.background.worker_sender.clone(),
                     ),
                 );
