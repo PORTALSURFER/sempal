@@ -14,7 +14,9 @@ pub use command::{
     SourceCollectionWrite, SourceContentHashWrite, SourceFileWrite, SourceTagWrite,
     SourceWriteCommand,
 };
-pub use transaction::{ManifestCommitResult, SourceIndexCommitResult};
+pub use transaction::{
+    ManifestCommitResult, SourceDirectoryTruthCommitResult, SourceIndexCommitResult,
+};
 
 #[cfg(test)]
 mod tests;
