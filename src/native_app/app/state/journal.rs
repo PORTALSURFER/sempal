@@ -10,10 +10,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
-use uuid::Uuid;
 
 use crate::native_app::transaction_history::operation_journal::{
-    BoundedAdmissionError, FilesystemStageOutcome, JournalError, OperationDisposition,
+    BoundedAdmissionError, FilesystemStageOutcome, JournalError, OperationDisposition, OperationId,
     OperationIntent, OperationJournalCoordinator, OperationPhase, PreparedOperationOutcome,
     RecoveryRootCapability,
 };
@@ -143,7 +142,7 @@ enum JournalCommand {
         payload: Value,
         direction: HistoryFileIoDirection,
         actions: Vec<HistoryFileAction>,
-        result: SyncSender<Result<Uuid, JournalOperationError>>,
+        result: SyncSender<Result<OperationId, JournalOperationError>>,
     },
     PrepareBoundedWaveformRestore {
         intent: OperationIntent,
@@ -163,10 +162,10 @@ enum JournalCommand {
     Admit {
         intent: OperationIntent,
         payload: Value,
-        result: SyncSender<Result<Uuid, JournalOperationError>>,
+        result: SyncSender<Result<OperationId, JournalOperationError>>,
     },
     Update {
-        operation_id: Uuid,
+        operation_id: OperationId,
         phase: OperationPhase,
         disposition: OperationDisposition,
         result: SyncSender<Result<(), JournalOperationError>>,
@@ -302,7 +301,7 @@ impl OperationJournalOwner {
         &self,
         intent: OperationIntent,
         payload: Value,
-    ) -> Result<Receiver<Result<Uuid, JournalOperationError>>, JournalOwnerQueueError> {
+    ) -> Result<Receiver<Result<OperationId, JournalOperationError>>, JournalOwnerQueueError> {
         self.ensure_available()?;
         let (result_tx, result_rx) = mpsc::sync_channel(1);
         self.commands
@@ -329,7 +328,7 @@ impl OperationJournalOwner {
         payload: Value,
         direction: HistoryFileIoDirection,
         actions: Vec<HistoryFileAction>,
-    ) -> Result<Receiver<Result<Uuid, JournalOperationError>>, JournalOwnerQueueError> {
+    ) -> Result<Receiver<Result<OperationId, JournalOperationError>>, JournalOwnerQueueError> {
         self.ensure_available()?;
         let (result_tx, result_rx) = mpsc::sync_channel(1);
         self.commands
@@ -416,7 +415,7 @@ impl OperationJournalOwner {
     #[allow(dead_code)]
     pub(in crate::native_app) fn update(
         &self,
-        operation_id: Uuid,
+        operation_id: OperationId,
         phase: OperationPhase,
         disposition: OperationDisposition,
     ) -> Result<Receiver<Result<(), JournalOperationError>>, JournalOwnerQueueError> {

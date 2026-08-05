@@ -59,6 +59,38 @@ const MAX_RECORD_BYTES: usize = 1024 * 1024;
 const RECORD_SUFFIX: &str = ".json";
 const LOCK_FILE_NAME: &str = "owner.lock";
 
+/// Opaque identity for one admitted durable operation.
+///
+/// The UUID representation is an on-disk compatibility detail. Callers must carry this type
+/// across journal and file-owner boundaries instead of manufacturing or comparing raw UUIDs.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) struct OperationId(Uuid);
+
+impl OperationId {
+    fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+
+    fn from_uuid(value: Uuid) -> Self {
+        Self(value)
+    }
+
+    fn as_uuid(self) -> Uuid {
+        self.0
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_test() -> Self {
+        Self::new()
+    }
+}
+
+impl std::fmt::Display for OperationId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
 /// Typed actor that admitted an operation to the journal.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) enum OperationActor {
@@ -329,7 +361,7 @@ pub(crate) struct AbsentFinalAdoptionEvidence {
 /// It owns no descriptor, does not inspect the filesystem, and cannot establish that the locator
 /// currently names the expected objects.
 pub(crate) struct AbsentFinalAdoptionGuardRequest {
-    pub(super) operation_id: Uuid,
+    pub(super) operation_id: OperationId,
     pub(super) target_parent_path: PathBuf,
     pub(super) final_leaf: PathBuf,
     pub(super) expected_target_parent_stable_id: String,
@@ -447,7 +479,7 @@ pub(crate) struct OperationRecord {
     /// Record schema version.
     pub(crate) schema_version: u32,
     /// Stable operation identity.
-    pub(crate) operation_id: Uuid,
+    pub(crate) operation_id: OperationId,
     /// Durable intent.
     pub(crate) intent: OperationIntent,
     /// Last durable coordinator phase.
@@ -594,7 +626,7 @@ impl From<PersistedOperationRecordV1> for OperationRecord {
     fn from(record: PersistedOperationRecordV1) -> Self {
         Self {
             schema_version: record.schema_version,
-            operation_id: record.operation_id,
+            operation_id: OperationId::from_uuid(record.operation_id),
             intent: record.intent,
             phase: record.phase,
             disposition: record.disposition,
@@ -658,7 +690,7 @@ fn persisted_v1_from_record(
     }
     Ok(PersistedOperationRecordV1 {
         schema_version: record.schema_version,
-        operation_id: record.operation_id,
+        operation_id: record.operation_id.as_uuid(),
         intent: record.intent.clone(),
         phase: record.phase,
         disposition: record.disposition,
@@ -740,7 +772,7 @@ impl From<PersistedOperationRecordV2> for OperationRecord {
     fn from(record: PersistedOperationRecordV2) -> Self {
         Self {
             schema_version: record.schema_version,
-            operation_id: record.operation_id,
+            operation_id: OperationId::from_uuid(record.operation_id),
             intent: record.intent,
             phase: record.phase,
             disposition: record.disposition,
@@ -764,7 +796,7 @@ fn persisted_v2_from_record(
 ) -> Result<PersistedOperationRecordV2, io::Error> {
     Ok(PersistedOperationRecordV2 {
         schema_version: record.schema_version,
-        operation_id: record.operation_id,
+        operation_id: record.operation_id.as_uuid(),
         intent: record.intent.clone(),
         phase: record.phase,
         disposition: record.disposition,
@@ -1390,7 +1422,7 @@ fn encode_record(record: &OperationRecord) -> io::Result<Vec<u8>> {
 
 impl OperationRecord {
     /// Construct a new intent record in the durable `IntentDurable` phase.
-    pub(crate) fn new(intent: OperationIntent, payload: Value) -> Self {
+    fn new(intent: OperationIntent, payload: Value) -> Self {
         Self::new_with_capacity_plan(intent, payload, None)
     }
 
@@ -1402,7 +1434,7 @@ impl OperationRecord {
         let now = unix_millis();
         Self {
             schema_version: SCHEMA_V1,
-            operation_id: Uuid::new_v4(),
+            operation_id: OperationId::new(),
             intent,
             phase: OperationPhase::IntentDurable,
             disposition: OperationDisposition::None,
@@ -1941,27 +1973,33 @@ pub(crate) enum JournalError {
     AppDirectory(String),
     /// A requested update did not refer to an admitted operation.
     #[error("operation journal record not found: {0}")]
-    NotFound(Uuid),
+    NotFound(OperationId),
     /// A legacy record remains visible for recovery but cannot be rewritten without losing its
     /// attention-required evidence.
     #[error("operation journal record is retained as non-writable recovery evidence: {0}")]
-    NotWritable(Uuid),
+    NotWritable(OperationId),
     /// A phase transition did not follow the bounded journal state machine.
     #[error("illegal operation journal transition for {operation_id}: {from:?} -> {to:?}")]
     IllegalTransition {
-        operation_id: Uuid,
+        operation_id: OperationId,
         from: OperationPhase,
         to: OperationPhase,
     },
     /// Preparation was requested without a typed descriptor.
     #[error("prepared operation {0} is missing typed evidence")]
-    MissingPreparedEvidence(Uuid),
+    MissingPreparedEvidence(OperationId),
     /// Publication evidence did not prove the complete guarded boundary.
     #[error("invalid publication evidence for operation {operation_id}: {reason}")]
-    InvalidPublicationEvidence { operation_id: Uuid, reason: String },
+    InvalidPublicationEvidence {
+        operation_id: OperationId,
+        reason: String,
+    },
     /// Recovery observation did not match the live or durable absent-final contract.
     #[error("invalid absent-final recovery observation for operation {operation_id}: {reason}")]
-    InvalidRecoveryObservation { operation_id: Uuid, reason: String },
+    InvalidRecoveryObservation {
+        operation_id: OperationId,
+        reason: String,
+    },
 }
 
 /// Result boundary for the bounded pre-intent capacity gate.
@@ -1979,30 +2017,36 @@ pub(crate) enum BoundedAdmissionError {
 /// Outcome after an admitted restore was freshly prepared on the journal owner thread.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PreparedOperationOutcome {
-    Prepared(Uuid),
-    RetryPending { operation_id: Uuid, reason: String },
-    JournalWriteFailed { operation_id: Uuid, reason: String },
+    Prepared(OperationId),
+    RetryPending {
+        operation_id: OperationId,
+        reason: String,
+    },
+    JournalWriteFailed {
+        operation_id: OperationId,
+        reason: String,
+    },
 }
 
 /// Result after the prepared restore has attempted destination-local staging.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum FilesystemStageOutcome {
-    FilesystemStaged(Uuid),
-    FilesystemPublished(Uuid),
+    FilesystemStaged(OperationId),
+    FilesystemPublished(OperationId),
     PlatformQualificationRequired {
-        operation_id: Uuid,
+        operation_id: OperationId,
         assessment: ReplacementQualificationAssessment,
     },
     RetryPending {
-        operation_id: Uuid,
+        operation_id: OperationId,
         reason: String,
     },
     AuditRequired {
-        operation_id: Uuid,
+        operation_id: OperationId,
         reason: String,
     },
     JournalWriteFailed {
-        operation_id: Uuid,
+        operation_id: OperationId,
         reason: String,
     },
 }
@@ -2028,8 +2072,8 @@ enum RetainedRecord {
 pub(crate) struct OperationJournalStore {
     directory: PathBuf,
     _ownership: OwnershipLock,
-    records: BTreeMap<Uuid, OperationRecord>,
-    non_writable: BTreeSet<Uuid>,
+    records: BTreeMap<OperationId, OperationRecord>,
+    non_writable: BTreeSet<OperationId>,
     retained: Vec<RetainedRecord>,
     recovery: RecoverySummary,
     capacity_claims: BTreeMap<VolumeIdentity, u64>,
@@ -2064,11 +2108,11 @@ impl OperationJournalStore {
     }
 
     /// Return a typed record currently retained by the store.
-    pub(crate) fn record(&self, operation_id: Uuid) -> Option<&OperationRecord> {
+    pub(crate) fn record(&self, operation_id: OperationId) -> Option<&OperationRecord> {
         self.records.get(&operation_id)
     }
 
-    fn ensure_writable(&self, operation_id: Uuid) -> Result<(), JournalError> {
+    fn ensure_writable(&self, operation_id: OperationId) -> Result<(), JournalError> {
         if self.non_writable.contains(&operation_id) {
             Err(JournalError::NotWritable(operation_id))
         } else {
@@ -2144,7 +2188,7 @@ impl OperationJournalStore {
     /// Durably replace one existing record as an atomic update.
     pub(crate) fn update(
         &mut self,
-        operation_id: Uuid,
+        operation_id: OperationId,
         phase: OperationPhase,
         disposition: OperationDisposition,
     ) -> Result<(), JournalError> {
@@ -2154,7 +2198,7 @@ impl OperationJournalStore {
     /// Durably replace one staged record with its latest platform qualification assessment.
     fn update_with_replacement_qualification(
         &mut self,
-        operation_id: Uuid,
+        operation_id: OperationId,
         assessment: ReplacementQualificationAssessment,
     ) -> Result<(), JournalError> {
         self.update_with_optional_replacement_qualification(
@@ -2167,7 +2211,7 @@ impl OperationJournalStore {
 
     fn update_with_optional_replacement_qualification(
         &mut self,
-        operation_id: Uuid,
+        operation_id: OperationId,
         phase: OperationPhase,
         disposition: OperationDisposition,
         replacement_qualification: Option<ReplacementQualificationAssessment>,
@@ -2262,7 +2306,7 @@ impl OperationJournalStore {
 
     fn guarded_prepare(
         &mut self,
-        operation_id: Uuid,
+        operation_id: OperationId,
         prepared: PreparedWaveformRestore,
     ) -> Result<(), JournalError> {
         let current = self
@@ -2298,7 +2342,7 @@ impl OperationJournalStore {
 
     fn guarded_stage(
         &mut self,
-        operation_id: Uuid,
+        operation_id: OperationId,
         staged: FilesystemStagedWaveformRestore,
     ) -> Result<(), JournalError> {
         let current = self
@@ -2350,7 +2394,7 @@ impl OperationJournalStore {
     #[cfg(test)]
     fn record_absent_final_recovery_observation(
         &mut self,
-        operation_id: Uuid,
+        operation_id: OperationId,
         observation: AbsentFinalRecoveryObservation,
     ) -> Result<(), JournalError> {
         let current = self
@@ -2392,7 +2436,7 @@ impl OperationJournalStore {
     #[cfg(test)]
     fn record_absent_final_transaction_owned_proof(
         &mut self,
-        operation_id: Uuid,
+        operation_id: OperationId,
         proof: AbsentFinalTransactionOwnedProof,
     ) -> Result<(), JournalError> {
         let current = self
@@ -2434,7 +2478,7 @@ impl OperationJournalStore {
     #[cfg(test)]
     fn record_absent_final_adoption_evidence(
         &mut self,
-        operation_id: Uuid,
+        operation_id: OperationId,
         evidence: AbsentFinalAdoptionEvidence,
     ) -> Result<(), JournalError> {
         let current = self
@@ -2475,7 +2519,7 @@ impl OperationJournalStore {
 
     fn guarded_publish(
         &mut self,
-        operation_id: Uuid,
+        operation_id: OperationId,
         published: FilesystemPublishedWaveformRestore,
     ) -> Result<(), JournalError> {
         let current = self
@@ -2580,7 +2624,7 @@ impl OperationJournalStore {
         }
     }
 
-    fn record_path(&self, operation_id: Uuid) -> PathBuf {
+    fn record_path(&self, operation_id: OperationId) -> PathBuf {
         self.directory
             .join(format!("{operation_id}{RECORD_SUFFIX}"))
     }
@@ -2664,7 +2708,8 @@ impl OperationJournalStore {
             let filename_id = path
                 .file_stem()
                 .and_then(|stem| stem.to_str())
-                .and_then(|stem| Uuid::parse_str(stem).ok());
+                .and_then(|stem| Uuid::parse_str(stem).ok())
+                .map(OperationId::from_uuid);
             if filename_id != Some(record.operation_id)
                 || self.records.contains_key(&record.operation_id)
             {
@@ -2869,7 +2914,7 @@ impl ExpectedIdentityPublicationAttemptContext {
 
 #[cfg(test)]
 fn validate_absent_final_recovery_result_operation_id(
-    operation_id: Uuid,
+    operation_id: OperationId,
     result: AbsentFinalRecoveryResult,
 ) -> Result<AbsentFinalRecoveryResult, JournalError> {
     if result.operation_id() != operation_id {
@@ -2885,7 +2930,7 @@ fn validate_absent_final_recovery_result_operation_id(
 
 #[cfg(test)]
 fn validate_absent_final_adoption_result_operation_id(
-    operation_id: Uuid,
+    operation_id: OperationId,
     result: AbsentFinalAdoptionQualificationResult,
 ) -> Result<AbsentFinalAdoptionOutcome, JournalError> {
     if result.operation_id() != operation_id {
@@ -3432,7 +3477,7 @@ pub(super) fn prepared_file_evidence(file: &File) -> PreparedFileEvidence {
 }
 
 fn prepare_descriptor(
-    operation_id: Uuid,
+    operation_id: OperationId,
     direction: super::file_io::HistoryFileIoDirection,
     actions: &[super::file_io::HistoryFileAction],
     capacity_plan: &DurableCapacityPlan,
@@ -3572,7 +3617,7 @@ impl OperationJournalCoordinator {
     #[cfg(test)]
     pub(crate) fn classify_schema_v2_absent_final_recovery(
         &self,
-        operation_id: Uuid,
+        operation_id: OperationId,
     ) -> Result<AbsentFinalRecoveryClassification, JournalError> {
         Ok(self
             .run_schema_v2_absent_final_recovery(operation_id)?
@@ -3583,7 +3628,7 @@ impl OperationJournalCoordinator {
     #[cfg(test)]
     fn prepare_schema_v2_absent_final_recovery_request(
         &self,
-        operation_id: Uuid,
+        operation_id: OperationId,
     ) -> Result<AbsentFinalRecoveryRequest, JournalError> {
         let record = self
             .store
@@ -3661,7 +3706,7 @@ impl OperationJournalCoordinator {
     #[cfg(test)]
     fn run_schema_v2_absent_final_recovery(
         &self,
-        operation_id: Uuid,
+        operation_id: OperationId,
     ) -> Result<AbsentFinalRecoveryResult, JournalError> {
         let request = self.prepare_schema_v2_absent_final_recovery_request(operation_id)?;
         let result = ProductionAbsentFinalRecoveryAdapter.inspect(request);
@@ -3674,7 +3719,7 @@ impl OperationJournalCoordinator {
     #[cfg(test)]
     pub(crate) fn record_schema_v2_absent_final_recovery_observation(
         &mut self,
-        operation_id: Uuid,
+        operation_id: OperationId,
     ) -> Result<AbsentFinalRecoveryClassification, JournalError> {
         let result = self.run_schema_v2_absent_final_recovery(operation_id)?;
         let existing = self
@@ -3726,7 +3771,7 @@ impl OperationJournalCoordinator {
     #[cfg(test)]
     pub(crate) fn record_schema_v2_absent_final_transaction_owned_proof(
         &mut self,
-        operation_id: Uuid,
+        operation_id: OperationId,
     ) -> Result<AbsentFinalRecoveryClassification, JournalError> {
         let result = self.run_schema_v2_absent_final_recovery(operation_id)?;
         let AbsentFinalRecoveryClassification::StagingMissingFinalMatches = result.classification
@@ -3794,7 +3839,7 @@ impl OperationJournalCoordinator {
     #[cfg(test)]
     pub(crate) fn qualify_schema_v2_absent_final_adoption(
         &self,
-        operation_id: Uuid,
+        operation_id: OperationId,
     ) -> Result<AbsentFinalAdoptionOutcome, JournalError> {
         let recovery = self
             .run_schema_v2_absent_final_recovery(operation_id)
@@ -3906,7 +3951,7 @@ impl OperationJournalCoordinator {
     /// phase/timestamps or capacity, or exposes a handle.
     fn prepare_absent_final_publication_attempt(
         &self,
-        operation_id: Uuid,
+        operation_id: OperationId,
     ) -> Result<AbsentFinalPublicationAttemptContext, JournalError> {
         let authorizing_record = self
             .store
@@ -3928,7 +3973,7 @@ impl OperationJournalCoordinator {
     /// result is committed or rejected.
     pub(crate) fn prepare_absent_final_publication_attempt_if_needed(
         &self,
-        operation_id: Uuid,
+        operation_id: OperationId,
     ) -> Result<Option<AbsentFinalPublicationAttemptContext>, JournalError> {
         let record = self
             .store
@@ -3948,7 +3993,7 @@ impl OperationJournalCoordinator {
 
     fn prepare_absent_final_adoption_guard_request_from_record(
         &self,
-        operation_id: Uuid,
+        operation_id: OperationId,
         record: &OperationRecord,
     ) -> Result<AbsentFinalAdoptionGuardRequest, JournalError> {
         if record.operation_id != operation_id {
@@ -4082,7 +4127,7 @@ impl OperationJournalCoordinator {
     #[cfg(test)]
     pub(crate) fn prepare_schema_v2_absent_final_adoption_guard_request(
         &self,
-        operation_id: Uuid,
+        operation_id: OperationId,
     ) -> Result<AbsentFinalAdoptionGuardRequest, JournalError> {
         let mut context = self.prepare_absent_final_publication_attempt(operation_id)?;
         context.take_guard_request()
@@ -4093,7 +4138,7 @@ impl OperationJournalCoordinator {
     #[cfg(test)]
     pub(crate) fn record_schema_v2_absent_final_adoption_evidence(
         &mut self,
-        operation_id: Uuid,
+        operation_id: OperationId,
     ) -> Result<AbsentFinalRecoveryClassification, JournalError> {
         let outcome = self.qualify_schema_v2_absent_final_adoption(operation_id)?;
         let AbsentFinalAdoptionOutcome::Qualified(qualified) = outcome else {
@@ -4151,7 +4196,7 @@ impl OperationJournalCoordinator {
         &mut self,
         intent: OperationIntent,
         payload: Value,
-    ) -> Result<Uuid, JournalError> {
+    ) -> Result<OperationId, JournalError> {
         let record = OperationRecord::new(intent, payload);
         let operation_id = record.operation_id;
         self.store.admit(record)?;
@@ -4168,7 +4213,7 @@ impl OperationJournalCoordinator {
         prepared: PreparedAbsentFinalNoReplace,
         staged: FilesystemStagedWaveformRestore,
         capacity_plan: DurableCapacityPlan,
-    ) -> Result<Uuid, JournalError> {
+    ) -> Result<OperationId, JournalError> {
         let record = OperationRecord::new_v2_absent_final_with_capacity_plan(
             intent,
             payload,
@@ -4198,7 +4243,7 @@ impl OperationJournalCoordinator {
     }
 
     #[cfg(test)]
-    pub(super) fn record_path_for_test(&self, operation_id: Uuid) -> PathBuf {
+    pub(super) fn record_path_for_test(&self, operation_id: OperationId) -> PathBuf {
         self.store.record_path(operation_id)
     }
 
@@ -4214,7 +4259,7 @@ impl OperationJournalCoordinator {
         payload: Value,
         direction: super::file_io::HistoryFileIoDirection,
         actions: &[super::file_io::HistoryFileAction],
-    ) -> Result<Uuid, BoundedAdmissionError> {
+    ) -> Result<OperationId, BoundedAdmissionError> {
         if self.store.capacity_blocked() {
             return Err(RejectedBeforeIntent::RecoveryBlocked.into());
         }
@@ -4247,7 +4292,7 @@ impl OperationJournalCoordinator {
 
     fn prepare_admitted_bounded_waveform_restore(
         &mut self,
-        operation_id: Uuid,
+        operation_id: OperationId,
         direction: super::file_io::HistoryFileIoDirection,
         actions: &[super::file_io::HistoryFileAction],
     ) -> Result<PreparedOperationOutcome, BoundedAdmissionError> {
@@ -4296,7 +4341,7 @@ impl OperationJournalCoordinator {
     /// `CopyValidated` participant checkpoint. This deliberately stops before final replacement.
     pub(crate) fn stage_admitted_bounded_waveform_restore(
         &mut self,
-        operation_id: Uuid,
+        operation_id: OperationId,
     ) -> Result<FilesystemStageOutcome, JournalError> {
         let record = self
             .store
@@ -4501,7 +4546,7 @@ impl OperationJournalCoordinator {
 
     fn stage_retry_or_audit(
         &mut self,
-        operation_id: Uuid,
+        operation_id: OperationId,
         phase: OperationPhase,
         reason: String,
     ) -> Result<FilesystemStageOutcome, JournalError> {
@@ -4533,7 +4578,7 @@ impl OperationJournalCoordinator {
 
     fn validate_already_published_absent_final_noop(
         &self,
-        operation_id: Uuid,
+        operation_id: OperationId,
     ) -> Result<FilesystemStageOutcome, JournalError> {
         let record = self
             .store
@@ -4656,7 +4701,7 @@ impl OperationJournalCoordinator {
 
     fn prepare_expected_identity_publication_attempt(
         &self,
-        operation_id: Uuid,
+        operation_id: OperationId,
     ) -> Result<ExpectedIdentityPublicationAttemptContext, JournalError> {
         let authorizing_record = self
             .store
@@ -4754,7 +4799,7 @@ impl OperationJournalCoordinator {
     /// intentionally return `None` so the two publication owner paths cannot cross-dispatch.
     pub(crate) fn prepare_expected_identity_publication_attempt_if_needed(
         &self,
-        operation_id: Uuid,
+        operation_id: OperationId,
     ) -> Result<Option<ExpectedIdentityPublicationAttemptContext>, JournalError> {
         let record = self
             .store
@@ -4860,7 +4905,7 @@ impl OperationJournalCoordinator {
     #[cfg(test)]
     fn attempt_publish_staged_waveform_restore(
         &mut self,
-        operation_id: Uuid,
+        operation_id: OperationId,
     ) -> Result<FilesystemStageOutcome, JournalError> {
         let (phase, is_absent_final) = {
             let record = self
@@ -4905,7 +4950,7 @@ impl OperationJournalCoordinator {
     #[cfg(test)]
     fn attempt_publish_staged_waveform_restore_with_adapter(
         &mut self,
-        operation_id: Uuid,
+        operation_id: OperationId,
         adapter: &super::expected_identity_replacement::TestQualifiedExpectedIdentityReplacementAdapter,
     ) -> Result<FilesystemStageOutcome, JournalError> {
         let mut context = self
@@ -4926,7 +4971,7 @@ impl OperationJournalCoordinator {
 
     fn update_platform_qualification(
         &mut self,
-        operation_id: Uuid,
+        operation_id: OperationId,
         assessment: ReplacementQualificationAssessment,
     ) -> Result<FilesystemStageOutcome, JournalError> {
         match self
@@ -4946,7 +4991,7 @@ impl OperationJournalCoordinator {
 
     fn update_attempt_disposition(
         &mut self,
-        operation_id: Uuid,
+        operation_id: OperationId,
         disposition: OperationDisposition,
         reason: String,
     ) -> Result<FilesystemStageOutcome, JournalError> {
@@ -4980,7 +5025,7 @@ impl OperationJournalCoordinator {
     #[cfg(test)]
     fn guarded_publish(
         &mut self,
-        operation_id: Uuid,
+        operation_id: OperationId,
         published: FilesystemPublishedWaveformRestore,
     ) -> Result<(), JournalError> {
         self.store.guarded_publish(operation_id, published)
@@ -4989,7 +5034,7 @@ impl OperationJournalCoordinator {
     /// Advance phase/disposition through one atomic durable record replacement.
     pub(crate) fn update(
         &mut self,
-        operation_id: Uuid,
+        operation_id: OperationId,
         phase: OperationPhase,
         disposition: OperationDisposition,
     ) -> Result<(), JournalError> {
@@ -5010,14 +5055,14 @@ impl OperationJournalCoordinator {
     /// Guarded, idempotent IntentDurable -> Prepared transition for validated evidence.
     pub(crate) fn guarded_prepare(
         &mut self,
-        operation_id: Uuid,
+        operation_id: OperationId,
         prepared: PreparedWaveformRestore,
     ) -> Result<(), JournalError> {
         self.store.guarded_prepare(operation_id, prepared)
     }
 
     /// Return a typed operation record, if present.
-    pub(crate) fn record(&self, operation_id: Uuid) -> Option<&OperationRecord> {
+    pub(crate) fn record(&self, operation_id: OperationId) -> Option<&OperationRecord> {
         self.store.record(operation_id)
     }
 }
@@ -5301,6 +5346,27 @@ mod tests {
         }
     }
 
+    #[test]
+    fn operation_id_keeps_uuid_json_and_filename_compatibility() {
+        let uuid =
+            Uuid::parse_str("01234567-89ab-cdef-0123-456789abcdef").expect("valid operation UUID");
+        let operation_id = OperationId::from_uuid(uuid);
+        let mut record = OperationRecord::new(intent(), Value::Null);
+        record.operation_id = operation_id;
+        let persisted = schema_v1_value(&record);
+
+        assert_eq!(
+            persisted["operation_id"],
+            serde_json::json!(uuid)
+        );
+        assert_eq!(operation_id.to_string(), uuid.to_string());
+        assert_eq!(format!("{operation_id}.json"), format!("{uuid}.json"));
+
+        let decoded: PersistedOperationRecordV1 =
+            serde_json::from_value(persisted).expect("deserialize persisted operation record");
+        assert_eq!(OperationId::from_uuid(decoded.operation_id), operation_id);
+    }
+
     fn schema_v1_bytes(record: &OperationRecord) -> Vec<u8> {
         encode_schema_v1(record).expect("encode schema-v1 fixture")
     }
@@ -5340,9 +5406,9 @@ mod tests {
 
     #[test]
     fn absent_final_adapter_results_are_operation_fenced_before_use() {
-        let operation_id = Uuid::new_v4();
+        let operation_id = OperationId::for_test();
         let recovery_result = AbsentFinalRecoveryResult {
-            operation_id: Uuid::new_v4(),
+            operation_id: OperationId::for_test(),
             classification: AbsentFinalRecoveryClassification::NeitherPresent,
             observation: None,
         };
@@ -5353,7 +5419,7 @@ mod tests {
         ));
 
         let adoption_result = AbsentFinalAdoptionQualificationResult {
-            operation_id: Uuid::new_v4(),
+            operation_id: OperationId::for_test(),
             outcome: AbsentFinalAdoptionOutcome::UnsupportedPlatform,
         };
         assert!(matches!(
@@ -5411,7 +5477,7 @@ mod tests {
     fn admit_absent_final_v2_fixture(
         journal: &mut OperationJournalCoordinator,
     ) -> (
-        Uuid,
+        OperationId,
         PreparedAbsentFinalNoReplace,
         FilesystemStagedWaveformRestore,
     ) {
@@ -5432,7 +5498,7 @@ mod tests {
     fn admit_real_absent_final_v2_fixture(
         journal: &mut OperationJournalCoordinator,
         directory: &tempfile::TempDir,
-    ) -> (Uuid, PathBuf, PathBuf) {
+    ) -> (OperationId, PathBuf, PathBuf) {
         let target_parent_path = directory.path().join("target-parent");
         fs::create_dir(&target_parent_path).expect("real target parent");
         let staging_path = target_parent_path.join("staging.wav");
@@ -5482,7 +5548,7 @@ mod tests {
     fn admit_real_absent_final_v2_adoption_fixture(
         journal: &mut OperationJournalCoordinator,
         directory: &tempfile::TempDir,
-    ) -> (Uuid, PathBuf, PathBuf) {
+    ) -> (OperationId, PathBuf, PathBuf) {
         let (operation_id, final_path, staging_path) =
             admit_real_absent_final_v2_fixture(journal, directory);
         fs::rename(&staging_path, &final_path).expect("staging to final rename");
@@ -5501,7 +5567,7 @@ mod tests {
     #[cfg(unix)]
     fn publish_absent_final_via_owner_route(
         journal: &mut OperationJournalCoordinator,
-        operation_id: Uuid,
+        operation_id: OperationId,
     ) -> Result<FilesystemStageOutcome, JournalError> {
         let mut context = journal
             .prepare_absent_final_publication_attempt_if_needed(operation_id)?
@@ -5538,7 +5604,7 @@ mod tests {
         }
     }
 
-    fn v2_absent_record_on_disk() -> (tempfile::TempDir, Uuid, PathBuf, Value) {
+    fn v2_absent_record_on_disk() -> (tempfile::TempDir, OperationId, PathBuf, Value) {
         let directory = tempfile::tempdir().unwrap();
         let mut journal = OperationJournalCoordinator::open(directory.path().to_path_buf())
             .expect("open v2 fixture journal");
@@ -5553,7 +5619,7 @@ mod tests {
         phase: OperationPhase,
         disposition: OperationDisposition,
         evidence: SchemaV2EvidencePresence,
-    ) -> (tempfile::TempDir, Uuid, PathBuf, Vec<u8>) {
+    ) -> (tempfile::TempDir, OperationId, PathBuf, Vec<u8>) {
         let (directory, operation_id, path, mut value) = v2_absent_record_on_disk();
         let prepared_value = value["prepared"].clone();
         let staged_value = value["staged"].clone();
@@ -5769,7 +5835,7 @@ mod tests {
     fn assert_unknown_nested_record_is_retained_unchanged(
         directory: &Path,
         path: &Path,
-        operation_id: Uuid,
+        operation_id: OperationId,
         bytes: &[u8],
     ) {
         for _ in 0..2 {
@@ -6064,7 +6130,7 @@ mod tests {
         tempfile::TempDir,
         tempfile::TempDir,
         OperationJournalCoordinator,
-        Uuid,
+        OperationId,
         PathBuf,
         PathBuf,
         PathBuf,
@@ -6308,7 +6374,7 @@ mod tests {
                     drift: None,
                 },
             )
-            .replace_operation_id_for_test(Uuid::new_v4());
+            .replace_operation_id_for_test(OperationId::for_test());
         let record_before = journal.record(id).unwrap().clone();
         let claims_before = journal.store.capacity_claims().clone();
         let target_before = fs::read(&target).unwrap();
@@ -7569,7 +7635,7 @@ mod tests {
 
     fn assert_malformed_qualification_recovery(
         journal: &OperationJournalCoordinator,
-        operation_id: Uuid,
+        operation_id: OperationId,
         path: &Path,
         bytes: &[u8],
     ) {
@@ -8740,7 +8806,7 @@ mod tests {
             .expect("absent-final owner handoff");
         let request = context.take_guard_request().expect("take owner request");
         assert!(matches!(
-            super::super::acquire_absent_final_publication_guard(request, Uuid::new_v4()),
+            super::super::acquire_absent_final_publication_guard(request, OperationId::for_test()),
             Err(AbsentFinalAdoptionOutcome::OperationIdDrift)
         ));
         assert_eq!(journal.record(operation_id), Some(&record_before));

@@ -13,14 +13,13 @@
 use std::fs::File;
 use std::path::Path;
 use std::path::PathBuf;
-use uuid::Uuid;
 
 use super::absent_final_no_replace::{
     exact_content_evidence_matches, stable_id_and_length_matches,
 };
 use super::operation_journal::{
     AbsentFinalRecoveryObservation, FilesystemStagedParticipant, FilesystemStagedWaveformRestore,
-    PreparedAbsentFinalNoReplace, PreparedFileEvidence, PreparedObjectIdentity,
+    OperationId, PreparedAbsentFinalNoReplace, PreparedFileEvidence, PreparedObjectIdentity,
 };
 #[cfg(unix)]
 use super::operation_journal::{descriptor_identity, open_root, prepared_file_evidence};
@@ -35,7 +34,7 @@ mod sealed {
 /// descriptor, filesystem capability, or mutation authority; the production adapter reacquires
 /// those capabilities before interpreting the locators.
 pub(super) struct AbsentFinalRecoveryRequest {
-    pub(super) operation_id: Uuid,
+    pub(super) operation_id: OperationId,
     pub(super) target_parent_path: PathBuf,
     pub(super) expected_target_parent: PreparedObjectIdentity,
     pub(super) staging_leaf: PathBuf,
@@ -58,7 +57,7 @@ pub(super) enum AbsentFinalRecoveryRequestError {
 impl AbsentFinalRecoveryRequest {
     /// Construct an owned recovery request without touching the filesystem.
     pub(super) fn try_new(
-        operation_id: Uuid,
+        operation_id: OperationId,
         target_parent_path: PathBuf,
         expected_target_parent: PreparedObjectIdentity,
         staging_leaf: PathBuf,
@@ -149,13 +148,13 @@ pub(super) struct AbsentFinalRecoveryInspection {
 /// operation ID before interpreting or persisting the evidence.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct AbsentFinalRecoveryResult {
-    pub(super) operation_id: Uuid,
+    pub(super) operation_id: OperationId,
     pub(super) classification: AbsentFinalRecoveryClassification,
     pub(super) observation: Option<AbsentFinalRecoveryObservation>,
 }
 
 impl AbsentFinalRecoveryResult {
-    pub(super) fn operation_id(&self) -> Uuid {
+    pub(super) fn operation_id(&self) -> OperationId {
         self.operation_id
     }
 }
@@ -222,14 +221,15 @@ pub(super) fn inspect_absent_final_recovery(
     prepared: &PreparedAbsentFinalNoReplace,
     staged: &FilesystemStagedWaveformRestore,
 ) -> AbsentFinalRecoveryInspection {
-    let request = match request_from_prepared(Uuid::nil(), prepared, staged) {
-        Ok(request) => request,
-        Err(_) => {
-            return inspection(AbsentFinalRecoveryClassification::IdentityAmbiguous(
-                AbsentFinalRecoveryAmbiguity::StagingInspectionRaceOrFailure,
-            ));
-        }
-    };
+    let request =
+        match request_from_prepared(OperationId::for_test(), prepared, staged) {
+            Ok(request) => request,
+            Err(_) => {
+                return inspection(AbsentFinalRecoveryClassification::IdentityAmbiguous(
+                    AbsentFinalRecoveryAmbiguity::StagingInspectionRaceOrFailure,
+                ));
+            }
+        };
     let result = ProductionAbsentFinalRecoveryAdapter.inspect(request);
     AbsentFinalRecoveryInspection {
         classification: result.classification,
@@ -436,7 +436,7 @@ fn final_ambiguity(error: LeafInspectionError) -> AbsentFinalRecoveryAmbiguity {
 }
 
 fn request_from_prepared(
-    operation_id: Uuid,
+    operation_id: OperationId,
     prepared: &PreparedAbsentFinalNoReplace,
     staged: &FilesystemStagedWaveformRestore,
 ) -> Result<AbsentFinalRecoveryRequest, AbsentFinalRecoveryRequestError> {
@@ -633,7 +633,7 @@ mod tests {
     #[test]
     fn owned_recovery_request_is_filesystem_free_before_adapter_inspection() {
         let fixture = Fixture::new();
-        let operation_id = Uuid::new_v4();
+        let operation_id = OperationId::for_test();
         let request = request_from_prepared(operation_id, &fixture.prepared, &fixture.staged)
             .expect("durable recovery request");
 
