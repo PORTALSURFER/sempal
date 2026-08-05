@@ -275,9 +275,12 @@ fn source_filesystem_change_queues_refresh_without_clearing_loaded_tree() {
     state.apply_message(
         crate::native_app::test_support::state::GuiMessage::SourceFilesystemChanged {
             source_id: source_id.clone(),
+            scopes: None,
             paths: Vec::new(),
             overflowed: true,
             source_root_available: true,
+            source_root_identity: None,
+            lifecycle_generation: None,
             journal_checkpoint_event_id: None,
             watcher_continuity_proof: None,
         },
@@ -331,9 +334,12 @@ fn source_filesystem_change_syncs_removed_file_to_source_database() {
     state.apply_message(
         crate::native_app::test_support::state::GuiMessage::SourceFilesystemChanged {
             source_id: source_id.clone(),
+            scopes: None,
             paths: vec![PathBuf::from("stale.wav")],
             overflowed: false,
             source_root_available: true,
+            source_root_identity: None,
+            lifecycle_generation: None,
             journal_checkpoint_event_id: Some(21),
             watcher_continuity_proof: Some(replay_proof(source_root.path(), 21)),
         },

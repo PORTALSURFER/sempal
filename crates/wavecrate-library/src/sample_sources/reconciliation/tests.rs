@@ -394,6 +394,69 @@ fn create_modify_directory_empty_folder_symlink_and_duplicates_keep_order() {
 }
 
 #[test]
+fn coalesce_scopes_keeps_exact_entries_non_recursive_and_widens_subtrees() {
+    let exact_entries = normalized(vec![
+        RawObservation::new(
+            RawEventKind::Modify,
+            vec![path("folder", RawPathRole::Subject)],
+        ),
+        RawObservation::new(
+            RawEventKind::Modify,
+            vec![path("folder/child.wav", RawPathRole::Subject)],
+        ),
+    ]);
+    let exact_scopes = coalesce_scopes(exact_entries.scopes().iter().cloned());
+    assert_eq!(exact_scopes.len(), 2);
+    assert_eq!(exact_scopes[0].kind(), ReconciliationScopeKind::ExactEntry);
+    assert_eq!(scope_path(&exact_scopes[0]), Some(Path::new("folder")));
+    assert_eq!(exact_scopes[1].kind(), ReconciliationScopeKind::ExactEntry);
+    assert_eq!(
+        scope_path(&exact_scopes[1]),
+        Some(Path::new("folder/child.wav"))
+    );
+
+    let normalized = normalized(vec![
+        RawObservation::new(
+            RawEventKind::Create,
+            vec![path("folder", RawPathRole::Subject).with_hint(RawPathHint::Directory)],
+        ),
+        RawObservation::new(
+            RawEventKind::Modify,
+            vec![path("folder/sibling.wav", RawPathRole::Subject)],
+        ),
+        RawObservation::new(
+            RawEventKind::Modify,
+            vec![path("other.wav", RawPathRole::Subject)],
+        ),
+    ]);
+
+    let scopes = coalesce_scopes(normalized.scopes().iter().cloned());
+
+    assert_eq!(scopes.len(), 2);
+    assert_eq!(scopes[0].kind(), ReconciliationScopeKind::Subtree);
+    assert_eq!(scope_path(&scopes[0]), Some(Path::new("folder")));
+    assert_eq!(scopes[1].kind(), ReconciliationScopeKind::ExactEntry);
+    assert_eq!(scope_path(&scopes[1]), Some(Path::new("other.wav")));
+}
+
+#[test]
+fn coalesce_scopes_routes_source_audit_as_widest_scope() {
+    let normalized = normalized(vec![
+        RawObservation::new(
+            RawEventKind::Modify,
+            vec![path("folder/file.wav", RawPathRole::Subject)],
+        ),
+        RawObservation::new(RawEventKind::RootChanged, Vec::new()),
+    ]);
+
+    let scopes = coalesce_scopes(normalized.scopes().iter().cloned());
+
+    assert_eq!(scopes.len(), 1);
+    assert_eq!(scopes[0].kind(), ReconciliationScopeKind::SourceAudit);
+    assert!(scopes[0].path().is_none());
+}
+
+#[test]
 fn delete_root_and_missing_parent_evidence_widens_conservatively() {
     let result = normalized(vec![
         RawObservation::new(

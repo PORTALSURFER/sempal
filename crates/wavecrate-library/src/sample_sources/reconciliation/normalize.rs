@@ -168,6 +168,48 @@ pub fn normalize_observation(envelope: RawObservationEnvelope) -> NormalizedObse
     NormalizedObservation { envelope, scopes }
 }
 
+/// Coalesce normalized scopes without narrowing their evidence.
+///
+/// A source audit dominates every path scope. A subtree dominates an exact entry at
+/// the same path and covers descendant scopes. The first retained scope keeps its
+/// diagnostic reason and role; no filesystem or database state is consulted.
+pub fn coalesce_scopes(
+    scopes: impl IntoIterator<Item = ReconciliationScope>,
+) -> Vec<ReconciliationScope> {
+    let mut coalesced: Vec<ReconciliationScope> = Vec::new();
+    for scope in scopes {
+        if scope.kind() == ReconciliationScopeKind::SourceAudit {
+            return vec![scope];
+        }
+        let Some(path) = scope.path() else {
+            return vec![ReconciliationScope::source_audit(
+                NormalizationReason::MissingPath,
+            )];
+        };
+        let covered_by_existing = coalesced.iter().any(|existing: &ReconciliationScope| {
+            let Some(existing_path) = existing.path() else {
+                return false;
+            };
+            let same_path = existing_path.as_path() == path.as_path();
+            let covered_by_subtree = existing.kind() == ReconciliationScopeKind::Subtree
+                && path.as_path().starts_with(existing_path.as_path());
+            same_path && existing.kind() >= scope.kind() || covered_by_subtree
+        });
+        if covered_by_existing {
+            continue;
+        }
+        coalesced.retain(|existing: &ReconciliationScope| {
+            !(scope.kind() == ReconciliationScopeKind::Subtree
+                && existing.path().is_some_and(|existing_path| {
+                    existing_path.as_path() == path.as_path()
+                        || existing_path.as_path().starts_with(path.as_path())
+                }))
+        });
+        coalesced.push(scope);
+    }
+    coalesced
+}
+
 fn normalize_record(observation: &RawObservation, scopes: &mut Vec<ReconciliationScope>) {
     match observation.kind() {
         RawEventKind::Create | RawEventKind::Modify => {

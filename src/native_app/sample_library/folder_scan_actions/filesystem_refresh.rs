@@ -3,13 +3,13 @@ use std::{path::PathBuf, time::Instant};
 use radiant::prelude as ui;
 
 use crate::native_app::app::{
-    GuiMessage, NativeAppState, SourceFilesystemChangePlan, SourceFilesystemSyncResult,
-    SourceRefreshCause, SourceRefreshRequest, emit_gui_action,
+    GuiMessage, NativeAppState, SourceFilesystemChangePlan, SourceFilesystemSyncAuditReason,
+    SourceFilesystemSyncResult, SourceRefreshCause, SourceRefreshRequest, emit_gui_action,
 };
 use crate::native_app::sample_library::folder_scan_actions::filesystem_refresh_worker::{
     capture_source_root_identity, recover_source_filesystem_sync,
     root_identity_matches_watcher_proof, run_targeted_sync_after_root_identity_gate,
-    sync_source_database_paths_with_writer,
+    sync_source_database_paths_with_writer, sync_source_database_scopes_with_writer,
 };
 use crate::native_app::sample_library::source_prep::{
     CacheWarmIntent, MetadataRefreshIntent, ReadinessIntent, SourceFeedbackIntent,
@@ -22,6 +22,7 @@ use crate::native_app::sample_library::source_watcher::{
 use crate::native_app::source_processing::{
     ExternalScanHandoff, manifest_delta_requires_browser_refresh,
 };
+use wavecrate_library::sample_sources::reconciliation::ReconciliationScope;
 
 pub(in crate::native_app) const FILESYSTEM_SYNC_PREP_INTENTS: SourcePrepIntents =
     SourcePrepIntents {
@@ -54,24 +55,34 @@ impl NativeAppState {
     pub(in crate::native_app) fn refresh_source_after_filesystem_change(
         &mut self,
         source_id: String,
+        scopes: Option<Vec<ReconciliationScope>>,
         paths: Vec<PathBuf>,
         overflowed: bool,
         source_root_available: bool,
+        source_root_identity: Option<String>,
+        message_lifecycle_generation: Option<u64>,
         journal_checkpoint_event_id: Option<u64>,
         watcher_continuity_proof: Option<WatcherContinuityProof>,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
         let started_at = Instant::now();
-        let lifecycle_generation = self
-            .background
-            .source_lifecycle_generations
-            .get(&source_id)
-            .copied();
-        match self.library.plan_filesystem_change(
+        let lifecycle_generation = if scopes.is_some() {
+            message_lifecycle_generation
+        } else {
+            message_lifecycle_generation.or_else(|| {
+                self.background
+                    .source_lifecycle_generations
+                    .get(&source_id)
+                    .copied()
+            })
+        };
+        match self.library.plan_filesystem_change_with_scopes(
             source_id,
+            scopes.as_deref(),
             &paths,
             overflowed,
             source_root_available,
+            source_root_identity,
             lifecycle_generation,
             journal_checkpoint_event_id,
             watcher_continuity_proof.clone(),
@@ -102,8 +113,11 @@ impl NativeAppState {
             } => {
                 self.queue_source_filesystem_sync(
                     source_id.clone(),
+                    None,
                     paths,
                     changed_count,
+                    None,
+                    lifecycle_generation,
                     journal_checkpoint_event_id,
                     watcher_continuity_proof,
                     context,
@@ -115,6 +129,48 @@ impl NativeAppState {
                     "sync_queued",
                     started_at,
                     None,
+                );
+            }
+            SourceFilesystemChangePlan::SyncScopes {
+                source_id,
+                scopes,
+                changed_count,
+                source_root_identity,
+                lifecycle_generation,
+                journal_checkpoint_event_id,
+                watcher_continuity_proof,
+            } => {
+                self.queue_source_filesystem_sync(
+                    source_id.clone(),
+                    Some(scopes),
+                    Vec::new(),
+                    changed_count,
+                    source_root_identity,
+                    lifecycle_generation,
+                    journal_checkpoint_event_id,
+                    watcher_continuity_proof,
+                    context,
+                );
+                emit_gui_action(
+                    "folder_browser.source.filesystem_change",
+                    Some("sources"),
+                    Some(&source_id),
+                    "sync_queued",
+                    started_at,
+                    None,
+                );
+            }
+            SourceFilesystemChangePlan::SourceAuditRequired { source_id, reason } => {
+                self.background
+                    .source_processing
+                    .request_source_manifest_audit(&source_id, reason);
+                emit_gui_action(
+                    "folder_browser.source.filesystem_change",
+                    Some("sources"),
+                    Some(&source_id),
+                    "audit_required",
+                    started_at,
+                    Some(reason),
                 );
             }
             SourceFilesystemChangePlan::DeferredAlreadyRunning { source_id } => {
@@ -158,10 +214,15 @@ impl NativeAppState {
                 lifecycle_generation = result.lifecycle_generation,
                 "Ignoring filesystem sync completion from an inactive source generation"
             );
+            self.background
+                .source_processing
+                .request_source_manifest_audit(
+                    &source_id,
+                    SourceFilesystemSyncAuditReason::LifecycleStale.label(),
+                );
             self.maybe_run_pending_source_refresh(context);
             return;
         }
-        let changed_count = result.changed_count;
         if !self.library.folder_browser.source_exists(&source_id) {
             tracing::debug!(
                 source_id = %source_id,
@@ -170,6 +231,47 @@ impl NativeAppState {
             self.maybe_run_pending_source_refresh(context);
             return;
         }
+        let audit_required = result.audit_required.or(result
+            .cancelled
+            .then_some(SourceFilesystemSyncAuditReason::Cancelled));
+        if let Some(reason) = audit_required {
+            self.background
+                .source_processing
+                .request_source_manifest_audit(&source_id, reason.label());
+            let (refresh_cause, reconciliation_reason) = match reason {
+                SourceFilesystemSyncAuditReason::RootIdentityUncertain => (
+                    SourceRefreshCause::WatcherAuthorityUnproven,
+                    "targeted_sync_watcher_authority_unproven",
+                ),
+                SourceFilesystemSyncAuditReason::ScopeLost
+                | SourceFilesystemSyncAuditReason::SourceAuditScope
+                | SourceFilesystemSyncAuditReason::LifecycleStale
+                | SourceFilesystemSyncAuditReason::Cancelled
+                | SourceFilesystemSyncAuditReason::TypedScopeDispatchUnavailable
+                | SourceFilesystemSyncAuditReason::WorkerPanic => (
+                    SourceRefreshCause::FilesystemSyncIncomplete,
+                    "filesystem_sync_incomplete_after_commit",
+                ),
+            };
+            self.background
+                .source_processing
+                .wake_source_for_full_reconciliation(&source_id, reconciliation_reason);
+            if let Err(error) = result.result.as_ref()
+                && source_id == self.library.folder_browser.selected_source_id()
+            {
+                self.ui.status.sample = format!("Source sync failed: {error}");
+            }
+            self.queue_filesystem_source_refresh(
+                source_id,
+                refresh_cause,
+                Some(result.lifecycle_generation),
+                Instant::now(),
+                context,
+            );
+            self.maybe_run_pending_source_refresh(context);
+            return;
+        }
+        let changed_count = result.changed_count;
         let watcher_root_identity_is_aligned = root_identity_matches_watcher_proof(
             root_identity.as_deref(),
             watcher_continuity_proof.as_ref(),
@@ -429,6 +531,12 @@ impl NativeAppState {
                     outcome = "stale_lifecycle",
                     "Suppressing stale pending source refresh"
                 );
+                self.background
+                    .source_processing
+                    .request_source_manifest_audit(
+                        &pending.source_id,
+                        SourceFilesystemSyncAuditReason::LifecycleStale.label(),
+                    );
                 continue;
             }
             self.queue_filesystem_source_refresh(
@@ -458,7 +566,31 @@ impl NativeAppState {
                     outcome = "stale_lifecycle",
                     "Suppressing stale targeted source sync"
                 );
+                self.background
+                    .source_processing
+                    .request_source_manifest_audit(
+                        &pending.source_id,
+                        SourceFilesystemSyncAuditReason::LifecycleStale.label(),
+                    );
                 continue;
+            }
+            let typed_scope_audit_reason = pending.scopes.as_ref().and_then(|scopes| {
+                if scopes.is_empty() {
+                    Some(SourceFilesystemSyncAuditReason::ScopeLost)
+                } else if scopes.iter().any(|scope| {
+                    scope.kind()
+                        == wavecrate_library::sample_sources::reconciliation::ReconciliationScopeKind::SourceAudit
+                }) {
+                    Some(SourceFilesystemSyncAuditReason::SourceAuditScope)
+                } else {
+                    None
+                }
+            });
+            if let Some(reason) = typed_scope_audit_reason {
+                self.background
+                    .source_processing
+                    .request_source_manifest_audit(&pending.source_id, reason.label());
+                break;
             }
             if pending.audit_required
                 || !watcher_replay_evidence_is_well_formed(
@@ -482,11 +614,15 @@ impl NativeAppState {
                 );
                 break;
             }
-            let changed_count = pending.paths.len();
+            let changed_count = pending
+                .scopes
+                .as_ref()
+                .map_or(pending.paths.len(), Vec::len);
             tracing::info!(
                 target: "wavecrate::source_processing",
                 source_id = pending.source_id,
-                path_count = changed_count,
+                scope_count = pending.scopes.as_ref().map_or(0, Vec::len),
+                path_count = pending.paths.len(),
                 lifecycle_generation = ?pending.lifecycle_generation,
                 queue_age_ms = pending.enqueued_at.elapsed().as_millis(),
                 outcome = "targeted_sync_admitted",
@@ -494,8 +630,11 @@ impl NativeAppState {
             );
             self.queue_source_filesystem_sync(
                 pending.source_id,
+                pending.scopes,
                 pending.paths,
                 changed_count,
+                pending.source_root_identity,
+                pending.lifecycle_generation,
                 pending.journal_checkpoint_event_id,
                 pending.watcher_continuity_proof,
                 context,
@@ -599,16 +738,50 @@ impl NativeAppState {
     fn queue_source_filesystem_sync(
         &mut self,
         source_id: String,
+        scopes: Option<Vec<ReconciliationScope>>,
         paths: Vec<PathBuf>,
         changed_count: usize,
+        source_root_identity: Option<String>,
+        lifecycle_generation: Option<u64>,
         journal_checkpoint_event_id: Option<u64>,
         watcher_continuity_proof: Option<WatcherContinuityProof>,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
-        if paths.is_empty() {
+        let scopes = scopes.map(|scopes| {
+            wavecrate_library::sample_sources::reconciliation::coalesce_scopes(scopes)
+        });
+        if let Some(scopes) = scopes.as_ref() {
+            let typed_authority_is_valid = !scopes.is_empty()
+                && scopes.iter().all(|scope| {
+                    scope.kind()
+                        != wavecrate_library::sample_sources::reconciliation::ReconciliationScopeKind::SourceAudit
+                })
+                && lifecycle_generation.is_some()
+                && watcher_replay_evidence_is_well_formed(
+                    journal_checkpoint_event_id,
+                    watcher_continuity_proof.as_ref(),
+                )
+                && source_root_identity.as_deref()
+                    == watcher_continuity_proof
+                        .as_ref()
+                        .map(|proof| proof.root_identity.as_str())
+                && self
+                    .background
+                    .source_lifecycle_generations
+                    .get(&source_id)
+                    == lifecycle_generation.as_ref();
+            if !typed_authority_is_valid {
+                self.background
+                    .source_processing
+                    .request_source_manifest_audit(
+                        &source_id,
+                        SourceFilesystemSyncAuditReason::RootIdentityUncertain.label(),
+                    );
+                return;
+            }
+        } else if paths.is_empty() {
             return;
-        }
-        if !watcher_replay_evidence_is_well_formed(
+        } else if !watcher_replay_evidence_is_well_formed(
             journal_checkpoint_event_id,
             watcher_continuity_proof.as_ref(),
         ) {
@@ -657,19 +830,44 @@ impl NativeAppState {
                     return;
                 }
             };
+        if let Some(lifecycle_generation) = lifecycle_generation
+            && lifecycle_generation != expected_lifecycle_generation
+        {
+            self.background
+                .source_processing
+                .request_source_manifest_audit(
+                    &source_id,
+                    SourceFilesystemSyncAuditReason::LifecycleStale.label(),
+                );
+            return;
+        }
         if !self
             .library
             .mark_targeted_source_sync_started(&source_id, expected_lifecycle_generation)
         {
-            self.library.plan_filesystem_change(
-                source_id.clone(),
-                &paths,
-                false,
-                true,
-                Some(expected_lifecycle_generation),
-                journal_checkpoint_event_id,
-                watcher_continuity_proof.clone(),
-            );
+            if scopes.is_some() {
+                self.library.plan_filesystem_change_with_scopes(
+                    source_id.clone(),
+                    scopes.as_deref(),
+                    &[],
+                    false,
+                    true,
+                    source_root_identity.clone(),
+                    Some(expected_lifecycle_generation),
+                    journal_checkpoint_event_id,
+                    watcher_continuity_proof.clone(),
+                );
+            } else {
+                self.library.plan_filesystem_change(
+                    source_id.clone(),
+                    &paths,
+                    false,
+                    true,
+                    Some(expected_lifecycle_generation),
+                    journal_checkpoint_event_id,
+                    watcher_continuity_proof.clone(),
+                );
+            }
             return;
         }
         let budget = self.background.source_processing.budget_handle();
@@ -686,6 +884,7 @@ impl NativeAppState {
                         journal_checkpoint_event_id,
                         watcher_continuity_proof,
                         cancelled: true,
+                        audit_required: Some(SourceFilesystemSyncAuditReason::Cancelled),
                         result: Err(String::from("Source filesystem sync canceled")),
                     };
                 };
@@ -706,8 +905,18 @@ impl NativeAppState {
                             captured_root_identity.clone(),
                             journal_checkpoint_event_id,
                             watcher_continuity_proof.clone(),
-                            || {
-                                sync_source_database_paths_with_writer(
+                            || match scopes {
+                                Some(scopes) => sync_source_database_scopes_with_writer(
+                                    source_id,
+                                    root,
+                                    scopes,
+                                    changed_count,
+                                    source_root_identity,
+                                    cancel.as_ref(),
+                                    watcher_continuity_proof.clone(),
+                                    &scan_writer,
+                                ),
+                                None => sync_source_database_paths_with_writer(
                                     source_id,
                                     root,
                                     database_root,
@@ -716,7 +925,7 @@ impl NativeAppState {
                                     cancel.as_ref(),
                                     watcher_continuity_proof.clone(),
                                     &scan_writer,
-                                )
+                                ),
                             },
                         )
                     },
@@ -725,7 +934,8 @@ impl NativeAppState {
                 result.watcher_continuity_proof = watcher_continuity_proof;
                 let projection_ticket = match &mut result.result {
                     Ok(success)
-                        if !result.cancelled
+                        if result.audit_required.is_none()
+                            && !result.cancelled
                             && success.incomplete_error.is_none()
                             && success.browser_projection_delta.is_some() =>
                     {
@@ -736,7 +946,9 @@ impl NativeAppState {
                     }
                     _ => {
                         permit.release_after_handoff(ExternalScanHandoff::FullReconciliation {
-                            reason: "targeted_source_sync_incomplete",
+                            reason: result
+                                .audit_required
+                                .map_or("targeted_source_sync_incomplete", |reason| reason.label()),
                         });
                         None
                     }
@@ -822,7 +1034,10 @@ mod tests {
 
     use super::{ManifestAuditFollowup, manifest_audit_followup};
     use crate::native_app::{
-        app::{BrowserProjectionDelta, SourceFilesystemSyncResult, SourceFilesystemSyncSuccess},
+        app::{
+            BrowserProjectionDelta, SourceFilesystemSyncAuditReason, SourceFilesystemSyncResult,
+            SourceFilesystemSyncSuccess,
+        },
         sample_library::folder_browser::{FolderBrowserState, scan::scan_source_with_progress},
         sample_library::source_watcher::{
             CheckpointCause, WatcherBackend, WatcherContinuityProof,
@@ -931,6 +1146,7 @@ mod tests {
             journal_checkpoint_event_id: Some(73),
             watcher_continuity_proof: None,
             cancelled: false,
+            audit_required: None,
             result: Ok(SourceFilesystemSyncSuccess {
                 renames_reconciled: 0,
                 incomplete_error: None,
@@ -985,6 +1201,7 @@ mod tests {
             journal_checkpoint_event_id: Some(73),
             watcher_continuity_proof,
             cancelled: false,
+            audit_required: None,
             result: Ok(SourceFilesystemSyncSuccess {
                 renames_reconciled: 0,
                 incomplete_error: None,
@@ -1107,6 +1324,7 @@ mod tests {
             journal_checkpoint_event_id: Some(73),
             watcher_continuity_proof: Some(proof),
             cancelled: false,
+            audit_required: Some(SourceFilesystemSyncAuditReason::RootIdentityUncertain),
             result: Err(String::from(
                 "Targeted source sync rejected because the captured source root identity does not match watcher replay evidence",
             )),

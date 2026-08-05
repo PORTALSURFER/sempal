@@ -173,6 +173,33 @@ impl LibraryAppState {
         )
     }
 
+    pub(in crate::native_app) fn plan_filesystem_change_with_scopes(
+        &mut self,
+        source_id: String,
+        scopes: Option<&[wavecrate_library::sample_sources::reconciliation::ReconciliationScope]>,
+        paths: &[std::path::PathBuf],
+        overflowed: bool,
+        source_root_available: bool,
+        source_root_identity: Option<String>,
+        lifecycle_generation: Option<u64>,
+        journal_checkpoint_event_id: Option<u64>,
+        watcher_continuity_proof: Option<WatcherContinuityProof>,
+    ) -> SourceFilesystemChangePlan {
+        self.source_scan
+            .plan_filesystem_change_with_scopes_for_generation(
+                &mut self.folder_browser,
+                source_id,
+                scopes,
+                paths,
+                overflowed,
+                source_root_available,
+                source_root_identity,
+                lifecycle_generation,
+                journal_checkpoint_event_id,
+                watcher_continuity_proof,
+            )
+    }
+
     pub(in crate::native_app) fn next_pending_source_refresh_if_idle(
         &mut self,
     ) -> Option<PendingSourceRefresh> {

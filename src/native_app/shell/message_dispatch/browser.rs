@@ -134,17 +134,23 @@ impl NativeAppState {
             }
             GuiMessage::SourceFilesystemChanged {
                 source_id,
+                scopes,
                 paths,
                 overflowed,
                 source_root_available,
+                source_root_identity,
+                lifecycle_generation,
                 journal_checkpoint_event_id,
                 watcher_continuity_proof,
             } => {
                 self.refresh_source_after_filesystem_change(
                     source_id,
+                    scopes,
                     paths,
                     overflowed,
                     source_root_available,
+                    source_root_identity,
+                    lifecycle_generation,
                     journal_checkpoint_event_id,
                     watcher_continuity_proof,
                     context,

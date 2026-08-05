@@ -9,6 +9,7 @@ use wavecrate::sample_sources::{
 };
 use wavecrate::selection::SelectionRange;
 use wavecrate_analysis::aspects::SimilarityAspect;
+use wavecrate_library::sample_sources::reconciliation::ReconciliationScope;
 
 use crate::native_app::app::ExtractedFilePlaybackType;
 use crate::native_app::app::OperationJournalRestoreCompletion;
@@ -87,9 +88,20 @@ pub(in crate::native_app) enum GuiMessage {
     SelectedFolderVerifyFinished(ui::TaskCompletion<FolderVerifyResult>),
     SourceFilesystemChanged {
         source_id: String,
+        /// `Some` is the authoritative normalized scope transport. An empty vector is scope loss;
+        /// it must not fall back to the compatibility paths below.
+        scopes: Option<Vec<ReconciliationScope>>,
+        /// Retained only for legacy watcher messages where `scopes` is `None`.
         paths: Vec<PathBuf>,
         overflowed: bool,
         source_root_available: bool,
+        /// Root identity authority carried by a typed replay handoff.
+        source_root_identity: Option<String>,
+        /// Producer-supplied current source-processing lifecycle authority. Typed replay may
+        /// intentionally carry `None` until current-token transport exists; consumers must not
+        /// substitute the GUI's current generation for `scopes: Some(_)`. Path-only legacy
+        /// messages may use `None` for the compatibility fallback.
+        lifecycle_generation: Option<u64>,
         /// A durable FSEvents cursor that may advance only after this targeted sync commits.
         journal_checkpoint_event_id: Option<u64>,
         /// Backend evidence for a targeted replay cursor. Legacy cursor-only messages remain
@@ -470,6 +482,31 @@ pub(in crate::native_app) enum BrowserScrollSurface {
     MetadataTags,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::native_app) enum SourceFilesystemSyncAuditReason {
+    ScopeLost,
+    SourceAuditScope,
+    RootIdentityUncertain,
+    LifecycleStale,
+    Cancelled,
+    TypedScopeDispatchUnavailable,
+    WorkerPanic,
+}
+
+impl SourceFilesystemSyncAuditReason {
+    pub(in crate::native_app) const fn label(self) -> &'static str {
+        match self {
+            Self::ScopeLost => "reconciliation_scope_lost",
+            Self::SourceAuditScope => "reconciliation_source_audit_scope",
+            Self::RootIdentityUncertain => "targeted_sync_root_identity_uncertain",
+            Self::LifecycleStale => "targeted_sync_stale_lifecycle",
+            Self::Cancelled => "targeted_sync_cancelled",
+            Self::TypedScopeDispatchUnavailable => "typed_scope_dispatch_unavailable",
+            Self::WorkerPanic => "targeted_sync_worker_panic",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::native_app) struct SourceFilesystemSyncResult {
     pub(in crate::native_app) source_id: String,
@@ -480,6 +517,7 @@ pub(in crate::native_app) struct SourceFilesystemSyncResult {
     pub(in crate::native_app) journal_checkpoint_event_id: Option<u64>,
     pub(in crate::native_app) watcher_continuity_proof: Option<WatcherContinuityProof>,
     pub(in crate::native_app) cancelled: bool,
+    pub(in crate::native_app) audit_required: Option<SourceFilesystemSyncAuditReason>,
     pub(in crate::native_app) result: Result<SourceFilesystemSyncSuccess, String>,
 }
 

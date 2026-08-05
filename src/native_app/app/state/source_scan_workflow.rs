@@ -20,6 +20,12 @@ use crate::native_app::sample_library::source_watcher::{
     WatcherContinuityProof, watcher_replay_evidence_is_well_formed,
 };
 use wavecrate::sample_sources::scanner::CommittedSourceDelta;
+use wavecrate_library::sample_sources::reconciliation::{
+    ReconciliationScope, ReconciliationScopeKind, coalesce_scopes,
+};
+
+const MAX_TYPED_SCOPE_COUNT: usize = 4096;
+const MAX_TYPED_SCOPE_PATH_BYTES: usize = 256 * 1024;
 
 #[cfg(test)]
 #[path = "source_scan_workflow/tests.rs"]
@@ -42,6 +48,19 @@ pub(in crate::native_app) enum SourceFilesystemChangePlan {
     SyncPaths {
         source_id: String,
         changed_count: usize,
+    },
+    SyncScopes {
+        source_id: String,
+        scopes: Vec<ReconciliationScope>,
+        changed_count: usize,
+        source_root_identity: Option<String>,
+        lifecycle_generation: Option<u64>,
+        journal_checkpoint_event_id: Option<u64>,
+        watcher_continuity_proof: Option<WatcherContinuityProof>,
+    },
+    SourceAuditRequired {
+        source_id: String,
+        reason: &'static str,
     },
     DeferredAlreadyRunning {
         source_id: String,
@@ -385,6 +404,33 @@ impl SourceScanWorkflow {
         journal_checkpoint_event_id: Option<u64>,
         watcher_continuity_proof: Option<WatcherContinuityProof>,
     ) -> SourceFilesystemChangePlan {
+        self.plan_filesystem_change_with_scopes_for_generation(
+            browser,
+            source_id,
+            None,
+            paths,
+            overflowed,
+            source_root_available,
+            None,
+            lifecycle_generation,
+            journal_checkpoint_event_id,
+            watcher_continuity_proof,
+        )
+    }
+
+    pub(in crate::native_app) fn plan_filesystem_change_with_scopes_for_generation(
+        &mut self,
+        browser: &mut FolderBrowserState,
+        source_id: String,
+        scopes: Option<&[ReconciliationScope]>,
+        paths: &[PathBuf],
+        overflowed: bool,
+        source_root_available: bool,
+        source_root_identity: Option<String>,
+        lifecycle_generation: Option<u64>,
+        journal_checkpoint_event_id: Option<u64>,
+        watcher_continuity_proof: Option<WatcherContinuityProof>,
+    ) -> SourceFilesystemChangePlan {
         let Some(source_missing) =
             browser.apply_observed_source_availability(&source_id, source_root_available)
         else {
@@ -396,6 +442,98 @@ impl SourceScanWorkflow {
             self.remove_pending_refresh(&source_id);
             self.remove_targeted_sync(&source_id);
             return SourceFilesystemChangePlan::IgnoredSourceMissing { source_id };
+        }
+        if let Some(scopes) = scopes {
+            let scopes = coalesce_scopes(scopes.iter().cloned());
+            if scopes.is_empty() {
+                return SourceFilesystemChangePlan::SourceAuditRequired {
+                    source_id,
+                    reason: "reconciliation_scope_lost",
+                };
+            }
+            if scopes
+                .iter()
+                .any(|scope| scope.kind() == ReconciliationScopeKind::SourceAudit)
+            {
+                return SourceFilesystemChangePlan::SourceAuditRequired {
+                    source_id,
+                    reason: "reconciliation_source_audit_scope",
+                };
+            }
+            let scope_path_bytes = scopes
+                .iter()
+                .filter_map(|scope| scope.path())
+                .map(|path| path.as_path().to_string_lossy().len())
+                .sum::<usize>();
+            if scopes.len() > MAX_TYPED_SCOPE_COUNT
+                || scope_path_bytes > MAX_TYPED_SCOPE_PATH_BYTES
+                || overflowed
+            {
+                return SourceFilesystemChangePlan::SourceAuditRequired {
+                    source_id,
+                    reason: "reconciliation_scope_budget_exceeded",
+                };
+            }
+            if lifecycle_generation.is_none() {
+                return SourceFilesystemChangePlan::SourceAuditRequired {
+                    source_id,
+                    reason: "targeted_sync_lifecycle_uncertain",
+                };
+            }
+            let authority_is_valid = watcher_replay_evidence_is_well_formed(
+                journal_checkpoint_event_id,
+                watcher_continuity_proof.as_ref(),
+            ) && source_root_identity.as_deref()
+                == watcher_continuity_proof
+                    .as_ref()
+                    .map(|proof| proof.root_identity.as_str());
+            if !authority_is_valid {
+                return SourceFilesystemChangePlan::SourceAuditRequired {
+                    source_id,
+                    reason: "targeted_sync_authority_unproven",
+                };
+            }
+            let full_scan_active_for_source = self
+                .progress
+                .as_ref()
+                .is_some_and(|progress| progress.source_id == source_id);
+            let full_scan_pending_for_source = self
+                .pending_refreshes
+                .iter()
+                .any(|pending| pending.source_id == source_id);
+            if full_scan_pending_for_source && !full_scan_active_for_source {
+                self.queue_targeted_sync(
+                    source_id.clone(),
+                    Some(&scopes),
+                    &[],
+                    source_root_identity,
+                    lifecycle_generation,
+                    journal_checkpoint_event_id,
+                    watcher_continuity_proof,
+                );
+                return SourceFilesystemChangePlan::DeferredAlreadyRunning { source_id };
+            }
+            if full_scan_active_for_source || self.active_targeted_syncs.contains_key(&source_id) {
+                self.queue_targeted_sync(
+                    source_id.clone(),
+                    Some(&scopes),
+                    &[],
+                    source_root_identity,
+                    lifecycle_generation,
+                    journal_checkpoint_event_id,
+                    watcher_continuity_proof,
+                );
+                return SourceFilesystemChangePlan::DeferredAlreadyRunning { source_id };
+            }
+            return SourceFilesystemChangePlan::SyncScopes {
+                source_id,
+                changed_count: scopes.len(),
+                scopes,
+                source_root_identity,
+                lifecycle_generation,
+                journal_checkpoint_event_id,
+                watcher_continuity_proof,
+            };
         }
         if !overflowed && !paths.is_empty() {
             let watcher_replay_proven = watcher_replay_evidence_is_well_formed(
@@ -414,7 +552,9 @@ impl SourceScanWorkflow {
                 if watcher_replay_proven {
                     self.queue_targeted_sync(
                         source_id.clone(),
+                        None,
                         paths,
+                        None,
                         lifecycle_generation,
                         journal_checkpoint_event_id,
                         watcher_continuity_proof,
@@ -438,7 +578,9 @@ impl SourceScanWorkflow {
             if full_scan_active_for_source || self.active_targeted_syncs.contains_key(&source_id) {
                 self.queue_targeted_sync(
                     source_id.clone(),
+                    None,
                     paths,
+                    None,
                     lifecycle_generation,
                     journal_checkpoint_event_id,
                     watcher_continuity_proof,
@@ -520,7 +662,9 @@ impl SourceScanWorkflow {
         let pending = self.pending_targeted_syncs.remove(&source_id)?;
         Some(PendingTargetedSourceSync {
             source_id: pending.source_id,
+            scopes: pending.scopes,
             paths: pending.paths.into_iter().collect(),
+            source_root_identity: pending.source_root_identity,
             lifecycle_generation: pending.lifecycle_generation,
             journal_checkpoint_event_id: pending.journal_checkpoint_event_id,
             watcher_continuity_proof: pending.watcher_continuity_proof,
@@ -785,7 +929,9 @@ impl SourceScanWorkflow {
     fn queue_targeted_sync(
         &mut self,
         source_id: String,
+        scopes: Option<&[ReconciliationScope]>,
         paths: &[PathBuf],
+        source_root_identity: Option<String>,
         lifecycle_generation: Option<u64>,
         journal_checkpoint_event_id: Option<u64>,
         watcher_continuity_proof: Option<WatcherContinuityProof>,
@@ -795,7 +941,9 @@ impl SourceScanWorkflow {
             .entry(source_id.clone())
             .or_insert_with(|| QueuedTargetedSourceSync {
                 source_id: source_id.clone(),
+                scopes: None,
                 paths: BTreeSet::new(),
+                source_root_identity: None,
                 lifecycle_generation,
                 journal_checkpoint_event_id: None,
                 watcher_continuity_proof: None,
@@ -804,7 +952,9 @@ impl SourceScanWorkflow {
                 enqueued_at: Instant::now(),
             });
         if pending.lifecycle_generation != lifecycle_generation {
+            pending.scopes = None;
             pending.paths.clear();
+            pending.source_root_identity = None;
             pending.lifecycle_generation = lifecycle_generation;
             pending.journal_checkpoint_event_id = None;
             pending.watcher_continuity_proof = None;
@@ -812,7 +962,68 @@ impl SourceScanWorkflow {
             pending.audit_required = false;
             pending.enqueued_at = Instant::now();
         }
-        pending.paths.extend(paths.iter().cloned());
+        let incoming_scopes = scopes.map(|scopes| coalesce_scopes(scopes.iter().cloned()));
+        if let Some(incoming_scopes) = incoming_scopes {
+            let incoming_scope_path_bytes = incoming_scopes
+                .iter()
+                .filter_map(|scope| scope.path())
+                .map(|path| path.as_path().to_string_lossy().len())
+                .sum::<usize>();
+            let incoming_scope_is_safe = !incoming_scopes.is_empty()
+                && incoming_scopes.len() <= MAX_TYPED_SCOPE_COUNT
+                && incoming_scope_path_bytes <= MAX_TYPED_SCOPE_PATH_BYTES
+                && incoming_scopes
+                    .iter()
+                    .all(|scope| scope.kind() != ReconciliationScopeKind::SourceAudit);
+            if pending.scopes.is_none() && !pending.paths.is_empty() {
+                pending.audit_required = true;
+                pending.paths.clear();
+            }
+            if !incoming_scope_is_safe {
+                pending.audit_required = true;
+                pending.scopes = Some(Vec::new());
+                pending.paths.clear();
+            } else {
+                let merged_scopes = coalesce_scopes(
+                    pending
+                        .scopes
+                        .take()
+                        .unwrap_or_default()
+                        .into_iter()
+                        .chain(incoming_scopes),
+                );
+                let merged_scope_path_bytes = merged_scopes
+                    .iter()
+                    .filter_map(|scope| scope.path())
+                    .map(|path| path.as_path().to_string_lossy().len())
+                    .sum::<usize>();
+                if merged_scopes.len() > MAX_TYPED_SCOPE_COUNT
+                    || merged_scope_path_bytes > MAX_TYPED_SCOPE_PATH_BYTES
+                    || merged_scopes
+                        .iter()
+                        .any(|scope| scope.kind() == ReconciliationScopeKind::SourceAudit)
+                {
+                    pending.audit_required = true;
+                    pending.scopes = Some(Vec::new());
+                    pending.paths.clear();
+                } else {
+                    pending.scopes = Some(merged_scopes);
+                    pending.paths.clear();
+                    if pending.source_root_identity.is_none() {
+                        pending.source_root_identity = source_root_identity.clone();
+                    } else if pending.source_root_identity != source_root_identity {
+                        pending.audit_required = true;
+                        pending.scopes = Some(Vec::new());
+                    }
+                }
+            }
+        } else if pending.scopes.is_some() {
+            // A legacy path event cannot narrow or supplement an already typed handoff.
+            pending.audit_required = true;
+            pending.paths.clear();
+        } else {
+            pending.paths.extend(paths.iter().cloned());
+        }
         if journal_checkpoint_event_id.is_none() || watcher_continuity_proof.is_none() {
             pending.proofless_evidence_seen = true;
         }
@@ -842,10 +1053,11 @@ impl SourceScanWorkflow {
         tracing::info!(
             target: "wavecrate::source_processing",
             source_id,
+            scope_count = pending.scopes.as_ref().map_or(0, Vec::len),
             path_count = pending.paths.len(),
             lifecycle_generation = ?pending.lifecycle_generation,
-            outcome = "coalesced_targeted_paths",
-            "Source discovery causal plan merged watcher paths"
+            outcome = "coalesced_targeted_scope_or_compatibility_event",
+            "Source discovery causal plan merged watcher evidence"
         );
     }
 

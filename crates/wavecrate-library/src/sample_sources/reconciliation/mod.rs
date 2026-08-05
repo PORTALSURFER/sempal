@@ -32,7 +32,7 @@ pub use model::{
 };
 pub use normalize::{
     NormalizationReason, NormalizedObservation, ReconciliationScope, ReconciliationScopeKind,
-    normalize_observation,
+    coalesce_scopes, normalize_observation,
 };
 pub use owner::{
     AdmissionOwnerError, OwnedAdmissionLane, OwnerReplayAdmission, ReconciliationAdmissionOwner,

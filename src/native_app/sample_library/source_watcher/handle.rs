@@ -14,7 +14,7 @@ use wavecrate::sample_sources::{SampleSource, SourceDatabase, SourceId};
 use wavecrate_library::sample_sources::reconciliation::{
     AdapterDisposition, AdmissionOutcome, BackendStreamIdentity, CaptureBoundary, DispatchTicket,
     LiveAuditCorrelation, ReconciliationLifecycle, ReconciliationScopeKind, RootIdentity,
-    SourceAuditReceipt, WatcherGeneration,
+    SourceAuditReceipt, WatcherGeneration, coalesce_scopes,
 };
 
 use super::admission_lifecycle::{AdmissionLifecycle, FseventsReplayEvidence};
@@ -1089,9 +1089,14 @@ fn run_source_watcher(
             );
             let _ = message_tx.send(GuiMessage::SourceFilesystemChanged {
                 source_id: event.source_id,
+                // Debounced native events are the explicit compatibility lane: no typed
+                // normalized scope is available after the live event collector coalesces them.
+                scopes: None,
                 paths: event.paths,
                 overflowed: event.overflowed,
                 source_root_available: event.source_root_available,
+                source_root_identity: None,
+                lifecycle_generation: None,
                 journal_checkpoint_event_id: None,
                 watcher_continuity_proof: None,
             });
@@ -1537,10 +1542,9 @@ fn handoff_dispatched_capture(
         state.mark_all_overflowed(now);
         return (false, false);
     }
+    let scopes = coalesce_scopes(dispatched.normalized().scopes().iter().cloned());
     let source_audit = context.conservative
-        || dispatched
-            .normalized()
-            .scopes()
+        || scopes
             .iter()
             .any(|scope| scope.kind() == ReconciliationScopeKind::SourceAudit);
     if let Some(correlation) = context.correlation.as_ref() {
@@ -1557,7 +1561,7 @@ fn handoff_dispatched_capture(
         state.mark_source_overflowed(context.source_id.as_str(), now);
         return (true, false);
     }
-    if source_audit {
+    if source_audit && context.replay.is_none() {
         widen_source(state, &context.source_root, now);
         return (true, false);
     }
@@ -1566,9 +1570,15 @@ fn handoff_dispatched_capture(
         if message_tx
             .send(GuiMessage::SourceFilesystemChanged {
                 source_id: context.source_id.as_str().to_string(),
+                scopes: Some(scopes),
                 paths: replay.paths.clone(),
                 overflowed: false,
                 source_root_available: true,
+                source_root_identity: Some(replay.proof.root_identity.clone()),
+                // The replay/checkpoint generation is historical watcher authority, not the
+                // current source-processing lifecycle generation. This lane has no current-token
+                // transport yet; leave it unset so typed scopes fail closed at the GUI boundary.
+                lifecycle_generation: None,
                 journal_checkpoint_event_id: Some(replay.proof.acknowledged_end_event_id),
                 watcher_continuity_proof: Some(replay.proof.clone()),
             })
@@ -4702,16 +4712,25 @@ mod lifecycle_tests {
         {
             GuiMessage::SourceFilesystemChanged {
                 source_id,
+                scopes,
                 paths,
                 overflowed,
                 source_root_available,
+                source_root_identity,
+                lifecycle_generation,
                 journal_checkpoint_event_id,
                 watcher_continuity_proof,
             } => {
                 assert_eq!(source_id, second.id.as_str());
+                assert!(scopes.is_some());
                 assert_eq!(paths, vec![PathBuf::from("second.wav")]);
                 assert!(!overflowed);
                 assert!(source_root_available);
+                assert_eq!(
+                    source_root_identity,
+                    Some(second_proof.root_identity.clone())
+                );
+                assert_eq!(lifecycle_generation, None);
                 assert_eq!(journal_checkpoint_event_id, Some(21));
                 assert_eq!(watcher_continuity_proof, Some(second_proof.clone()));
             }
