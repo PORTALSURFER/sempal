@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::OptionalExtension;
+use rusqlite::types::ValueRef;
 
 use super::super::util::{
     map_sql_error, normalize_relative_path, parse_canonical_directory_path_from_db,
@@ -54,6 +55,16 @@ enum DirectoryTruthActivationMode {
 }
 
 impl SourceWriteBatch<'_> {
+    pub(crate) fn begin_next_source_directory_truth_generation(
+        &mut self,
+        expected_entry_count: u64,
+    ) -> Result<u64, SourceDbError> {
+        directory_entry_count_sql_value(expected_entry_count)?;
+        let generation = next_source_directory_truth_generation(&self.tx)?;
+        self.begin_source_directory_truth_generation(generation, expected_entry_count)?;
+        Ok(generation)
+    }
+
     pub(crate) fn begin_source_directory_truth_generation(
         &mut self,
         generation: u64,
@@ -719,6 +730,54 @@ fn directory_generation_sql_value(generation: u64) -> Result<i64, SourceDbError>
     }
     i64::try_from(generation)
         .map_err(|_| SourceDirectoryTruthError::InvalidGeneration { generation }.into())
+}
+
+fn next_source_directory_truth_generation(
+    connection: &rusqlite::Transaction<'_>,
+) -> Result<u64, SourceDbError> {
+    let nonpositive_generation = connection
+        .query_row(
+            "SELECT generation
+             FROM source_directory_generations
+             WHERE generation <= 0
+             LIMIT 1",
+            [],
+            |_| Ok(()),
+        )
+        .optional()
+        .map_err(map_sql_error)?;
+    if nonpositive_generation.is_some() {
+        return Err(directory_requires_audit());
+    }
+
+    let highest_generation = match connection
+        .query_row(
+            "SELECT generation
+             FROM source_directory_generations
+             ORDER BY generation DESC
+             LIMIT 1",
+            [],
+            |row| {
+                Ok(match row.get_ref(0)? {
+                    ValueRef::Integer(value) if value > 0 => Some(value),
+                    _ => None,
+                })
+            },
+        )
+        .optional()
+        .map_err(map_sql_error)?
+    {
+        None => 0,
+        Some(Some(value)) => u64::try_from(value).map_err(|_| directory_requires_audit())?,
+        Some(None) => return Err(directory_requires_audit()),
+    };
+    let next_generation =
+        highest_generation
+            .checked_add(1)
+            .ok_or(SourceDirectoryTruthError::InvalidGeneration {
+                generation: u64::MAX,
+            })?;
+    directory_generation_sql_value(next_generation).map(|_| next_generation)
 }
 
 fn directory_entry_count_sql_value(count: u64) -> Result<i64, SourceDbError> {

@@ -260,6 +260,21 @@ impl SourceDatabase {
         batch.commit_auxiliary_state()
     }
 
+    /// Allocate and start the next revision-neutral source-directory generation.
+    ///
+    /// The allocation and staging-row insert share the immediate writer reservation, so a
+    /// concurrent source writer cannot observe and reuse the same generation.
+    pub fn begin_next_source_directory_truth_generation(
+        &self,
+        expected_entry_count: u64,
+    ) -> Result<u64, SourceDbError> {
+        let mut batch = self.write_batch()?;
+        let generation =
+            batch.begin_next_source_directory_truth_generation(expected_entry_count)?;
+        batch.commit_auxiliary_state()?;
+        Ok(generation)
+    }
+
     /// Stage one bounded batch of validated descendant directories.
     pub fn stage_source_directory_truth_entries(
         &self,
@@ -600,6 +615,194 @@ mod tests {
             .unwrap();
         assert_eq!(second.entries.len(), 1);
         assert!(second.next_cursor.is_none());
+    }
+
+    #[test]
+    fn allocator_starts_at_one_for_an_empty_directory_truth_table() {
+        let root = tempfile::tempdir().unwrap();
+        let db = SourceDatabase::open_for_source_write(root.path()).unwrap();
+
+        assert_eq!(
+            db.begin_next_source_directory_truth_generation(0).unwrap(),
+            1
+        );
+        assert_eq!(db.get_revision().unwrap(), 0);
+        assert_eq!(
+            db.connection
+                .query_row(
+                    "SELECT status, expected_entry_count, staged_entry_count, complete
+                     FROM source_directory_generations
+                     WHERE generation = 1",
+                    [],
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, i64>(1)?,
+                            row.get::<_, i64>(2)?,
+                            row.get::<_, i64>(3)?,
+                        ))
+                    },
+                )
+                .unwrap(),
+            ("staging".to_owned(), 0, 0, 1)
+        );
+    }
+
+    #[test]
+    fn allocator_includes_staging_and_finalized_generations() {
+        let root = tempfile::tempdir().unwrap();
+        let db = SourceDatabase::open_for_source_write(root.path()).unwrap();
+
+        assert_eq!(
+            db.begin_next_source_directory_truth_generation(0).unwrap(),
+            1
+        );
+        let finalized = db.begin_next_source_directory_truth_generation(0).unwrap();
+        assert_eq!(finalized, 2);
+        db.finalize_source_directory_truth_generation(finalized, 0)
+            .unwrap();
+
+        let staged_after_finalization = db.begin_next_source_directory_truth_generation(0).unwrap();
+        assert_eq!(staged_after_finalization, 3);
+        db.finalize_source_directory_truth_generation(staged_after_finalization, 1)
+            .unwrap();
+
+        assert_eq!(
+            db.begin_next_source_directory_truth_generation(0).unwrap(),
+            4
+        );
+    }
+
+    #[test]
+    fn allocator_rejects_unrepresentable_entry_count_without_a_row() {
+        let root = tempfile::tempdir().unwrap();
+        let db = SourceDatabase::open_for_source_write(root.path()).unwrap();
+        let count = i64::MAX as u64 + 1;
+
+        let error = db
+            .begin_next_source_directory_truth_generation(count)
+            .unwrap_err();
+        assert_eq!(
+            directory_error(error),
+            SourceDirectoryTruthError::InvalidEntryCount { count }
+        );
+        assert_eq!(
+            db.connection
+                .query_row(
+                    "SELECT COUNT(*) FROM source_directory_generations",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn allocator_rejects_malformed_generation_state_without_allocating() {
+        let root = tempfile::tempdir().unwrap();
+        let db = SourceDatabase::open_for_source_write(root.path()).unwrap();
+        db.connection
+            .execute_batch("PRAGMA ignore_check_constraints = ON;")
+            .unwrap();
+        db.connection
+            .execute(
+                "INSERT INTO source_directory_generations (
+                    generation, status, expected_entry_count, staged_entry_count, complete,
+                    published_source_revision, created_at
+                 ) VALUES (0, 'staging', 0, 0, 1, NULL, 0)",
+                [],
+            )
+            .unwrap();
+
+        let error = db
+            .begin_next_source_directory_truth_generation(0)
+            .unwrap_err();
+        assert_eq!(
+            directory_error(error),
+            SourceDirectoryTruthError::RequiresAudit {
+                reason: SourceDirectoryTruthUnavailableReason::Malformed,
+            }
+        );
+        assert_eq!(
+            db.connection
+                .query_row(
+                    "SELECT COUNT(*) FROM source_directory_generations",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1
+        );
+    }
+
+    #[test]
+    fn allocator_rejects_generation_after_sql_integer_limit_without_allocating() {
+        let root = tempfile::tempdir().unwrap();
+        let db = SourceDatabase::open_for_source_write(root.path()).unwrap();
+        db.connection
+            .execute(
+                "INSERT INTO source_directory_generations (
+                    generation, status, expected_entry_count, staged_entry_count, complete,
+                    published_source_revision, created_at
+                 ) VALUES (?1, 'staging', 0, 0, 1, NULL, 0)",
+                [i64::MAX],
+            )
+            .unwrap();
+        let next_generation = i64::MAX as u64 + 1;
+
+        let error = db
+            .begin_next_source_directory_truth_generation(0)
+            .unwrap_err();
+        assert_eq!(
+            directory_error(error),
+            SourceDirectoryTruthError::InvalidGeneration {
+                generation: next_generation,
+            }
+        );
+        assert_eq!(
+            db.connection
+                .query_row(
+                    "SELECT COUNT(*) FROM source_directory_generations",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1
+        );
+    }
+
+    #[test]
+    fn allocator_waits_for_an_existing_writer_reservation() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let root = tempfile::tempdir().unwrap();
+        let db = SourceDatabase::open_for_source_write(root.path()).unwrap();
+        let mut writer = db.write_batch().unwrap();
+        writer
+            .begin_source_directory_truth_generation(1, 0)
+            .unwrap();
+
+        let source_path = root.path().to_path_buf();
+        let (done_tx, done_rx) = mpsc::channel();
+        let allocator_thread = std::thread::spawn(move || {
+            let db = SourceDatabase::open_for_source_write(source_path).unwrap();
+            done_tx
+                .send(db.begin_next_source_directory_truth_generation(0))
+                .unwrap();
+        });
+
+        assert!(done_rx.recv_timeout(Duration::from_millis(50)).is_err());
+        writer.commit_auxiliary_state().unwrap();
+        assert_eq!(
+            done_rx
+                .recv_timeout(Duration::from_secs(5))
+                .expect("allocator completion")
+                .unwrap(),
+            2
+        );
+        allocator_thread.join().unwrap();
     }
 
     #[test]
