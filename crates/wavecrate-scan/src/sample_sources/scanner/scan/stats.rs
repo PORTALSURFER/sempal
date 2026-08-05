@@ -1,6 +1,8 @@
 use std::{fmt, path::PathBuf};
 
-use wavecrate_library::sample_sources::db::{ContentAuditReport, PendingRenameDiagnostics};
+use wavecrate_library::sample_sources::db::{
+    ContentAuditReport, PendingRenameDiagnostics, SourceDirectoryEntry,
+};
 use wavecrate_library::sample_sources::{SourceIndexEntry, SourceManifestEntry};
 
 /// One bounded group of source-manifest rows after its database transaction commits.
@@ -132,6 +134,9 @@ pub struct SourceTreeFile {
 pub struct SourceTreeSnapshot {
     /// All visible directories, relative to the source root, including the empty root path.
     pub directories: Vec<PathBuf>,
+    /// Identity-bearing descendant directories prepared for a later bounded persistence handoff.
+    #[doc(hidden)]
+    pub(crate) directory_entries: Option<Vec<SourceDirectoryEntry>>,
     /// Visible regular files that are not authoritative supported-audio manifest rows.
     pub other_files: Vec<SourceTreeFile>,
     /// Typed index-only file facts captured by this traversal.
@@ -153,6 +158,15 @@ impl SourceTreeSnapshot {
     /// A projection is safe to publish only when every encountered entry was classified.
     pub fn is_complete(&self) -> bool {
         self.diagnostics.is_empty()
+    }
+
+    /// Borrow persistence-ready directory entries only from a complete traversal snapshot.
+    #[allow(dead_code)]
+    pub(crate) fn complete_directory_entries(&self) -> Option<&[SourceDirectoryEntry]> {
+        if !self.is_complete() {
+            return None;
+        }
+        self.directory_entries.as_deref()
     }
 }
 

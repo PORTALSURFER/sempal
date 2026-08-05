@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs,
     io::Read,
     path::{Path, PathBuf},
@@ -7,7 +7,7 @@ use std::{
 };
 
 #[cfg(test)]
-use std::{cell::RefCell, collections::BTreeSet};
+use std::cell::RefCell;
 
 use cap_fs_ext::{DirExt, OpenOptionsFollowExt};
 use cap_std::fs::{Dir, OpenOptions};
@@ -17,6 +17,7 @@ use wavecrate_library::filesystem_identity::filesystem_change_marker;
 use wavecrate_library::filesystem_identity::{
     stable_filesystem_identity, stable_filesystem_identity_from_open_file,
 };
+use wavecrate_library::sample_sources::db::SourceDirectoryEntry;
 use wavecrate_library::sample_sources::{
     SourceEntryClassification, SourceEntryFileType, SourceFileClassification,
     SourceIndexDiagnostic, SourceIndexEntry, SourceTraversalPolicy,
@@ -44,9 +45,10 @@ thread_local! {
     static FORCED_DIRECTORY_IDENTITIES: RefCell<BTreeMap<PathBuf, Option<String>>> = const { RefCell::new(BTreeMap::new()) };
 }
 
-/// A per-traversal directory identity set shared by full and targeted scans.
+/// A per-traversal directory identity map shared by full and targeted scans.
 #[derive(Default)]
 pub(super) struct VisitedDirectories {
+    /// Stable identity captured from an opened directory descriptor and its first accepted path.
     identities: BTreeMap<String, PathBuf>,
     diagnostics: Vec<SourceTreeDiagnostic>,
 }
@@ -112,6 +114,27 @@ impl VisitedDirectories {
 
     pub(super) fn diagnostics(&self) -> &[SourceTreeDiagnostic] {
         &self.diagnostics
+    }
+
+    /// Assemble persistence-ready descendant entries from the accepted identity map.
+    pub(super) fn directory_entries(&self) -> Option<Vec<SourceDirectoryEntry>> {
+        let mut identities = BTreeSet::new();
+        let mut paths = BTreeSet::new();
+        let mut entries = Vec::with_capacity(self.identities.len().saturating_sub(1));
+        for (identity, relative_path) in &self.identities {
+            if relative_path.as_os_str().is_empty() {
+                continue;
+            }
+            if !identities.insert(identity) || !paths.insert(relative_path) {
+                return None;
+            }
+            entries.push(SourceDirectoryEntry {
+                relative_path: relative_path.clone(),
+                directory_identity: identity.clone(),
+            });
+        }
+        entries.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+        Some(entries)
     }
 }
 
@@ -498,6 +521,7 @@ pub(super) fn visit_dir_with_cancel_check(
     snapshot
         .index_entries
         .sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+    snapshot.directory_entries = visited.directory_entries();
     snapshot
         .diagnostics
         .extend_from_slice(visited.diagnostics());

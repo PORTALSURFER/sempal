@@ -106,6 +106,7 @@ fn full_scan_stops_an_injected_directory_identity_cycle() {
 
     assert_eq!(stats.total_files, 1);
     assert!(!snapshot.is_complete());
+    assert!(snapshot.complete_directory_entries().is_none());
     assert!(!snapshot.directories.contains(&PathBuf::from("cycle")));
     assert!(snapshot.diagnostics.iter().any(|diagnostic| matches!(
         diagnostic,
@@ -125,9 +126,15 @@ fn full_scan_preserves_manifest_when_root_identity_is_unavailable() {
     scan_once(&db).unwrap();
 
     let _root_identity = force_directory_identity(dir.path(), None);
-    let ScanError::Incomplete { .. } = scan_once(&db).unwrap_err() else {
+    let ScanError::Incomplete { committed, .. } = scan_once(&db).unwrap_err() else {
         panic!("an unavailable root identity must return an incomplete scan");
     };
+    let snapshot = committed
+        .source_tree_snapshot
+        .as_ref()
+        .expect("source tree snapshot");
+    assert!(!snapshot.is_complete());
+    assert!(snapshot.complete_directory_entries().is_none());
     assert_eq!(db.count_files().unwrap(), 1);
 }
 
@@ -200,6 +207,71 @@ fn full_scan_captures_browser_layout_in_the_authoritative_traversal() {
         .find(|file| file.relative_path == Path::new("nested/notes.txt"))
         .expect("notes layout entry");
     assert_eq!(notes.file_size, 5);
+}
+
+#[test]
+fn full_scan_transports_directory_identities_in_relative_path_order() {
+    let dir = tempdir().unwrap();
+    let alpha = dir.path().join("alpha");
+    let nested = alpha.join("nested");
+    let zeta = dir.path().join("zeta");
+    std::fs::create_dir_all(&nested).unwrap();
+    std::fs::create_dir(&zeta).unwrap();
+
+    let _root_identity = force_directory_identity(dir.path(), Some("identity-root"));
+    let _alpha_identity = force_directory_identity(&alpha, Some("identity-alpha"));
+    let _nested_identity = force_directory_identity(&nested, Some("identity-nested"));
+    let _zeta_identity = force_directory_identity(&zeta, Some("identity-zeta"));
+
+    let db = SourceDatabase::open_for_scan(dir.path()).unwrap();
+    let snapshot = scan_once(&db)
+        .unwrap()
+        .source_tree_snapshot
+        .expect("source tree snapshot");
+
+    assert!(snapshot.is_complete());
+    assert_eq!(
+        snapshot.directories,
+        vec![
+            PathBuf::new(),
+            PathBuf::from("alpha"),
+            PathBuf::from("alpha/nested"),
+            PathBuf::from("zeta"),
+        ]
+    );
+    let entries = snapshot
+        .complete_directory_entries()
+        .expect("complete directory entries");
+    let pairs = entries
+        .iter()
+        .map(|entry| {
+            (
+                entry.relative_path.clone(),
+                entry.directory_identity.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        pairs,
+        vec![
+            (PathBuf::from("alpha"), String::from("identity-alpha")),
+            (
+                PathBuf::from("alpha/nested"),
+                String::from("identity-nested")
+            ),
+            (PathBuf::from("zeta"), String::from("identity-zeta")),
+        ]
+    );
+    assert_eq!(entries.len(), snapshot.directories.len() - 1);
+    assert!(entries.windows(2).all(|pair| {
+        pair[0].relative_path < pair[1].relative_path
+            && pair[0].directory_identity != pair[1].directory_identity
+    }));
+    assert!(
+        entries
+            .iter()
+            .all(|entry| !entry.relative_path.as_os_str().is_empty())
+    );
 }
 
 #[test]
@@ -279,6 +351,14 @@ fn browser_layout_snapshot_does_not_include_symlink_entries() {
             .directories
             .iter()
             .all(|path| path != Path::new("outside-link"))
+    );
+    let entries = snapshot
+        .complete_directory_entries()
+        .expect("complete directory entries");
+    assert!(
+        entries
+            .iter()
+            .all(|entry| entry.relative_path != Path::new("outside-link"))
     );
     assert!(
         snapshot
