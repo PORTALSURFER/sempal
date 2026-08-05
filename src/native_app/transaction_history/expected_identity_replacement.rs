@@ -7,10 +7,9 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use super::capacity_gate::VolumeIdentity;
-use super::operation_journal::{PreparedFileEvidence, PreparedObjectIdentity};
+use super::operation_journal::{OperationId, PreparedFileEvidence, PreparedObjectIdentity};
 use super::publication::{
     PublicationSynchronization, PublicationVisibility, WholePublicationAtomicity,
 };
@@ -144,7 +143,7 @@ fn classify_candidate(
 /// Filesystem-free durable expectations handed from the journal owner to the physical file
 /// owner. The request contains no descriptor, store, or mutation authority.
 pub(in crate::native_app) struct ExpectedIdentityReplacementOwnerRequest {
-    operation_id: Uuid,
+    operation_id: OperationId,
     target_root_path: PathBuf,
     target_leaf: PathBuf,
     staging_leaf: PathBuf,
@@ -159,7 +158,7 @@ pub(in crate::native_app) struct ExpectedIdentityReplacementOwnerRequest {
 impl ExpectedIdentityReplacementOwnerRequest {
     /// Construct an owned request only from a complete, already-validated durable snapshot.
     pub(super) fn try_new(
-        operation_id: Uuid,
+        operation_id: OperationId,
         target_root_path: PathBuf,
         target_leaf: PathBuf,
         staging_leaf: PathBuf,
@@ -297,7 +296,7 @@ pub(super) enum ExpectedIdentityReplacementOutcome {
 /// Opaque result returned by the physical file owner. It is deliberately neither cloneable nor
 /// serializable; only the operation-bound coordinator may consume it.
 pub(in crate::native_app) struct OperationBoundExpectedIdentityReplacementResult {
-    operation_id: Uuid,
+    operation_id: OperationId,
     outcome: ExpectedIdentityReplacementOutcome,
 }
 
@@ -307,13 +306,13 @@ pub(super) enum ExpectedIdentityReplacementResultError {
 }
 
 impl OperationBoundExpectedIdentityReplacementResult {
-    pub(super) fn operation_id(&self) -> Uuid {
+    pub(super) fn operation_id(&self) -> OperationId {
         self.operation_id
     }
 
     pub(super) fn into_outcome(
         self,
-        expected_operation_id: Uuid,
+        expected_operation_id: OperationId,
     ) -> Result<ExpectedIdentityReplacementOutcome, ExpectedIdentityReplacementResultError> {
         if self.operation_id != expected_operation_id {
             return Err(ExpectedIdentityReplacementResultError::OperationIdDrift);
@@ -322,7 +321,7 @@ impl OperationBoundExpectedIdentityReplacementResult {
     }
 
     #[cfg(test)]
-    pub(super) fn replace_operation_id_for_test(mut self, operation_id: Uuid) -> Self {
+    pub(super) fn replace_operation_id_for_test(mut self, operation_id: OperationId) -> Self {
         self.operation_id = operation_id;
         self
     }

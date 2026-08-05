@@ -2,10 +2,10 @@ use super::gui_state_for_span_tests;
 use crate::native_app::app::{OperationJournalRestoreCompletion, OperationJournalRestoreError};
 use crate::native_app::sample_library::committed_file_mutations::PreparedCommittedFileMutationChange;
 use crate::native_app::transaction_history::operation_journal::{
-    FilesystemStageOutcome, ObservedFilesystemClassification, ReplacementCandidateAssessment,
-    ReplacementCandidatePrimitive, ReplacementMissingInvariant, ReplacementPlatformFamily,
-    ReplacementQualificationAssessment, ReplacementQualificationDecision,
-    ReplacementQualificationRetryCondition, VolumeIdentity,
+    FilesystemStageOutcome, ObservedFilesystemClassification, OperationId,
+    ReplacementCandidateAssessment, ReplacementCandidatePrimitive, ReplacementMissingInvariant,
+    ReplacementPlatformFamily, ReplacementQualificationAssessment,
+    ReplacementQualificationDecision, ReplacementQualificationRetryCondition, VolumeIdentity,
 };
 use crate::native_app::transaction_history::{
     HistoryFileAction, HistoryFileIoDirection, HistoryFileIoOutput, HistoryFileIoResult,
@@ -19,7 +19,6 @@ use crate::native_app::{
     },
 };
 use radiant::prelude::{self as ui, IntoView};
-use uuid::Uuid;
 use wavecrate::selection::SelectionRange;
 
 #[test]
@@ -96,22 +95,22 @@ fn platform_qualification_assessment_for_tests() -> ReplacementQualificationAsse
 #[test]
 fn owner_staging_outcomes_retain_history_and_operation_identity() {
     let outcomes = [
-        FilesystemStageOutcome::FilesystemStaged(Uuid::new_v4()),
-        FilesystemStageOutcome::FilesystemPublished(Uuid::new_v4()),
+        FilesystemStageOutcome::FilesystemStaged(OperationId::for_test()),
+        FilesystemStageOutcome::FilesystemPublished(OperationId::for_test()),
         FilesystemStageOutcome::PlatformQualificationRequired {
-            operation_id: Uuid::new_v4(),
+            operation_id: OperationId::for_test(),
             assessment: platform_qualification_assessment_for_tests(),
         },
         FilesystemStageOutcome::RetryPending {
-            operation_id: Uuid::new_v4(),
+            operation_id: OperationId::for_test(),
             reason: String::from("staging collision"),
         },
         FilesystemStageOutcome::AuditRequired {
-            operation_id: Uuid::new_v4(),
+            operation_id: OperationId::for_test(),
             reason: String::from("checkpoint mismatch"),
         },
         FilesystemStageOutcome::JournalWriteFailed {
-            operation_id: Uuid::new_v4(),
+            operation_id: OperationId::for_test(),
             reason: String::from("journal sync failed"),
         },
     ];
@@ -153,16 +152,20 @@ fn owner_staging_outcomes_retain_history_and_operation_identity() {
         assert_eq!(state.transactions.history_through_count, 0);
         assert!(state.ui.status.sample.contains(&operation_id.to_string()));
         if is_platform_qualification {
-            assert!(state
-                .ui
-                .status
-                .sample
-                .contains("safe replacement unavailable on the current platform/build"));
-            assert!(state
-                .ui
-                .status
-                .sample
-                .contains("staged recovery data preserved"));
+            assert!(
+                state
+                    .ui
+                    .status
+                    .sample
+                    .contains("safe replacement unavailable on the current platform/build")
+            );
+            assert!(
+                state
+                    .ui
+                    .status
+                    .sample
+                    .contains("staged recovery data preserved")
+            );
         }
     }
 }
@@ -226,7 +229,7 @@ fn owner_staging_ambiguous_journal_error_retains_history_for_recovery() {
 fn duplicate_owner_staging_completion_does_not_replace_pending_outcome() {
     let mut state = gui_state_for_span_tests();
     let command = begin_owner_restore_for_tests(&mut state);
-    let first_operation_id = Uuid::new_v4();
+    let first_operation_id = OperationId::for_test();
     state.finish_operation_journal_restore(OperationJournalRestoreCompletion {
         execution_id: command.execution_id,
         transaction_id: command.transaction_id,
@@ -236,7 +239,7 @@ fn duplicate_owner_staging_completion_does_not_replace_pending_outcome() {
         result: Ok(FilesystemStageOutcome::FilesystemStaged(first_operation_id)),
     });
     let first_status = state.ui.status.sample.clone();
-    let replacement_operation_id = Uuid::new_v4();
+    let replacement_operation_id = OperationId::for_test();
     state.finish_operation_journal_restore(OperationJournalRestoreCompletion {
         execution_id: command.execution_id,
         transaction_id: command.transaction_id,
@@ -314,7 +317,7 @@ fn stale_owner_staging_completion_preserves_in_flight_transaction() {
         direction: command.direction,
         through_target: command.through_target,
         label: command.label,
-        result: Ok(FilesystemStageOutcome::FilesystemStaged(Uuid::new_v4())),
+        result: Ok(FilesystemStageOutcome::FilesystemStaged(OperationId::for_test())),
     });
     assert!(state.transactions.history.file_io_in_flight());
     assert!(state.transactions.pending_history_owner_staging.is_none());

@@ -10,10 +10,9 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use super::operation_journal::{
-    AbsentFinalAdoptionGuardRequest, PreparedFileEvidence, PreparedObjectIdentity,
+    AbsentFinalAdoptionGuardRequest, OperationId, PreparedFileEvidence, PreparedObjectIdentity,
 };
 use super::publication::{PublicationSynchronization, PublicationVisibility};
 
@@ -60,7 +59,7 @@ pub(super) struct AbsentFinalAdoptionRequest<'a> {
 /// this request carries no borrowed descriptor.
 #[cfg(test)]
 pub(super) struct AbsentFinalAdoptionQualificationRequest {
-    pub(super) operation_id: Uuid,
+    pub(super) operation_id: OperationId,
     pub(super) target_parent_path: PathBuf,
     pub(super) final_leaf: PathBuf,
     pub(super) expected_target_parent_stable_id: String,
@@ -81,7 +80,7 @@ pub(super) enum AbsentFinalAdoptionQualificationRequestError {
 #[cfg(test)]
 impl AbsentFinalAdoptionQualificationRequest {
     pub(super) fn try_new(
-        operation_id: Uuid,
+        operation_id: OperationId,
         target_parent_path: PathBuf,
         final_leaf: PathBuf,
         expected_target_parent_stable_id: String,
@@ -143,7 +142,7 @@ impl<'a> AbsentFinalAdoptionRequest<'a> {
 
 impl AbsentFinalAdoptionGuardRequest {
     pub(super) fn try_new(
-        operation_id: Uuid,
+        operation_id: OperationId,
         target_parent_path: PathBuf,
         final_leaf: PathBuf,
         expected_target_parent_stable_id: String,
@@ -168,7 +167,7 @@ impl AbsentFinalAdoptionGuardRequest {
         })
     }
 
-    pub(super) fn operation_id(&self) -> Uuid {
+    pub(super) fn operation_id(&self) -> OperationId {
         self.operation_id
     }
 }
@@ -201,13 +200,13 @@ pub(crate) struct QualifiedAbsentFinalAdoption {
 #[cfg(test)]
 #[derive(Debug, Eq, PartialEq)]
 pub(super) struct AbsentFinalAdoptionQualificationResult {
-    pub(super) operation_id: Uuid,
+    pub(super) operation_id: OperationId,
     pub(super) outcome: AbsentFinalAdoptionOutcome,
 }
 
 #[cfg(test)]
 impl AbsentFinalAdoptionQualificationResult {
-    pub(super) fn operation_id(&self) -> Uuid {
+    pub(super) fn operation_id(&self) -> OperationId {
         self.operation_id
     }
 }
@@ -218,7 +217,7 @@ impl AbsentFinalAdoptionQualificationResult {
 /// descriptors, clean leaf, and exact content hash are the authority for a later binding check;
 /// the configured root pathname is not retained or consulted.
 pub(super) struct QualifiedAbsentFinalAdoptionGuard {
-    operation_id: Uuid,
+    operation_id: OperationId,
     target_parent: File,
     final_object: File,
     final_leaf: PathBuf,
@@ -230,7 +229,7 @@ pub(super) struct QualifiedAbsentFinalAdoptionGuard {
 impl QualifiedAbsentFinalAdoptionGuard {
     pub(super) fn revalidate_binding(
         &self,
-        current_operation_id: Uuid,
+        current_operation_id: OperationId,
     ) -> Result<(), AbsentFinalAdoptionOutcome> {
         #[cfg(unix)]
         {
@@ -246,13 +245,13 @@ impl QualifiedAbsentFinalAdoptionGuard {
         }
     }
 
-    pub(super) fn operation_id(&self) -> Uuid {
+    pub(super) fn operation_id(&self) -> OperationId {
         self.operation_id
     }
 
     fn into_operation_bound_publication(
         self,
-        expected_operation_id: Uuid,
+        expected_operation_id: OperationId,
     ) -> Result<OperationBoundQualifiedAbsentFinalNoReplace, AbsentFinalAdoptionOutcome> {
         // Keep the guard alive until the last possible moment.  This rechecks the retained
         // parent descriptor, retained final descriptor, and the freshly reopened final through
@@ -349,7 +348,7 @@ impl ProductionAbsentFinalAdoptionAdapter {
     pub(super) fn consume_guard_for_publication(
         &self,
         guard: QualifiedAbsentFinalAdoptionGuard,
-        expected_operation_id: Uuid,
+        expected_operation_id: OperationId,
     ) -> Result<OperationBoundQualifiedAbsentFinalNoReplace, AbsentFinalAdoptionOutcome> {
         guard.into_operation_bound_publication(expected_operation_id)
     }
@@ -363,7 +362,7 @@ impl ProductionAbsentFinalAdoptionAdapter {
 /// evidence.
 pub(in crate::native_app) fn acquire_absent_final_publication_guard(
     request: AbsentFinalAdoptionGuardRequest,
-    expected_operation_id: Uuid,
+    expected_operation_id: OperationId,
 ) -> Result<OperationBoundQualifiedAbsentFinalNoReplace, AbsentFinalAdoptionOutcome> {
     let adapter = ProductionAbsentFinalAdoptionAdapter;
     let guard = adapter.acquire_guard(request)?;
@@ -687,18 +686,18 @@ pub(super) struct QualifiedAbsentFinalNoReplace {
 /// boundary.  The journal may only obtain the typed publication evidence by consuming it with the
 /// expected operation ID after its exact record snapshot has been checked.
 pub(in crate::native_app) struct OperationBoundQualifiedAbsentFinalNoReplace {
-    operation_id: Uuid,
+    operation_id: OperationId,
     qualified: QualifiedAbsentFinalNoReplace,
 }
 
 impl OperationBoundQualifiedAbsentFinalNoReplace {
-    pub(super) fn operation_id(&self) -> Uuid {
+    pub(super) fn operation_id(&self) -> OperationId {
         self.operation_id
     }
 
     pub(super) fn into_qualified(
         self,
-        expected_operation_id: Uuid,
+        expected_operation_id: OperationId,
     ) -> Result<QualifiedAbsentFinalNoReplace, AbsentFinalAdoptionOutcome> {
         if self.operation_id != expected_operation_id {
             return Err(AbsentFinalAdoptionOutcome::OperationIdDrift);
@@ -1461,7 +1460,7 @@ mod tests {
             PreparedFileEvidence::ContentHash(hash) => *hash,
             _ => panic!("fixture must have exact content"),
         };
-        let operation_id = Uuid::new_v4();
+        let operation_id = OperationId::for_test();
         let request = AbsentFinalAdoptionQualificationRequest::try_new(
             operation_id,
             fixture.target_parent_path.clone(),
@@ -1493,7 +1492,7 @@ mod tests {
             PreparedFileEvidence::ContentHash(hash) => *hash,
             _ => panic!("fixture must have exact content"),
         };
-        let operation_id = Uuid::new_v4();
+        let operation_id = OperationId::for_test();
         let request = AbsentFinalAdoptionGuardRequest::try_new(
             operation_id,
             fixture.target_parent_path.clone(),
@@ -1524,7 +1523,7 @@ mod tests {
             PreparedFileEvidence::ContentHash(hash) => *hash,
             _ => panic!("fixture must have exact content"),
         };
-        let operation_id = Uuid::new_v4();
+        let operation_id = OperationId::for_test();
         let request = AbsentFinalAdoptionQualificationRequest::try_new(
             operation_id,
             fixture.target_parent_path.clone(),

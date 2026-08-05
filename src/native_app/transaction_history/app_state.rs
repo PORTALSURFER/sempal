@@ -3,15 +3,13 @@ use crate::native_app::app::{
     PendingHistoryCommit, PendingHistoryOwnerStaging,
 };
 use crate::native_app::transaction_history::operation_journal::{
-    FilesystemStageOutcome, OperationActor, OperationIntent, OperationKind,
+    FilesystemStageOutcome, OperationActor, OperationId, OperationIntent, OperationKind,
 };
 use crate::native_app::transaction_history::{
     HistoryFileIoCommand, HistoryFileIoDirection, HistoryFileIoResult, HistoryFileIoRoute,
     TransactionContext, TransactionResult,
 };
 use radiant::prelude as ui;
-use uuid::Uuid;
-
 impl NativeAppState {
     pub(in crate::native_app) fn begin_transaction(&mut self, label: impl Into<String>) {
         if !self.transactions.restoring {
@@ -555,7 +553,7 @@ impl NativeAppState {
     }
 }
 
-fn operation_id_for_stage_outcome(outcome: &FilesystemStageOutcome) -> Uuid {
+fn operation_id_for_stage_outcome(outcome: &FilesystemStageOutcome) -> OperationId {
     match outcome {
         FilesystemStageOutcome::FilesystemStaged(operation_id)
         | FilesystemStageOutcome::FilesystemPublished(operation_id)

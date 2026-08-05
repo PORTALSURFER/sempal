@@ -6,7 +6,7 @@ These are approximate total architecture-alignment estimates for dependency-orde
 
 | Implementation phase | Estimated alignment |
 | --- | ---: |
-| 1. Authority and contracts | 75% |
+| 1. Authority and contracts | 100% |
 | 2. Lifecycle registration and watcher/journal transport | 50% |
 | 3. Coordinator admission and bounded scanner execution | 25% |
 | 4. Source database writes and committed deltas | 60% |
@@ -17,4 +17,8 @@ These are approximate total architecture-alignment estimates for dependency-orde
 
 ## Overall estimate
 
-**Approximately 45% aligned with the design target.**
+**Approximately 48% aligned with the design target.**
+
+This cycle completes the remaining reasonable Authority/contracts work by carrying the opaque
+`OperationId` through durable journal, file-owner, recovery, and pending-history boundaries while
+preserving the UUID-on-disk representation. Later phases remain intentionally unchanged.
