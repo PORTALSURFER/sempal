@@ -10,6 +10,7 @@ use super::super::decode::{
     decode_path_row, decode_wav_entry_row, wav_file_has_column, wav_file_select_columns,
     wav_file_supported_audio_filter,
 };
+use crate::sample_sources::reconciliation::RootRelativePath;
 
 fn collect_wav_entries(
     db: &SourceDatabase,
@@ -174,6 +175,85 @@ impl SourceDatabase {
             let mut statement = transaction.prepare(&sql).map_err(map_sql_error)?;
             let rows = statement
                 .query_map(params_from_iter(parameters.iter()), |row| {
+                    let Some(relative_path) = decode_path_row(
+                        row,
+                        "Skipping source manifest row with invalid relative path",
+                    )?
+                    else {
+                        return Ok(None);
+                    };
+                    Ok(Some(SourceManifestEntry {
+                        relative_path,
+                        file_identity: row.get(1)?,
+                        content_hash: row.get(2)?,
+                        file_size: row.get::<_, i64>(3)?.max(0) as u64,
+                        modified_ns: row.get(4)?,
+                    }))
+                })
+                .map_err(map_sql_error)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(map_sql_error)?;
+            entries.extend(rows.into_iter().flatten());
+        }
+        entries.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+        entries.dedup_by(|left, right| left.relative_path == right.relative_path);
+        transaction.rollback().map_err(map_sql_error)?;
+        Ok((revision, entries))
+    }
+
+    /// Fetch the committed live source manifest for exact validated entries.
+    ///
+    /// Unlike the subtree snapshot above, every predicate is an exact path
+    /// equality. The validated typed path is retained through the query seam;
+    /// no legacy targeted-path normalization or descendant expansion occurs.
+    pub fn manifest_snapshot_with_revision_for_exact_paths(
+        &self,
+        paths: &[RootRelativePath],
+    ) -> Result<(u64, Vec<SourceManifestEntry>), SourceDbError> {
+        let transaction = self
+            .connection
+            .unchecked_transaction()
+            .map_err(map_sql_error)?;
+        let revision = transaction
+            .query_row(
+                "SELECT value FROM metadata WHERE key = 'revision'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(map_sql_error)?
+            .map(|raw| raw.parse::<u64>().map_err(|_| SourceDbError::Unexpected))
+            .transpose()?
+            .unwrap_or_default();
+        if paths.is_empty() {
+            transaction.rollback().map_err(map_sql_error)?;
+            return Ok((revision, Vec::new()));
+        }
+
+        let mut normalized_paths = paths
+            .iter()
+            .map(|path| super::super::super::normalize_relative_path(path.as_path()))
+            .collect::<Result<Vec<_>, _>>()?;
+        normalized_paths.sort();
+        normalized_paths.dedup();
+        let filter = wav_file_supported_audio_filter(self)?;
+        const PATHS_PER_QUERY: usize = 128;
+        let mut entries = Vec::new();
+        for chunk in normalized_paths.chunks(PATHS_PER_QUERY) {
+            let parameters = chunk.iter().map(String::as_str).collect::<Vec<_>>();
+            let predicates = (1..=chunk.len())
+                .map(|index| format!("path = ?{index} COLLATE BINARY"))
+                .collect::<Vec<_>>();
+            let sql = format!(
+                "SELECT path, file_identity, content_hash, file_size, modified_ns
+                 FROM wav_files
+                 WHERE {filter} AND missing = 0 AND ({})
+                 ORDER BY path ASC",
+                predicates.join(" OR ")
+            );
+            let mut statement = transaction.prepare(&sql).map_err(map_sql_error)?;
+            let rows = statement
+                .query_map(rusqlite::params_from_iter(parameters), |row| {
                     let Some(relative_path) = decode_path_row(
                         row,
                         "Skipping source manifest row with invalid relative path",

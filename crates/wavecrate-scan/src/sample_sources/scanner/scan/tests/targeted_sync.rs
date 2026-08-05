@@ -1,10 +1,18 @@
 use super::*;
-use crate::sample_sources::scanner::scan_fs::force_directory_identity;
-use crate::sample_sources::scanner::scan_fs::force_directory_read_failure;
-use crate::sample_sources::scanner::{DirectoryRepeatKind, SourceTreeDiagnostic};
-use crate::sample_sources::scanner::{sync_paths, sync_paths_with_progress};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
+
+use crate::sample_sources::scanner::scan_fs::force_directory_identity;
+use crate::sample_sources::scanner::scan_fs::force_directory_read_failure;
+use crate::sample_sources::scanner::{
+    DirectoryRepeatKind, SourceTreeDiagnostic, UncoordinatedScanWriter,
+    sync_exact_paths_with_progress_and_writer, sync_paths, sync_paths_with_progress,
+};
+use wavecrate_library::sample_sources::reconciliation::RootRelativePath;
+
+fn exact_path(path: &str) -> RootRelativePath {
+    RootRelativePath::try_from_path(PathBuf::from(path)).expect("valid exact path")
+}
 
 #[test]
 fn targeted_sync_updates_only_requested_file() {
@@ -23,6 +31,111 @@ fn targeted_sync_updates_only_requested_file() {
     assert_eq!(db.list_files().unwrap().len(), 2);
     assert_eq!(stats.committed_delta.changed.len(), 1);
     assert!(stats.committed_delta.revision > 0);
+}
+
+#[test]
+fn exact_sync_updates_one_live_entry_with_an_exact_manifest_snapshot() {
+    let dir = tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("target/inside")).unwrap();
+    std::fs::write(dir.path().join("target/inside.wav"), b"before").unwrap();
+    std::fs::write(dir.path().join("target/inside/deep.wav"), b"deep").unwrap();
+    std::fs::write(dir.path().join("unrelated.wav"), b"unrelated").unwrap();
+    let db = SourceDatabase::open_for_scan(dir.path()).unwrap();
+    scan_once(&db).unwrap();
+
+    std::fs::write(dir.path().join("target/inside.wav"), b"after").unwrap();
+    let target = exact_path("target/inside.wav");
+    let stats = sync_exact_paths_with_progress_and_writer(
+        &db,
+        std::slice::from_ref(&target),
+        None,
+        &mut |_, _| {},
+        &UncoordinatedScanWriter,
+    )
+    .unwrap();
+
+    assert_eq!(stats.total_files, 1);
+    assert_eq!(stats.updated, 1);
+    assert_eq!(stats.committed_delta.changed.len(), 1);
+    assert_eq!(stats.manifest_before.len(), 1);
+    assert_eq!(stats.manifest_after.len(), 1);
+    assert_eq!(
+        stats.manifest_after[0].relative_path,
+        PathBuf::from("target/inside.wav")
+    );
+    assert_eq!(db.list_files().unwrap().len(), 3);
+}
+
+#[test]
+fn exact_sync_indexes_one_live_unsupported_entry_without_subtree_rows() {
+    let dir = tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("target/inside")).unwrap();
+    std::fs::write(dir.path().join("target/inside.txt"), b"inside").unwrap();
+    std::fs::write(dir.path().join("target/inside/deep.txt"), b"deep").unwrap();
+    let db = SourceDatabase::open_for_scan(dir.path()).unwrap();
+
+    let target = exact_path("target/inside.txt");
+    let stats = sync_exact_paths_with_progress_and_writer(
+        &db,
+        std::slice::from_ref(&target),
+        None,
+        &mut |_, _| {},
+        &UncoordinatedScanWriter,
+    )
+    .unwrap();
+
+    assert_eq!(stats.total_files, 1);
+    assert_eq!(db.list_files().unwrap().len(), 0);
+    assert_eq!(
+        db.list_source_index_entries()
+            .unwrap()
+            .into_iter()
+            .map(|entry| entry.relative_path)
+            .collect::<Vec<_>>(),
+        vec![PathBuf::from("target/inside.txt")]
+    );
+}
+
+#[test]
+fn exact_sync_rejects_missing_or_directory_entries_without_retirement() {
+    let dir = tempdir().unwrap();
+    std::fs::write(dir.path().join("tracked.wav"), b"tracked").unwrap();
+    std::fs::create_dir_all(dir.path().join("folder/child")).unwrap();
+    std::fs::write(dir.path().join("folder/child.wav"), b"child").unwrap();
+    let db = SourceDatabase::open_for_scan(dir.path()).unwrap();
+    scan_once(&db).unwrap();
+    let before = db
+        .entry_for_path(Path::new("tracked.wav"))
+        .unwrap()
+        .unwrap();
+    let revision = db.get_revision().unwrap();
+
+    std::fs::remove_file(dir.path().join("tracked.wav")).unwrap();
+    let missing = sync_exact_paths_with_progress_and_writer(
+        &db,
+        &[exact_path("tracked.wav")],
+        None,
+        &mut |_, _| {},
+        &UncoordinatedScanWriter,
+    );
+    assert!(missing.is_err());
+
+    let directory = sync_exact_paths_with_progress_and_writer(
+        &db,
+        &[exact_path("folder")],
+        None,
+        &mut |_, _| {},
+        &UncoordinatedScanWriter,
+    );
+    assert!(directory.is_err());
+    let after = db
+        .entry_for_path(Path::new("tracked.wav"))
+        .unwrap()
+        .unwrap();
+    assert_eq!(after.file_size, before.file_size);
+    assert_eq!(after.modified_ns, before.modified_ns);
+    assert_eq!(after.content_hash, before.content_hash);
+    assert_eq!(db.get_revision().unwrap(), revision);
 }
 
 #[test]

@@ -1,6 +1,6 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, params, types::Value};
 
 use super::schema;
 use super::util::{
@@ -11,6 +11,7 @@ use super::{
     META_SOURCE_INDEX_REVISION, SourceDatabase, SourceDbError, SourceIndexClassification,
     SourceIndexDiagnostic, SourceIndexEntry, SourceIndexSnapshot, SourceWriteBatch,
 };
+use crate::sample_sources::reconciliation::RootRelativePath;
 
 const REQUIRED_COLUMNS: [&str; 7] = [
     "path",
@@ -23,6 +24,22 @@ const REQUIRED_COLUMNS: [&str; 7] = [
 ];
 
 impl SourceDatabase {
+    /// Read index-only entries at exact validated paths and their current index revision.
+    ///
+    /// The row query remains equality-only and bounded by the supplied paths; the revision is
+    /// read separately so callers can reject a concurrent index write before publishing facts.
+    pub fn source_index_entries_for_exact_paths(
+        &self,
+        paths: &[RootRelativePath],
+    ) -> Result<SourceIndexSnapshot, SourceDbError> {
+        let expected_revision = if source_index_schema_available(&self.connection)? {
+            read_index_revision(&self.connection)?
+        } else {
+            0
+        };
+        self.source_index_entries_for_exact_paths_at_revision(expected_revision, paths)
+    }
+
     /// Read the complete index-only file set and its independent revision atomically.
     ///
     /// Legacy read-only databases without the table project revision zero and
@@ -207,6 +224,87 @@ impl SourceDatabase {
                     collect_entries(&transaction, &sql, rusqlite::params![path])?
                 }
             });
+        }
+        entries.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+        entries.dedup_by(|left, right| left.relative_path == right.relative_path);
+        transaction.rollback().map_err(map_sql_error)?;
+        Ok(SourceIndexSnapshot { revision, entries })
+    }
+
+    /// Read a bounded set of index-only entries at one exact typed path set.
+    ///
+    /// Each query is equality-only and the validated typed paths are never
+    /// widened into subtree predicates.
+    pub fn source_index_entries_for_exact_paths_at_revision(
+        &self,
+        expected_revision: u64,
+        paths: &[RootRelativePath],
+    ) -> Result<SourceIndexSnapshot, SourceDbError> {
+        if !source_index_schema_available(&self.connection)? {
+            if expected_revision != 0 {
+                return Err(SourceDbError::Unexpected);
+            }
+            return Ok(SourceIndexSnapshot {
+                revision: 0,
+                entries: Vec::new(),
+            });
+        }
+        let transaction = self
+            .connection
+            .unchecked_transaction()
+            .map_err(map_sql_error)?;
+        let revision = read_index_revision(&transaction)?;
+        if revision != expected_revision {
+            return Err(SourceDbError::Unexpected);
+        }
+        let path_encoding_available = source_index_path_encoding_available(&transaction)?;
+        let normalized = paths
+            .iter()
+            .map(|path| normalize_source_index_path(path.as_path()))
+            .collect::<Result<Vec<_>, _>>()?;
+        const PATHS_PER_QUERY: usize = 128;
+        let mut entries = Vec::new();
+        for chunk in normalized.chunks(PATHS_PER_QUERY) {
+            let mut parameters = Vec::with_capacity(chunk.len() * 2);
+            let predicates = chunk
+                .iter()
+                .enumerate()
+                .map(|(index, (path, encoding))| {
+                    if path_encoding_available {
+                        let path_parameter = index * 2 + 1;
+                        let encoding_parameter = path_parameter + 1;
+                        parameters.push(Value::Text(path.clone()));
+                        parameters.push(Value::Integer(*encoding));
+                        Ok(format!(
+                            "(path = ?{path_parameter} COLLATE BINARY AND path_encoding = ?{encoding_parameter})"
+                        ))
+                    } else {
+                        if *encoding != INDEX_PATH_ENCODING_PLAIN {
+                            return Err(SourceDbError::NonUnicodeRelativePath(PathBuf::from(path)));
+                        }
+                        parameters.push(Value::Text(path.clone()));
+                        Ok(format!("path = ?{} COLLATE BINARY", index + 1))
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let sql = format!(
+                "SELECT path, {}, classification, file_size, modified_ns, file_identity,
+                        diagnostic, format_policy_version
+                 FROM source_index_entries
+                 WHERE {}
+                 ORDER BY path ASC",
+                if path_encoding_available {
+                    "path_encoding"
+                } else {
+                    "0 AS path_encoding"
+                },
+                predicates.join(" OR ")
+            );
+            entries.extend(collect_entries(
+                &transaction,
+                &sql,
+                rusqlite::params_from_iter(parameters),
+            )?);
         }
         entries.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
         entries.dedup_by(|left, right| left.relative_path == right.relative_path);
@@ -574,6 +672,95 @@ mod tests {
                 .expect("read literal subtree"),
             vec![entries[0].clone(), entries[1].clone()]
         );
+    }
+
+    #[test]
+    fn typed_exact_index_reads_exclude_descendants_and_siblings() {
+        let directory = tempfile::tempdir().expect("source root");
+        let database =
+            SourceDatabase::open_for_source_write(directory.path()).expect("source database");
+        let entries = [
+            SourceIndexEntry {
+                relative_path: PathBuf::from("target/inside.txt"),
+                classification: SourceIndexClassification::UnsupportedNonAudio,
+                file_size: Some(5),
+                modified_ns: Some(10),
+                file_identity: None,
+                diagnostic: None,
+                format_policy_version: SOURCE_FORMAT_POLICY_VERSION,
+            },
+            SourceIndexEntry {
+                relative_path: PathBuf::from("target/inside/deep.txt"),
+                classification: SourceIndexClassification::UnsupportedNonAudio,
+                file_size: Some(6),
+                modified_ns: Some(11),
+                file_identity: None,
+                diagnostic: None,
+                format_policy_version: SOURCE_FORMAT_POLICY_VERSION,
+            },
+            SourceIndexEntry {
+                relative_path: PathBuf::from("target/other.txt"),
+                classification: SourceIndexClassification::UnsupportedNonAudio,
+                file_size: Some(7),
+                modified_ns: Some(12),
+                file_identity: None,
+                diagnostic: None,
+                format_policy_version: SOURCE_FORMAT_POLICY_VERSION,
+            },
+        ];
+        let mut batch = database.write_batch().expect("index batch");
+        for entry in &entries {
+            batch
+                .upsert_source_index_entry(entry)
+                .expect("upsert index entry");
+        }
+        batch.commit_auxiliary_state().expect("commit index rows");
+
+        let exact = crate::sample_sources::reconciliation::RootRelativePath::try_from_path(
+            PathBuf::from("target/inside.txt"),
+        )
+        .expect("valid exact path");
+        let snapshot = database
+            .source_index_entries_for_exact_paths(std::slice::from_ref(&exact))
+            .expect("exact index snapshot");
+
+        assert_eq!(snapshot.revision, 1);
+        assert_eq!(snapshot.entries, vec![entries[0].clone()]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn typed_exact_index_reads_round_trip_non_unicode_paths() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let directory = tempfile::tempdir().expect("source root");
+        let database =
+            SourceDatabase::open_for_source_write(directory.path()).expect("source database");
+        let relative_path = PathBuf::from(OsString::from_vec(b"raw-\xFF.txt".to_vec()));
+        let entry = SourceIndexEntry {
+            relative_path: relative_path.clone(),
+            classification: SourceIndexClassification::UnsupportedNonAudio,
+            file_size: Some(5),
+            modified_ns: Some(10),
+            file_identity: Some(String::from("raw-file")),
+            diagnostic: None,
+            format_policy_version: SOURCE_FORMAT_POLICY_VERSION,
+        };
+        let mut batch = database.write_batch().expect("index batch");
+        batch
+            .upsert_source_index_entry(&entry)
+            .expect("upsert raw index entry");
+        batch.commit_auxiliary_state().expect("commit index row");
+
+        let exact =
+            crate::sample_sources::reconciliation::RootRelativePath::try_from_path(relative_path)
+                .expect("valid raw exact path");
+        let snapshot = database
+            .source_index_entries_for_exact_paths(std::slice::from_ref(&exact))
+            .expect("exact raw index snapshot");
+
+        assert_eq!(snapshot.entries, vec![entry]);
     }
 
     #[cfg(unix)]

@@ -909,6 +909,7 @@ impl NativeAppState {
                                 Some(scopes) => sync_source_database_scopes_with_writer(
                                     source_id,
                                     root,
+                                    database_root,
                                     scopes,
                                     changed_count,
                                     source_root_identity,
