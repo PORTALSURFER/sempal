@@ -542,8 +542,9 @@ mod tests {
     use std::path::Path;
 
     use super::super::{
-        SourceDatabase, SourceDbError, SourceDirectoryEntry, SourceDirectoryTruthError,
-        SourceDirectoryTruthState, SourceDirectoryTruthUnavailableReason,
+        META_LAST_SCAN_COMPLETED_AT, SourceDatabase, SourceDbError, SourceDirectoryEntry,
+        SourceDirectoryTruthError, SourceDirectoryTruthState,
+        SourceDirectoryTruthUnavailableReason, SourceManifestEntry,
     };
 
     fn directory(path: &str, identity: &str) -> SourceDirectoryEntry {
@@ -599,6 +600,193 @@ mod tests {
             .unwrap();
         assert_eq!(second.entries.len(), 1);
         assert!(second.next_cursor.is_none());
+    }
+
+    #[test]
+    fn full_scan_handoff_publishes_directory_truth_and_exact_manifest_snapshot() {
+        let root = tempfile::tempdir().unwrap();
+        let db = SourceDatabase::open_for_source_write(root.path()).unwrap();
+        let mut manifest_batch = db.write_batch().unwrap();
+        manifest_batch
+            .upsert_file_with_hash(Path::new("kick.wav"), 128, 42, "kick-hash")
+            .unwrap();
+        manifest_batch.commit().unwrap();
+        db.begin_source_directory_truth_generation(1, 1).unwrap();
+        db.stage_source_directory_truth_entries(1, &[directory("drums", "dir-1")])
+            .unwrap();
+
+        let batch = db.write_batch().unwrap();
+        let result = batch
+            .commit_full_scan_with_directory_truth(1, 1, 1234)
+            .unwrap();
+
+        assert_eq!(result.publication.generation, 1);
+        assert_eq!(result.publication.source_revision, 2);
+        assert!(!result.publication.idempotent);
+        assert_eq!(
+            result.manifest_snapshot,
+            (
+                2,
+                vec![SourceManifestEntry {
+                    relative_path: Path::new("kick.wav").to_path_buf(),
+                    file_identity: None,
+                    content_hash: Some("kick-hash".to_owned()),
+                    file_size: 128,
+                    modified_ns: 42,
+                }]
+            )
+        );
+        assert_eq!(db.get_revision().unwrap(), 2);
+        assert_eq!(
+            db.get_metadata(META_LAST_SCAN_COMPLETED_AT).unwrap(),
+            Some("1234".to_owned())
+        );
+        assert_eq!(
+            db.source_directory_truth_state().unwrap(),
+            SourceDirectoryTruthState::Active {
+                generation: 1,
+                published_source_revision: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn full_scan_handoff_rejects_incomplete_stale_and_active_generations_without_changes() {
+        let root = tempfile::tempdir().unwrap();
+        let db = SourceDatabase::open_for_source_write(root.path()).unwrap();
+        db.begin_source_directory_truth_generation(1, 1).unwrap();
+        db.stage_source_directory_truth_entries(1, &[directory("one", "dir-1")])
+            .unwrap();
+        db.finalize_source_directory_truth_generation(1, 0).unwrap();
+        let mut timestamp_batch = db.write_batch().unwrap();
+        timestamp_batch
+            .set_metadata(META_LAST_SCAN_COMPLETED_AT, "old")
+            .unwrap();
+        timestamp_batch.commit_auxiliary_state().unwrap();
+
+        db.begin_source_directory_truth_generation(2, 2).unwrap();
+        db.stage_source_directory_truth_entries(2, &[directory("two", "dir-2")])
+            .unwrap();
+        let error = db
+            .write_batch()
+            .unwrap()
+            .commit_full_scan_with_directory_truth(2, 1, 200)
+            .unwrap_err();
+        assert_eq!(
+            directory_error(error),
+            SourceDirectoryTruthError::Incomplete {
+                generation: 2,
+                expected: 2,
+                staged: 1,
+            }
+        );
+
+        db.stage_source_directory_truth_entries(2, &[directory("three", "dir-3")])
+            .unwrap();
+        let error = db
+            .write_batch()
+            .unwrap()
+            .commit_full_scan_with_directory_truth(2, 0, 201)
+            .unwrap_err();
+        assert_eq!(
+            directory_error(error),
+            SourceDirectoryTruthError::StaleRevision {
+                expected: 0,
+                actual: 1,
+            }
+        );
+
+        let error = db
+            .write_batch()
+            .unwrap()
+            .commit_full_scan_with_directory_truth(1, 1, 202)
+            .unwrap_err();
+        assert_eq!(
+            directory_error(error),
+            SourceDirectoryTruthError::GenerationCollision { generation: 1 }
+        );
+        assert_eq!(db.get_revision().unwrap(), 1);
+        assert_eq!(
+            db.get_metadata(META_LAST_SCAN_COMPLETED_AT).unwrap(),
+            Some("old".to_owned())
+        );
+        assert_eq!(
+            db.source_directory_truth_state().unwrap(),
+            SourceDirectoryTruthState::Active {
+                generation: 1,
+                published_source_revision: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn full_scan_handoff_rejects_dirty_manifest_batch_and_rolls_it_back() {
+        let root = tempfile::tempdir().unwrap();
+        let db = SourceDatabase::open_for_source_write(root.path()).unwrap();
+        db.begin_source_directory_truth_generation(1, 0).unwrap();
+
+        let mut batch = db.write_batch().unwrap();
+        batch.upsert_file(Path::new("dirty.wav"), 1, 1).unwrap();
+        assert!(matches!(
+            batch.commit_full_scan_with_directory_truth(1, 0, 300),
+            Err(SourceDbError::Unexpected)
+        ));
+
+        assert_eq!(db.get_revision().unwrap(), 0);
+        assert!(db.entry_for_path(Path::new("dirty.wav")).unwrap().is_none());
+        assert_eq!(db.get_metadata(META_LAST_SCAN_COMPLETED_AT).unwrap(), None);
+        assert_eq!(
+            db.source_directory_truth_state().unwrap(),
+            SourceDirectoryTruthState::Uninitialized
+        );
+    }
+
+    #[test]
+    fn full_scan_handoff_rolls_back_on_injected_activation_failure() {
+        let root = tempfile::tempdir().unwrap();
+        let db = SourceDatabase::open_for_source_write(root.path()).unwrap();
+        db.begin_source_directory_truth_generation(1, 1).unwrap();
+        db.stage_source_directory_truth_entries(1, &[directory("one", "dir-1")])
+            .unwrap();
+        db.finalize_source_directory_truth_generation(1, 0).unwrap();
+        let mut timestamp_batch = db.write_batch().unwrap();
+        timestamp_batch
+            .set_metadata(META_LAST_SCAN_COMPLETED_AT, "old")
+            .unwrap();
+        timestamp_batch.commit_auxiliary_state().unwrap();
+
+        db.begin_source_directory_truth_generation(2, 1).unwrap();
+        db.stage_source_directory_truth_entries(2, &[directory("two", "dir-2")])
+            .unwrap();
+        db.connection
+            .execute_batch(
+                "CREATE TRIGGER fail_directory_truth_activation
+                 BEFORE UPDATE OF status ON source_directory_generations
+                 WHEN OLD.status = 'staging' AND NEW.status = 'active'
+                 BEGIN
+                     SELECT RAISE(ABORT, 'injected directory activation failure');
+                 END;",
+            )
+            .unwrap();
+
+        let error = db
+            .write_batch()
+            .unwrap()
+            .commit_full_scan_with_directory_truth(2, 1, 400)
+            .unwrap_err();
+        assert!(matches!(error, SourceDbError::Sql(_)));
+        assert_eq!(db.get_revision().unwrap(), 1);
+        assert_eq!(
+            db.get_metadata(META_LAST_SCAN_COMPLETED_AT).unwrap(),
+            Some("old".to_owned())
+        );
+        assert_eq!(
+            db.source_directory_truth_state().unwrap(),
+            SourceDirectoryTruthState::Active {
+                generation: 1,
+                published_source_revision: 1,
+            }
+        );
     }
 
     #[test]

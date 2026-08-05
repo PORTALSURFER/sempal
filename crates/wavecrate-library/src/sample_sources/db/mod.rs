@@ -69,8 +69,9 @@ pub use types::{
 };
 pub use util::normalize_relative_path;
 pub use write::{
-    ManifestCommitResult, SourceCollectionWrite, SourceContentHashWrite, SourceFileWrite,
-    SourceIndexCommitResult, SourceTagWrite, SourceWriteCommand,
+    ManifestCommitResult, SourceCollectionWrite, SourceContentHashWrite,
+    SourceDirectoryTruthCommitResult, SourceFileWrite, SourceIndexCommitResult, SourceTagWrite,
+    SourceWriteCommand,
 };
 
 /// Hidden filename used for per-source databases.

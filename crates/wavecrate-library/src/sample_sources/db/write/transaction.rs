@@ -8,9 +8,9 @@ use super::super::util::{
     map_sql_error, normalize_relative_path, parse_canonical_directory_path_from_db,
 };
 use super::super::{
-    META_SOURCE_TRAVERSAL_POLICY, SourceDatabase, SourceDbError, SourceDirectoryEntry,
-    SourceDirectoryTruthError, SourceDirectoryTruthPublication, SourceIndexEntry,
-    SourceManifestEntry, SourceTraversalPolicy, SourceWriteBatch,
+    META_LAST_SCAN_COMPLETED_AT, META_SOURCE_TRAVERSAL_POLICY, SourceDatabase, SourceDbError,
+    SourceDirectoryEntry, SourceDirectoryTruthError, SourceDirectoryTruthPublication,
+    SourceIndexEntry, SourceManifestEntry, SourceTraversalPolicy, SourceWriteBatch,
 };
 use crate::sample_sources::reconciliation::{RootIdentity, SourceAuditCommit, SourceAuditRequest};
 
@@ -36,6 +36,21 @@ pub struct SourceIndexCommitResult {
     pub upserted_entries: Vec<SourceIndexEntry>,
     /// Index rows removed by the transaction.
     pub removed_paths: Vec<PathBuf>,
+}
+
+/// Result of atomically publishing a complete directory generation with a full-scan handoff.
+#[derive(Debug, PartialEq, Eq)]
+pub struct SourceDirectoryTruthCommitResult {
+    /// Directory generation publication committed by the handoff.
+    pub publication: SourceDirectoryTruthPublication,
+    /// Complete manifest snapshot captured at the publication's committed source revision.
+    pub manifest_snapshot: (u64, Vec<SourceManifestEntry>),
+}
+
+#[derive(Clone, Copy)]
+enum DirectoryTruthActivationMode {
+    AllowIdempotent,
+    RequireStaging,
 }
 
 impl SourceWriteBatch<'_> {
@@ -223,6 +238,62 @@ impl SourceWriteBatch<'_> {
         generation: u64,
         expected_source_revision: u64,
     ) -> Result<SourceDirectoryTruthPublication, SourceDbError> {
+        let mut batch = self;
+        let publication = batch.activate_source_directory_truth_generation(
+            generation,
+            expected_source_revision,
+            DirectoryTruthActivationMode::AllowIdempotent,
+        )?;
+        let db_path = batch.db_path.clone();
+        let telemetry_label = batch.telemetry_label;
+        batch.tx.commit().map_err(map_sql_error)?;
+        checkpoint_source_database(&db_path, telemetry_label);
+        Ok(publication)
+    }
+
+    /// Commit a complete full-scan directory handoff and its exact manifest snapshot atomically.
+    pub fn commit_full_scan_with_directory_truth(
+        mut self,
+        generation: u64,
+        expected_source_revision: u64,
+        completed_at: i64,
+    ) -> Result<SourceDirectoryTruthCommitResult, SourceDbError> {
+        if self.paths_revision_dirty
+            || self.identities_revision_dirty
+            || self.index_revision_dirty
+            || !self.manifest_touched_paths.is_empty()
+            || !self.source_index_changes.is_empty()
+        {
+            return Err(SourceDbError::Unexpected);
+        }
+
+        let publication = self.activate_source_directory_truth_generation(
+            generation,
+            expected_source_revision,
+            DirectoryTruthActivationMode::RequireStaging,
+        )?;
+        self.set_metadata(META_LAST_SCAN_COMPLETED_AT, &completed_at.to_string())?;
+        let manifest_snapshot = manifest_snapshot(&self.tx)?;
+        if manifest_snapshot.0 != publication.source_revision {
+            return Err(SourceDbError::Unexpected);
+        }
+
+        let db_path = self.db_path.clone();
+        let telemetry_label = self.telemetry_label;
+        self.tx.commit().map_err(map_sql_error)?;
+        checkpoint_source_database(&db_path, telemetry_label);
+        Ok(SourceDirectoryTruthCommitResult {
+            publication,
+            manifest_snapshot,
+        })
+    }
+
+    fn activate_source_directory_truth_generation(
+        &mut self,
+        generation: u64,
+        expected_source_revision: u64,
+        activation_mode: DirectoryTruthActivationMode,
+    ) -> Result<SourceDirectoryTruthPublication, SourceDbError> {
         let generation_sql = directory_generation_sql_value(generation)?;
         let Some((status, expected_entry_count, staged_entry_count, complete, published_revision)) =
             self.tx
@@ -262,10 +333,12 @@ impl SourceWriteBatch<'_> {
                 staged_entry_count,
                 complete,
             )?;
-            let db_path = self.db_path.clone();
-            let telemetry_label = self.telemetry_label;
-            self.tx.commit().map_err(map_sql_error)?;
-            checkpoint_source_database(&db_path, telemetry_label);
+            if matches!(
+                activation_mode,
+                DirectoryTruthActivationMode::RequireStaging
+            ) {
+                return Err(SourceDirectoryTruthError::GenerationCollision { generation }.into());
+            }
             return Ok(SourceDirectoryTruthPublication {
                 generation,
                 source_revision: published_revision,
@@ -370,10 +443,6 @@ impl SourceWriteBatch<'_> {
         if changed != 1 {
             return Err(SourceDirectoryTruthError::GenerationMissing { generation }.into());
         }
-        let db_path = self.db_path.clone();
-        let telemetry_label = self.telemetry_label;
-        self.tx.commit().map_err(map_sql_error)?;
-        checkpoint_source_database(&db_path, telemetry_label);
         Ok(SourceDirectoryTruthPublication {
             generation,
             source_revision: committed_source_revision,
