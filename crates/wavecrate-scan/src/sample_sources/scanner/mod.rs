@@ -28,5 +28,8 @@ pub use scan::{
     scan_in_background, scan_once, scan_with_progress, scan_with_progress_and_writer,
     scan_with_progress_and_writer_and_committed_batch,
 };
-pub use scan_paths::{sync_paths, sync_paths_with_progress, sync_paths_with_progress_and_writer};
+pub use scan_paths::{
+    sync_exact_paths_with_progress_and_writer, sync_paths, sync_paths_with_progress,
+    sync_paths_with_progress_and_writer, validate_exact_regular_paths,
+};
 pub use scan_writer::{ScanWritePhase, ScanWriter, UncoordinatedScanWriter};

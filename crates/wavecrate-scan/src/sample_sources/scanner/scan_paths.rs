@@ -8,6 +8,7 @@ use std::{
 
 use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
 use cap_std::fs::{Dir, OpenOptions};
+use wavecrate_library::sample_sources::reconciliation::RootRelativePath;
 use wavecrate_library::sample_sources::{
     SourceEntryClassification, SourceEntryFileType, SourceFileClassification,
     SourceIndexDiagnostic, SourceIndexEntry, SourceTraversalPolicy,
@@ -17,11 +18,11 @@ use wavecrate_library::sample_sources::{
 use crate::sample_sources::{SourceDatabase, WavEntry};
 
 use super::{
-    scan::{ScanContext, ScanError, ScanMode, ScanStats},
+    scan::{ScanContext, ScanError, ScanMode, ScanStats, finish_scan_result},
     scan_capability::SourceRootCapability,
     scan_db_sync::{complete_scan_generation, db_sync_phase},
     scan_diff_phase::prepare_diff_from_facts,
-    scan_fs::{DirectoryVisit, VisitedDirectories, ensure_root_dir},
+    scan_fs::{DirectoryVisit, VisitedDirectories, ensure_root_dir, read_facts_from_open_file},
     scan_index::{inaccessible_index_entry, index_entry_from_file_facts, non_unicode_index_entry},
     scan_walk::apply_prepared_chunk,
     scan_writer::{ScanWriter, UncoordinatedScanWriter},
@@ -36,6 +37,213 @@ const TARGET_PREPARE_BATCH_SIZE: usize = 64;
 /// pending-rename rules used by a normal quick scan.
 pub fn sync_paths(db: &SourceDatabase, paths: &[PathBuf]) -> Result<ScanStats, ScanError> {
     sync_paths_with_progress(db, paths, None, &mut |_, _| {})
+}
+
+/// Validate exact-entry paths without following any path component.
+///
+/// This is the admission preflight for typed filesystem refreshes. A missing entry, directory,
+/// link, or unavailable path is deliberately indistinguishable from an invalid exact scope to
+/// callers: the whole batch must widen to authoritative recovery before database work starts.
+pub fn validate_exact_regular_paths(
+    root: &Path,
+    paths: &[RootRelativePath],
+    cancel: Option<&AtomicBool>,
+) -> Result<(), ScanError> {
+    let source_root = SourceRootCapability::open(root)?;
+    source_root.ensure_current_generation()?;
+    for path in paths {
+        if cancel.is_some_and(|cancel| cancel.load(Ordering::Relaxed)) {
+            return Err(ScanError::Canceled);
+        }
+        if source_root.open_regular_file(path.as_path())?.is_none() {
+            return Err(exact_entry_unavailable(root, path.as_path()));
+        }
+    }
+    source_root.ensure_current_generation()
+}
+
+/// Reconcile a fully validated set of live regular files without widening to a subtree.
+///
+/// Unlike [`sync_paths_with_progress_and_writer`], this path never enumerates a directory and
+/// never performs rename reconciliation. Manifest and source-index reads are exact-path bounded;
+/// any missing, changed, or uncertain entry fails the complete operation closed.
+pub fn sync_exact_paths_with_progress_and_writer(
+    db: &SourceDatabase,
+    paths: &[RootRelativePath],
+    cancel: Option<&AtomicBool>,
+    on_progress: &mut impl FnMut(usize, &Path),
+    writer: &impl ScanWriter,
+) -> Result<ScanStats, ScanError> {
+    let started = Instant::now();
+    if paths.is_empty() {
+        return Err(ScanError::Io {
+            path: db.root().to_path_buf(),
+            source: io::Error::new(io::ErrorKind::InvalidInput, "exact scope batch is empty"),
+        });
+    }
+    if cancel.is_some_and(|cancel| cancel.load(Ordering::Relaxed)) {
+        return Err(ScanError::Canceled);
+    }
+
+    let root = ensure_root_dir(db)?;
+    validate_exact_regular_paths(&root, paths, cancel)?;
+    let source_root = SourceRootCapability::open(&root)?;
+    source_root.ensure_current_generation()?;
+    let policy = db.source_traversal_policy()?;
+    let exact_paths = paths
+        .iter()
+        .map(|path| path.as_path().to_path_buf())
+        .collect::<Vec<_>>();
+    let (manifest_revision, manifest_before) =
+        db.manifest_snapshot_with_revision_for_exact_paths(paths)?;
+    let source_index_before = db.source_index_entries_for_exact_paths(paths)?;
+    let mut existing = HashMap::new();
+    for path in paths {
+        if path.as_path().to_str().is_some()
+            && let Some(entry) = db.entry_for_path(path.as_path())?
+        {
+            existing.insert(entry.relative_path.clone(), entry);
+        }
+    }
+    let mut context = ScanContext::from_existing(
+        existing,
+        ScanMode::Targeted,
+        manifest_revision,
+        manifest_before.clone(),
+    );
+    context.set_traversal_policy(policy);
+    context.set_targeted_manifest_scope(exact_paths.clone());
+    context.stats.targeted_manifest_rows_read = manifest_before.len();
+    context.stats.targeted_manifest_query_count = 1;
+    context.stats.targeted_manifest_scope_count = exact_paths.len();
+    context.disable_rename_candidates();
+
+    let mut prepared = Vec::with_capacity(paths.len());
+    let mut observed_index_entries = BTreeMap::new();
+    let mut observed_index_facts = BTreeMap::new();
+    for path in paths {
+        if cancel.is_some_and(|cancel| cancel.load(Ordering::Relaxed)) {
+            return Err(ScanError::Canceled);
+        }
+        let relative_path = path.as_path();
+        let Some(file) = source_root.open_regular_file(relative_path)? else {
+            return Err(exact_entry_unavailable(&root, relative_path));
+        };
+        let absolute_path = root.join(relative_path);
+        let facts = read_facts_from_open_file(&root, &absolute_path, &file)?;
+        let classification =
+            classify_source_entry_with_policy(relative_path, SourceEntryFileType::File, policy);
+        let Some(file_classification) = classification.file_classification() else {
+            return Err(exact_entry_unavailable(&root, relative_path));
+        };
+        if classification.indexes_audio() {
+            let mut prepared_file = prepare_diff_from_facts(facts, &context);
+            prepared_file.source_file = Some(file);
+            prepared_file.source_handle_verified = true;
+            prepared.push(prepared_file);
+        } else if !classification.has_supported_audio() {
+            let Some(index_entry) = index_entry_from_file_facts(
+                relative_path.to_path_buf(),
+                file_classification,
+                facts.size,
+                facts.modified_ns,
+                facts.file_identity.clone(),
+            ) else {
+                return Err(exact_entry_unavailable(&root, relative_path));
+            };
+            observed_index_facts.insert(relative_path.to_path_buf(), facts);
+            observed_index_entries.insert(relative_path.to_path_buf(), index_entry);
+        } else {
+            // A supported format excluded by the current traversal policy is not a complete exact
+            // observation. The next authoritative source audit owns that policy boundary.
+            return Err(exact_entry_unavailable(&root, relative_path));
+        }
+        context.stats.total_files = context.stats.total_files.saturating_add(1);
+        on_progress(context.stats.total_files, &absolute_path);
+    }
+    context.set_targeted_index_entries(
+        source_index_before.entries,
+        observed_index_entries.into_values(),
+    );
+    source_root.ensure_current_generation()?;
+    revalidate_exact_index_facts(&root, &source_root, &observed_index_facts, cancel)?;
+
+    let result = (|| {
+        if !prepared.is_empty() {
+            let _ = apply_prepared_chunk(
+                db,
+                &root,
+                &source_root,
+                cancel,
+                &mut context,
+                prepared,
+                false,
+                writer,
+            )?;
+        }
+        if context.has_uncertain_prefixes() {
+            return Err(ScanError::Io {
+                path: root.clone(),
+                source: io::Error::other("exact entry changed during preparation"),
+            });
+        }
+        revalidate_exact_index_facts(&root, &source_root, &observed_index_facts, cancel)?;
+        reconcile_exact_index_entries(db, &source_root, &mut context, cancel, writer)?;
+        source_root.ensure_current_generation()?;
+        complete_scan_generation(db, &source_root, &mut context, cancel, writer)
+    })();
+    context.stats.targeted_sync_elapsed_us =
+        started.elapsed().as_micros().min(u64::MAX as u128) as u64;
+    finish_scan_result(manifest_before, context, result)
+}
+
+fn revalidate_exact_index_facts(
+    root: &Path,
+    source_root: &SourceRootCapability,
+    expected_facts: &BTreeMap<PathBuf, super::scan_fs::FileFacts>,
+    cancel: Option<&AtomicBool>,
+) -> Result<(), ScanError> {
+    for (relative_path, expected) in expected_facts {
+        if cancel.is_some_and(|cancel| cancel.load(Ordering::Relaxed)) {
+            return Err(ScanError::Canceled);
+        }
+        let Some(file) = source_root.open_regular_file(relative_path)? else {
+            return Err(exact_entry_unavailable(root, relative_path));
+        };
+        let observed =
+            super::scan_fs::read_facts_from_open_file(root, &root.join(relative_path), &file)?;
+        if !expected.same_file_facts(&observed) {
+            return Err(exact_entry_unavailable(root, relative_path));
+        }
+    }
+    source_root.ensure_current_generation()
+}
+
+fn reconcile_exact_index_entries(
+    db: &SourceDatabase,
+    source_root: &SourceRootCapability,
+    context: &mut ScanContext,
+    cancel: Option<&AtomicBool>,
+    writer: &impl ScanWriter,
+) -> Result<(), ScanError> {
+    if cancel.is_some_and(|cancel| cancel.load(Ordering::Relaxed)) {
+        return Err(ScanError::Canceled);
+    }
+    super::scan_index::reconcile_index_entries(db, source_root, context, writer)?;
+    if cancel.is_some_and(|cancel| cancel.load(Ordering::Relaxed)) {
+        return Err(ScanError::Canceled);
+    }
+    Ok(())
+}
+
+fn exact_entry_unavailable(root: &Path, relative_path: &Path) -> ScanError {
+    ScanError::Io {
+        path: root.join(relative_path),
+        source: io::Error::new(
+            io::ErrorKind::NotFound,
+            "exact entry is unavailable or changed",
+        ),
+    }
 }
 
 /// Reconcile changed paths with a progress callback and optional cancellation.

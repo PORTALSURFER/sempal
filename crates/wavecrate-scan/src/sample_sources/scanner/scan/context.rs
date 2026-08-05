@@ -14,6 +14,7 @@ pub(crate) struct ScanContext {
     pub(crate) stats: ScanStats,
     pub(crate) mode: ScanMode,
     pub(crate) rename_candidate_generation: Option<u64>,
+    allow_rename_candidates: bool,
     existing_index_entries: BTreeMap<PathBuf, SourceIndexEntry>,
     observed_index_entries: BTreeMap<PathBuf, SourceIndexEntry>,
     committed_manifest: BTreeMap<PathBuf, SourceManifestEntry>,
@@ -62,6 +63,7 @@ impl ScanContext {
             stats: ScanStats::default(),
             mode,
             rename_candidate_generation: None,
+            allow_rename_candidates: true,
             existing_index_entries: BTreeMap::new(),
             observed_index_entries: BTreeMap::new(),
             committed_manifest: manifest
@@ -354,6 +356,9 @@ impl ScanContext {
         &mut self,
         batch: &mut SourceWriteBatch<'_>,
     ) -> Result<(), ScanError> {
+        if !self.allow_rename_candidates {
+            return Ok(());
+        }
         if self.rename_candidate_generation.is_some() {
             return Ok(());
         }
@@ -367,6 +372,10 @@ impl ScanContext {
         };
         self.rename_candidate_generation = Some(generation);
         Ok(())
+    }
+
+    pub(in crate::sample_sources::scanner) fn disable_rename_candidates(&mut self) {
+        self.allow_rename_candidates = false;
     }
 
     pub(in crate::sample_sources::scanner) fn committed_file_identity(

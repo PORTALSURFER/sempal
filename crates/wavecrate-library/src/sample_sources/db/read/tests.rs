@@ -525,6 +525,37 @@ fn scoped_manifest_snapshot_reads_only_requested_exact_subtrees() {
 }
 
 #[test]
+fn exact_manifest_snapshot_reads_only_requested_entries() {
+    let dir = tempdir().unwrap();
+    let db = SourceDatabase::open_for_source_write(dir.path()).unwrap();
+    for path in [
+        "target/inside.wav",
+        "target/inside/deep.wav",
+        "target/other.wav",
+        "targetX/inside.wav",
+    ] {
+        db.upsert_file(Path::new(path), 10, 5).unwrap();
+    }
+    let exact = crate::sample_sources::reconciliation::RootRelativePath::try_from_path(
+        PathBuf::from("target/./inside.wav"),
+    )
+    .unwrap();
+
+    let (revision, entries) = db
+        .manifest_snapshot_with_revision_for_exact_paths(std::slice::from_ref(&exact))
+        .unwrap();
+
+    assert_eq!(revision, db.get_revision().unwrap());
+    assert_eq!(
+        entries
+            .into_iter()
+            .map(|entry| entry.relative_path)
+            .collect::<Vec<_>>(),
+        vec![PathBuf::from("target/inside.wav")]
+    );
+}
+
+#[test]
 fn recent_unretained_rename_destinations_report_bounded_overflow() {
     let dir = tempdir().unwrap();
     let db = SourceDatabase::open_for_source_write(dir.path()).unwrap();

@@ -9,7 +9,7 @@ use std::{
 use wavecrate::sample_sources::{Rating, SourceDatabase, SourceIndexClassification};
 use wavecrate_library::filesystem_identity::stable_filesystem_identity;
 use wavecrate_library::sample_sources::reconciliation::{
-    ReconciliationScope, ReconciliationScopeKind,
+    ReconciliationScope, ReconciliationScopeKind, RootRelativePath,
 };
 use wavecrate_scan::sample_sources::scanner::{
     self, ScanWritePhase, ScanWriter, UncoordinatedScanWriter,
@@ -205,30 +205,28 @@ pub(in crate::native_app) fn sync_source_database_paths_with_writer(
     }
 }
 
-/// Admit typed scopes at the refresh-worker boundary without narrowing them into compatibility
-/// paths. The scanner collection contract is deliberately deferred to the next slice, so every
-/// typed scope is conservatively routed to the existing source-audit owner before any DB work.
 pub(in crate::native_app) fn sync_source_database_scopes_with_writer(
     source_id: String,
     root: PathBuf,
+    database_root: PathBuf,
     scopes: Vec<ReconciliationScope>,
     changed_count: usize,
     source_root_identity: Option<String>,
     cancel: &AtomicBool,
     watcher_continuity_proof: Option<WatcherContinuityProof>,
-    _writer: &impl ScanWriter,
+    writer: &impl ScanWriter,
 ) -> SourceFilesystemSyncResult {
     let root_identity = capture_source_root_identity(&root);
     let cancelled = cancel.load(Ordering::Acquire);
     let audit_required = if cancelled {
-        SourceFilesystemSyncAuditReason::Cancelled
+        Some(SourceFilesystemSyncAuditReason::Cancelled)
     } else if scopes.is_empty() {
-        SourceFilesystemSyncAuditReason::ScopeLost
+        Some(SourceFilesystemSyncAuditReason::ScopeLost)
     } else if scopes
         .iter()
         .any(|scope| scope.kind() == ReconciliationScopeKind::SourceAudit)
     {
-        SourceFilesystemSyncAuditReason::SourceAuditScope
+        Some(SourceFilesystemSyncAuditReason::SourceAuditScope)
     } else if !root_identity_matches_watcher_proof(
         root_identity.as_deref(),
         watcher_continuity_proof.as_ref(),
@@ -237,23 +235,76 @@ pub(in crate::native_app) fn sync_source_database_scopes_with_writer(
             .as_ref()
             .map(|proof| proof.root_identity.as_str())
     {
-        SourceFilesystemSyncAuditReason::RootIdentityUncertain
+        Some(SourceFilesystemSyncAuditReason::RootIdentityUncertain)
+    } else if !scopes
+        .iter()
+        .all(|scope| scope.kind() == ReconciliationScopeKind::ExactEntry && scope.path().is_some())
+    {
+        Some(SourceFilesystemSyncAuditReason::TypedScopeDispatchUnavailable)
     } else {
-        SourceFilesystemSyncAuditReason::TypedScopeDispatchUnavailable
+        None
     };
+    if let Some(audit_required) = audit_required {
+        return SourceFilesystemSyncResult {
+            source_id,
+            lifecycle_generation: 0,
+            changed_count,
+            root_identity,
+            journal_checkpoint_event_id: None,
+            watcher_continuity_proof,
+            cancelled,
+            audit_required: Some(audit_required),
+            result: Err(format!(
+                "Typed reconciliation scope dispatch requires source audit: {}",
+                audit_required.label()
+            )),
+        };
+    }
+
+    let exact_paths = scopes
+        .iter()
+        .map(|scope| {
+            scope
+                .path()
+                .expect("validated exact scope must carry a path")
+                .clone()
+        })
+        .collect::<Vec<_>>();
+    if let Err(error) = scanner::validate_exact_regular_paths(&root, &exact_paths, Some(cancel)) {
+        let audit_required = exact_scope_preflight_audit_reason(&root, &error, cancel);
+        return SourceFilesystemSyncResult {
+            source_id,
+            lifecycle_generation: 0,
+            changed_count,
+            root_identity: capture_source_root_identity(&root),
+            journal_checkpoint_event_id: None,
+            watcher_continuity_proof,
+            cancelled: cancel.load(Ordering::Acquire),
+            audit_required: Some(audit_required),
+            result: Err(format!("Exact scope preflight failed: {error}")),
+        };
+    }
+
+    let attempt = sync_source_database_target_once(
+        &source_id,
+        &root,
+        &database_root,
+        SourceDatabaseSyncTarget::ExactEntries(&exact_paths),
+        cancel,
+        watcher_continuity_proof.as_ref(),
+        writer,
+    );
+    let cancelled = cancel.load(Ordering::Acquire);
     SourceFilesystemSyncResult {
         source_id,
         lifecycle_generation: 0,
         changed_count,
-        root_identity,
+        root_identity: attempt.root_identity,
         journal_checkpoint_event_id: None,
         watcher_continuity_proof,
         cancelled,
-        audit_required: Some(audit_required),
-        result: Err(format!(
-            "Typed reconciliation scope dispatch requires source audit: {}",
-            audit_required.label()
-        )),
+        audit_required: cancelled.then_some(SourceFilesystemSyncAuditReason::Cancelled),
+        result: attempt.result,
     }
 }
 
@@ -272,9 +323,44 @@ fn sync_source_database_paths_once(
     watcher_continuity_proof: Option<&WatcherContinuityProof>,
     writer: &impl ScanWriter,
 ) -> SourceDatabaseSyncAttempt {
+    sync_source_database_target_once(
+        source_id,
+        root,
+        database_root,
+        SourceDatabaseSyncTarget::CompatibilityPaths(paths),
+        cancel,
+        watcher_continuity_proof,
+        writer,
+    )
+}
+
+#[derive(Clone, Copy)]
+enum SourceDatabaseSyncTarget<'a> {
+    CompatibilityPaths(&'a [PathBuf]),
+    ExactEntries(&'a [RootRelativePath]),
+}
+
+impl SourceDatabaseSyncTarget<'_> {
+    fn browser_delta_eligible(self) -> bool {
+        match self {
+            Self::CompatibilityPaths(paths) => paths.iter().all(|path| path.to_str().is_some()),
+            Self::ExactEntries(paths) => paths.iter().all(|path| path.as_path().to_str().is_some()),
+        }
+    }
+}
+
+fn sync_source_database_target_once(
+    source_id: &str,
+    root: &std::path::Path,
+    database_root: &std::path::Path,
+    target: SourceDatabaseSyncTarget<'_>,
+    cancel: &AtomicBool,
+    watcher_continuity_proof: Option<&WatcherContinuityProof>,
+    writer: &impl ScanWriter,
+) -> SourceDatabaseSyncAttempt {
     // Browser IDs are UTF-8 paths. A raw path is still reconciled in the database, but it must
     // take the existing full-recovery path rather than enter a lossy incremental projection.
-    let browser_delta_eligible = paths.iter().all(|path| path.to_str().is_some());
+    let browser_delta_eligible = target.browser_delta_eligible();
     let _writer = writer.lock(ScanWritePhase::Open);
     let root_identity = capture_source_root_identity(root);
     if cancel.load(Ordering::Acquire) {
@@ -302,13 +388,27 @@ fn sync_source_database_paths_once(
     let result = database
         .map_err(|err| format!("open source index: {err}"))
         .and_then(|db| {
-            let (stats, mut incomplete_error) = match scanner::sync_paths_with_progress_and_writer(
-                &db,
-                paths,
-                Some(cancel),
-                &mut |_, _| {},
-                writer,
-            ) {
+            let scan_result = match target {
+                SourceDatabaseSyncTarget::CompatibilityPaths(paths) => {
+                    scanner::sync_paths_with_progress_and_writer(
+                        &db,
+                        paths,
+                        Some(cancel),
+                        &mut |_, _| {},
+                        writer,
+                    )
+                }
+                SourceDatabaseSyncTarget::ExactEntries(paths) => {
+                    scanner::sync_exact_paths_with_progress_and_writer(
+                        &db,
+                        paths,
+                        Some(cancel),
+                        &mut |_, _| {},
+                        writer,
+                    )
+                }
+            };
+            let (stats, mut incomplete_error) = match scan_result {
                 Ok(stats) => (stats, None),
                 Err(scanner::ScanError::Incomplete { committed, error }) => {
                     (*committed, Some(error))
@@ -316,7 +416,9 @@ fn sync_source_database_paths_once(
                 Err(error) => return Err(format!("sync source index: {error}")),
             };
             let committed = stats.clone();
-            let completed = if incomplete_error.is_some() {
+            let completed = if incomplete_error.is_some()
+                || matches!(target, SourceDatabaseSyncTarget::ExactEntries(_))
+            {
                 committed
             } else {
                 match scanner::complete_deferred_rename_candidates_with_cancel_and_writer(
@@ -385,6 +487,25 @@ fn sync_source_database_paths_once(
         root_identity,
         result,
         retryable: true,
+    }
+}
+
+fn exact_scope_preflight_audit_reason(
+    root: &Path,
+    error: &scanner::ScanError,
+    cancel: &AtomicBool,
+) -> SourceFilesystemSyncAuditReason {
+    if cancel.load(Ordering::Acquire) || matches!(error, scanner::ScanError::Canceled) {
+        return SourceFilesystemSyncAuditReason::Cancelled;
+    }
+    let root_loss = matches!(
+        error,
+        scanner::ScanError::InvalidRoot(_) | scanner::ScanError::StaleRootGeneration { .. }
+    ) || matches!(error, scanner::ScanError::Io { path, .. } if path == root);
+    if root_loss {
+        SourceFilesystemSyncAuditReason::RootIdentityUncertain
+    } else {
+        SourceFilesystemSyncAuditReason::ScopeLost
     }
 }
 
@@ -618,7 +739,9 @@ mod tests {
         RawObservationEnvelope, RawObservationLimits, RawObservationProvenance, RawObservedPath,
         RawPathRole, RootIdentity, WatcherGeneration, normalize_observation,
     };
-    use wavecrate_scan::sample_sources::scanner::{ScanWritePhase, ScanWriter};
+    use wavecrate_scan::sample_sources::scanner::{
+        ScanWritePhase, ScanWriter, UncoordinatedScanWriter,
+    };
 
     use crate::native_app::sample_library::source_watcher::{
         WatcherBackend, WatcherContinuityProof,
@@ -721,7 +844,7 @@ mod tests {
     }
 
     #[test]
-    fn typed_scope_dispatch_routes_to_audit_without_opening_database_or_using_paths() {
+    fn typed_scope_preflight_falls_back_without_opening_database() {
         let root = tempfile::tempdir().expect("source root");
         let root_identity = capture_source_root_identity(root.path()).expect("root identity");
         let proof = watcher_proof(&root_identity, 73);
@@ -731,6 +854,7 @@ mod tests {
 
         let result = sync_source_database_scopes_with_writer(
             String::from("source-a"),
+            root.path().to_path_buf(),
             root.path().to_path_buf(),
             vec![exact_scope()],
             1,
@@ -742,12 +866,43 @@ mod tests {
 
         assert_eq!(
             result.audit_required,
-            Some(
-                crate::native_app::app::SourceFilesystemSyncAuditReason::TypedScopeDispatchUnavailable
-            )
+            Some(crate::native_app::app::SourceFilesystemSyncAuditReason::ScopeLost)
         );
         assert!(result.result.is_err());
         assert!(!writer.database_open_started.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn typed_scope_dispatch_uses_exact_scanner_and_committed_projection() {
+        let root = tempfile::tempdir().expect("source root");
+        std::fs::write(root.path().join("exact.wav"), b"exact").expect("exact file");
+        let database_parent = tempfile::tempdir().expect("database parent");
+        let database_root = database_parent.path().join("source-db");
+        let database_path = database_root.join(".wavecrate.db");
+        let root_identity = capture_source_root_identity(root.path()).expect("root identity");
+        let proof = watcher_proof(&root_identity, 73);
+
+        let result = sync_source_database_scopes_with_writer(
+            String::from("source-a"),
+            root.path().to_path_buf(),
+            database_root,
+            vec![exact_scope()],
+            1,
+            Some(root_identity),
+            &AtomicBool::new(false),
+            Some(proof),
+            &UncoordinatedScanWriter,
+        );
+
+        assert!(result.audit_required.is_none());
+        let success = result.result.expect("exact scope sync");
+        assert_eq!(success.renames_reconciled, 0);
+        assert_eq!(success.committed_delta.created.len(), 1);
+        assert!(success.incomplete_error.is_none());
+        assert!(success.browser_projection_delta.is_some());
+        assert!(success.projection_handoff_ticket.is_none());
+        assert!(database_path.is_file());
+        assert!(!root.path().join(".wavecrate.db").exists());
     }
 
     #[test]
