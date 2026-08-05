@@ -474,15 +474,19 @@ impl SourceScanWorkflow {
                     reason: "reconciliation_scope_budget_exceeded",
                 };
             }
-            let authority_is_valid = lifecycle_generation.is_some()
-                && watcher_replay_evidence_is_well_formed(
-                    journal_checkpoint_event_id,
-                    watcher_continuity_proof.as_ref(),
-                )
-                && source_root_identity.as_deref()
-                    == watcher_continuity_proof
-                        .as_ref()
-                        .map(|proof| proof.root_identity.as_str());
+            if lifecycle_generation.is_none() {
+                return SourceFilesystemChangePlan::SourceAuditRequired {
+                    source_id,
+                    reason: "targeted_sync_lifecycle_uncertain",
+                };
+            }
+            let authority_is_valid = watcher_replay_evidence_is_well_formed(
+                journal_checkpoint_event_id,
+                watcher_continuity_proof.as_ref(),
+            ) && source_root_identity.as_deref()
+                == watcher_continuity_proof
+                    .as_ref()
+                    .map(|proof| proof.root_identity.as_str());
             if !authority_is_valid {
                 return SourceFilesystemChangePlan::SourceAuditRequired {
                     source_id,

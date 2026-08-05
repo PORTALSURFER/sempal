@@ -66,12 +66,16 @@ impl NativeAppState {
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
         let started_at = Instant::now();
-        let lifecycle_generation = message_lifecycle_generation.or_else(|| {
-            self.background
-                .source_lifecycle_generations
-                .get(&source_id)
-                .copied()
-        });
+        let lifecycle_generation = if scopes.is_some() {
+            message_lifecycle_generation
+        } else {
+            message_lifecycle_generation.or_else(|| {
+                self.background
+                    .source_lifecycle_generations
+                    .get(&source_id)
+                    .copied()
+            })
+        };
         match self.library.plan_filesystem_change_with_scopes(
             source_id,
             scopes.as_deref(),

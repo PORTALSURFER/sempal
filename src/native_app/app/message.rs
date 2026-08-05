@@ -97,7 +97,10 @@ pub(in crate::native_app) enum GuiMessage {
         source_root_available: bool,
         /// Root identity authority carried by a typed replay handoff.
         source_root_identity: Option<String>,
-        /// Source-processing lifecycle authority, when the producer has one.
+        /// Producer-supplied current source-processing lifecycle authority. Typed replay may
+        /// intentionally carry `None` until current-token transport exists; consumers must not
+        /// substitute the GUI's current generation for `scopes: Some(_)`. Path-only legacy
+        /// messages may use `None` for the compatibility fallback.
         lifecycle_generation: Option<u64>,
         /// A durable FSEvents cursor that may advance only after this targeted sync commits.
         journal_checkpoint_event_id: Option<u64>,

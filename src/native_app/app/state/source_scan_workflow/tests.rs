@@ -1221,9 +1221,14 @@ fn typed_scope_plan_preserves_exact_and_subtree_kinds_and_ignores_legacy_paths()
 
 #[test]
 fn typed_source_audit_and_scope_loss_route_before_targeted_dispatch() {
-    for (scopes, reason) in [
-        (source_audit_scope(), "reconciliation_source_audit_scope"),
-        (Vec::new(), "reconciliation_scope_lost"),
+    for (scopes, reason, lifecycle_generation) in [
+        (
+            source_audit_scope(),
+            "reconciliation_source_audit_scope",
+            Some(7),
+        ),
+        (Vec::new(), "reconciliation_scope_lost", Some(7)),
+        (typed_scopes(), "targeted_sync_lifecycle_uncertain", None),
     ] {
         let root = temp_dir_with_wav();
         let mut browser = FolderBrowserState::load_default();
@@ -1247,7 +1252,7 @@ fn typed_source_audit_and_scope_loss_route_before_targeted_dispatch() {
                 false,
                 true,
                 Some(String::from("root-a")),
-                Some(7),
+                lifecycle_generation,
                 Some(9),
                 Some(replay_proof(9)),
             ),

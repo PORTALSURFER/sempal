@@ -1,7 +1,13 @@
 use super::*;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::native_app::sample_library::source_watcher::{WatcherBackend, WatcherContinuityProof};
+use wavecrate::sample_sources::SourceId;
+use wavecrate_library::sample_sources::reconciliation::{
+    BackendStreamIdentity, CaptureBoundary, RawEventKind, RawObservation, RawObservationEnvelope,
+    RawObservationLimits, RawObservationProvenance, RawObservedPath, RawPathRole,
+    ReconciliationScope, RootIdentity, WatcherGeneration, normalize_observation,
+};
 
 fn replay_proof(root: &Path, end_event_id: u64) -> WatcherContinuityProof {
     let metadata = fs::metadata(root).expect("source metadata");
@@ -17,6 +23,29 @@ fn replay_proof(root: &Path, end_event_id: u64) -> WatcherContinuityProof {
         replay_coverage_end_event_id: end_event_id,
         acknowledged_end_event_id: end_event_id,
     }
+}
+
+fn typed_scopes() -> Vec<ReconciliationScope> {
+    let provenance = RawObservationProvenance::new(
+        SourceId::from_string("source-a"),
+        Some(RootIdentity::from_bytes(vec![1])),
+        Some(BackendStreamIdentity::from_bytes(vec![2])),
+        WatcherGeneration::new(4),
+        CaptureBoundary::try_new(9, Some(8), Some(9)).expect("capture boundary"),
+    );
+    let envelope = RawObservationEnvelope::try_new(
+        provenance,
+        vec![RawObservation::new(
+            RawEventKind::Modify,
+            vec![RawObservedPath::new(
+                PathBuf::from("file.wav"),
+                RawPathRole::Subject,
+            )],
+        )],
+        RawObservationLimits::new(8, usize::MAX, usize::MAX).expect("observation limits"),
+    )
+    .expect("observation envelope");
+    normalize_observation(envelope).scopes().to_vec()
 }
 
 #[test]
@@ -144,6 +173,41 @@ fn foreground_scan_terminal_release_admits_coalesced_watcher_paths() {
             .library
             .targeted_source_sync_active_for_tests(&source_id),
         "terminal scan release must immediately admit the coalesced targeted follow-up"
+    );
+}
+
+#[test]
+fn typed_replay_without_producer_lifecycle_generation_routes_to_audit() {
+    let source_root = tempfile::tempdir().expect("source root");
+    let mut state = gui_state_for_span_tests();
+    let request = state
+        .library
+        .folder_browser
+        .begin_add_source_path(source_root.path().to_path_buf(), 106)
+        .expect("new source requests scan");
+    let source_id = request.source_id.clone();
+    let mut context = ui::UiUpdateContext::default();
+    state.launch_folder_scan(request, &mut context);
+    let proof = replay_proof(source_root.path(), 11);
+
+    state.refresh_source_after_filesystem_change(
+        source_id.clone(),
+        Some(typed_scopes()),
+        vec![PathBuf::from("legacy-fallback.wav")],
+        false,
+        true,
+        Some(proof.root_identity.clone()),
+        None,
+        Some(11),
+        Some(proof),
+        &mut context,
+    );
+
+    assert!(
+        !state
+            .library
+            .targeted_source_sync_active_for_tests(&source_id),
+        "typed replay without producer lifecycle authority must not use the GUI current generation"
     );
 }
 

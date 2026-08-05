@@ -1575,6 +1575,9 @@ fn handoff_dispatched_capture(
                 overflowed: false,
                 source_root_available: true,
                 source_root_identity: Some(replay.proof.root_identity.clone()),
+                // The replay/checkpoint generation is historical watcher authority, not the
+                // current source-processing lifecycle generation. This lane has no current-token
+                // transport yet; leave it unset so typed scopes fail closed at the GUI boundary.
                 lifecycle_generation: None,
                 journal_checkpoint_event_id: Some(replay.proof.acknowledged_end_event_id),
                 watcher_continuity_proof: Some(replay.proof.clone()),
