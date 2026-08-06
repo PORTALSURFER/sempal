@@ -242,6 +242,9 @@ mod tests {
                 bounds,
                 ui::WidgetInput::PointerMove {
                     position: bounds.center(),
+                    modifiers: Default::default(),
+                    timestamp: None,
+                    sequence_range: None,
                 },
             );
 
@@ -269,7 +272,9 @@ mod tests {
         assert_eq!(
             category_header(&category).view_dispatch_widget_output(
                 input_id,
-                ui::WidgetOutput::typed(ui::InteractiveRowMessage::Activate),
+                ui::WidgetOutput::typed(ui::InteractiveRowMessage::Activate {
+                    provenance: ui::InteractionProvenance::Programmatic,
+                }),
             ),
             Some(GuiMessage::Metadata(
                 MetadataMessage::ToggleMetadataTagCategory(String::from(category_id))

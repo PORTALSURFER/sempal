@@ -50,7 +50,9 @@ fn general_settings_button_opens_general_tab() {
     assert_eq!(
         surface.dispatch_widget_output(
             crate::native_app::test_support::settings::GENERAL_SETTINGS_BUTTON_ID,
-            radiant::widgets::WidgetOutput::typed(ButtonMessage::Activate),
+            radiant::widgets::WidgetOutput::typed(ButtonMessage::Activate {
+                provenance: radiant::widgets::InteractionProvenance::Programmatic,
+            }),
         ),
         Some(
             crate::native_app::test_support::state::GuiMessage::Settings(
@@ -78,7 +80,9 @@ fn help_tooltips_button_toggles_help_mode() {
     assert_eq!(
         surface.dispatch_widget_output(
             crate::native_app::test_support::settings::HELP_TOOLTIPS_BUTTON_ID,
-            radiant::widgets::WidgetOutput::typed(ButtonMessage::Activate),
+            radiant::widgets::WidgetOutput::typed(ButtonMessage::Activate {
+                provenance: radiant::widgets::InteractionProvenance::Programmatic,
+            }),
         ),
         Some(
             crate::native_app::test_support::state::GuiMessage::Settings(
@@ -107,7 +111,9 @@ fn normalized_audition_button_toggles_forced_normalized_mode() {
     assert_eq!(
         surface.dispatch_widget_output(
             crate::native_app::test_support::settings::NORMALIZED_AUDITION_BUTTON_ID,
-            radiant::widgets::WidgetOutput::typed(ButtonMessage::Activate),
+            radiant::widgets::WidgetOutput::typed(ButtonMessage::Activate {
+                provenance: radiant::widgets::InteractionProvenance::Programmatic,
+            }),
         ),
         Some(
             crate::native_app::test_support::state::GuiMessage::Settings(
@@ -145,7 +151,9 @@ fn release_update_button_opens_download_page() {
     assert_eq!(
         surface.dispatch_widget_output(
             crate::native_app::test_support::settings::RELEASE_UPDATE_BUTTON_ID,
-            radiant::widgets::WidgetOutput::typed(ButtonMessage::Activate),
+            radiant::widgets::WidgetOutput::typed(ButtonMessage::Activate {
+                provenance: radiant::widgets::InteractionProvenance::Programmatic,
+            }),
         ),
         Some(crate::native_app::test_support::state::GuiMessage::OpenReleaseDownloadPage)
     );

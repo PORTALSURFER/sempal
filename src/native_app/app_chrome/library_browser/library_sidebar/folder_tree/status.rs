@@ -129,7 +129,9 @@ mod tests {
             )
             .view_dispatch_widget_output(
                 widget_ids::FOLDER_TREE_INCLUDE_SUBFOLDERS_TOGGLE_ID,
-                ui::WidgetOutput::typed(ButtonMessage::Activate),
+                ui::WidgetOutput::typed(ButtonMessage::Activate {
+                    provenance: ui::InteractionProvenance::Programmatic,
+                }),
             ),
             Some(GuiMessage::FolderBrowser(
                 FolderBrowserMessage::ToggleFolderSubtreeListing
@@ -166,7 +168,9 @@ mod tests {
             )
             .view_dispatch_widget_output(
                 widget_ids::FOLDER_TREE_SHOW_EMPTY_FOLDERS_TOGGLE_ID,
-                ui::WidgetOutput::typed(ButtonMessage::Activate),
+                ui::WidgetOutput::typed(ButtonMessage::Activate {
+                    provenance: ui::InteractionProvenance::Programmatic,
+                }),
             ),
             Some(GuiMessage::FolderBrowser(
                 FolderBrowserMessage::ToggleEmptyFolderVisibility

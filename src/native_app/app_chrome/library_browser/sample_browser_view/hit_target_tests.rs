@@ -200,7 +200,9 @@ fn production_hit_target_derives_stable_input_identity_from_sample_row_key() {
     )
     .view_dispatch_widget_output(
         input_id,
-        WidgetOutput::typed(InteractiveRowMessage::DoubleActivate),
+        WidgetOutput::typed(InteractiveRowMessage::DoubleActivate {
+            provenance: radiant::widgets::InteractionProvenance::Programmatic,
+        }),
     );
 
     assert_eq!(

@@ -110,7 +110,9 @@ fn source_add_button_routes_add_source_message() {
     assert_eq!(
         source_add_button(false).view_dispatch_widget_output(
             AUTOMATION_SOURCE_ADD_BUTTON_ID,
-            ui::WidgetOutput::typed(ButtonMessage::Activate),
+            ui::WidgetOutput::typed(ButtonMessage::Activate {
+                provenance: ui::InteractionProvenance::Programmatic,
+            }),
         ),
         Some(GuiMessage::FolderBrowser(FolderBrowserMessage::AddSource))
     );
@@ -178,7 +180,9 @@ fn source_row_routes_primary_activation_through_interactive_row() {
     assert_eq!(
         source_row(row).view_dispatch_widget_output(
             retained_source_row_input_id(source.id.as_str()),
-            ui::WidgetOutput::typed(ui::InteractiveRowMessage::Activate),
+            ui::WidgetOutput::typed(ui::InteractiveRowMessage::Activate {
+                provenance: ui::InteractionProvenance::Programmatic,
+            }),
         ),
         Some(GuiMessage::FolderBrowser(
             FolderBrowserMessage::SelectSource(source.id.clone())
@@ -373,7 +377,9 @@ fn source_row_keeps_actions_enabled_while_processing_feedback_is_overlay_owned()
     assert_eq!(
         source_row(row).view_dispatch_widget_output(
             retained_source_row_input_id(source.id.as_str()),
-            ui::WidgetOutput::typed(ui::InteractiveRowMessage::Activate),
+            ui::WidgetOutput::typed(ui::InteractiveRowMessage::Activate {
+                provenance: ui::InteractionProvenance::Programmatic,
+            }),
         ),
         Some(GuiMessage::FolderBrowser(
             FolderBrowserMessage::SelectSource(source.id.clone())

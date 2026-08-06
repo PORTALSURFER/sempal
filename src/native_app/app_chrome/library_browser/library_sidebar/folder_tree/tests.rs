@@ -321,6 +321,7 @@ fn standard_folder_rows_derive_stable_input_id_from_row_key() {
             position,
             button: ui::PointerButton::Primary,
             modifiers: Default::default(),
+            timestamp: None,
         },
     );
     let output = surface.dispatch_widget_input(
@@ -330,6 +331,7 @@ fn standard_folder_rows_derive_stable_input_id_from_row_key() {
             position,
             button: ui::PointerButton::Primary,
             modifiers: Default::default(),
+            timestamp: None,
         },
     );
 

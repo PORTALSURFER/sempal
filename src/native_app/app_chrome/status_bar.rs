@@ -574,6 +574,9 @@ mod tests {
 
         runtime.dispatch_event(Event::PointerMove {
             position: compact_rect.center(),
+            modifiers: Default::default(),
+            timestamp: None,
+            sequence_range: None,
         });
 
         assert!(
