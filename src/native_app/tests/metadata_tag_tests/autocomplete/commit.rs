@@ -18,12 +18,12 @@ fn metadata_autocomplete_suffix_is_not_editable_input_text() {
     assert!(runtime.focus_widget(input_id));
 
     assert_eq!(
-        runtime.dispatch_focused_input(WidgetInput::KeyPress(WidgetKey::Backspace)),
+        runtime.dispatch_focused_input(WidgetInput::key_press(WidgetKey::Backspace)),
         Some(input_id)
     );
     assert_eq!(runtime.bridge().state().metadata.tag_draft, "k");
     assert_eq!(
-        runtime.dispatch_focused_input(WidgetInput::KeyPress(WidgetKey::Backspace)),
+        runtime.dispatch_focused_input(WidgetInput::key_press(WidgetKey::Backspace)),
         Some(input_id)
     );
     assert!(runtime.bridge().state().metadata.tag_draft.is_empty());
@@ -58,11 +58,11 @@ fn metadata_autocomplete_enter_commits_typed_prefix_without_selecting_first_sugg
     assert!(runtime.focus_widget(input_id));
 
     assert_eq!(
-        runtime.dispatch_focused_input(WidgetInput::Character('k')),
+        runtime.dispatch_focused_input(WidgetInput::character('k')),
         Some(input_id)
     );
     assert_eq!(
-        runtime.dispatch_focused_input(WidgetInput::Character('i')),
+        runtime.dispatch_focused_input(WidgetInput::character('i')),
         Some(input_id)
     );
 
@@ -82,7 +82,7 @@ fn metadata_autocomplete_enter_commits_typed_prefix_without_selecting_first_sugg
     );
 
     assert_eq!(
-        runtime.dispatch_focused_input(WidgetInput::KeyPress(WidgetKey::Enter)),
+        runtime.dispatch_focused_input(WidgetInput::key_press(WidgetKey::Enter)),
         Some(input_id)
     );
 

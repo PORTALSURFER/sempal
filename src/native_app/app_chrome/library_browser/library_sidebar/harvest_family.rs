@@ -130,21 +130,27 @@ mod tests {
         assert_eq!(
             harvest_family_section(&harvest_family_model()).view_dispatch_widget_output(
                 widget_ids::HARVEST_FAMILY_ORIGIN_BUTTON_ID,
-                ui::WidgetOutput::typed(ButtonMessage::Activate),
+                ui::WidgetOutput::typed(ButtonMessage::Activate {
+                    provenance: ui::InteractionProvenance::Programmatic,
+                }),
             ),
             Some(GuiMessage::ShowSelectedSampleHarvestOrigin)
         );
         assert_eq!(
             harvest_family_section(&harvest_family_model()).view_dispatch_widget_output(
                 widget_ids::HARVEST_FAMILY_DERIVATIVES_BUTTON_ID,
-                ui::WidgetOutput::typed(ButtonMessage::Activate),
+                ui::WidgetOutput::typed(ButtonMessage::Activate {
+                    provenance: ui::InteractionProvenance::Programmatic,
+                }),
             ),
             Some(GuiMessage::ShowSelectedSampleHarvestDerivatives)
         );
         assert_eq!(
             harvest_family_section(&harvest_family_model()).view_dispatch_widget_output(
                 widget_ids::HARVEST_FAMILY_DESTINATION_BUTTON_ID,
-                ui::WidgetOutput::typed(ButtonMessage::Activate),
+                ui::WidgetOutput::typed(ButtonMessage::Activate {
+                    provenance: ui::InteractionProvenance::Programmatic,
+                }),
             ),
             Some(GuiMessage::OpenSelectedSampleHarvestDestination)
         );

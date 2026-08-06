@@ -84,7 +84,9 @@ fn toolbar_icon_button_routes_messages_through_radiant_builder() {
                 .view_dispatch_widget_output(
                     101,
                     radiant::widgets::WidgetOutput::typed(
-                        radiant::widgets::ButtonMessage::Activate
+                        radiant::widgets::ButtonMessage::Activate {
+                            provenance: radiant::widgets::InteractionProvenance::Programmatic,
+                        }
                     ),
                 ),
             Some(message)
@@ -102,9 +104,13 @@ fn toolbar_icon_button_routes_messages_through_radiant_builder() {
             101,
             radiant::widgets::WidgetOutput::typed(
                 radiant::widgets::ButtonMessage::ActivateWithModifiers {
-                    modifiers: PointerModifiers {
-                        command: true,
-                        ..Default::default()
+                    provenance: radiant::widgets::InteractionProvenance::Pointer {
+                        modifiers: PointerModifiers {
+                            command: true,
+                            ..Default::default()
+                        },
+                        timestamp: None,
+                        sequence_range: None,
                     },
                 },
             ),
@@ -125,9 +131,13 @@ fn toolbar_icon_button_routes_messages_through_radiant_builder() {
             101,
             radiant::widgets::WidgetOutput::typed(
                 radiant::widgets::ButtonMessage::ActivateWithModifiers {
-                    modifiers: PointerModifiers {
-                        shift: true,
-                        ..Default::default()
+                    provenance: radiant::widgets::InteractionProvenance::Pointer {
+                        modifiers: PointerModifiers {
+                            shift: true,
+                            ..Default::default()
+                        },
+                        timestamp: None,
+                        sequence_range: None,
                     },
                 },
             ),
@@ -219,7 +229,9 @@ fn apply_edit_mark_edits_button_appears_only_for_pending_effects() {
     assert_eq!(
         crate::native_app::test_support::toolbar::main_toolbar(&state).view_dispatch_widget_output(
             crate::native_app::test_support::toolbar::TOOLBAR_APPLY_EDIT_MARK_EDITS_ID,
-            radiant::widgets::WidgetOutput::typed(radiant::widgets::ButtonMessage::Activate),
+            radiant::widgets::WidgetOutput::typed(radiant::widgets::ButtonMessage::Activate {
+                provenance: radiant::widgets::InteractionProvenance::Programmatic,
+            },),
         ),
         Some(crate::native_app::test_support::state::GuiMessage::RequestApplyEditSelectionEffects)
     );
@@ -571,7 +583,7 @@ fn beat_guide_count_field_owns_up_down_only_while_focused() {
     let input_id = crate::native_app::test_support::toolbar::TOOLBAR_BEAT_GUIDE_COUNT_ID;
 
     assert_eq!(
-        runtime.dispatch_event(Event::KeyPress(WidgetKey::ArrowUp)),
+        runtime.dispatch_event(Event::key_press(WidgetKey::ArrowUp)),
         None,
         "unfocused number field should not receive arrow keys"
     );
@@ -587,29 +599,29 @@ fn beat_guide_count_field_owns_up_down_only_while_focused() {
         Some(input_id)
     );
     assert_eq!(
-        runtime.dispatch_event(Event::Character('1')),
+        runtime.dispatch_event(Event::character('1')),
         Some(input_id)
     );
     assert_eq!(
-        runtime.dispatch_event(Event::Character('6')),
+        runtime.dispatch_event(Event::character('6')),
         Some(input_id)
     );
     assert_eq!(runtime.bridge().state().ui.chrome.beat_guide_count, 16);
 
     assert_eq!(
-        runtime.dispatch_event(Event::KeyPress(WidgetKey::ArrowUp)),
+        runtime.dispatch_event(Event::key_press(WidgetKey::ArrowUp)),
         Some(input_id)
     );
     assert_eq!(runtime.bridge().state().ui.chrome.beat_guide_count, 17);
     assert_eq!(
-        runtime.dispatch_event(Event::KeyPress(WidgetKey::ArrowDown)),
+        runtime.dispatch_event(Event::key_press(WidgetKey::ArrowDown)),
         Some(input_id)
     );
     assert_eq!(runtime.bridge().state().ui.chrome.beat_guide_count, 16);
 
     runtime.clear_focus();
     assert_eq!(
-        runtime.dispatch_event(Event::KeyPress(WidgetKey::ArrowDown)),
+        runtime.dispatch_event(Event::key_press(WidgetKey::ArrowDown)),
         None
     );
     assert_eq!(runtime.bridge().state().ui.chrome.beat_guide_count, 16);
@@ -624,7 +636,7 @@ fn beat_guide_count_field_owns_up_down_only_while_focused() {
         Some(input_id)
     );
     assert_eq!(
-        runtime.dispatch_event(Event::Character('0')),
+        runtime.dispatch_event(Event::character('0')),
         Some(input_id)
     );
     assert_eq!(runtime.bridge().state().ui.chrome.beat_guide_count, 16);
@@ -641,17 +653,17 @@ fn beat_guide_count_field_owns_up_down_only_while_focused() {
         Some(input_id)
     );
     assert_eq!(
-        runtime.dispatch_event(Event::Character('9')),
+        runtime.dispatch_event(Event::character('9')),
         Some(input_id)
     );
     assert_eq!(runtime.bridge().state().ui.chrome.beat_guide_count, 9);
     assert_eq!(
-        runtime.dispatch_event(Event::Character('9')),
+        runtime.dispatch_event(Event::character('9')),
         Some(input_id)
     );
     assert_eq!(runtime.bridge().state().ui.chrome.beat_guide_count, 9);
     assert_eq!(
-        runtime.dispatch_event(Event::Character('9')),
+        runtime.dispatch_event(Event::character('9')),
         Some(input_id)
     );
     runtime.clear_focus();
@@ -667,7 +679,7 @@ fn beat_guide_count_field_owns_up_down_only_while_focused() {
         Some(input_id)
     );
     assert_eq!(
-        runtime.dispatch_event(Event::Character('x')),
+        runtime.dispatch_event(Event::character('x')),
         Some(input_id)
     );
     assert_eq!(runtime.bridge().state().ui.chrome.beat_guide_count, 32);

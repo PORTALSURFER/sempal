@@ -198,7 +198,9 @@ fn filter_section_filter_labels_dispatch_family_enable_changes() {
     assert_eq!(
         filter_section(&model).view_dispatch_widget_output(
             automation_filter_family_label_toggle_id("Name"),
-            ui::WidgetOutput::typed(ButtonMessage::Activate),
+            ui::WidgetOutput::typed(ButtonMessage::Activate {
+                provenance: ui::InteractionProvenance::Programmatic,
+            }),
         ),
         Some(GuiMessage::FolderBrowser(
             FolderBrowserMessage::SetFilterFamilyEnabled(FilterFamily::Name, false)
@@ -207,7 +209,9 @@ fn filter_section_filter_labels_dispatch_family_enable_changes() {
     assert_eq!(
         filter_section(&model).view_dispatch_widget_output(
             automation_filter_family_label_toggle_id("Rating"),
-            ui::WidgetOutput::typed(ButtonMessage::Activate),
+            ui::WidgetOutput::typed(ButtonMessage::Activate {
+                provenance: ui::InteractionProvenance::Programmatic,
+            }),
         ),
         Some(GuiMessage::FolderBrowser(
             FolderBrowserMessage::SetFilterFamilyEnabled(FilterFamily::Rating, false)
@@ -216,7 +220,9 @@ fn filter_section_filter_labels_dispatch_family_enable_changes() {
     assert_eq!(
         filter_section(&model).view_dispatch_widget_output(
             automation_filter_family_label_toggle_id("Tags"),
-            ui::WidgetOutput::typed(ButtonMessage::Activate),
+            ui::WidgetOutput::typed(ButtonMessage::Activate {
+                provenance: ui::InteractionProvenance::Programmatic,
+            }),
         ),
         Some(GuiMessage::FolderBrowser(
             FolderBrowserMessage::SetFilterFamilyEnabled(FilterFamily::Tags, true)
@@ -287,7 +293,9 @@ fn filter_section_projects_curation_scope_dropdown_and_dispatches_changes() {
     assert_eq!(
         filter_section(&model).view_dispatch_widget_output(
             CURATION_FILTER_DROPDOWN_TRIGGER_ID,
-            ui::WidgetOutput::typed(ButtonMessage::Activate),
+            ui::WidgetOutput::typed(ButtonMessage::Activate {
+                provenance: ui::InteractionProvenance::Programmatic,
+            }),
         ),
         Some(GuiMessage::ToggleCurationFilterDropdown)
     );
@@ -342,7 +350,9 @@ fn filter_section_projects_curation_scope_dropdown_and_dispatches_changes() {
             .expect("open curation dropdown should project an overlay menu")
             .view_dispatch_widget_output(
                 automation_curation_filter_dropdown_option_id("Tags"),
-                ui::WidgetOutput::typed(ButtonMessage::Activate),
+                ui::WidgetOutput::typed(ButtonMessage::Activate {
+                    provenance: ui::InteractionProvenance::Programmatic,
+                }),
             ),
         Some(GuiMessage::FolderBrowser(
             FolderBrowserMessage::SetCurationScope(BrowserCurationScope::Tags, true)
@@ -385,7 +395,9 @@ fn filter_section_uses_harvest_dropdown_as_only_filter_mode_trigger() {
     assert_eq!(
         filter_section(&model).view_dispatch_widget_output(
             HARVEST_FILTER_DROPDOWN_TRIGGER_ID,
-            ui::WidgetOutput::typed(ButtonMessage::Activate),
+            ui::WidgetOutput::typed(ButtonMessage::Activate {
+                provenance: ui::InteractionProvenance::Programmatic,
+            }),
         ),
         Some(GuiMessage::ToggleHarvestFilterDropdown)
     );
@@ -411,7 +423,9 @@ fn filter_section_projects_harvest_filter_dropdown_and_dispatches_changes() {
     assert_eq!(
         filter_section(&model).view_dispatch_widget_output(
             HARVEST_FILTER_DROPDOWN_TRIGGER_ID,
-            ui::WidgetOutput::typed(ButtonMessage::Activate),
+            ui::WidgetOutput::typed(ButtonMessage::Activate {
+                provenance: ui::InteractionProvenance::Programmatic,
+            }),
         ),
         Some(GuiMessage::ToggleHarvestFilterDropdown)
     );
@@ -452,7 +466,9 @@ fn filter_section_projects_harvest_filter_dropdown_and_dispatches_changes() {
                 .expect("open harvest dropdown should project an overlay menu")
                 .view_dispatch_widget_output(
                     automation_harvest_filter_dropdown_option_id(label),
-                    ui::WidgetOutput::typed(ButtonMessage::Activate),
+                    ui::WidgetOutput::typed(ButtonMessage::Activate {
+                        provenance: ui::InteractionProvenance::Programmatic,
+                    }),
                 ),
             Some(GuiMessage::FolderBrowser(
                 FolderBrowserMessage::SetHarvestFilter(filter, true)
@@ -503,7 +519,9 @@ fn filter_section_hides_clear_buttons_when_filters_are_empty() {
     assert_eq!(
         filter_section(&model).view_dispatch_widget_output(
             name_filter_clear_button_id(),
-            ui::WidgetOutput::typed(ButtonMessage::Activate),
+            ui::WidgetOutput::typed(ButtonMessage::Activate {
+                provenance: ui::InteractionProvenance::Programmatic,
+            }),
         ),
         None
     );
@@ -537,7 +555,9 @@ fn filter_section_projects_name_clear_button_for_active_name_filter() {
     assert_eq!(
         filter_section(&model).view_dispatch_widget_output(
             name_filter_clear_button_id(),
-            ui::WidgetOutput::typed(ButtonMessage::Activate),
+            ui::WidgetOutput::typed(ButtonMessage::Activate {
+                provenance: ui::InteractionProvenance::Programmatic,
+            }),
         ),
         Some(GuiMessage::FolderBrowser(
             FolderBrowserMessage::NameFilterInput(empty_filter_message())
@@ -573,7 +593,9 @@ fn filter_section_projects_tag_clear_button_for_active_tag_filter() {
     assert_eq!(
         filter_section(&model).view_dispatch_widget_output(
             tag_filter_clear_button_id(),
-            ui::WidgetOutput::typed(ButtonMessage::Activate),
+            ui::WidgetOutput::typed(ButtonMessage::Activate {
+                provenance: ui::InteractionProvenance::Programmatic,
+            }),
         ),
         Some(GuiMessage::FolderBrowser(
             FolderBrowserMessage::TagFilterInput(empty_filter_message())
@@ -610,7 +632,9 @@ fn filter_section_projects_playback_type_toggles_and_dispatches_changes() {
     assert_eq!(
         filter_section(&model).view_dispatch_widget_output(
             automation_playback_type_filter_toggle_id("1-Shot"),
-            ui::WidgetOutput::typed(ButtonMessage::Activate),
+            ui::WidgetOutput::typed(ButtonMessage::Activate {
+                provenance: ui::InteractionProvenance::Programmatic,
+            }),
         ),
         Some(GuiMessage::FolderBrowser(
             FolderBrowserMessage::TogglePlaybackTypeFilter(PlaybackTypeFilter::OneShot, true)
@@ -619,7 +643,9 @@ fn filter_section_projects_playback_type_toggles_and_dispatches_changes() {
     assert_eq!(
         filter_section(&model).view_dispatch_widget_output(
             automation_playback_type_filter_toggle_id("Loop"),
-            ui::WidgetOutput::typed(ButtonMessage::Activate),
+            ui::WidgetOutput::typed(ButtonMessage::Activate {
+                provenance: ui::InteractionProvenance::Programmatic,
+            }),
         ),
         Some(GuiMessage::FolderBrowser(
             FolderBrowserMessage::TogglePlaybackTypeFilter(PlaybackTypeFilter::Loop, false)
@@ -769,7 +795,9 @@ fn filter_section_projects_rating_toggles_and_dispatches_changes() {
     assert_eq!(
         filter_section(&model).view_dispatch_widget_output(
             automation_rating_filter_toggle_id("K4"),
-            ui::WidgetOutput::typed(ButtonMessage::Activate),
+            ui::WidgetOutput::typed(ButtonMessage::Activate {
+                provenance: ui::InteractionProvenance::Programmatic,
+            }),
         ),
         Some(GuiMessage::FolderBrowser(
             FolderBrowserMessage::ToggleRatingFilter(4, true)
@@ -778,7 +806,9 @@ fn filter_section_projects_rating_toggles_and_dispatches_changes() {
     assert_eq!(
         filter_section(&model).view_dispatch_widget_output(
             automation_rating_filter_toggle_id("U"),
-            ui::WidgetOutput::typed(ButtonMessage::Activate),
+            ui::WidgetOutput::typed(ButtonMessage::Activate {
+                provenance: ui::InteractionProvenance::Programmatic,
+            }),
         ),
         Some(GuiMessage::FolderBrowser(
             FolderBrowserMessage::ToggleRatingFilter(0, false)
@@ -787,7 +817,9 @@ fn filter_section_projects_rating_toggles_and_dispatches_changes() {
     assert_eq!(
         filter_section(&model).view_dispatch_widget_output(
             automation_rating_filter_toggle_id("T3"),
-            ui::WidgetOutput::typed(ButtonMessage::Activate),
+            ui::WidgetOutput::typed(ButtonMessage::Activate {
+                provenance: ui::InteractionProvenance::Programmatic,
+            }),
         ),
         Some(GuiMessage::FolderBrowser(
             FolderBrowserMessage::ToggleRatingFilter(-3, false)

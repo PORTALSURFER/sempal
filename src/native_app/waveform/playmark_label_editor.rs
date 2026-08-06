@@ -10,7 +10,7 @@ use radiant::{
 };
 use std::sync::{Arc, Mutex};
 
-use super::{playmark_label, PlaymarkLabelMessage, WaveformState, WaveformWidget};
+use super::{PlaymarkLabelMessage, WaveformState, WaveformWidget, playmark_label};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::native_app) struct PlaymarkLabelEditorState {
@@ -178,7 +178,7 @@ impl Widget for PlaymarkLabelWidget {
                 .map(WidgetOutput::typed);
         }
         (matches!(input, WidgetInput::PointerPress { position, button: PointerButton::Primary, .. } if label_rect.contains(position))
-            || matches!(input, WidgetInput::KeyPress(WidgetKey::Enter | WidgetKey::Space)))
+            || matches!(input, WidgetInput::KeyPress { key: WidgetKey::Enter | WidgetKey::Space, .. }))
         .then(|| WidgetOutput::typed(PlaymarkLabelMessage::BeginEdit))
     }
 

@@ -12,14 +12,14 @@ fn metadata_category_completion_mouse_click_commits_pending_tag() {
     assert!(runtime.focus_widget(input_id));
 
     assert_eq!(
-        runtime.dispatch_focused_input(WidgetInput::Character('d')),
+        runtime.dispatch_focused_input(WidgetInput::character('d')),
         Some(input_id)
     );
     for character in "eep-kick".chars() {
-        runtime.dispatch_focused_input(WidgetInput::Character(character));
+        runtime.dispatch_focused_input(WidgetInput::character(character));
     }
     assert_eq!(
-        runtime.dispatch_focused_input(WidgetInput::KeyPress(WidgetKey::Enter)),
+        runtime.dispatch_focused_input(WidgetInput::key_press(WidgetKey::Enter)),
         Some(input_id)
     );
 
@@ -62,10 +62,10 @@ fn metadata_category_completion_pointer_hover_updates_active_category() {
     assert!(runtime.focus_widget(input_id));
 
     for character in "deep-kick".chars() {
-        runtime.dispatch_focused_input(WidgetInput::Character(character));
+        runtime.dispatch_focused_input(WidgetInput::character(character));
     }
     assert_eq!(
-        runtime.dispatch_focused_input(WidgetInput::KeyPress(WidgetKey::Enter)),
+        runtime.dispatch_focused_input(WidgetInput::key_press(WidgetKey::Enter)),
         Some(input_id)
     );
 
@@ -78,6 +78,9 @@ fn metadata_category_completion_pointer_hover_updates_active_category() {
         category_rect.center(),
         WidgetInput::PointerMove {
             position: category_rect.center(),
+            modifiers: Default::default(),
+            timestamp: None,
+            sequence_range: None,
         },
     );
 
@@ -105,10 +108,10 @@ fn metadata_category_completion_pointer_hover_uses_full_row_width() {
     assert!(runtime.focus_widget(input_id));
 
     for character in "deep-kick".chars() {
-        runtime.dispatch_focused_input(WidgetInput::Character(character));
+        runtime.dispatch_focused_input(WidgetInput::character(character));
     }
     assert_eq!(
-        runtime.dispatch_focused_input(WidgetInput::KeyPress(WidgetKey::Enter)),
+        runtime.dispatch_focused_input(WidgetInput::key_press(WidgetKey::Enter)),
         Some(input_id)
     );
 
@@ -122,6 +125,9 @@ fn metadata_category_completion_pointer_hover_uses_full_row_width() {
         right_side,
         WidgetInput::PointerMove {
             position: right_side,
+            modifiers: Default::default(),
+            timestamp: None,
+            sequence_range: None,
         },
     );
 

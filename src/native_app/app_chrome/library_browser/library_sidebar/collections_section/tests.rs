@@ -48,7 +48,9 @@ fn collection_input_routes_double_click_to_rename() {
     assert!(matches!(
         collection_row(&row).view_dispatch_widget_output(
             retained_collection_row_input_id(collection_id),
-            ui::WidgetOutput::typed(ui::InteractiveRowMessage::DoubleActivate),
+            ui::WidgetOutput::typed(ui::InteractiveRowMessage::DoubleActivate {
+                provenance: radiant::widgets::InteractionProvenance::Programmatic,
+            }),
         ),
         Some(GuiMessage::FolderBrowser(
             FolderBrowserMessage::RenameCollection(collection)

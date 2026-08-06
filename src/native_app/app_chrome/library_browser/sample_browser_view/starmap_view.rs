@@ -494,6 +494,7 @@ impl Widget for StarmapWidget {
                 pointer,
                 button: PointerButton::Primary,
                 modifiers,
+                ..
             } => self.begin_audition_drag_message(bounds, pointer.position, modifiers),
             CanvasGestureEvent::Drag {
                 pointer,
@@ -501,7 +502,7 @@ impl Widget for StarmapWidget {
                 modifiers,
                 ..
             } => self.update_audition_drag_message(bounds, pointer.position, modifiers),
-            CanvasGestureEvent::Hover(pointer) if self.active_drag.is_some() => self
+            CanvasGestureEvent::Hover { pointer, .. } if self.active_drag.is_some() => self
                 .update_audition_drag_message(
                     bounds,
                     pointer.position,
@@ -510,7 +511,7 @@ impl Widget for StarmapWidget {
                         .map(|drag| drag.modifiers)
                         .unwrap_or_default(),
                 ),
-            CanvasGestureEvent::Hover(pointer) => {
+            CanvasGestureEvent::Hover { pointer, .. } => {
                 self.set_hovered_file_at(bounds, pointer.position);
                 None
             }
@@ -537,7 +538,7 @@ impl Widget for StarmapWidget {
                     },
                 )))
             }
-            CanvasGestureEvent::Wheel { pointer, delta } => {
+            CanvasGestureEvent::Wheel { pointer, delta, .. } => {
                 let factor = if delta.y < 0.0 { 1.15 } else { 1.0 / 1.15 };
                 Some(WidgetOutput::typed(GuiMessage::ChangeStarmapViewport(
                     StarmapViewportChange::Zoom {
@@ -550,6 +551,7 @@ impl Widget for StarmapWidget {
                 pointer,
                 button: PointerButton::Primary,
                 modifiers,
+                ..
             } => self.begin_audition_drag_message(bounds, pointer.position, modifiers),
             CanvasGestureEvent::DoubleClick { .. } => None,
             CanvasGestureEvent::Release {

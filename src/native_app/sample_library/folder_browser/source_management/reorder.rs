@@ -28,7 +28,9 @@ impl FolderBrowserState {
         message: DragHandleMessage,
     ) -> bool {
         match message {
-            DragHandleMessage::Started { origin, position } => {
+            DragHandleMessage::Started {
+                origin, position, ..
+            } => {
                 let Some(source_slot) = self.configured_source_slot(&source_id) else {
                     return false;
                 };
@@ -43,11 +45,11 @@ impl FolderBrowserState {
                 self.update_source_reorder_target(&source_id, position.y);
                 false
             }
-            DragHandleMessage::Moved { position } => {
+            DragHandleMessage::Moved { position, .. } => {
                 self.update_source_reorder_target(&source_id, position.y);
                 false
             }
-            DragHandleMessage::Ended { position } => {
+            DragHandleMessage::Ended { position, .. } => {
                 self.update_source_reorder_target(&source_id, position.y);
                 self.commit_source_reorder(&source_id)
             }

@@ -209,7 +209,7 @@ impl WaveformWidget {
         self.active_drag_kind?;
         match event {
             CanvasGestureEvent::Drag { pointer, .. } => Some(*pointer),
-            CanvasGestureEvent::Hover(pointer) => Some(*pointer),
+            CanvasGestureEvent::Hover { pointer, .. } => Some(*pointer),
             _ => None,
         }
     }
@@ -374,6 +374,7 @@ impl WaveformWidget {
             pointer,
             button: PointerButton::Primary,
             modifiers,
+            ..
         } = event
         else {
             return None;
