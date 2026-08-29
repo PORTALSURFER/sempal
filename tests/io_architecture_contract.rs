@@ -6,6 +6,32 @@ use std::path::{Path, PathBuf};
 const IO_ARCHITECTURE_TARGET: &str = include_str!("../docs/IO_ARCHITECTURE_TARGET.md");
 const IO_ALIGNMENT_ESTIMATE: &str = include_str!("../docs/IO_ALIGNMENT_ESTIMATE.md");
 
+const OWNER_FORBIDDEN_SIDE_EFFECT_PAIRS: &[(&str, &str)] = &[
+    ("**I/O coordinator**", "Direct filesystem or SQL work."),
+    (
+        "**Durable app-local journal**",
+        "Source manifest truth or arbitrary user metadata.",
+    ),
+    (
+        "**File operation owner**",
+        "SQLite transactions or browser projection.",
+    ),
+    (
+        "**Per-physical-source DB writer owner**",
+        "Filesystem traversal, copy, hashing, cache payload writes, or another source.",
+    ),
+    ("**Global-library owner**", "physical file mutation"),
+    ("**Harvest owner**", "Rendering or copying bytes."),
+    (
+        "**Projection publisher**",
+        "Filesystem/SQLite reads during UI application.",
+    ),
+    (
+        "**Artifact store**",
+        "Durable user metadata or source membership.",
+    ),
+];
+
 #[test]
 fn source_revision_contract_is_one_monotonic_cursor() {
     for required in [
@@ -38,28 +64,16 @@ fn source_revision_contract_is_one_monotonic_cursor() {
 
 #[test]
 fn io_target_names_owners_and_forbidden_side_effects() {
-    for required in [
-        "| **I/O coordinator** |",
-        "| **Durable app-local journal** |",
-        "| **File operation owner** |",
-        "| **Per-physical-source DB writer owner** |",
-        "| **Global-library owner** |",
-        "| **Harvest owner** |",
-        "| **Projection publisher** |",
-        "| **Artifact store** |",
-        "Direct filesystem or SQL work.",
-        "Source manifest truth or arbitrary user metadata.",
-        "SQLite transactions or browser projection.",
-        "Filesystem traversal, copy, hashing, cache payload writes, or another source.",
-        "physical file mutation",
-        "Rendering or copying bytes.",
-        "Filesystem/SQLite reads during UI application.",
-        "Durable user metadata or source membership.",
-        "There is no per-event full metadata snapshot, recursive browser hydration, or UI-thread I/O.",
-    ] {
+    for (owner, forbidden) in OWNER_FORBIDDEN_SIDE_EFFECT_PAIRS {
+        let row = IO_ARCHITECTURE_TARGET
+            .lines()
+            .find(|line| line.starts_with('|') && line.contains(owner))
+            .unwrap_or_else(|| {
+                panic!("IO_ARCHITECTURE_TARGET.md must contain an owner-table row for {owner}")
+            });
         assert!(
-            IO_ARCHITECTURE_TARGET.contains(required),
-            "IO_ARCHITECTURE_TARGET.md must retain owner boundary phrase: {required}"
+            row.contains(forbidden),
+            "owner row for {owner} must contain paired forbidden-side-effect text {forbidden}; row was: {row}"
         );
     }
 }
@@ -195,6 +209,11 @@ fn for_rust_source_file(root: &Path, visit: &mut impl FnMut(&Path)) {
             && path.extension().and_then(|extension| extension.to_str()) == Some("rs")
         {
             visit(&path);
+        } else if file_type.is_symlink() {
+            panic!(
+                "{} is a source-tree symlink; production source walking must fail closed",
+                path.display()
+            );
         }
     }
 }
@@ -252,6 +271,63 @@ fn production_code_lines(source: &str) -> Vec<(usize, String)> {
     }
 
     lines
+}
+
+#[test]
+fn code_after_char_and_byte_char_literals_remains_visible() {
+    for (literal, label) in [("'{'", "char"), ("b'{'", "byte-char")] {
+        let source = format!(
+            "#[cfg(test)]\nmod fixture {{\n    let _literal = {literal};\n}}\nstd::fs::read(\"production\");\n"
+        );
+        let lines = production_code_lines(&source);
+        assert!(
+            lines.iter().any(|(_, line)| line.contains("std::fs::read")),
+            "code after a {label} literal must remain visible to the I/O scan"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn source_walker_rejects_symlinked_rust_entries() {
+    use std::os::unix::fs::symlink;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let temp_root = manifest_dir.join(".tmp");
+    fs::create_dir_all(&temp_root).expect("create repository-local disposable root");
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock should be after the Unix epoch")
+        .as_nanos();
+    let source_root = temp_root.join(format!(
+        "io_architecture_contract_symlink_{}_{}",
+        std::process::id(),
+        unique
+    ));
+    assert!(
+        !source_root.exists(),
+        "unique repository-local symlink fixture path unexpectedly exists: {}",
+        source_root.display()
+    );
+    let cleanup = DisposableSourceRoot {
+        path: source_root.clone(),
+    };
+    fs::create_dir(&source_root).expect("create repository-local symlink fixture");
+    let real_source = source_root.join("real.rs");
+    let linked_source = source_root.join("linked.rs");
+    fs::write(&real_source, "fn fixture() {}\n").expect("write real Rust fixture");
+    symlink(&real_source, &linked_source).expect("create symlinked Rust fixture");
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        for_rust_source_file(&source_root, &mut |_| {});
+    }));
+
+    assert!(
+        result.is_err(),
+        "source walker must reject a symlinked .rs entry instead of silently skipping it"
+    );
+    drop(cleanup);
 }
 
 fn brace_counts(code: &str) -> (usize, usize) {
@@ -342,6 +418,19 @@ impl RustLexState {
                 index += consumed;
                 continue;
             }
+            if bytes[index] == b'b'
+                && bytes.get(index + 1) == Some(&b'\'')
+                && char_literal_len(bytes, index + 1).is_some()
+            {
+                index += char_literal_len(bytes, index + 1).unwrap_or(0) + 1;
+                continue;
+            }
+            if bytes[index] == b'\'' {
+                if let Some(consumed) = char_literal_len(bytes, index) {
+                    index += consumed;
+                    continue;
+                }
+            }
             if bytes[index] == b'"' {
                 self.quoted = Some(QuotedState::String);
                 escaped = false;
@@ -370,4 +459,48 @@ fn raw_string_start(bytes: &[u8], index: usize) -> Option<(QuotedState, usize)> 
     }
     (bytes.get(cursor) == Some(&b'"'))
         .then_some((QuotedState::RawString(hash_count), cursor + 1 - index))
+}
+
+fn char_literal_len(bytes: &[u8], quote_index: usize) -> Option<usize> {
+    if bytes.get(quote_index) != Some(&b'\'') {
+        return None;
+    }
+
+    let mut cursor = quote_index + 1;
+    match bytes.get(cursor) {
+        Some(b'\\') => {
+            cursor += 1;
+            match bytes.get(cursor) {
+                Some(b'u') if bytes.get(cursor + 1) == Some(&b'{') => {
+                    cursor += 2;
+                    while let Some(byte) = bytes.get(cursor) {
+                        cursor += 1;
+                        if *byte == b'}' {
+                            break;
+                        }
+                    }
+                }
+                Some(b'x') => cursor += 3,
+                Some(_) => cursor += 1,
+                None => return None,
+            }
+        }
+        Some(_) => {
+            let character = std::str::from_utf8(&bytes[cursor..]).ok()?.chars().next()?;
+            cursor += character.len_utf8();
+        }
+        None => return None,
+    }
+
+    (bytes.get(cursor) == Some(&b'\'')).then_some(cursor + 1 - quote_index)
+}
+
+struct DisposableSourceRoot {
+    path: PathBuf,
+}
+
+impl Drop for DisposableSourceRoot {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.path);
+    }
 }
