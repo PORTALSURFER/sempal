@@ -1,5 +1,7 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+
+use tempfile::{Builder, TempDir};
 
 pub(crate) fn is_test_source(path: &Path) -> bool {
     if path
@@ -113,43 +115,23 @@ fn code_after_char_and_byte_char_literals_remains_visible() {
 #[test]
 fn source_walker_rejects_symlinked_rust_entries() {
     use std::os::unix::fs::symlink;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let temp_root = manifest_dir.join(".tmp");
-    fs::create_dir_all(&temp_root).expect("create repository-local disposable root");
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock should be after the Unix epoch")
-        .as_nanos();
-    let source_root = temp_root.join(format!(
-        "io_architecture_contract_symlink_{}_{}",
-        std::process::id(),
-        unique
-    ));
-    assert!(
-        !source_root.exists(),
-        "unique repository-local symlink fixture path unexpectedly exists: {}",
-        source_root.display()
-    );
-    let cleanup = DisposableSourceRoot {
-        path: source_root.clone(),
-    };
-    fs::create_dir(&source_root).expect("create repository-local symlink fixture");
-    let real_source = source_root.join("real.rs");
-    let linked_source = source_root.join("linked.rs");
+    let source_root: TempDir = Builder::new("io_architecture_contract_symlink")
+        .tempdir()
+        .expect("create disposable symlink fixture");
+    let real_source = source_root.path().join("real.rs");
+    let linked_source = source_root.path().join("linked.rs");
     fs::write(&real_source, "fn fixture() {}\n").expect("write real Rust fixture");
     symlink(&real_source, &linked_source).expect("create symlinked Rust fixture");
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        for_rust_source_file(&source_root, &mut |_| {});
+        for_rust_source_file(source_root.path(), &mut |_| {});
     }));
 
     assert!(
         result.is_err(),
         "source walker must reject a symlinked .rs entry instead of silently skipping it"
     );
-    drop(cleanup);
 }
 
 fn brace_counts(code: &str) -> (usize, usize) {
@@ -315,14 +297,4 @@ fn char_literal_len(bytes: &[u8], quote_index: usize) -> Option<usize> {
     }
 
     (bytes.get(cursor) == Some(&b'\'')).then_some(cursor + 1 - quote_index)
-}
-
-struct DisposableSourceRoot {
-    path: PathBuf,
-}
-
-impl Drop for DisposableSourceRoot {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
-    }
 }
