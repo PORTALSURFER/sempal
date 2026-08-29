@@ -46,6 +46,21 @@ pub(in crate::native_app) fn toolbar_icon_color(enabled: bool, active: bool) -> 
     TOOLBAR_ICON_TINTS.color(enabled, active)
 }
 
+pub(in crate::native_app) fn toolbar_icon_label(icon: ToolbarIcon) -> &'static str {
+    match icon {
+        ToolbarIcon::FocusLoaded => "Focus loaded sample",
+        ToolbarIcon::Loop => "Loop playback",
+        ToolbarIcon::Random => "Play random section",
+        ToolbarIcon::SimilarSections => "Similar sections",
+        ToolbarIcon::ZeroCrossingSnap => "Zero-crossing snap",
+        ToolbarIcon::BpmSnap => "BPM snap",
+        ToolbarIcon::BeatGuides => "Beat guides",
+        ToolbarIcon::Metronome => "Metronome",
+        ToolbarIcon::Play => "Play",
+        ToolbarIcon::Stop => "Stop",
+    }
+}
+
 pub(in crate::native_app) fn toolbar_icon_glyph(
     icon: ToolbarIcon,
     enabled: bool,

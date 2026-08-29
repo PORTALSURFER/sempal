@@ -11,7 +11,9 @@ pub(in crate::native_app) use beat_count_input::{
     BeatGuideCountInputMessage, BeatGuideCountInputWidget,
 };
 
-pub(in crate::native_app) use icons::{ToolbarIcon, toolbar_icon_color, toolbar_icon_glyph};
+pub(in crate::native_app) use icons::{
+    ToolbarIcon, toolbar_icon_color, toolbar_icon_glyph, toolbar_icon_label,
+};
 pub(in crate::native_app) use projection::{
     ToolbarControlProjection, ToolbarIconButtonProjection, ToolbarProjection,
 };
@@ -145,6 +147,7 @@ fn toolbar_icon_button_from_projection(
         button.icon_enabled,
         button.active,
     ))
+    .label(toolbar_icon_label(button.icon))
     .enabled(button.enabled)
     .active(button.active)
     .mapped(move |message| toolbar_button_message(button.icon, message))
@@ -178,5 +181,24 @@ fn toolbar_button_message(icon: ToolbarIcon, message: ButtonMessage) -> GuiMessa
         ToolbarIcon::Metronome => GuiMessage::ToggleMetronome,
         ToolbarIcon::Play => GuiMessage::PlaySelectedSample,
         ToolbarIcon::Stop => GuiMessage::StopPlayback,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use radiant::prelude::IntoView;
+
+    #[test]
+    fn toolbar_icon_button_exposes_an_accessible_label() {
+        let surface = toolbar_icon_button(123, ToolbarIcon::Play, true, false).into_surface();
+        let label = surface
+            .find_widget(123)
+            .expect("toolbar icon button")
+            .widget_object()
+            .automation_semantics()
+            .label;
+
+        assert_eq!(label.as_deref(), Some("Play"));
     }
 }
