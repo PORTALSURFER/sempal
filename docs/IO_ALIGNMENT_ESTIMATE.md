@@ -22,3 +22,6 @@ These are approximate total architecture-alignment estimates for dependency-orde
 This cycle completes the remaining reasonable Authority/contracts work by carrying the opaque
 `OperationId` through durable journal, file-owner, recovery, and pending-history boundaries while
 preserving the UUID-on-disk representation. Later phases remain intentionally unchanged.
+The OPT-1298 contract gate also resolves the source-revision wording and adds auditable source
+guardrails; it does not claim that legacy writable paths have migrated or change these approximate
+phase estimates.

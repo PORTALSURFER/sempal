@@ -263,6 +263,15 @@ still current and the revision precondition is satisfied. It commits the next re
 returns the exact delta. If the precondition is stale, it returns `Superseded` or requests
 an audit; it does not merge a stale snapshot opportunistically.
 
+### Source publication cursor
+
+For the `0.19.1` target, each physical source has one monotonic committed `SourceRevision`.
+It is the sole authoritative publication cursor for source membership, path, and structural
+directory truth. Browser/folder projection and readiness wakes are fenced to that revision.
+A directory generation is only a staging/readiness aid fenced to the committed
+`SourceRevision`; it is not an independent publication cursor and cannot publish a projection
+or wake readiness on its own. There is no composite source-publication cursor.
+
 ## Logical and physical ownership
 
 The following owners are the target side-effect boundaries. “Owner” means serialized
@@ -1003,7 +1012,7 @@ actionable and passive maintenance continues without making an unsafe durability
 
 The writer receives a normalized region and current observations prepared by a worker. In a
 bounded transaction it verifies the source identity/generation, applies idempotent changes,
-increments the appropriate source revision only when authoritative source truth changed,
+advances the single source revision only when authoritative source truth changed,
 records watcher checkpoint evidence separately, and advances a durable last-ack cursor only
 with a valid `WatcherContinuityProof`; otherwise it records the gap/audit requirement and
 retains the last good projection. It returns a structured delta. Metadata-only updates do not
@@ -1455,28 +1464,26 @@ watcher callback alone.
    benchmark/fault-injection evidence is required before recording `PowerLossSynchronized`?
    The no-replace/fail-closed semantic boundary and downgrade behavior are resolved;
    qualification evidence remains open.
-3. Should source revisions be one global manifest sequence or independent membership/path,
-   directory, and metadata sequences with a composite projection cursor?
-4. What exact stable physical-source identity survives root replacement, volume remount, and
+3. What exact stable physical-source identity survives root replacement, volume remount, and
    user relocation without incorrectly adopting a different folder?
-5. Which global-library and Harvest records are authoritative versus rebuildable references,
+4. Which global-library and Harvest records are authoritative versus rebuildable references,
    and what compatibility adapter is required for existing rows?
-6. How much raw watcher evidence can be retained durably, and what privacy/redaction policy
+5. How much raw watcher evidence can be retained durably, and what privacy/redaction policy
    applies to paths and operation diagnostics?
-7. What are the platform-specific Finder event captures and overflow semantics needed for
+6. What are the platform-specific Finder event captures and overflow semantics needed for
    real acceptance, beyond synthetic fixtures?
-8. What audit thresholds keep worst-case scan cost bounded for very large sources while
+7. What audit thresholds keep worst-case scan cost bounded for very large sources while
    preserving the no-false-deletion rule?
-9. Which user actions may be coalesced, and which must retain separate operation IDs for
+8. Which user actions may be coalesced, and which must retain separate operation IDs for
    undo/redo and auditability?
-10. What provisional SLOs survive real local-disk, removable-volume, antivirus, and database
+9. What provisional SLOs survive real local-disk, removable-volume, antivirus, and database
    contention measurements?
-11. Which durable journal/sidecar primitive should own the per-volume reserve ledger, and what
+10. Which durable journal/sidecar primitive should own the per-volume reserve ledger, and what
     control-plane margin is sufficient across supported filesystems without weakening the
     256 MiB floor?
-12. Which watcher backends provide replayable cursors and what retention window is required to
+11. Which watcher backends provide replayable cursors and what retention window is required to
     establish contiguous coverage after restart or stream replacement?
-13. Which user-facing recovery action is appropriate when a cross-source move has both copies,
+12. Which user-facing recovery action is appropriate when a cross-source move has both copies,
     ambiguous identity, or preserved pre-publish staging, subject to the no-destructive-guess
     guard?
 
