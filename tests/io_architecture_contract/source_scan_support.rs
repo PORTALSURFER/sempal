@@ -116,7 +116,8 @@ fn code_after_char_and_byte_char_literals_remains_visible() {
 fn source_walker_rejects_symlinked_rust_entries() {
     use std::os::unix::fs::symlink;
 
-    let source_root: TempDir = Builder::new("io_architecture_contract_symlink")
+    let source_root: TempDir = Builder::new()
+        .prefix("io_architecture_contract_symlink")
         .tempdir()
         .expect("create disposable symlink fixture");
     let real_source = source_root.path().join("real.rs");
