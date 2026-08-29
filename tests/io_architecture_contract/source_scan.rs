@@ -9,7 +9,12 @@ fn app_chrome_and_workflows_do_not_perform_direct_io() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let mut violations = Vec::new();
 
-    for relative_root in ["src/native_app/app_chrome", "src/native_app/workflows"] {
+    for relative_root in [
+        "src/native_app/app_chrome",
+        "src/native_app/app_chrome.rs",
+        "src/native_app/workflows",
+        "src/native_app/workflows.rs",
+    ] {
         let source_root = root.join(relative_root);
         for_rust_source_file(&source_root, &mut |path| {
             if is_test_source(path) {
@@ -51,6 +56,34 @@ fn source_database_opening_facades_are_rejected_by_the_forbidden_io_scan() {
             "the shared forbidden-I/O scan must reject {call:?} with canonical token and path/line guidance: {violations:?}"
         );
     }
+}
+
+#[test]
+fn source_database_type_names_are_identifier_bounded() {
+    let source = concat!(
+        "use crate::SourceDatabase as Db; type SourceDb = SourceDatabase; struct Holder { database: &SourceDatabase }\n",
+        "fn query(database: &SourceDatabase) -> SourceDatabase {\n",
+        "    database.get_metadata();\n}\n",
+        "fn allowed(role: SourceDatabaseConnectionRole, request: SourceDatabaseRequest) {}\n",
+    );
+    let violations = scan_forbidden_io("fixture.rs", source);
+
+    for line in [1, 2] {
+        assert!(
+            violations.iter().any(|violation| {
+                violation.starts_with(&format!("fixture.rs:{line}: forbidden SourceDatabase in "))
+            }),
+            "SourceDatabase must be rejected as an identifier-bounded token on line {line}: {violations:?}"
+        );
+    }
+    assert!(
+        violations.iter().all(|violation| {
+            !violation.contains("get_metadata(")
+                && !violation.contains("SourceDatabaseConnectionRole")
+                && !violation.contains("SourceDatabaseRequest")
+        }),
+        "the SourceDatabase guard must not broadly ban get_metadata or longer type names: {violations:?}"
+    );
 }
 
 #[test]
@@ -115,7 +148,12 @@ fn scan_forbidden_io(path: &str, source: &str) -> Vec<String> {
         );
         let matching_code = compact_for_matching(code);
         for forbidden in FORBIDDEN_IO_TOKENS {
-            if matching_code.contains(&compact_for_matching(forbidden.token)) {
+            let matches = if is_identifier_only(forbidden.token) {
+                contains_identifier_bounded(code, forbidden.token)
+            } else {
+                matching_code.contains(&compact_for_matching(forbidden.token))
+            };
+            if matches {
                 violations.push(format!(
                     "{path}:{line_number}: forbidden {} in {} -- {}",
                     forbidden.token, code, forbidden.action
@@ -195,7 +233,7 @@ fn grouped_std_import_contains_fs(item: &str) -> bool {
         return false;
     };
     let normalized_tree = compact_for_matching(tree);
-    normalized_tree.starts_with("std::{") && contains_identifier_bounded_fs(tree)
+    normalized_tree.starts_with("std::{") && contains_identifier_bounded(tree, "fs")
 }
 
 fn use_tree(item: &str) -> Option<&str> {
@@ -221,10 +259,14 @@ fn use_tree(item: &str) -> Option<&str> {
     Some(after_use.trim_start())
 }
 
-fn contains_identifier_bounded_fs(import_tree: &str) -> bool {
-    for (index, _) in import_tree.match_indices("fs") {
-        let before = import_tree[..index].chars().next_back();
-        let after = import_tree[index + "fs".len()..].chars().next();
+fn is_identifier_only(token: &str) -> bool {
+    !token.is_empty() && token.chars().all(is_rust_identifier_continue)
+}
+
+fn contains_identifier_bounded(source: &str, token: &str) -> bool {
+    for (index, _) in source.match_indices(token) {
+        let before = source[..index].chars().next_back();
+        let after = source[index + token.len()..].chars().next();
         let before_is_boundary =
             before.map_or(true, |character| !is_rust_identifier_continue(character));
         let after_is_boundary =
@@ -245,129 +287,94 @@ struct ForbiddenIoToken {
     action: &'static str,
 }
 
+const fn forbidden_io_token(token: &'static str, action: &'static str) -> ForbiddenIoToken {
+    ForbiddenIoToken { token, action }
+}
+
+const FILESYSTEM_ACTION: &str =
+    "route filesystem work through an attributable worker or file-operation owner";
+const NAMESPACED_READ_ACTION: &str =
+    "route namespaced filesystem or database reads through an attributable owner";
+const FILE_READ_ACTION: &str =
+    "route filesystem reads through an attributable worker or platform service";
+const FILE_WRITE_ACTION: &str = "route filesystem writes through the file-operation owner";
+const SQLITE_ACTION: &str = "keep SQLite access behind the source/global database owner";
+const DATABASE_OPEN_ACTION: &str =
+    "open databases only in an attributable database owner or worker";
+const SOURCE_DATABASE_ACTION: &str =
+    "request source-database work through a background or typed owner boundary";
+const SOURCE_DATABASE_FACADE_ACTION: &str =
+    "open source databases only in an attributable database owner or worker";
+
 const FORBIDDEN_IO_TOKENS: &[ForbiddenIoToken] = &[
-    ForbiddenIoToken {
-        token: "std::fs",
-        action: "route filesystem work through an attributable worker or file-operation owner",
-    },
-    ForbiddenIoToken {
-        token: "fs::",
-        action: "route filesystem work through an attributable worker or file-operation owner",
-    },
-    ForbiddenIoToken {
-        token: "::read(",
-        action: "route namespaced filesystem or database reads through an attributable owner",
-    },
-    ForbiddenIoToken {
-        token: "File::open(",
-        action: "route filesystem reads through an attributable worker or platform service",
-    },
-    ForbiddenIoToken {
-        token: "File::create(",
-        action: "route filesystem writes through the file-operation owner",
-    },
-    ForbiddenIoToken {
-        token: "OpenOptions::new(",
-        action: "route filesystem writes through the file-operation owner",
-    },
-    ForbiddenIoToken {
-        token: "rusqlite",
-        action: "keep SQLite access behind the source/global database owner",
-    },
-    ForbiddenIoToken {
-        token: "Connection::open(",
-        action: "open databases only in an attributable database owner or worker",
-    },
-    ForbiddenIoToken {
-        token: "Connection::open_with_flags(",
-        action: "open databases only in an attributable database owner or worker",
-    },
-    ForbiddenIoToken {
-        token: "SourceDatabase::",
-        action: "request source-database work through a background or typed owner boundary",
-    },
-    ForbiddenIoToken {
-        token: "open_db(",
-        action: "open source databases only in an attributable database owner or worker",
-    },
-    ForbiddenIoToken {
-        token: "open_for_source_write(",
-        action: "open source databases only in an attributable database owner or worker",
-    },
-    ForbiddenIoToken {
-        token: "open_for_source_write_with_database_root(",
-        action: "open source databases only in an attributable database owner or worker",
-    },
-    ForbiddenIoToken {
-        token: "open_for_background_job(",
-        action: "open source databases only in an attributable database owner or worker",
-    },
-    ForbiddenIoToken {
-        token: "open_for_background_job_with_database_root(",
-        action: "open source databases only in an attributable database owner or worker",
-    },
-    ForbiddenIoToken {
-        token: "open_for_scan(",
-        action: "open source databases only in an attributable database owner or worker",
-    },
-    ForbiddenIoToken {
-        token: "open_for_scan_with_database_root(",
-        action: "open source databases only in an attributable database owner or worker",
-    },
-    ForbiddenIoToken {
-        token: "open_for_ui_read(",
-        action: "open source databases only in an attributable database owner or worker",
-    },
-    ForbiddenIoToken {
-        token: "open_for_ui_read_with_database_root(",
-        action: "open source databases only in an attributable database owner or worker",
-    },
-    ForbiddenIoToken {
-        token: "open_for_maintenance(",
-        action: "open source databases only in an attributable database owner or worker",
-    },
-    ForbiddenIoToken {
-        token: "open_for_user_metadata_write(",
-        action: "open source databases only in an attributable database owner or worker",
-    },
-    ForbiddenIoToken {
-        token: "open_for_user_metadata_write_with_database_root(",
-        action: "open source databases only in an attributable database owner or worker",
-    },
-    ForbiddenIoToken {
-        token: "open_for_playback_history_write(",
-        action: "open source databases only in an attributable database owner or worker",
-    },
-    ForbiddenIoToken {
-        token: "open_for_playback_history_write_with_database_root(",
-        action: "open source databases only in an attributable database owner or worker",
-    },
-    ForbiddenIoToken {
-        token: "open_for_test_fixture_source_write(",
-        action: "open source databases only in an attributable database owner or worker",
-    },
-    ForbiddenIoToken {
-        token: "open_with_role(",
-        action: "open source databases only in an attributable database owner or worker",
-    },
-    ForbiddenIoToken {
-        token: "open_with_role_and_database_root(",
-        action: "open source databases only in an attributable database owner or worker",
-    },
-    ForbiddenIoToken {
-        token: "open_connection_with_role(",
-        action: "open source databases only in an attributable database owner or worker",
-    },
-    ForbiddenIoToken {
-        token: "open_connection_for_background_job(",
-        action: "open source databases only in an attributable database owner or worker",
-    },
-    ForbiddenIoToken {
-        token: "open_connection_with_role_and_database_root(",
-        action: "open source databases only in an attributable database owner or worker",
-    },
-    ForbiddenIoToken {
-        token: "open_unavailable_source_metadata_connection(",
-        action: "open source databases only in an attributable database owner or worker",
-    },
+    forbidden_io_token("std::fs", FILESYSTEM_ACTION),
+    forbidden_io_token("fs::", FILESYSTEM_ACTION),
+    forbidden_io_token("::read(", NAMESPACED_READ_ACTION),
+    forbidden_io_token("File::open(", FILE_READ_ACTION),
+    forbidden_io_token("File::create(", FILE_WRITE_ACTION),
+    forbidden_io_token("OpenOptions::new(", FILE_WRITE_ACTION),
+    forbidden_io_token("rusqlite", SQLITE_ACTION),
+    forbidden_io_token("Connection::open(", DATABASE_OPEN_ACTION),
+    forbidden_io_token("Connection::open_with_flags(", DATABASE_OPEN_ACTION),
+    forbidden_io_token("SourceDatabase", SOURCE_DATABASE_ACTION),
+    forbidden_io_token("open_db(", SOURCE_DATABASE_FACADE_ACTION),
+    forbidden_io_token("open_for_source_write(", SOURCE_DATABASE_FACADE_ACTION),
+    forbidden_io_token(
+        "open_for_source_write_with_database_root(",
+        SOURCE_DATABASE_FACADE_ACTION,
+    ),
+    forbidden_io_token("open_for_background_job(", SOURCE_DATABASE_FACADE_ACTION),
+    forbidden_io_token(
+        "open_for_background_job_with_database_root(",
+        SOURCE_DATABASE_FACADE_ACTION,
+    ),
+    forbidden_io_token("open_for_scan(", SOURCE_DATABASE_FACADE_ACTION),
+    forbidden_io_token(
+        "open_for_scan_with_database_root(",
+        SOURCE_DATABASE_FACADE_ACTION,
+    ),
+    forbidden_io_token("open_for_ui_read(", SOURCE_DATABASE_FACADE_ACTION),
+    forbidden_io_token(
+        "open_for_ui_read_with_database_root(",
+        SOURCE_DATABASE_FACADE_ACTION,
+    ),
+    forbidden_io_token("open_for_maintenance(", SOURCE_DATABASE_FACADE_ACTION),
+    forbidden_io_token(
+        "open_for_user_metadata_write(",
+        SOURCE_DATABASE_FACADE_ACTION,
+    ),
+    forbidden_io_token(
+        "open_for_user_metadata_write_with_database_root(",
+        SOURCE_DATABASE_FACADE_ACTION,
+    ),
+    forbidden_io_token(
+        "open_for_playback_history_write(",
+        SOURCE_DATABASE_FACADE_ACTION,
+    ),
+    forbidden_io_token(
+        "open_for_playback_history_write_with_database_root(",
+        SOURCE_DATABASE_FACADE_ACTION,
+    ),
+    forbidden_io_token(
+        "open_for_test_fixture_source_write(",
+        SOURCE_DATABASE_FACADE_ACTION,
+    ),
+    forbidden_io_token("open_with_role(", SOURCE_DATABASE_FACADE_ACTION),
+    forbidden_io_token(
+        "open_with_role_and_database_root(",
+        SOURCE_DATABASE_FACADE_ACTION,
+    ),
+    forbidden_io_token("open_connection_with_role(", SOURCE_DATABASE_FACADE_ACTION),
+    forbidden_io_token(
+        "open_connection_for_background_job(",
+        SOURCE_DATABASE_FACADE_ACTION,
+    ),
+    forbidden_io_token(
+        "open_connection_with_role_and_database_root(",
+        SOURCE_DATABASE_FACADE_ACTION,
+    ),
+    forbidden_io_token(
+        "open_unavailable_source_metadata_connection(",
+        SOURCE_DATABASE_FACADE_ACTION,
+    ),
 ];

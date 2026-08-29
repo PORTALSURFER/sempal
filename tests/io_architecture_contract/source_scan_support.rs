@@ -18,9 +18,26 @@ pub(crate) fn is_test_source(path: &Path) -> bool {
 pub(crate) fn for_rust_source_file(root: &Path, visit: &mut impl FnMut(&Path)) {
     let root_metadata = fs::symlink_metadata(root)
         .unwrap_or_else(|error| panic!("{} should have metadata: {error}", root.display()));
-    if root_metadata.file_type().is_symlink() {
+    let root_type = root_metadata.file_type();
+    if root_type.is_symlink() {
         panic!(
             "{} is a source-tree symlink; production source walking must fail closed",
+            root.display()
+        );
+    }
+    if root_type.is_file() {
+        if root.extension().and_then(|extension| extension.to_str()) == Some("rs") {
+            visit(root);
+            return;
+        }
+        panic!(
+            "{} is an unsupported non-Rust source leaf; expected a directory or .rs file",
+            root.display()
+        );
+    }
+    if !root_type.is_dir() {
+        panic!(
+            "{} is an unsupported source root; expected a directory or .rs file",
             root.display()
         );
     }
@@ -48,6 +65,20 @@ pub(crate) fn for_rust_source_file(root: &Path, visit: &mut impl FnMut(&Path)) {
             );
         }
     }
+}
+
+#[test]
+fn source_walker_visits_a_regular_rust_leaf_once() {
+    let leaf = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/native_app/app_chrome.rs");
+    let mut visited = Vec::new();
+
+    for_rust_source_file(&leaf, &mut |path| visited.push(path.to_path_buf()));
+
+    assert_eq!(
+        visited,
+        vec![leaf],
+        "a regular .rs leaf must invoke the callback exactly once with its exact path"
+    );
 }
 
 pub(crate) fn relative_path(path: &Path, root: &Path) -> String {
