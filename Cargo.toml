@@ -14,7 +14,7 @@ resolver = "3"
 
 [workspace.metadata.radiant]
 repository = "https://github.com/PORTALSURFER/radiant.git"
-revision = "13ae1f524313a5257fee6691679799a1aca99d32"
+revision = "fa707ff5cba809d334968416f9bcd1b702083db1"
 path = "../radiant"
 
 [package]
@@ -92,6 +92,9 @@ symphonia = { version = "0.5.4", features = ["wav", "pcm", "mp3", "flac"] }
 rayon = "1.10"
 crossbeam-queue = "0.3.12"
 reson = { path = "crates/reson" }
+
+[patch.crates-io]
+vello = { git = "https://github.com/PORTALSURFER/vello.git", rev = "a08d1c11641908414e5e273d18e50f0f367095a1" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 fsevent-sys = "4.1.0"

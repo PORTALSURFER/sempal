@@ -133,7 +133,8 @@ fn sample_browser_similarity_controls_emit_control_messages() {
         surface.dispatch_widget_output(
             crate::native_app::ui::ids::AUTOMATION_SAMPLE_SIMILARITY_WEIGHTING_TOGGLE_ID,
             radiant::widgets::WidgetOutput::typed(radiant::widgets::ToggleMessage::ValueChanged {
-                checked: true
+                checked: true,
+                provenance: radiant::widgets::InteractionProvenance::Programmatic,
             },),
         ),
         Some(
@@ -149,7 +150,8 @@ fn sample_browser_similarity_controls_emit_control_messages() {
                 "spectrum",
             ),
             radiant::widgets::WidgetOutput::typed(radiant::widgets::ToggleMessage::ValueChanged {
-                checked: false
+                checked: false,
+                provenance: radiant::widgets::InteractionProvenance::Programmatic,
             },),
         ),
         Some(

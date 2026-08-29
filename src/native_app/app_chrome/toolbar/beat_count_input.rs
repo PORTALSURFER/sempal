@@ -60,8 +60,11 @@ impl BeatGuideCountInputWidget {
         input: WidgetInput,
     ) -> Option<BeatGuideCountInputMessage> {
         match input {
-            WidgetInput::Character(character) if !character.is_ascii_digit() => None,
-            WidgetInput::TextEdit(TextEditCommand::InsertText(text)) => {
+            WidgetInput::Character { character, .. } if !character.is_ascii_digit() => None,
+            WidgetInput::TextEdit {
+                command: TextEditCommand::InsertText(text),
+                timestamp,
+            } => {
                 let digits = text
                     .chars()
                     .filter(char::is_ascii_digit)
@@ -72,14 +75,23 @@ impl BeatGuideCountInputWidget {
                 self.input
                     .handle_input(
                         bounds,
-                        WidgetInput::TextEdit(TextEditCommand::InsertText(digits)),
+                        WidgetInput::TextEdit {
+                            command: TextEditCommand::InsertText(digits),
+                            timestamp,
+                        },
                     )
                     .and_then(input_message)
             }
-            WidgetInput::KeyPress(WidgetKey::ArrowUp) if self.accepts_editing_input() => {
+            WidgetInput::KeyPress {
+                key: WidgetKey::ArrowUp,
+                ..
+            } if self.accepts_editing_input() => {
                 Some(BeatGuideCountInputMessage::Set(self.step_value(1)))
             }
-            WidgetInput::KeyPress(WidgetKey::ArrowDown) if self.accepts_editing_input() => {
+            WidgetInput::KeyPress {
+                key: WidgetKey::ArrowDown,
+                ..
+            } if self.accepts_editing_input() => {
                 Some(BeatGuideCountInputMessage::Set(self.step_value(-1)))
             }
             WidgetInput::Wheel { delta, .. } if delta.y < 0.0 => {
