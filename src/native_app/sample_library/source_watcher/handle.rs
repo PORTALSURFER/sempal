@@ -11,16 +11,20 @@ use std::{
     time::{Duration, Instant},
 };
 use wavecrate::sample_sources::{SampleSource, SourceDatabase, SourceId};
+#[cfg(target_os = "macos")]
+use wavecrate_library::sample_sources::reconciliation::AdapterDisposition;
 use wavecrate_library::sample_sources::reconciliation::{
-    AdapterDisposition, AdmissionOutcome, BackendStreamIdentity, CaptureBoundary, DispatchTicket,
-    LiveAuditCorrelation, ReconciliationLifecycle, ReconciliationScopeKind, RootIdentity,
-    SourceAuditReceipt, WatcherGeneration, coalesce_scopes,
+    AdmissionOutcome, BackendStreamIdentity, CaptureBoundary, DispatchTicket, LiveAuditCorrelation,
+    ReconciliationLifecycle, ReconciliationScopeKind, RootIdentity, SourceAuditReceipt,
+    WatcherGeneration, coalesce_scopes,
 };
 
-use super::admission_lifecycle::{AdmissionLifecycle, FseventsReplayEvidence};
-use super::capture::{
-    SourceWatcherCapture, capture_event, capture_to_observation_batch, fsevents_replay_observations,
-};
+use super::admission_lifecycle::AdmissionLifecycle;
+#[cfg(target_os = "macos")]
+use super::admission_lifecycle::FseventsReplayEvidence;
+#[cfg(target_os = "macos")]
+use super::capture::fsevents_replay_observations;
+use super::capture::{SourceWatcherCapture, capture_event, capture_to_observation_batch};
 use super::classification::retain_source_refresh_candidates;
 use super::journal::{self, JournalRecovery};
 use super::roots::{
@@ -2030,6 +2034,9 @@ fn publish_closed_app_journal_recovery(
     deferred_audit_barrier_sources: &mut HashSet<String>,
     defer_audit_barriers: bool,
 ) {
+    #[cfg(not(target_os = "macos"))]
+    let _ = (&state, &admission, &pending_contexts);
+    #[cfg(target_os = "macos")]
     let now = Instant::now();
     for (source, recovery) in sources
         .iter()
@@ -2835,10 +2842,14 @@ mod lifecycle_tests {
     };
     use wavecrate::sample_sources::{SampleSource, SourceId};
     use wavecrate_library::sample_sources::db::META_SOURCE_WATCHER_CHECKPOINT;
+    #[cfg(target_os = "macos")]
     use wavecrate_library::sample_sources::reconciliation::{
-        BackendStreamIdentity, CaptureBoundary, RawEventKind, RawObservation,
-        RawObservationEnvelope, RawObservationLimits, RawObservationProvenance, RawObservedPath,
-        RawPathRole, ReconciliationAdmissionLimits, ReconciliationScopeKind, UncertaintyReason,
+        BackendStreamIdentity, RawEventKind, RawObservation, RawObservationEnvelope,
+        RawObservationProvenance, RawObservedPath, RawPathRole,
+    };
+    use wavecrate_library::sample_sources::reconciliation::{
+        CaptureBoundary, RawObservationLimits, ReconciliationAdmissionLimits,
+        ReconciliationScopeKind, UncertaintyReason,
     };
 
     static LIFECYCLE_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
