@@ -16,6 +16,14 @@ pub(crate) fn is_test_source(path: &Path) -> bool {
 }
 
 pub(crate) fn for_rust_source_file(root: &Path, visit: &mut impl FnMut(&Path)) {
+    let root_metadata = fs::symlink_metadata(root)
+        .unwrap_or_else(|error| panic!("{} should have metadata: {error}", root.display()));
+    if root_metadata.file_type().is_symlink() {
+        panic!(
+            "{} is a source-tree symlink; production source walking must fail closed",
+            root.display()
+        );
+    }
     let mut entries = fs::read_dir(root)
         .unwrap_or_else(|error| panic!("{} should be readable: {error}", root.display()))
         .map(|entry| entry.expect("source directory entry should be readable"))
@@ -132,6 +140,45 @@ fn source_walker_rejects_symlinked_rust_entries() {
     assert!(
         result.is_err(),
         "source walker must reject a symlinked .rs entry instead of silently skipping it"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn source_walker_rejects_symlinked_root_before_callback() {
+    use std::os::unix::fs::symlink;
+
+    let real_root = Builder::new()
+        .prefix("io_architecture_contract_real_root")
+        .tempdir()
+        .expect("create real source root");
+    let link_parent = Builder::new()
+        .prefix("io_architecture_contract_link_parent")
+        .tempdir()
+        .expect("create symlink parent");
+    fs::write(real_root.path().join("real.rs"), "fn fixture() {}\n")
+        .expect("write real Rust fixture");
+    let mut callback_reached = false;
+    for_rust_source_file(real_root.path(), &mut |_| callback_reached = true);
+    assert!(
+        callback_reached,
+        "source walker must reach a real TempDir root's Rust entry"
+    );
+    let linked_root = link_parent.path().join("linked-root");
+    symlink(real_root.path(), &linked_root).expect("create symlinked source root");
+    callback_reached = false;
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        for_rust_source_file(&linked_root, &mut |_| callback_reached = true);
+    }));
+
+    assert!(
+        result.is_err(),
+        "source walker must reject a symlinked root before reading its entries"
+    );
+    assert!(
+        !callback_reached,
+        "source walker must not reach the callback for a symlinked root"
     );
 }
 

@@ -28,39 +28,37 @@ fn app_chrome_and_workflows_do_not_perform_direct_io() {
 }
 
 #[test]
-fn source_open_db_is_rejected_by_the_forbidden_io_scan() {
-    let violations = scan_forbidden_io(
-        "fixture.rs",
-        "fn projection(source: &Source) {\n    source.open_db();\n}\n",
-    );
+fn source_database_opening_facades_are_rejected_by_the_forbidden_io_scan() {
+    for (call, canonical_token) in [
+        ("source.open_db ();", "open_db("),
+        (
+            "Db::open_for_source_write (root);",
+            "open_for_source_write(",
+        ),
+        (
+            "source.open_for_test_fixture_source_write();",
+            "open_for_test_fixture_source_write(",
+        ),
+    ] {
+        let source = format!("fn projection() {{\n    {call}\n}}\n");
+        let violations = scan_forbidden_io("fixture.rs", &source);
+        let expected_prefix = format!("fixture.rs:2: forbidden {canonical_token} in ");
 
-    assert!(
-        violations
-            .iter()
-            .any(|violation| violation.contains("open_db(") && violation.contains("fixture.rs:2")),
-        "the shared forbidden-I/O scan must reject source.open_db() with path/line guidance: {violations:?}"
-    );
-}
-
-#[test]
-fn source_test_fixture_open_facade_is_rejected_by_the_forbidden_io_scan() {
-    let violations = scan_forbidden_io(
-        "fixture.rs",
-        "fn fixture(source: &Source) {\n    source.open_for_test_fixture_source_write();\n}\n",
-    );
-
-    assert!(
-        violations.iter().any(|violation| {
-            violation.contains("open_for_test_fixture_source_write(")
-                && violation.contains("fixture.rs:2")
-        }),
-        "the shared forbidden-I/O scan must reject the test-fixture source DB facade with path/line guidance: {violations:?}"
-    );
+        assert!(
+            violations
+                .iter()
+                .any(|violation| violation.starts_with(&expected_prefix)),
+            "the shared forbidden-I/O scan must reject {call:?} with canonical token and path/line guidance: {violations:?}"
+        );
+    }
 }
 
 #[test]
 fn grouped_std_filesystem_alias_is_rejected() {
-    let violations = scan_forbidden_io("fixture.rs", "use std::{fs as disk};\n");
+    let violations = scan_forbidden_io(
+        "fixture.rs",
+        "pub(crate)  use std::{fs as disk};\ndisk::read (path);\n",
+    );
 
     assert!(
         violations.iter().any(|violation| {
@@ -69,6 +67,12 @@ fn grouped_std_filesystem_alias_is_rejected() {
                 && violation.contains("identifier-bounded `fs`")
         }),
         "grouped std filesystem aliases must be rejected with path/line guidance: {violations:?}"
+    );
+    assert!(
+        violations.iter().any(|violation| {
+            violation.contains("fixture.rs:2") && violation.contains("::read(")
+        }),
+        "aliased filesystem reads must retain their original line while reporting the canonical token: {violations:?}"
     );
 }
 
@@ -109,8 +113,9 @@ fn scan_forbidden_io(path: &str, source: &str) -> Vec<String> {
             &mut pending_use_item,
             &mut violations,
         );
+        let matching_code = compact_for_matching(code);
         for forbidden in FORBIDDEN_IO_TOKENS {
-            if code.contains(forbidden.token) {
+            if matching_code.contains(&compact_for_matching(forbidden.token)) {
                 violations.push(format!(
                     "{path}:{line_number}: forbidden {} in {} -- {}",
                     forbidden.token, code, forbidden.action
@@ -120,6 +125,13 @@ fn scan_forbidden_io(path: &str, source: &str) -> Vec<String> {
     }
 
     violations
+}
+
+fn compact_for_matching(source: &str) -> String {
+    source
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect()
 }
 
 fn scan_grouped_std_import(
@@ -133,7 +145,11 @@ fn scan_grouped_std_import(
 
     while !remainder.trim().is_empty() {
         if let Some((start_line, mut use_item)) = pending_use_item.take() {
-            use_item.push_str(remainder.trim());
+            let fragment = remainder.trim();
+            if !use_item.is_empty() && !fragment.is_empty() {
+                use_item.push(' ');
+            }
+            use_item.push_str(fragment);
             if let Some(semicolon) = use_item.find(';') {
                 report_grouped_std_import(path, start_line, &use_item[..=semicolon], violations);
                 remainder = use_item[semicolon + 1..].to_owned();
@@ -178,10 +194,8 @@ fn grouped_std_import_contains_fs(item: &str) -> bool {
     let Some(tree) = use_tree(item) else {
         return false;
     };
-    let Some(group) = tree.strip_prefix("std::") else {
-        return false;
-    };
-    group.starts_with('{') && contains_identifier_bounded_fs(group)
+    let normalized_tree = compact_for_matching(tree);
+    normalized_tree.starts_with("std::{") && contains_identifier_bounded_fs(tree)
 }
 
 fn use_tree(item: &str) -> Option<&str> {
@@ -189,13 +203,22 @@ fn use_tree(item: &str) -> Option<&str> {
     if let Some(after_pub) = item.strip_prefix("pub") {
         let after_pub = after_pub.trim_start();
         if let Some(after_visibility) = after_pub.strip_prefix('(') {
-            let close = after_visibility.find(") ")?;
-            item = &after_visibility[close + 2..];
+            let close = after_visibility.find(')')?;
+            item = &after_visibility[close + 1..];
         } else {
             item = after_pub;
         }
     }
-    item.strip_prefix("use ")
+    let item = item.trim_start();
+    let after_use = item.strip_prefix("use")?;
+    if after_use
+        .chars()
+        .next()
+        .is_some_and(|character| !character.is_whitespace())
+    {
+        return None;
+    }
+    Some(after_use.trim_start())
 }
 
 fn contains_identifier_bounded_fs(import_tree: &str) -> bool {
@@ -230,6 +253,10 @@ const FORBIDDEN_IO_TOKENS: &[ForbiddenIoToken] = &[
     ForbiddenIoToken {
         token: "fs::",
         action: "route filesystem work through an attributable worker or file-operation owner",
+    },
+    ForbiddenIoToken {
+        token: "::read(",
+        action: "route namespaced filesystem or database reads through an attributable owner",
     },
     ForbiddenIoToken {
         token: "File::open(",
