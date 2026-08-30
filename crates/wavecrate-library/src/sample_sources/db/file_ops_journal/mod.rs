@@ -22,6 +22,8 @@ mod store;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use recovery_io::BoundDatabaseRoot;
+
 pub use entry::{
     CopyJournalEntryInit, FileOpJournalEntry, FileOpStage, MoveJournalEntryInit, new_op_id,
     staged_relative_for_target,

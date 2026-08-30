@@ -114,6 +114,42 @@ impl WritableProfileGuard {
         &self.profile_root
     }
 
+    /// Return the identity captured from the retained profile-root capability.
+    pub(crate) fn profile_root_identity(&self) -> &str {
+        &self.profile_identity
+    }
+
+    /// Clone this acquired profile capability for another profile-owned participant.
+    ///
+    /// The clone retains the same lock identity and open lock descriptor. It therefore does not
+    /// acquire a second profile lock, and the profile remains owned until every participant clone
+    /// has been dropped.
+    pub fn try_clone(&self) -> Result<Self, ProfileOwnershipError> {
+        self.validate_current()?;
+        let root_dir = self
+            .root_dir
+            .try_clone()
+            .map_err(|source| ProfileOwnershipError::Io {
+                path: self.profile_root.clone(),
+                source,
+            })?;
+        let lock_file =
+            self._lock_file
+                .try_clone()
+                .map_err(|source| ProfileOwnershipError::Io {
+                    path: self.lock_path.clone(),
+                    source,
+                })?;
+        Ok(Self {
+            profile_root: self.profile_root.clone(),
+            profile_identity: self.profile_identity.clone(),
+            lock_path: self.lock_path.clone(),
+            lock_identity: self.lock_identity.clone(),
+            root_dir,
+            _lock_file: lock_file,
+        })
+    }
+
     /// Revalidate the acquired root and lock identities without following links.
     ///
     /// A successful check means the configured profile path still names the same root and

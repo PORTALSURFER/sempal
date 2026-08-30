@@ -27,9 +27,11 @@ pub use db::{
     SourceTagUsage, SourceTagWrite, SourceWriteCommand, WavEntry,
 };
 pub use library::{
+    GLOBAL_LIBRARY_WRITER_COMMAND_CAPACITY, GlobalLibraryWriter, GlobalLibraryWriterQueueError,
+    GlobalLibraryWriterStartError, GlobalLibraryWriterStatus, GlobalLibraryWriterUnavailable,
     HarvestDerivationOperation, HarvestDerivationRecord, HarvestFileIdentity, HarvestFileKey,
     HarvestFileRecord, HarvestMetadataSnapshot, HarvestSourceRange, HarvestState,
-    LIBRARY_DB_FILE_NAME, LibraryError, LibraryState, NewHarvestDerivation,
+    LIBRARY_DB_FILE_NAME, LibraryError, LibraryState, NewHarvestDerivation, SourceRegistrySnapshot,
 };
 pub use source_entry::{
     HiddenDirectoryPolicy, SOURCE_FORMAT_POLICY_VERSION, SourceEntryClassification,

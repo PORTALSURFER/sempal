@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::connection::LibraryDatabase;
 use super::error::map_sql_error;
+use super::owner::SourceRegistrySnapshot;
 use super::telemetry::record_library_db_event;
 use super::{KNOWN_SOURCES_KEY, LibraryError, LibraryState};
 use crate::sample_sources::normalize_path;
@@ -23,13 +24,35 @@ impl LibraryDatabase {
     }
 
     pub(super) fn replace_state(&mut self, state: &LibraryState) -> Result<(), LibraryError> {
+        self.replace_source_registry_with_event(
+            &SourceRegistrySnapshot::from_sources(state.sources.clone()),
+            "library.replace_state",
+        )
+    }
+
+    pub(super) fn load_source_registry(&self) -> Result<SourceRegistrySnapshot, LibraryError> {
+        Ok(SourceRegistrySnapshot::from_sources(self.load_sources()?))
+    }
+
+    pub(super) fn replace_source_registry(
+        &mut self,
+        snapshot: &SourceRegistrySnapshot,
+    ) -> Result<(), LibraryError> {
+        self.replace_source_registry_with_event(snapshot, "library.replace_source_registry")
+    }
+
+    fn replace_source_registry_with_event(
+        &mut self,
+        snapshot: &SourceRegistrySnapshot,
+        event: &'static str,
+    ) -> Result<(), LibraryError> {
         let started_at = Instant::now();
         let tx = self.connection.transaction().map_err(map_sql_error)?;
         let mut mappings = Self::load_known_sources_from(&tx)?;
-        Self::replace_sources(&tx, &state.sources)?;
-        Self::remember_known_sources_in_tx(&tx, &mut mappings, &state.sources)?;
+        Self::replace_sources(&tx, snapshot.as_slice())?;
+        Self::remember_known_sources_in_tx(&tx, &mut mappings, snapshot.as_slice())?;
         tx.commit().map_err(map_sql_error)?;
-        record_library_db_event("library.replace_state", started_at, Ok(()));
+        record_library_db_event(event, started_at, Ok(()));
         Ok(())
     }
 

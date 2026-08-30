@@ -15,6 +15,7 @@ mod directories;
 mod error;
 /// Persistent file operation journal for crash recovery.
 pub mod file_ops_journal;
+pub(crate) use file_ops_journal::BoundDatabaseRoot;
 mod index_entries;
 mod open;
 mod open_profiles;
@@ -113,9 +114,9 @@ pub const SOURCE_DB_READ_ONLY_ENV: &str = "WAVECRATE_SOURCE_DB_READ_ONLY";
 
 /// Keeps a verified database-root namespace alive for the lifetime of its connection.
 ///
-/// Recovery supplies platform-specific implementations when SQLite must open through a
-/// descriptor-bound namespace. This is intentionally private to the library's database
-/// implementation; ordinary callers continue to use pathname-based opening.
+/// Recovery and profile-owned writers supply platform-specific implementations when SQLite must
+/// open through a descriptor-bound namespace. This is intentionally private to the library's
+/// database implementation; ordinary callers continue to use pathname-based opening.
 pub(crate) trait DatabaseRootBindingGuard: Send {}
 
 /// SQLite wrapper that stores wav metadata for a single source folder.
