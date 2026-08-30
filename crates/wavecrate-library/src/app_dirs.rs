@@ -10,6 +10,7 @@ mod error;
 mod overrides;
 mod paths;
 mod profile;
+mod profile_ownership;
 mod resolution;
 mod state;
 mod storage_usage;
@@ -21,6 +22,7 @@ pub use paths::{
     rebuildable_cache_root_dir, waveform_cache_dir,
 };
 pub use profile::{PersistenceMode, PersistenceProfileGuard, ResolvedPersistence};
+pub use profile_ownership::{ProfileOwnershipError, WritableProfileGuard};
 pub use resolution::{
     app_root_dir, config_base_dir_path, ensure_test_config_base, persistence_mode,
     resolve_persistence, set_app_root_override,

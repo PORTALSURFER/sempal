@@ -1959,9 +1959,9 @@ pub(crate) struct RecoverySummary {
 /// Errors from ownership, durable writes, or fail-closed recovery scanning.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum JournalError {
-    /// The profile-local journal is owned by another process.
+    /// The profile-local journal lock is owned by another process.
     #[error("operation journal is owned by another process: {path}")]
-    OwnedByAnotherProcess { path: PathBuf },
+    JournalOwnedByAnotherProcess { path: PathBuf },
     /// A durable operation record could not be written or synchronized.
     #[error("operation journal write failed at {path}: {source}")]
     Write { path: PathBuf, source: io::Error },
@@ -3592,11 +3592,11 @@ fn prepare_descriptor(
 }
 
 impl OperationJournalCoordinator {
-    /// Open the journal in the current profile and perform a non-mutating scan.
-    pub(crate) fn open_current_profile() -> Result<Self, JournalError> {
-        let directory = wavecrate::app_dirs::operation_journal_dir()
-            .map_err(|error| JournalError::AppDirectory(error.to_string()))?;
-        Self::open(directory)
+    /// Open the current profile's journal after the caller has acquired profile ownership.
+    pub(crate) fn open_current_profile(
+        profile_guard: &wavecrate::app_dirs::WritableProfileGuard,
+    ) -> Result<Self, JournalError> {
+        Self::open(profile_guard.profile_root().join("operation_journal"))
     }
 
     /// Open a journal at an explicit directory (used by isolated tests).
@@ -5109,7 +5109,7 @@ impl OwnershipLock {
             if result != 0 {
                 let source = io::Error::last_os_error();
                 if source.kind() == io::ErrorKind::WouldBlock {
-                    return Err(JournalError::OwnedByAnotherProcess { path });
+                    return Err(JournalError::JournalOwnedByAnotherProcess { path });
                 }
                 return Err(JournalError::Write { path, source });
             }
@@ -5172,7 +5172,7 @@ impl OwnershipLock {
                 )
             };
             if result.is_err() {
-                return Err(JournalError::OwnedByAnotherProcess { path });
+                return Err(JournalError::JournalOwnedByAnotherProcess { path });
             }
             file.set_len(0)
                 .and_then(|_| file.write_all(format!("pid={}\n", std::process::id()).as_bytes()))
@@ -5355,10 +5355,7 @@ mod tests {
         record.operation_id = operation_id;
         let persisted = schema_v1_value(&record);
 
-        assert_eq!(
-            persisted["operation_id"],
-            serde_json::json!(uuid)
-        );
+        assert_eq!(persisted["operation_id"], serde_json::json!(uuid));
         assert_eq!(operation_id.to_string(), uuid.to_string());
         assert_eq!(format!("{operation_id}.json"), format!("{uuid}.json"));
 
@@ -7869,7 +7866,7 @@ mod tests {
         let journal = OperationJournalCoordinator::open(dir.path().to_path_buf()).unwrap();
         assert!(matches!(
             OperationJournalCoordinator::open(dir.path().to_path_buf()),
-            Err(JournalError::OwnedByAnotherProcess { .. })
+            Err(JournalError::JournalOwnedByAnotherProcess { .. })
         ));
         drop(journal);
         assert!(OperationJournalCoordinator::open(dir.path().to_path_buf()).is_ok());

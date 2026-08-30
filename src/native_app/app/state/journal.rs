@@ -10,6 +10,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
+use wavecrate_library::app_dirs::{ProfileOwnershipError, WritableProfileGuard};
 
 use crate::native_app::transaction_history::operation_journal::{
     BoundedAdmissionError, FilesystemStageOutcome, JournalError, OperationDisposition, OperationId,
@@ -69,7 +70,8 @@ pub(in crate::native_app) enum OperationJournalStatus {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::native_app) enum OperationJournalUnavailable {
-    OwnedByAnotherProcess { path: PathBuf },
+    JournalOwnedByAnotherProcess { path: PathBuf },
+    ProfileOwnedByAnotherProcess { path: PathBuf },
     OpenFailed(String),
     OwnerStartFailed(String),
 }
@@ -77,8 +79,19 @@ pub(in crate::native_app) enum OperationJournalUnavailable {
 impl std::fmt::Display for OperationJournalUnavailable {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::OwnedByAnotherProcess { path } => {
-                write!(formatter, "owned by another process: {}", path.display())
+            Self::JournalOwnedByAnotherProcess { path } => {
+                write!(
+                    formatter,
+                    "journal owned by another process: {}",
+                    path.display()
+                )
+            }
+            Self::ProfileOwnedByAnotherProcess { path } => {
+                write!(
+                    formatter,
+                    "profile owned by another process: {}",
+                    path.display()
+                )
             }
             Self::OpenFailed(error) => formatter.write_str(error),
             Self::OwnerStartFailed(error) => formatter.write_str(error),
@@ -89,7 +102,18 @@ impl std::fmt::Display for OperationJournalUnavailable {
 impl OperationJournalUnavailable {
     fn from_error(error: JournalError) -> Self {
         match error {
-            JournalError::OwnedByAnotherProcess { path } => Self::OwnedByAnotherProcess { path },
+            JournalError::JournalOwnedByAnotherProcess { path } => {
+                Self::JournalOwnedByAnotherProcess { path }
+            }
+            error => Self::OpenFailed(error.to_string()),
+        }
+    }
+
+    fn from_profile_ownership_error(error: ProfileOwnershipError) -> Self {
+        match error {
+            ProfileOwnershipError::ProfileOwnedByAnotherProcess { path } => {
+                Self::ProfileOwnedByAnotherProcess { path }
+            }
             error => Self::OpenFailed(error.to_string()),
         }
     }
@@ -197,6 +221,11 @@ impl OperationJournalOwner {
         // applies strict no-follow traversal to its capability root.
         let directory = std::fs::canonicalize(&directory).unwrap_or(directory);
         Self::start_with_optional_directory(Some(directory))
+    }
+
+    #[cfg(test)]
+    pub(in crate::native_app) fn start_with_current_profile_for_test() -> Self {
+        Self::start_with_optional_directory(None)
     }
 
     fn start_with_optional_directory(directory: Option<PathBuf>) -> Self {
@@ -494,6 +523,30 @@ fn run_owner(
     unavailable: Arc<Mutex<Option<OperationJournalUnavailable>>>,
 ) {
     let _ = status_tx.send(OperationJournalStatus::Initializing);
+    let profile_guard = if directory.is_none() {
+        if stop.load(std::sync::atomic::Ordering::Acquire) {
+            lifecycle.store(
+                OwnerLifecycle::Closed as u8,
+                std::sync::atomic::Ordering::Release,
+            );
+            return;
+        }
+        match WritableProfileGuard::acquire_current() {
+            Ok(guard) => Some(guard),
+            Err(error) => {
+                let reason = OperationJournalUnavailable::from_profile_ownership_error(error);
+                *unavailable.lock().expect("journal unavailable state") = Some(reason.clone());
+                lifecycle.store(
+                    OwnerLifecycle::Unavailable as u8,
+                    std::sync::atomic::Ordering::Release,
+                );
+                let _ = status_tx.send(OperationJournalStatus::Unavailable { reason });
+                return;
+            }
+        }
+    } else {
+        None
+    };
     let mut retry_interval = OWNER_RETRY_INTERVAL;
     let retry_started = Instant::now();
     let mut coordinator = loop {
@@ -504,18 +557,23 @@ fn run_owner(
             );
             return;
         }
-        let opened = match directory.as_ref() {
-            Some(directory) => OperationJournalCoordinator::open(directory.clone()),
-            None => OperationJournalCoordinator::open_current_profile(),
+        let opened = match (directory.as_ref(), profile_guard.as_ref()) {
+            (Some(directory), None) => OperationJournalCoordinator::open(directory.clone()),
+            (None, Some(profile_guard)) => {
+                OperationJournalCoordinator::open_current_profile(profile_guard)
+            }
+            _ => unreachable!("profile guard and journal directory startup modes diverged"),
         };
         match opened {
             Ok(coordinator) => {
                 let summary = coordinator.recovery_summary();
                 // The explicit journal directory is also the recovery root for
-                // test/runtime overrides. Production callers pass `None`, so
-                // the capability helper resolves the profile app root here on
-                // the owner thread.
-                let recovery_path = directory.clone();
+                // test/runtime overrides. Production uses the root held by the
+                // profile guard so journal and recovery share one resolved root.
+                let recovery_path = profile_guard
+                    .as_ref()
+                    .map(|guard| guard.profile_root().to_path_buf())
+                    .or_else(|| directory.clone());
                 let recovery_root = match crate::native_app::transaction_history::operation_journal::open_recovery_root_capability(recovery_path) {
                     Ok(capability) => capability,
                     Err(error) => {
@@ -536,10 +594,10 @@ fn run_owner(
                 });
                 break Some(coordinator);
             }
-            Err(JournalError::OwnedByAnotherProcess { path }) => {
+            Err(JournalError::JournalOwnedByAnotherProcess { path }) => {
                 // Ownership replacement is retried here, never admitted while initializing.
                 if retry_started.elapsed() >= OWNER_RETRY_TIMEOUT {
-                    let reason = OperationJournalUnavailable::OwnedByAnotherProcess { path };
+                    let reason = OperationJournalUnavailable::JournalOwnedByAnotherProcess { path };
                     *unavailable.lock().expect("journal unavailable state") = Some(reason.clone());
                     lifecycle.store(
                         OwnerLifecycle::Unavailable as u8,
@@ -816,6 +874,7 @@ fn run_owner(
         }
     }
     drop(coordinator);
+    drop(profile_guard);
     lifecycle.store(
         OwnerLifecycle::Closed as u8,
         std::sync::atomic::Ordering::Release,
@@ -830,6 +889,7 @@ mod tests {
         FilesystemStagedParticipant, OperationActor, OperationKind,
     };
     use crate::native_app::waveform_edits::waveform_restore_action_for_capacity_tests;
+    use wavecrate_library::{app_dirs::WritableProfileGuard, test_runtime::TestRuntimeGuard};
 
     fn fixture_directory() -> tempfile::TempDir {
         #[cfg(target_os = "macos")]
@@ -1064,6 +1124,58 @@ mod tests {
             .recv_timeout(Duration::from_secs(2))
             .expect("startup status");
         assert!(matches!(status, OperationJournalStatus::Available { .. }));
+    }
+
+    #[test]
+    fn production_owner_loser_reports_profile_conflict_without_journal_admission() {
+        let mut runtime = TestRuntimeGuard::acquire();
+        let base = tempfile::tempdir().expect("profile base");
+        runtime.set_var("WAVECRATE_CONFIG_HOME", base.path().as_os_str());
+        runtime.set_var("WAVECRATE_CONFIG_PROFILE", "native-owner-conflict");
+
+        let holder = WritableProfileGuard::acquire_current().expect("profile holder");
+        let profile_root = holder.profile_root().to_path_buf();
+        let lock_path = profile_root.join("profile-owner.lock");
+        let journal_directory = profile_root.join("operation_journal");
+        let loser = OperationJournalOwner::start_with_current_profile_for_test();
+
+        assert_eq!(
+            loser
+                .statuses
+                .recv_timeout(Duration::from_secs(2))
+                .expect("initializing status"),
+            OperationJournalStatus::Initializing
+        );
+        assert!(matches!(
+            loser
+                .statuses
+                .recv_timeout(Duration::from_secs(2))
+                .expect("profile conflict status"),
+            OperationJournalStatus::Unavailable {
+                reason: OperationJournalUnavailable::ProfileOwnedByAnotherProcess { path }
+            } if path == lock_path
+        ));
+        assert!(!journal_directory.exists());
+        assert!(matches!(
+            loser.admit(intent(), Value::Null),
+            Err(JournalOwnerQueueError::Unavailable(
+                OperationJournalUnavailable::ProfileOwnedByAnotherProcess { .. }
+            ))
+        ));
+
+        drop(holder);
+        std::thread::sleep(Duration::from_millis(100));
+        assert_eq!(
+            OwnerLifecycle::from_u8(loser.lifecycle.load(std::sync::atomic::Ordering::Acquire)),
+            OwnerLifecycle::Unavailable
+        );
+        assert!(loser.statuses.try_recv().is_err());
+        assert!(matches!(
+            loser.admit(intent(), Value::Null),
+            Err(JournalOwnerQueueError::Unavailable(
+                OperationJournalUnavailable::ProfileOwnedByAnotherProcess { .. }
+            ))
+        ));
     }
 
     #[test]
