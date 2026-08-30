@@ -14,6 +14,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
+use cap_std::fs::{Dir, OpenOptions as CapabilityOpenOptions};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use uuid::Uuid;
@@ -418,6 +420,46 @@ pub(crate) struct RecoveryRootCapability {
     pub(crate) path: PathBuf,
     pub(crate) file: Arc<File>,
     pub(crate) identity: String,
+}
+
+pub(crate) fn open_recovery_root_capability_from_profile(
+    profile_guard: &wavecrate_library::app_dirs::WritableProfileGuard,
+) -> Result<RecoveryRootCapability, JournalError> {
+    let path = profile_guard.profile_root().to_path_buf();
+    let dir = profile_guard
+        .profile_root_dir()
+        .map_err(JournalError::ProfileOwnership)?;
+    let file = dir.into_std_file();
+    if !file
+        .metadata()
+        .map_err(|source| JournalError::Write {
+            path: path.clone(),
+            source,
+        })?
+        .is_dir()
+    {
+        return Err(JournalError::Write {
+            path,
+            source: io::Error::new(
+                io::ErrorKind::InvalidData,
+                "recovery root is not a directory",
+            ),
+        });
+    }
+    let identity =
+        wavecrate_library::filesystem_identity::stable_filesystem_identity_from_open_file(&file)
+            .ok_or_else(|| JournalError::Write {
+                path: path.clone(),
+                source: io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "recovery root identity unavailable",
+                ),
+            })?;
+    Ok(RecoveryRootCapability {
+        path,
+        file: Arc::new(file),
+        identity,
+    })
 }
 
 impl PartialEq for RecoveryRootCapability {
@@ -1962,6 +2004,9 @@ pub(crate) enum JournalError {
     /// The profile-local journal lock is owned by another process.
     #[error("operation journal is owned by another process: {path}")]
     JournalOwnedByAnotherProcess { path: PathBuf },
+    /// Profile ownership changed while opening the production journal or recovery root.
+    #[error(transparent)]
+    ProfileOwnership(#[from] wavecrate_library::app_dirs::ProfileOwnershipError),
     /// A durable operation record could not be written or synchronized.
     #[error("operation journal write failed at {path}: {source}")]
     Write { path: PathBuf, source: io::Error },
@@ -2071,6 +2116,7 @@ enum RetainedRecord {
 /// The profile-owned journal store. Holding this value holds exclusive ownership.
 pub(crate) struct OperationJournalStore {
     directory: PathBuf,
+    journal_dir: Option<Arc<Dir>>,
     _ownership: OwnershipLock,
     records: BTreeMap<OperationId, OperationRecord>,
     non_writable: BTreeSet<OperationId>,
@@ -2090,6 +2136,28 @@ impl OperationJournalStore {
         let ownership = OwnershipLock::acquire(&directory)?;
         let mut store = Self {
             directory,
+            journal_dir: None,
+            _ownership: ownership,
+            records: BTreeMap::new(),
+            non_writable: BTreeSet::new(),
+            retained: Vec::new(),
+            recovery: RecoverySummary::default(),
+            capacity_claims: BTreeMap::new(),
+            capacity_blocked: false,
+        };
+        store.scan()?;
+        Ok(store)
+    }
+
+    /// Open and scan a production journal through its retained profile-relative capability.
+    pub(crate) fn open_from_capability(
+        directory: PathBuf,
+        journal_dir: Dir,
+    ) -> Result<Self, JournalError> {
+        let ownership = OwnershipLock::acquire_at(&journal_dir, &directory)?;
+        let mut store = Self {
+            directory,
+            journal_dir: Some(Arc::new(journal_dir)),
             _ownership: ownership,
             records: BTreeMap::new(),
             non_writable: BTreeSet::new(),
@@ -2152,7 +2220,7 @@ impl OperationJournalStore {
             });
         }
         let path = self.record_path(record.operation_id);
-        atomic_durable_write(&path, &record)?;
+        self.atomic_durable_write(&path, &record)?;
         self.records.insert(record.operation_id, record);
         self.rebuild_capacity_claims();
         Ok(())
@@ -2179,7 +2247,7 @@ impl OperationJournalStore {
             source: io::Error::new(io::ErrorKind::InvalidInput, error.to_string()),
         })?;
         let path = self.record_path(record.operation_id);
-        atomic_durable_write(&path, &record)?;
+        self.atomic_durable_write(&path, &record)?;
         self.records.insert(record.operation_id, record);
         self.rebuild_capacity_claims();
         Ok(())
@@ -2298,7 +2366,7 @@ impl OperationJournalStore {
             updated.replacement_qualification = Some(assessment);
         }
         let path = self.record_path(operation_id);
-        atomic_durable_write(&path, &updated)?;
+        self.atomic_durable_write(&path, &updated)?;
         self.records.insert(operation_id, updated);
         self.rebuild_capacity_claims();
         Ok(())
@@ -2319,7 +2387,7 @@ impl OperationJournalStore {
                 let updated = current
                     .with_prepared(PreparedTargetContract::ExistingExpectedIdentity(prepared));
                 let path = self.record_path(operation_id);
-                atomic_durable_write(&path, &updated)?;
+                self.atomic_durable_write(&path, &updated)?;
                 self.records.insert(operation_id, updated);
                 self.rebuild_capacity_claims();
                 Ok(())
@@ -2364,7 +2432,7 @@ impl OperationJournalStore {
                 self.ensure_writable(operation_id)?;
                 let updated = current.with_staged(staged);
                 let path = self.record_path(operation_id);
-                atomic_durable_write(&path, &updated)?;
+                self.atomic_durable_write(&path, &updated)?;
                 self.records.insert(operation_id, updated);
                 self.rebuild_capacity_claims();
                 Ok(())
@@ -2427,7 +2495,7 @@ impl OperationJournalStore {
         })?;
         self.ensure_writable(operation_id)?;
         let path = self.record_path(operation_id);
-        atomic_durable_write(&path, &updated)?;
+        self.atomic_durable_write(&path, &updated)?;
         self.records.insert(operation_id, updated);
         self.rebuild_capacity_claims();
         Ok(())
@@ -2469,7 +2537,7 @@ impl OperationJournalStore {
         })?;
         self.ensure_writable(operation_id)?;
         let path = self.record_path(operation_id);
-        atomic_durable_write(&path, &updated)?;
+        self.atomic_durable_write(&path, &updated)?;
         self.records.insert(operation_id, updated);
         self.rebuild_capacity_claims();
         Ok(())
@@ -2511,7 +2579,7 @@ impl OperationJournalStore {
         })?;
         self.ensure_writable(operation_id)?;
         let path = self.record_path(operation_id);
-        atomic_durable_write(&path, &updated)?;
+        self.atomic_durable_write(&path, &updated)?;
         self.records.insert(operation_id, updated);
         self.rebuild_capacity_claims();
         Ok(())
@@ -2564,7 +2632,7 @@ impl OperationJournalStore {
                 self.ensure_writable(operation_id)?;
                 let updated = current.with_published(published);
                 let path = self.record_path(operation_id);
-                atomic_durable_write(&path, &updated)?;
+                self.atomic_durable_write(&path, &updated)?;
                 self.records.insert(operation_id, updated);
                 self.rebuild_capacity_claims();
                 Ok(())
@@ -2629,7 +2697,33 @@ impl OperationJournalStore {
             .join(format!("{operation_id}{RECORD_SUFFIX}"))
     }
 
+    fn atomic_durable_write(
+        &self,
+        path: &Path,
+        record: &OperationRecord,
+    ) -> Result<(), JournalError> {
+        if let Some(directory) = self.journal_dir.as_ref() {
+            let name = path.file_name().ok_or_else(|| JournalError::Write {
+                path: path.to_path_buf(),
+                source: io::Error::new(io::ErrorKind::InvalidInput, "record path has no file name"),
+            })?;
+            atomic_durable_write_relative(directory, path, Path::new(name), record)
+        } else {
+            atomic_durable_write(path, record)
+        }
+    }
+
     fn scan(&mut self) -> Result<(), JournalError> {
+        if let Some(directory) = self.journal_dir.clone() {
+            self.scan_capability(&directory)?;
+        } else {
+            self.scan_path_based()?;
+        }
+        self.rebuild_capacity_claims();
+        Ok(())
+    }
+
+    fn scan_path_based(&mut self) -> Result<(), JournalError> {
         let entries = fs::read_dir(&self.directory).map_err(|source| JournalError::Scan {
             path: self.directory.clone(),
             source,
@@ -2643,7 +2737,6 @@ impl OperationJournalStore {
             if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
                 continue;
             }
-            self.recovery.record_count += 1;
             let mut bytes = Vec::with_capacity(MAX_RECORD_BYTES);
             File::open(&path)
                 .map(|file| {
@@ -2655,179 +2748,232 @@ impl OperationJournalStore {
                     path: path.clone(),
                     source,
                 })?;
-            if bytes.len() > MAX_RECORD_BYTES {
-                self.recovery.oversize_count += 1;
-                self.recovery.attention_required = true;
-                self.retained.push(RetainedRecord::Oversize {
+            self.ingest_scan_entry(path, bytes)?;
+        }
+        Ok(())
+    }
+
+    fn scan_capability(&mut self, directory: &Dir) -> Result<(), JournalError> {
+        let entries = directory.entries().map_err(|source| JournalError::Scan {
+            path: self.directory.clone(),
+            source,
+        })?;
+        for entry in entries {
+            let entry = entry.map_err(|source| JournalError::Scan {
+                path: self.directory.clone(),
+                source,
+            })?;
+            let name = entry.file_name();
+            let path = self.directory.join(&name);
+            if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+                continue;
+            }
+            let file_type = entry.file_type().map_err(|source| JournalError::Scan {
+                path: path.clone(),
+                source,
+            })?;
+            if !file_type.is_file() {
+                return Err(JournalError::Scan {
                     path,
-                    bytes: bytes.len() as u64,
+                    source: io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "operation journal entry is not a regular file",
+                    ),
                 });
-                continue;
             }
-            let value: Value = match serde_json::from_slice(&bytes) {
-                Ok(value) => value,
-                Err(_) => {
-                    self.recovery.malformed_count += 1;
-                    self.recovery.attention_required = true;
-                    self.retained
-                        .push(RetainedRecord::Malformed { path, bytes });
-                    continue;
-                }
-            };
-            let decoded = match dispatch_persisted_record(value) {
-                Ok(decoded) => decoded,
-                Err(()) => {
-                    self.recovery.malformed_count += 1;
-                    self.recovery.attention_required = true;
-                    self.retained
-                        .push(RetainedRecord::Malformed { path, bytes });
-                    continue;
-                }
-            };
-            let record: OperationRecord = match decoded {
-                DecodedPersistedRecord::UnknownVersion(version) => {
-                    self.recovery.unknown_version_count += 1;
-                    self.recovery.attention_required = true;
-                    self.retained.push(RetainedRecord::UnknownVersion {
-                        path,
-                        bytes,
-                        version,
-                    });
-                    continue;
-                }
-                DecodedPersistedRecord::V1(persisted) => persisted.into(),
-                DecodedPersistedRecord::V2(persisted) => persisted.into(),
-            };
-            if validate_schema_v2_phase_evidence_record(&record).is_err() {
+            let mut options = CapabilityOpenOptions::new();
+            options.read(true).follow(FollowSymlinks::No);
+            let file = entry
+                .open_with(&options)
+                .map_err(|source| JournalError::Scan {
+                    path: path.clone(),
+                    source,
+                })?;
+            let mut bytes = Vec::with_capacity(MAX_RECORD_BYTES);
+            file.take((MAX_RECORD_BYTES as u64).saturating_add(1))
+                .read_to_end(&mut bytes)
+                .map_err(|source| JournalError::Scan {
+                    path: path.clone(),
+                    source,
+                })?;
+            self.ingest_scan_entry(path, bytes)?;
+        }
+        Ok(())
+    }
+
+    fn ingest_scan_entry(&mut self, path: PathBuf, bytes: Vec<u8>) -> Result<(), JournalError> {
+        self.recovery.record_count += 1;
+        if bytes.len() > MAX_RECORD_BYTES {
+            self.recovery.oversize_count += 1;
+            self.recovery.attention_required = true;
+            self.retained.push(RetainedRecord::Oversize {
+                path,
+                bytes: bytes.len() as u64,
+            });
+            return Ok(());
+        }
+        let value: Value = match serde_json::from_slice(&bytes) {
+            Ok(value) => value,
+            Err(_) => {
                 self.recovery.malformed_count += 1;
                 self.recovery.attention_required = true;
                 self.retained
                     .push(RetainedRecord::Malformed { path, bytes });
-                continue;
+                return Ok(());
             }
-            let filename_id = path
-                .file_stem()
-                .and_then(|stem| stem.to_str())
-                .and_then(|stem| Uuid::parse_str(stem).ok())
-                .map(OperationId::from_uuid);
-            if filename_id != Some(record.operation_id)
-                || self.records.contains_key(&record.operation_id)
-            {
+        };
+        let decoded = match dispatch_persisted_record(value) {
+            Ok(decoded) => decoded,
+            Err(()) => {
                 self.recovery.malformed_count += 1;
                 self.recovery.attention_required = true;
                 self.retained
                     .push(RetainedRecord::Malformed { path, bytes });
-                continue;
+                return Ok(());
             }
-            if validate_capacity_plan_option(record.capacity_plan.as_ref()).is_err() {
-                self.recovery.malformed_count += 1;
+        };
+        let record: OperationRecord = match decoded {
+            DecodedPersistedRecord::UnknownVersion(version) => {
+                self.recovery.unknown_version_count += 1;
                 self.recovery.attention_required = true;
-                self.retained
-                    .push(RetainedRecord::Malformed { path, bytes });
-                continue;
+                self.retained.push(RetainedRecord::UnknownVersion {
+                    path,
+                    bytes,
+                    version,
+                });
+                return Ok(());
             }
-            if record
+            DecodedPersistedRecord::V1(persisted) => persisted.into(),
+            DecodedPersistedRecord::V2(persisted) => persisted.into(),
+        };
+        if validate_schema_v2_phase_evidence_record(&record).is_err() {
+            self.recovery.malformed_count += 1;
+            self.recovery.attention_required = true;
+            self.retained
+                .push(RetainedRecord::Malformed { path, bytes });
+            return Ok(());
+        }
+        let filename_id = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .and_then(|stem| Uuid::parse_str(stem).ok())
+            .map(OperationId::from_uuid);
+        if filename_id != Some(record.operation_id)
+            || self.records.contains_key(&record.operation_id)
+        {
+            self.recovery.malformed_count += 1;
+            self.recovery.attention_required = true;
+            self.retained
+                .push(RetainedRecord::Malformed { path, bytes });
+            return Ok(());
+        }
+        if validate_capacity_plan_option(record.capacity_plan.as_ref()).is_err() {
+            self.recovery.malformed_count += 1;
+            self.recovery.attention_required = true;
+            self.retained
+                .push(RetainedRecord::Malformed { path, bytes });
+            return Ok(());
+        }
+        if record
+            .prepared
+            .as_ref()
+            .is_some_and(|prepared| validate_prepared_contract(prepared).is_err())
+        {
+            self.recovery.malformed_count += 1;
+            self.recovery.attention_required = true;
+            self.retained
+                .push(RetainedRecord::Malformed { path, bytes });
+            return Ok(());
+        }
+        if record.schema_version == SCHEMA_V1
+            && record
+                .published
+                .as_ref()
+                .is_some_and(is_absent_final_no_replace_publication)
+        {
+            // A v1 record containing an absent-final claim is not a v2 record in disguise.
+            // Retain its original bytes and refuse to expose a writable runtime projection.
+            self.recovery.malformed_count += 1;
+            self.recovery.attention_required = true;
+            self.retained
+                .push(RetainedRecord::Malformed { path, bytes });
+            return Ok(());
+        }
+        if record.phase == OperationPhase::Prepared && record.prepared.is_none() {
+            self.recovery.malformed_count += 1;
+            self.recovery.attention_required = true;
+            self.retained
+                .push(RetainedRecord::Malformed { path, bytes });
+            return Ok(());
+        }
+        let staged_valid = match (record.phase, record.staged.as_ref()) {
+            (OperationPhase::FilesystemStaged, Some(staged)) => record
                 .prepared
                 .as_ref()
-                .is_some_and(|prepared| validate_prepared_contract(prepared).is_err())
-            {
-                self.recovery.malformed_count += 1;
-                self.recovery.attention_required = true;
-                self.retained
-                    .push(RetainedRecord::Malformed { path, bytes });
-                continue;
-            }
-            if record.schema_version == SCHEMA_V1
-                && record
-                    .published
-                    .as_ref()
-                    .is_some_and(is_absent_final_no_replace_publication)
-            {
-                // A v1 record containing an absent-final claim is not a v2 record in disguise.
-                // Retain its original bytes and refuse to expose a writable runtime projection.
-                self.recovery.malformed_count += 1;
-                self.recovery.attention_required = true;
-                self.retained
-                    .push(RetainedRecord::Malformed { path, bytes });
-                continue;
-            }
-            if record.phase == OperationPhase::Prepared && record.prepared.is_none() {
-                self.recovery.malformed_count += 1;
-                self.recovery.attention_required = true;
-                self.retained
-                    .push(RetainedRecord::Malformed { path, bytes });
-                continue;
-            }
-            let staged_valid = match (record.phase, record.staged.as_ref()) {
-                (OperationPhase::FilesystemStaged, Some(staged)) => record
-                    .prepared
-                    .as_ref()
-                    .is_some_and(|prepared| validate_staged_checkpoint(prepared, staged).is_ok()),
-                (OperationPhase::FilesystemStaged, None)
-                | (OperationPhase::IntentDurable | OperationPhase::Prepared, Some(_)) => false,
-                (_, Some(staged)) => record
-                    .prepared
-                    .as_ref()
-                    .is_some_and(|prepared| validate_staged_checkpoint(prepared, staged).is_ok()),
-                (_, None) => true,
-            };
-            if !staged_valid {
-                self.recovery.malformed_count += 1;
-                self.recovery.attention_required = true;
-                self.retained
-                    .push(RetainedRecord::Malformed { path, bytes });
-                continue;
-            }
-            let legacy_post_publication_without_evidence = record.schema_version == SCHEMA_V1
-                && record.published.is_none()
-                && (matches!(
-                    record.phase,
-                    OperationPhase::FilesystemPublished
-                        | OperationPhase::SourceReconciled
-                        | OperationPhase::GlobalReconciled
-                        | OperationPhase::ProjectionPublished
-                        | OperationPhase::ReadinessScheduled
-                ) || (record.phase == OperationPhase::Terminal
-                    && record.disposition.is_terminal()));
-            if legacy_post_publication_without_evidence {
-                self.recovery.malformed_count += 1;
-                self.recovery.attention_required = true;
-                if record.phase != OperationPhase::Terminal {
-                    self.recovery.unresolved_count += 1;
-                }
-                self.non_writable.insert(record.operation_id);
-                self.retained.push(RetainedRecord::Malformed {
-                    path: path.clone(),
-                    bytes: bytes.clone(),
-                });
-                self.records.insert(record.operation_id, record);
-                continue;
-            }
-            let published_valid = if record.phase.is_pre_publication() {
-                record.published.is_none()
-            } else if record.phase.is_post_publication() {
-                validate_record_publication(&record).is_ok()
-            } else {
-                record
-                    .published
-                    .as_ref()
-                    .map(|_| validate_record_publication(&record).is_ok())
-                    .unwrap_or(true)
-            };
-            if !published_valid {
-                self.recovery.malformed_count += 1;
-                self.recovery.attention_required = true;
-                self.retained
-                    .push(RetainedRecord::Malformed { path, bytes });
-                continue;
-            }
-            if record.phase != OperationPhase::Terminal || !record.disposition.is_terminal() {
-                self.recovery.unresolved_count += 1;
-                self.recovery.attention_required = true;
-            }
-            self.records.insert(record.operation_id, record);
+                .is_some_and(|prepared| validate_staged_checkpoint(prepared, staged).is_ok()),
+            (OperationPhase::FilesystemStaged, None)
+            | (OperationPhase::IntentDurable | OperationPhase::Prepared, Some(_)) => false,
+            (_, Some(staged)) => record
+                .prepared
+                .as_ref()
+                .is_some_and(|prepared| validate_staged_checkpoint(prepared, staged).is_ok()),
+            (_, None) => true,
+        };
+        if !staged_valid {
+            self.recovery.malformed_count += 1;
+            self.recovery.attention_required = true;
+            self.retained
+                .push(RetainedRecord::Malformed { path, bytes });
+            return Ok(());
         }
-        self.rebuild_capacity_claims();
+        let legacy_post_publication_without_evidence = record.schema_version == SCHEMA_V1
+            && record.published.is_none()
+            && (matches!(
+                record.phase,
+                OperationPhase::FilesystemPublished
+                    | OperationPhase::SourceReconciled
+                    | OperationPhase::GlobalReconciled
+                    | OperationPhase::ProjectionPublished
+                    | OperationPhase::ReadinessScheduled
+            ) || (record.phase == OperationPhase::Terminal
+                && record.disposition.is_terminal()));
+        if legacy_post_publication_without_evidence {
+            self.recovery.malformed_count += 1;
+            self.recovery.attention_required = true;
+            if record.phase != OperationPhase::Terminal {
+                self.recovery.unresolved_count += 1;
+            }
+            self.non_writable.insert(record.operation_id);
+            self.retained.push(RetainedRecord::Malformed {
+                path: path.clone(),
+                bytes: bytes.clone(),
+            });
+            self.records.insert(record.operation_id, record);
+            return Ok(());
+        }
+        let published_valid = if record.phase.is_pre_publication() {
+            record.published.is_none()
+        } else if record.phase.is_post_publication() {
+            validate_record_publication(&record).is_ok()
+        } else {
+            record
+                .published
+                .as_ref()
+                .map(|_| validate_record_publication(&record).is_ok())
+                .unwrap_or(true)
+        };
+        if !published_valid {
+            self.recovery.malformed_count += 1;
+            self.recovery.attention_required = true;
+            self.retained
+                .push(RetainedRecord::Malformed { path, bytes });
+            return Ok(());
+        }
+        if record.phase != OperationPhase::Terminal || !record.disposition.is_terminal() {
+            self.recovery.unresolved_count += 1;
+            self.recovery.attention_required = true;
+        }
+        self.records.insert(record.operation_id, record);
         Ok(())
     }
 }
@@ -3596,7 +3742,13 @@ impl OperationJournalCoordinator {
     pub(crate) fn open_current_profile(
         profile_guard: &wavecrate::app_dirs::WritableProfileGuard,
     ) -> Result<Self, JournalError> {
-        Self::open(profile_guard.profile_root().join("operation_journal"))
+        let directory = profile_guard.profile_root().join("operation_journal");
+        let journal_dir = profile_guard
+            .open_child_dir(Path::new("operation_journal"))
+            .map_err(JournalError::ProfileOwnership)?;
+        Ok(Self {
+            store: OperationJournalStore::open_from_capability(directory, journal_dir)?,
+        })
     }
 
     /// Open a journal at an explicit directory (used by isolated tests).
@@ -5193,6 +5345,119 @@ impl OwnershipLock {
             ),
         })
     }
+
+    fn acquire_at(directory: &Dir, display_directory: &Path) -> Result<Self, JournalError> {
+        let path = display_directory.join(LOCK_FILE_NAME);
+        let mut options = CapabilityOpenOptions::new();
+        options
+            .read(true)
+            .write(true)
+            .create(true)
+            .follow(FollowSymlinks::No);
+        let mut file = directory
+            .open_with(Path::new(LOCK_FILE_NAME), &options)
+            .map_err(|source| JournalError::Write {
+                path: path.clone(),
+                source,
+            })?
+            .into_std();
+
+        #[cfg(unix)]
+        {
+            use std::os::fd::AsRawFd;
+
+            let metadata = file.metadata().map_err(|source| JournalError::Write {
+                path: path.clone(),
+                source,
+            })?;
+            if !metadata.is_file() {
+                return Err(JournalError::Write {
+                    path,
+                    source: io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "operation-journal owner is not a regular file",
+                    ),
+                });
+            }
+            let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+            if result != 0 {
+                let source = io::Error::last_os_error();
+                if source.kind() == io::ErrorKind::WouldBlock {
+                    return Err(JournalError::JournalOwnedByAnotherProcess { path });
+                }
+                return Err(JournalError::Write { path, source });
+            }
+            file.set_len(0)
+                .and_then(|_| file.write_all(format!("pid={}\n", std::process::id()).as_bytes()))
+                .and_then(|_| file.sync_all())
+                .map_err(|source| JournalError::Write {
+                    path: path.clone(),
+                    source,
+                })?;
+            return Ok(Self { file: Some(file) });
+        }
+
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            use std::os::windows::io::AsRawHandle;
+            use windows::Win32::Foundation::{FILE_ATTRIBUTE_REPARSE_POINT, HANDLE};
+            use windows::Win32::Storage::FileSystem::{
+                LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY, LockFileEx,
+            };
+            use windows::Win32::System::IO::OVERLAPPED;
+
+            let metadata = file.metadata().map_err(|source| JournalError::Write {
+                path: path.clone(),
+                source,
+            })?;
+            if !metadata.is_file()
+                || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0
+            {
+                return Err(JournalError::Write {
+                    path,
+                    source: io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "operation-journal owner is not a regular non-reparse file",
+                    ),
+                });
+            }
+            let mut overlapped = OVERLAPPED::default();
+            let result = unsafe {
+                LockFileEx(
+                    HANDLE(file.as_raw_handle()),
+                    LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
+                    None,
+                    u32::MAX,
+                    u32::MAX,
+                    &mut overlapped,
+                )
+            };
+            if result.is_err() {
+                return Err(JournalError::JournalOwnedByAnotherProcess { path });
+            }
+            file.set_len(0)
+                .and_then(|_| file.write_all(format!("pid={}\n", std::process::id()).as_bytes()))
+                .and_then(|_| file.sync_all())
+                .map_err(|source| JournalError::Write {
+                    path: path.clone(),
+                    source,
+                })?;
+            return Ok(Self { file: Some(file) });
+        }
+
+        #[cfg(all(not(unix), not(windows)))]
+        {
+            let _ = file;
+            Err(JournalError::Write {
+                path,
+                source: io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    "no verified operation-journal ownership primitive on this platform",
+                ),
+            })
+        }
+    }
 }
 
 impl Drop for OwnershipLock {
@@ -5258,6 +5523,98 @@ fn atomic_durable_write(path: &Path, record: &OperationRecord) -> Result<(), Jou
         });
     }
     Ok(())
+}
+
+fn atomic_durable_write_relative(
+    directory: &Dir,
+    path: &Path,
+    name: &Path,
+    record: &OperationRecord,
+) -> Result<(), JournalError> {
+    validate_schema_v2_phase_evidence_record(record).map_err(|reason| JournalError::Write {
+        path: path.to_path_buf(),
+        source: io::Error::new(io::ErrorKind::InvalidInput, reason),
+    })?;
+    let temp_name = PathBuf::from(format!(
+        ".{}.tmp",
+        name.file_name().unwrap_or_default().to_string_lossy()
+    ));
+    let temp_path = path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(&temp_name);
+    let bytes = encode_record(record).map_err(|source| JournalError::Write {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    if bytes.len() > MAX_RECORD_BYTES {
+        return Err(JournalError::Write {
+            path: path.to_path_buf(),
+            source: io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("journal record exceeds {MAX_RECORD_BYTES} bytes"),
+            ),
+        });
+    }
+
+    let mut options = CapabilityOpenOptions::new();
+    options
+        .write(true)
+        .create_new(true)
+        .follow(FollowSymlinks::No);
+    let mut file = directory
+        .open_with(&temp_name, &options)
+        .map_err(|source| JournalError::Write {
+            path: temp_path.clone(),
+            source,
+        })?;
+    if let Err(source) = file.write_all(&bytes).and_then(|_| file.sync_all()) {
+        let _ = directory.remove_file(&temp_name);
+        return Err(JournalError::Write {
+            path: temp_path,
+            source,
+        });
+    }
+    drop(file);
+    if let Err(source) = directory.rename(&temp_name, directory, name) {
+        let _ = directory.remove_file(&temp_name);
+        return Err(JournalError::Write {
+            path: path.to_path_buf(),
+            source,
+        });
+    }
+    if let Err(source) = sync_capability_directory(directory) {
+        return Err(JournalError::Write {
+            path: path
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .to_path_buf(),
+            source,
+        });
+    }
+    Ok(())
+}
+
+fn sync_capability_directory(directory: &Dir) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        directory.try_clone()?.into_std_file().sync_all()
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = directory;
+        // Windows uses the capability-relative rename; the underlying rename is the
+        // strongest namespace durability primitive available to this store.
+        Ok(())
+    }
+    #[cfg(all(not(unix), not(target_os = "windows")))]
+    {
+        let _ = directory;
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "directory synchronization is not verified on this platform",
+        ))
+    }
 }
 
 fn replace_file(temp_path: &Path, path: &Path) -> io::Result<()> {

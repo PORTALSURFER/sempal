@@ -3,9 +3,11 @@
 use std::{
     fs::File,
     io::{self, Write},
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
 };
 
+use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt, ambient_authority};
+use cap_std::fs::{Dir, OpenOptions};
 use thiserror::Error;
 
 const PROFILE_OWNER_LOCK_FILE_NAME: &str = "profile-owner.lock";
@@ -22,8 +24,8 @@ pub enum ProfileOwnershipError {
     /// Resolving the current profile root failed.
     #[error("profile root unavailable: {0}")]
     AppDirectory(String),
-    /// Opening, validating, or writing the profile lock failed.
-    #[error("profile ownership lock failed at {path}: {source}")]
+    /// Opening, validating, or writing the profile ownership boundary failed.
+    #[error("profile ownership filesystem operation failed at {path}: {source}")]
     Io {
         /// Profile lock path involved in the failure.
         path: PathBuf,
@@ -34,6 +36,24 @@ pub enum ProfileOwnershipError {
     #[error("profile ownership lock is not a regular file: {path}")]
     NotRegularFile {
         /// Profile lock path that failed validation.
+        path: PathBuf,
+    },
+    /// The retained profile root no longer matches the path used to acquire ownership.
+    #[error("profile root was replaced after ownership acquisition: {path}")]
+    ProfileRootReplaced {
+        /// Profile root path whose identity changed.
+        path: PathBuf,
+    },
+    /// The profile-owner lock entry no longer matches the acquired lock file.
+    #[error("profile ownership lock was replaced after acquisition: {path}")]
+    ProfileOwnerLockReplaced {
+        /// Profile lock path whose identity changed.
+        path: PathBuf,
+    },
+    /// The host could not provide a stable identity for the retained capability.
+    #[error("profile ownership identity unavailable at {path}")]
+    IdentityUnavailable {
+        /// Profile path whose identity could not be established.
         path: PathBuf,
     },
     /// This platform has no verified nonblocking profile ownership primitive.
@@ -52,7 +72,10 @@ pub enum ProfileOwnershipError {
 #[derive(Debug)]
 pub struct WritableProfileGuard {
     profile_root: PathBuf,
-    _lock_path: PathBuf,
+    profile_identity: String,
+    lock_path: PathBuf,
+    lock_identity: String,
+    root_dir: Dir,
     _lock_file: File,
 }
 
@@ -63,18 +86,246 @@ impl WritableProfileGuard {
             .map_err(|error| ProfileOwnershipError::AppDirectory(error.to_string()))?
             .app_root;
         let lock_path = profile_root.join(PROFILE_OWNER_LOCK_FILE_NAME);
-        let lock_file = acquire_lock(&lock_path)?;
-        Ok(Self {
+        #[cfg(all(not(unix), not(windows)))]
+        return Err(ProfileOwnershipError::Unsupported { path: lock_path });
+
+        let root_dir =
+            open_profile_root(&profile_root).map_err(|source| ProfileOwnershipError::Io {
+                path: profile_root.clone(),
+                source,
+            })?;
+        let profile_identity = identity_for_root(&profile_root, &root_dir)?;
+        let lock_file = acquire_lock(&root_dir, &lock_path)?;
+        let lock_identity = identity_for_lock(&lock_path, &lock_file)?;
+        let guard = Self {
             profile_root,
-            _lock_path: lock_path,
+            profile_identity,
+            lock_path,
+            lock_identity,
+            root_dir,
             _lock_file: lock_file,
-        })
+        };
+        guard.validate_current()?;
+        Ok(guard)
     }
 
     /// Return the profile root protected by this guard.
     pub fn profile_root(&self) -> &Path {
         &self.profile_root
     }
+
+    /// Revalidate the acquired root and lock identities without following links.
+    ///
+    /// A successful check means the configured profile path still names the same root and
+    /// lock entries that were acquired. The retained directory capability remains the authority
+    /// for child access; this check detects a path replacement so the owner can fail closed.
+    pub fn validate_current(&self) -> Result<(), ProfileOwnershipError> {
+        let current_root = open_profile_root(&self.profile_root).map_err(|_| {
+            ProfileOwnershipError::ProfileRootReplaced {
+                path: self.profile_root.clone(),
+            }
+        })?;
+        let current_identity = identity_from_dir(&current_root).ok_or_else(|| {
+            ProfileOwnershipError::ProfileRootReplaced {
+                path: self.profile_root.clone(),
+            }
+        })?;
+        if current_identity != self.profile_identity {
+            return Err(ProfileOwnershipError::ProfileRootReplaced {
+                path: self.profile_root.clone(),
+            });
+        }
+
+        let current_lock = open_lock_file(&current_root, false).map_err(|_| {
+            ProfileOwnershipError::ProfileOwnerLockReplaced {
+                path: self.lock_path.clone(),
+            }
+        })?;
+        if !is_regular_file(&current_lock).unwrap_or(false) {
+            return Err(ProfileOwnershipError::ProfileOwnerLockReplaced {
+                path: self.lock_path.clone(),
+            });
+        }
+        let current_lock_identity =
+            identity_from_file(&self.lock_path, &current_lock).ok_or_else(|| {
+                ProfileOwnershipError::ProfileOwnerLockReplaced {
+                    path: self.lock_path.clone(),
+                }
+            })?;
+        if current_lock_identity != self.lock_identity {
+            return Err(ProfileOwnershipError::ProfileOwnerLockReplaced {
+                path: self.lock_path.clone(),
+            });
+        }
+        Ok(())
+    }
+
+    /// Clone the retained no-follow profile-root capability for a production participant.
+    pub fn profile_root_dir(&self) -> Result<Dir, ProfileOwnershipError> {
+        self.validate_current()?;
+        self.root_dir
+            .try_clone()
+            .map_err(|source| ProfileOwnershipError::Io {
+                path: self.profile_root.clone(),
+                source,
+            })
+    }
+
+    /// Create or open one direct child directory relative to the retained profile capability.
+    pub fn open_child_dir(&self, child: &Path) -> Result<Dir, ProfileOwnershipError> {
+        let child_name =
+            single_normal_component(child).map_err(|source| ProfileOwnershipError::Io {
+                path: self.profile_root.join(child),
+                source,
+            })?;
+        self.validate_current()?;
+        match self.root_dir.create_dir(child_name) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(source) => {
+                return Err(ProfileOwnershipError::Io {
+                    path: self.profile_root.join(child),
+                    source,
+                });
+            }
+        }
+        let child_dir = self
+            .root_dir
+            .open_dir_nofollow(child_name)
+            .map_err(|source| ProfileOwnershipError::Io {
+                path: self.profile_root.join(child),
+                source,
+            })?;
+        self.validate_current()?;
+        Ok(child_dir)
+    }
+}
+
+fn single_normal_component(path: &Path) -> io::Result<&Path> {
+    let mut components = path.components();
+    let Some(Component::Normal(name)) = components.next() else {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "profile child must be a single normal component",
+        ));
+    };
+    if components.next().is_some() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "profile child must be a single normal component",
+        ));
+    }
+    Ok(Path::new(name))
+}
+
+fn open_profile_root(path: &Path) -> io::Result<Dir> {
+    let mut components = path.components();
+    #[cfg(unix)]
+    {
+        if !matches!(components.next(), Some(Component::RootDir)) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "profile root must be absolute",
+            ));
+        }
+        let mut dir = Dir::open_ambient_dir(Path::new("/"), ambient_authority())?;
+        for component in components {
+            let Component::Normal(name) = component else {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "profile root contains a non-normal component",
+                ));
+            };
+            dir = dir.open_dir_nofollow(name)?;
+        }
+        return Ok(dir);
+    }
+    #[cfg(windows)]
+    {
+        let Some(Component::Prefix(prefix)) = components.next() else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "profile root must have a Windows path prefix",
+            ));
+        };
+        if !matches!(components.next(), Some(Component::RootDir)) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "profile root must be absolute",
+            ));
+        }
+        let mut anchor = PathBuf::from(prefix.as_os_str());
+        anchor.push(std::path::MAIN_SEPARATOR_STR);
+        let mut dir = Dir::open_ambient_dir(anchor, ambient_authority())?;
+        for component in components {
+            let Component::Normal(name) = component else {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "profile root contains a non-normal component",
+                ));
+            };
+            dir = dir.open_dir_nofollow(name)?;
+        }
+        return Ok(dir);
+    }
+    #[cfg(all(not(unix), not(windows)))]
+    {
+        let _ = (path, components);
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "no verified profile-root capability on this platform",
+        ))
+    }
+}
+
+fn identity_for_root(path: &Path, dir: &Dir) -> Result<String, ProfileOwnershipError> {
+    identity_from_dir(dir).ok_or_else(|| ProfileOwnershipError::IdentityUnavailable {
+        path: path.to_path_buf(),
+    })
+}
+
+fn identity_for_lock(path: &Path, file: &File) -> Result<String, ProfileOwnershipError> {
+    identity_from_file(path, file).ok_or_else(|| ProfileOwnershipError::IdentityUnavailable {
+        path: path.to_path_buf(),
+    })
+}
+
+fn identity_from_dir(dir: &Dir) -> Option<String> {
+    let retained_file = dir.try_clone().ok()?.into_std_file();
+    crate::filesystem_identity::stable_filesystem_identity_from_open_file(&retained_file)
+}
+
+fn identity_from_file(_path: &Path, file: &File) -> Option<String> {
+    crate::filesystem_identity::stable_filesystem_identity_from_open_file(file)
+}
+
+fn is_regular_file(file: &File) -> io::Result<bool> {
+    let metadata = file.metadata()?;
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
+
+        return Ok(
+            metadata.is_file() && metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT.0 == 0
+        );
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(metadata.is_file() && !metadata.is_symlink())
+    }
+}
+
+fn open_lock_file(root_dir: &Dir, create: bool) -> io::Result<File> {
+    let mut options = OpenOptions::new();
+    options
+        .read(true)
+        .write(true)
+        .create(create)
+        .follow(FollowSymlinks::No);
+    root_dir
+        .open_with(Path::new(PROFILE_OWNER_LOCK_FILE_NAME), &options)
+        .map(|file| file.into_std())
 }
 
 fn write_diagnostic(mut file: File, path: &Path) -> Result<File, ProfileOwnershipError> {
@@ -89,28 +340,17 @@ fn write_diagnostic(mut file: File, path: &Path) -> Result<File, ProfileOwnershi
 }
 
 #[cfg(unix)]
-fn acquire_lock(path: &Path) -> Result<File, ProfileOwnershipError> {
-    use std::os::{fd::AsRawFd, unix::fs::OpenOptionsExt};
+fn acquire_lock(root_dir: &Dir, path: &Path) -> Result<File, ProfileOwnershipError> {
+    use std::os::fd::AsRawFd;
 
-    let mut options = std::fs::OpenOptions::new();
-    options
-        .read(true)
-        .write(true)
-        .create(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
-    let file = options
-        .open(path)
-        .map_err(|source| ProfileOwnershipError::Io {
-            path: path.to_path_buf(),
-            source,
-        })?;
-    let metadata = file
-        .metadata()
-        .map_err(|source| ProfileOwnershipError::Io {
-            path: path.to_path_buf(),
-            source,
-        })?;
-    if !metadata.is_file() {
+    let file = open_lock_file(root_dir, true).map_err(|source| ProfileOwnershipError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    if !is_regular_file(&file).map_err(|source| ProfileOwnershipError::Io {
+        path: path.to_path_buf(),
+        source,
+    })? {
         return Err(ProfileOwnershipError::NotRegularFile {
             path: path.to_path_buf(),
         });
@@ -136,40 +376,22 @@ fn acquire_lock(path: &Path) -> Result<File, ProfileOwnershipError> {
 }
 
 #[cfg(windows)]
-fn acquire_lock(path: &Path) -> Result<File, ProfileOwnershipError> {
-    use std::os::windows::{
-        fs::{MetadataExt, OpenOptionsExt},
-        io::AsRawHandle,
-    };
-    use windows::Win32::Foundation::{
-        ERROR_LOCK_VIOLATION, FILE_ATTRIBUTE_REPARSE_POINT, HANDLE, WIN32_ERROR,
-    };
+fn acquire_lock(root_dir: &Dir, path: &Path) -> Result<File, ProfileOwnershipError> {
+    use std::os::windows::io::AsRawHandle;
+    use windows::Win32::Foundation::{ERROR_LOCK_VIOLATION, HANDLE, WIN32_ERROR};
     use windows::Win32::Storage::FileSystem::{
-        FILE_FLAG_OPEN_REPARSE_POINT, LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY,
-        LockFileEx,
+        LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY, LockFileEx,
     };
     use windows::Win32::System::IO::OVERLAPPED;
 
-    let mut options = std::fs::OpenOptions::new();
-    options
-        .read(true)
-        .write(true)
-        .create(true)
-        .share_mode(0x00000001 | 0x00000002)
-        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT.0);
-    let file = options
-        .open(path)
-        .map_err(|source| ProfileOwnershipError::Io {
-            path: path.to_path_buf(),
-            source,
-        })?;
-    let metadata = file
-        .metadata()
-        .map_err(|source| ProfileOwnershipError::Io {
-            path: path.to_path_buf(),
-            source,
-        })?;
-    if !metadata.is_file() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0 {
+    let file = open_lock_file(root_dir, true).map_err(|source| ProfileOwnershipError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    if !is_regular_file(&file).map_err(|source| ProfileOwnershipError::Io {
+        path: path.to_path_buf(),
+        source,
+    })? {
         return Err(ProfileOwnershipError::NotRegularFile {
             path: path.to_path_buf(),
         });
@@ -202,7 +424,7 @@ fn acquire_lock(path: &Path) -> Result<File, ProfileOwnershipError> {
 }
 
 #[cfg(all(not(unix), not(windows)))]
-fn acquire_lock(path: &Path) -> Result<File, ProfileOwnershipError> {
+fn acquire_lock(_root_dir: &Dir, path: &Path) -> Result<File, ProfileOwnershipError> {
     Err(ProfileOwnershipError::Unsupported {
         path: path.to_path_buf(),
     })
@@ -299,6 +521,61 @@ mod tests {
         assert_ne!(first_root, second.profile_root());
         assert!(first_root.ends_with("ownership-one"));
         assert!(second.profile_root().ends_with("ownership-two"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn retained_root_capability_and_identity_detect_profile_root_replacement() {
+        let _runtime = test_runtime();
+        let base = tempdir().expect("profile base");
+        let _base_guard = ConfigBaseGuard::set(base.path().to_path_buf());
+        let _profile_guard = PersistenceProfileGuard::named("ownership-root-replaced");
+        let guard = WritableProfileGuard::acquire_current().expect("profile holder");
+        let root = guard.profile_root().to_path_buf();
+        let journal = guard
+            .open_child_dir(Path::new("operation_journal"))
+            .expect("journal capability");
+
+        let displaced = base.path().join("displaced-profile-root");
+        fs::rename(&root, &displaced).expect("displace acquired root");
+        fs::create_dir(&root).expect("replacement profile root");
+        fs::create_dir(root.join("operation_journal")).expect("replacement journal");
+        fs::write(
+            root.join("operation_journal").join("replacement-marker"),
+            b"replacement",
+        )
+        .expect("replacement marker");
+
+        assert!(matches!(
+            guard.validate_current(),
+            Err(ProfileOwnershipError::ProfileRootReplaced { path }) if path == root
+        ));
+        assert!(
+            !journal
+                .entries()
+                .expect("retained journal entries")
+                .filter_map(Result::ok)
+                .any(|entry| entry.file_name() == "replacement-marker")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn retained_lock_identity_detects_profile_lock_replacement() {
+        let _runtime = test_runtime();
+        let base = tempdir().expect("profile base");
+        let _base_guard = ConfigBaseGuard::set(base.path().to_path_buf());
+        let _profile_guard = PersistenceProfileGuard::named("ownership-lock-replaced");
+        let guard = WritableProfileGuard::acquire_current().expect("profile holder");
+        let lock_path = guard.profile_root().join(PROFILE_OWNER_LOCK_FILE_NAME);
+        let displaced = guard.profile_root().join("profile-owner.lock.old");
+        fs::rename(&lock_path, &displaced).expect("displace acquired lock entry");
+        fs::write(&lock_path, b"replacement").expect("replacement lock entry");
+
+        assert!(matches!(
+            guard.validate_current(),
+            Err(ProfileOwnershipError::ProfileOwnerLockReplaced { path }) if path == lock_path
+        ));
     }
 
     #[cfg(unix)]

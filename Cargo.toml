@@ -38,6 +38,8 @@ sqlite-ext-unsafe = ["wavecrate-library/sqlite-ext-unsafe"]
 [dependencies]
 hound = "3.5.1"
 sysinfo = "0.37.2"
+cap-fs-ext = "4.0.2"
+cap-std = "4.0.2"
 rusqlite = { version = "0.37.0", features = ["bundled", "load_extension"] }
 uuid = { version = "1.19.0", features = ["v4", "serde"] }
 serde = { version = "1.0.228", features = ["derive"] }

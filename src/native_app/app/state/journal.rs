@@ -72,6 +72,7 @@ pub(in crate::native_app) enum OperationJournalStatus {
 pub(in crate::native_app) enum OperationJournalUnavailable {
     JournalOwnedByAnotherProcess { path: PathBuf },
     ProfileOwnedByAnotherProcess { path: PathBuf },
+    ProfileOwnershipChanged { path: PathBuf },
     OpenFailed(String),
     OwnerStartFailed(String),
 }
@@ -93,6 +94,13 @@ impl std::fmt::Display for OperationJournalUnavailable {
                     path.display()
                 )
             }
+            Self::ProfileOwnershipChanged { path } => {
+                write!(
+                    formatter,
+                    "profile ownership changed after acquisition: {}",
+                    path.display()
+                )
+            }
             Self::OpenFailed(error) => formatter.write_str(error),
             Self::OwnerStartFailed(error) => formatter.write_str(error),
         }
@@ -105,6 +113,7 @@ impl OperationJournalUnavailable {
             JournalError::JournalOwnedByAnotherProcess { path } => {
                 Self::JournalOwnedByAnotherProcess { path }
             }
+            JournalError::ProfileOwnership(error) => Self::from_profile_ownership_error(error),
             error => Self::OpenFailed(error.to_string()),
         }
     }
@@ -113,6 +122,10 @@ impl OperationJournalUnavailable {
         match error {
             ProfileOwnershipError::ProfileOwnedByAnotherProcess { path } => {
                 Self::ProfileOwnedByAnotherProcess { path }
+            }
+            ProfileOwnershipError::ProfileRootReplaced { path }
+            | ProfileOwnershipError::ProfileOwnerLockReplaced { path } => {
+                Self::ProfileOwnershipChanged { path }
             }
             error => Self::OpenFailed(error.to_string()),
         }
@@ -574,7 +587,10 @@ fn run_owner(
                     .as_ref()
                     .map(|guard| guard.profile_root().to_path_buf())
                     .or_else(|| directory.clone());
-                let recovery_root = match crate::native_app::transaction_history::operation_journal::open_recovery_root_capability(recovery_path) {
+                let recovery_root = match match profile_guard.as_ref() {
+                    Some(profile_guard) => crate::native_app::transaction_history::operation_journal::open_recovery_root_capability_from_profile(profile_guard),
+                    None => crate::native_app::transaction_history::operation_journal::open_recovery_root_capability(recovery_path),
+                } {
                     Ok(capability) => capability,
                     Err(error) => {
                         let reason = OperationJournalUnavailable::from_error(error);
@@ -622,7 +638,23 @@ fn run_owner(
         }
     };
 
+    let mut profile_ownership_changed = false;
     while !stop.load(std::sync::atomic::Ordering::Acquire) {
+        if !profile_ownership_changed {
+            if let Some(profile_guard) = profile_guard.as_ref() {
+                if let Err(error) = profile_guard.validate_current() {
+                    let reason = OperationJournalUnavailable::from_profile_ownership_error(error);
+                    *unavailable.lock().expect("journal unavailable state") = Some(reason.clone());
+                    lifecycle.store(
+                        OwnerLifecycle::Unavailable as u8,
+                        std::sync::atomic::Ordering::Release,
+                    );
+                    let _ = status_tx.send(OperationJournalStatus::Unavailable { reason });
+                    coordinator = None;
+                    profile_ownership_changed = true;
+                }
+            }
+        }
         match command_rx.recv_timeout(OWNER_POLL_INTERVAL) {
             Ok(JournalCommand::BoundedWaveformRestore {
                 intent,
@@ -1174,6 +1206,57 @@ mod tests {
             loser.admit(intent(), Value::Null),
             Err(JournalOwnerQueueError::Unavailable(
                 OperationJournalUnavailable::ProfileOwnedByAnotherProcess { .. }
+            ))
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn production_owner_closes_admission_when_profile_root_is_replaced() {
+        let mut runtime = TestRuntimeGuard::acquire();
+        let base = tempfile::tempdir().expect("profile base");
+        runtime.set_var("WAVECRATE_CONFIG_HOME", base.path().as_os_str());
+        runtime.set_var("WAVECRATE_CONFIG_PROFILE", "native-owner-root-replaced");
+
+        let owner = OperationJournalOwner::start_with_current_profile_for_test();
+        assert_eq!(
+            owner
+                .statuses
+                .recv_timeout(Duration::from_secs(2))
+                .expect("initializing status"),
+            OperationJournalStatus::Initializing
+        );
+        assert!(matches!(
+            owner
+                .statuses
+                .recv_timeout(Duration::from_secs(2))
+                .expect("available status"),
+            OperationJournalStatus::Available { .. }
+        ));
+
+        let profile_root = base
+            .path()
+            .join(wavecrate_library::app_dirs::APP_DIR_NAME)
+            .join(wavecrate_library::app_dirs::PROFILE_DIR_NAME)
+            .join("native-owner-root-replaced");
+        let displaced = base.path().join("displaced-native-profile-root");
+        std::fs::rename(&profile_root, &displaced).expect("displace acquired root");
+        std::fs::create_dir(&profile_root).expect("replacement profile root");
+
+        assert!(matches!(
+            owner
+                .statuses
+                .recv_timeout(Duration::from_secs(2))
+                .expect("profile replacement status"),
+            OperationJournalStatus::Unavailable {
+                reason: OperationJournalUnavailable::ProfileOwnershipChanged { path }
+            } if path == profile_root
+        ));
+        assert!(!profile_root.join("operation_journal").exists());
+        assert!(matches!(
+            owner.admit(intent(), Value::Null),
+            Err(JournalOwnerQueueError::Unavailable(
+                OperationJournalUnavailable::ProfileOwnershipChanged { .. }
             ))
         ));
     }
