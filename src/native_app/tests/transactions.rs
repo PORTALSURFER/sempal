@@ -354,7 +354,9 @@ fn stale_owner_staging_completion_preserves_in_flight_transaction() {
         direction: command.direction,
         through_target: command.through_target,
         label: command.label,
-        result: Ok(FilesystemStageOutcome::FilesystemStaged(OperationId::for_test())),
+        result: Ok(FilesystemStageOutcome::FilesystemStaged(
+            OperationId::for_test(),
+        )),
     });
     assert!(state.transactions.history.file_io_in_flight());
     assert!(state.transactions.pending_history_owner_staging.is_none());
