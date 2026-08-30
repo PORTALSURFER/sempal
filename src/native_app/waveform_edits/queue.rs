@@ -9,11 +9,27 @@ use crate::native_app::app::{
     WaveformDestructiveEditKind, WaveformDestructiveEditTarget, WaveformDestructiveEditUiContext,
     sample_path_label,
 };
+use crate::native_app::transaction_history::operation_journal::RecoveryUnavailable;
 use crate::native_app::waveform::WaveformSelectionKind;
 
 use super::worker::{self, WaveformDestructiveEditWorkerRequest};
 
 const WAVEFORM_DESTRUCTIVE_EDIT_TASK_NAME: &str = "gui-waveform-destructive-edit";
+
+#[derive(Debug, thiserror::Error)]
+pub(super) enum WaveformDestructiveEditQueueError {
+    #[error("{0}")]
+    RecoveryUnavailable(RecoveryUnavailable),
+    #[error("{0}")]
+    Message(String),
+}
+
+impl From<String> for WaveformDestructiveEditQueueError {
+    fn from(error: String) -> Self {
+        Self::Message(error)
+    }
+}
+
 #[derive(Default)]
 pub(super) struct WaveformDestructiveEditQueueOptions {
     pub(super) copy_source_path: Option<PathBuf>,
@@ -26,7 +42,7 @@ impl NativeAppState {
         &mut self,
         request: PendingWaveformDestructiveEdit,
         context: &mut ui::UiUpdateContext<GuiMessage>,
-    ) -> Result<(), String> {
+    ) -> Result<(), WaveformDestructiveEditQueueError> {
         self.queue_destructive_edit_request_with_options(
             request,
             WaveformDestructiveEditQueueOptions::default(),
@@ -39,18 +55,18 @@ impl NativeAppState {
         request: PendingWaveformDestructiveEdit,
         options: WaveformDestructiveEditQueueOptions,
         context: &mut ui::UiUpdateContext<GuiMessage>,
-    ) -> Result<(), String> {
+    ) -> Result<(), WaveformDestructiveEditQueueError> {
         let recovery_root = self
             .background
-            .waveform_recovery_root
+            .waveform_recovery
             .clone()
-            .ok_or_else(|| String::from("waveform recovery root is not ready"))?;
+            .map_err(WaveformDestructiveEditQueueError::RecoveryUnavailable)?;
         if let Some(error) = self
             .library
             .folder_browser
             .file_change_lock_error(&request.absolute_path, request.prompt.edit.action_label())
         {
-            return Err(error);
+            return Err(error.into());
         }
         let extraction_request =
             if request.prompt.edit == WaveformDestructiveEditKind::ExtractAndTrimSelection {
@@ -159,6 +175,29 @@ impl NativeAppState {
         } else {
             self.waveform.current.flash_denied_selection(fallback_kind);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn production_recovery_unavailability_is_typed_before_worker_request() {
+        let recovery: Result<
+            crate::native_app::transaction_history::operation_journal::RecoveryRootCapability,
+            RecoveryUnavailable,
+        > = Err(RecoveryUnavailable::ParticipantLeaseRequired);
+        let error = recovery
+            .map(|_| ())
+            .map_err(WaveformDestructiveEditQueueError::RecoveryUnavailable)
+            .expect_err("production recovery must remain unavailable");
+        assert!(matches!(
+            error,
+            WaveformDestructiveEditQueueError::RecoveryUnavailable(
+                RecoveryUnavailable::ParticipantLeaseRequired
+            )
+        ));
     }
 }
 

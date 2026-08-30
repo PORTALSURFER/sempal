@@ -264,7 +264,7 @@ fn native_app_state_with_temp_sample_in(
     let identity =
         wavecrate_library::filesystem_identity::stable_filesystem_identity_from_open_file(&file)
             .expect("source app root identity");
-    state.background.waveform_recovery_root = Some(
+    state.background.waveform_recovery = Ok(
         crate::native_app::transaction_history::operation_journal::RecoveryRootCapability {
             path: app_root,
             file: std::sync::Arc::new(file),

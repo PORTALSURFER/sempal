@@ -138,7 +138,8 @@ impl NativeAppState {
                 harvest_whole_file_derivation: Some((source_path, harvest_operation)),
             },
             context,
-        )?;
+        )
+        .map_err(|error| error.to_string())?;
         Ok(true)
     }
 

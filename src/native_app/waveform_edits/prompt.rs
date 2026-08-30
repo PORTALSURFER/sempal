@@ -24,6 +24,7 @@ impl NativeAppState {
         let denied_path = request.absolute_path.clone();
         let result = self.queue_destructive_edit_request(request, context);
         if let Err(error) = result {
+            let error = error.to_string();
             self.flash_protected_source_block_if_error(&error, &denied_path);
             self.flash_denied_waveform_selection_for_error(
                 &error,

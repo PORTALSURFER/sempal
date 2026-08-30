@@ -214,6 +214,7 @@ impl NativeAppState {
                 .browser_interaction
                 .pending_waveform_destructive_edit = None;
             if let Err(error) = self.queue_destructive_edit_request(request, context) {
+                let error = error.to_string();
                 self.ui.status.sample = format!(
                     "{} failed: {}",
                     kind.action_label(),

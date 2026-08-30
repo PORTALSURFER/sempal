@@ -503,7 +503,9 @@ impl NativeAppState {
 
     pub(in crate::native_app) fn shutdown(&mut self) -> Option<serde_json::Value> {
         let started_at = Instant::now();
-        let operation_journal_released = self.background.operation_journal.shutdown();
+        // `shutdown` closes the caller-side command sender. The owner thread still has to drop
+        // the coordinator and profile guard; this telemetry is not a release acknowledgement.
+        let operation_journal_close_requested = self.background.operation_journal.shutdown();
         let source_processing = self.background.source_processing.shutdown();
         let harvest_touched_unflushed = self.background.harvest_touched_persist.close();
         let harvest_selection_derivation_unflushed =
@@ -532,7 +534,7 @@ impl NativeAppState {
         Some(serde_json::json!({
             "waveform_cache_shutdown_flush_ms": duration_ms(elapsed),
             "source_processing": source_processing,
-            "operation_journal_released": operation_journal_released,
+            "operation_journal_close_requested": operation_journal_close_requested,
             "harvest_touched_unflushed": harvest_touched_unflushed,
             "harvest_selection_derivation_unflushed": harvest_selection_derivation_unflushed,
             "rating_persist_unflushed": rating_persist_unflushed,
