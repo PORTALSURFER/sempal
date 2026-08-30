@@ -380,15 +380,16 @@ impl GlobalLibraryWriter {
             WriterLifecycle::Closing as u8,
             std::sync::atomic::Ordering::AcqRel,
         );
-        let _admission = self
-            .admission_gate
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let sender = self
-            .commands
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .take();
+        let sender = {
+            let _admission = self
+                .admission_gate
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            self.commands
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .take()
+        };
         drop(sender);
         #[cfg(test)]
         self.blocked_receiver.take();
