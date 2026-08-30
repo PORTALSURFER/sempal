@@ -360,6 +360,8 @@ pub(super) struct WaveformDestructiveEditWorkerRequest {
     edit: PendingWaveformDestructiveEdit,
     extraction: Option<WaveformExtractionRequest>,
     copy_source: Option<PathBuf>,
+    // Production does not provide this capability until the participant-lease and recovery
+    // lifecycle exists; the current capability-backed worker remains an explicit/test seam.
     recovery_root:
         crate::native_app::transaction_history::operation_journal::RecoveryRootCapability,
 }

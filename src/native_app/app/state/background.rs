@@ -31,11 +31,14 @@ use crate::native_app::sample_library::sample_ratings::{
 use crate::native_app::source_processing::{
     SourceProcessingRegistration, SourceProcessingSupervisor,
 };
+use crate::native_app::transaction_history::operation_journal::{
+    RecoveryRootCapability, RecoveryUnavailable,
+};
 use crate::native_app::waveform::WaveformPreservedMarks;
 
 pub(in crate::native_app) struct BackgroundTaskState {
-    pub(in crate::native_app) waveform_recovery_root:
-        Option<crate::native_app::transaction_history::operation_journal::RecoveryRootCapability>,
+    pub(in crate::native_app) waveform_recovery:
+        Result<RecoveryRootCapability, RecoveryUnavailable>,
     pub(in crate::native_app) worker_sender: Sender<GuiMessage>,
     pub(in crate::native_app) worker_receiver: Option<Receiver<GuiMessage>>,
     pub(in crate::native_app) next_task_id: u64,
@@ -472,25 +475,27 @@ impl BackgroundTaskState {
                 )
             })
             .collect();
-        let waveform_recovery_root = recovery_root.map(|path| {
-            let file = std::fs::File::open(&path).expect("test recovery root");
-            let identity =
-                wavecrate_library::filesystem_identity::stable_filesystem_identity_from_open_file(
+        let waveform_recovery = match recovery_root {
+            Some(path) => {
+                let file = std::fs::File::open(&path).expect("test recovery root");
+                let identity = wavecrate_library::filesystem_identity::stable_filesystem_identity_from_open_file(
                     &file,
                 )
                 .expect("test recovery root identity");
-            crate::native_app::transaction_history::operation_journal::RecoveryRootCapability {
-                path,
-                file: Arc::new(file),
-                identity,
+                Ok(RecoveryRootCapability {
+                    path,
+                    file: Arc::new(file),
+                    identity,
+                })
             }
-        });
+            None => Err(RecoveryUnavailable::OperationJournalUnavailable),
+        };
         #[cfg(not(test))]
         let operation_journal = super::OperationJournalOwner::start();
         #[cfg(test)]
         let operation_journal = super::OperationJournalOwner::disabled();
         Self {
-            waveform_recovery_root,
+            waveform_recovery,
             worker_sender,
             worker_receiver,
             next_task_id: 1,
@@ -551,14 +556,14 @@ impl BackgroundTaskState {
         &mut self,
     ) -> Option<super::journal::OperationJournalStatus> {
         let status = self.operation_journal.take_status()?;
-        if let super::journal::OperationJournalStatus::Available { recovery_root, .. } = &status {
-            self.waveform_recovery_root = Some(recovery_root.clone());
-        } else if matches!(
-            status,
+        match &status {
+            super::journal::OperationJournalStatus::Available { recovery, .. } => {
+                self.waveform_recovery = recovery.clone();
+            }
             super::journal::OperationJournalStatus::Initializing
-                | super::journal::OperationJournalStatus::Unavailable { .. }
-        ) {
-            self.waveform_recovery_root = None;
+            | super::journal::OperationJournalStatus::Unavailable { .. } => {
+                self.waveform_recovery = Err(RecoveryUnavailable::OperationJournalUnavailable);
+            }
         }
         Some(status)
     }

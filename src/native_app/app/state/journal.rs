@@ -15,7 +15,7 @@ use wavecrate_library::app_dirs::{ProfileOwnershipError, WritableProfileGuard};
 use crate::native_app::transaction_history::operation_journal::{
     BoundedAdmissionError, FilesystemStageOutcome, JournalError, OperationDisposition, OperationId,
     OperationIntent, OperationJournalCoordinator, OperationPhase, PreparedOperationOutcome,
-    RecoveryRootCapability,
+    RecoveryRootCapability, RecoveryUnavailable,
 };
 use crate::native_app::transaction_history::{
     HistoryFileAction, HistoryFileIoDirection, RejectedBeforeIntent,
@@ -61,7 +61,9 @@ pub(in crate::native_app) enum OperationJournalStatus {
     Initializing,
     Available {
         summary: crate::native_app::transaction_history::operation_journal::RecoverySummary,
-        recovery_root: RecoveryRootCapability,
+        /// Explicit-directory tests may receive a capability. Production reports the typed
+        /// unavailable result until participant recovery leases exist.
+        recovery: Result<RecoveryRootCapability, RecoveryUnavailable>,
     },
     Unavailable {
         reason: OperationJournalUnavailable,
@@ -73,6 +75,7 @@ pub(in crate::native_app) enum OperationJournalUnavailable {
     JournalOwnedByAnotherProcess { path: PathBuf },
     ProfileOwnedByAnotherProcess { path: PathBuf },
     ProfileOwnershipChanged { path: PathBuf },
+    UnsupportedPlatform { path: PathBuf, reason: String },
     OpenFailed(String),
     OwnerStartFailed(String),
 }
@@ -101,6 +104,13 @@ impl std::fmt::Display for OperationJournalUnavailable {
                     path.display()
                 )
             }
+            Self::UnsupportedPlatform { path, reason } => {
+                write!(
+                    formatter,
+                    "operation journal unsupported or unverified at {}: {reason}",
+                    path.display()
+                )
+            }
             Self::OpenFailed(error) => formatter.write_str(error),
             Self::OwnerStartFailed(error) => formatter.write_str(error),
         }
@@ -114,6 +124,9 @@ impl OperationJournalUnavailable {
                 Self::JournalOwnedByAnotherProcess { path }
             }
             JournalError::ProfileOwnership(error) => Self::from_profile_ownership_error(error),
+            JournalError::UnsupportedPlatform { path, reason } => {
+                Self::UnsupportedPlatform { path, reason }
+            }
             error => Self::OpenFailed(error.to_string()),
         }
     }
@@ -580,34 +593,28 @@ fn run_owner(
         match opened {
             Ok(coordinator) => {
                 let summary = coordinator.recovery_summary();
-                // The explicit journal directory is also the recovery root for
-                // test/runtime overrides. Production uses the root held by the
-                // profile guard so journal and recovery share one resolved root.
-                let recovery_path = profile_guard
-                    .as_ref()
-                    .map(|guard| guard.profile_root().to_path_buf())
-                    .or_else(|| directory.clone());
-                let recovery_root = match match profile_guard.as_ref() {
-                    Some(profile_guard) => crate::native_app::transaction_history::operation_journal::open_recovery_root_capability_from_profile(profile_guard),
-                    None => crate::native_app::transaction_history::operation_journal::open_recovery_root_capability(recovery_path),
-                } {
-                    Ok(capability) => capability,
-                    Err(error) => {
-                        let reason = OperationJournalUnavailable::from_error(error);
-                        *unavailable.lock().expect("journal unavailable state") = Some(reason.clone());
-                        lifecycle.store(OwnerLifecycle::Unavailable as u8, std::sync::atomic::Ordering::Release);
-                        let _ = status_tx.send(OperationJournalStatus::Unavailable { reason });
-                        break None;
+                // The explicit journal directory retains its existing test-only recovery seam.
+                // Production deliberately does not publish a profile capability to asynchronous
+                // destructive-edit workers until a participant lease/recovery lifecycle exists.
+                let recovery = if profile_guard.is_some() {
+                    Err(RecoveryUnavailable::ParticipantLeaseRequired)
+                } else {
+                    match crate::native_app::transaction_history::operation_journal::open_recovery_root_capability(directory.clone()) {
+                        Ok(capability) => Ok(capability),
+                        Err(error) => {
+                            let reason = OperationJournalUnavailable::from_error(error);
+                            *unavailable.lock().expect("journal unavailable state") = Some(reason.clone());
+                            lifecycle.store(OwnerLifecycle::Unavailable as u8, std::sync::atomic::Ordering::Release);
+                            let _ = status_tx.send(OperationJournalStatus::Unavailable { reason });
+                            break None;
+                        }
                     }
                 };
                 lifecycle.store(
                     OwnerLifecycle::Available as u8,
                     std::sync::atomic::Ordering::Release,
                 );
-                let _ = status_tx.send(OperationJournalStatus::Available {
-                    summary,
-                    recovery_root,
-                });
+                let _ = status_tx.send(OperationJournalStatus::Available { summary, recovery });
                 break Some(coordinator);
             }
             Err(JournalError::JournalOwnedByAnotherProcess { path }) => {
@@ -938,6 +945,42 @@ mod tests {
             kind: OperationKind::FileHistory,
             label: String::from("owner test"),
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn production_available_does_not_publish_unleased_recovery_capability() {
+        let mut runtime = TestRuntimeGuard::acquire();
+        let base = tempfile::tempdir().expect("profile base");
+        runtime.set_var("WAVECRATE_CONFIG_HOME", base.path().as_os_str());
+        runtime.set_var("WAVECRATE_CONFIG_PROFILE", "native-owner-recovery-unleased");
+
+        let owner = OperationJournalOwner::start_with_current_profile_for_test();
+        assert_eq!(
+            owner
+                .statuses
+                .recv_timeout(Duration::from_secs(2))
+                .expect("initializing status"),
+            OperationJournalStatus::Initializing
+        );
+        let status = owner
+            .statuses
+            .recv_timeout(Duration::from_secs(2))
+            .expect("available status");
+        assert!(matches!(
+            status,
+            OperationJournalStatus::Available {
+                recovery: Err(RecoveryUnavailable::ParticipantLeaseRequired),
+                ..
+            }
+        ));
+
+        let profile_root = base
+            .path()
+            .join(wavecrate_library::app_dirs::APP_DIR_NAME)
+            .join(wavecrate_library::app_dirs::PROFILE_DIR_NAME)
+            .join("native-owner-recovery-unleased");
+        assert!(!profile_root.join("session_recovery").exists());
     }
 
     #[test]

@@ -414,52 +414,15 @@ pub(crate) struct FilesystemStagedWaveformRestore {
     pub(crate) participant: FilesystemStagedParticipant,
 }
 
-/// Profile recovery root opened and identity-checked by the journal owner thread.
+/// Explicit-directory recovery root used by bounded test/runtime recovery seams.
+///
+/// Production does not publish this capability to asynchronous destructive-edit workers until
+/// the participant-lease and recovery lifecycle exists.
 #[derive(Clone, Debug)]
 pub(crate) struct RecoveryRootCapability {
     pub(crate) path: PathBuf,
     pub(crate) file: Arc<File>,
     pub(crate) identity: String,
-}
-
-pub(crate) fn open_recovery_root_capability_from_profile(
-    profile_guard: &wavecrate_library::app_dirs::WritableProfileGuard,
-) -> Result<RecoveryRootCapability, JournalError> {
-    let path = profile_guard.profile_root().to_path_buf();
-    let dir = profile_guard
-        .profile_root_dir()
-        .map_err(JournalError::ProfileOwnership)?;
-    let file = dir.into_std_file();
-    if !file
-        .metadata()
-        .map_err(|source| JournalError::Write {
-            path: path.clone(),
-            source,
-        })?
-        .is_dir()
-    {
-        return Err(JournalError::Write {
-            path,
-            source: io::Error::new(
-                io::ErrorKind::InvalidData,
-                "recovery root is not a directory",
-            ),
-        });
-    }
-    let identity =
-        wavecrate_library::filesystem_identity::stable_filesystem_identity_from_open_file(&file)
-            .ok_or_else(|| JournalError::Write {
-                path: path.clone(),
-                source: io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "recovery root identity unavailable",
-                ),
-            })?;
-    Ok(RecoveryRootCapability {
-        path,
-        file: Arc::new(file),
-        identity,
-    })
 }
 
 impl PartialEq for RecoveryRootCapability {
@@ -513,6 +476,32 @@ pub(crate) fn open_recovery_root_capability(
         file: Arc::new(file),
         identity,
     })
+}
+
+/// Why asynchronous destructive recovery is not available at the current boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum RecoveryUnavailable {
+    /// A participant lease and the corresponding cancel/drain/release lifecycle are not yet
+    /// implemented, so production must not hand a recovery capability to an async worker.
+    ParticipantLeaseRequired,
+    /// The journal owner is not available to authorize the recovery boundary.
+    OperationJournalUnavailable,
+    /// The required platform capability or durability primitive is not verified.
+    UnsupportedPlatform,
+}
+
+impl std::fmt::Display for RecoveryUnavailable {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ParticipantLeaseRequired => formatter
+                .write_str("destructive recovery is unavailable until a participant lease exists"),
+            Self::OperationJournalUnavailable => formatter
+                .write_str("destructive recovery is unavailable while the journal is unavailable"),
+            Self::UnsupportedPlatform => {
+                formatter.write_str("destructive recovery is unsupported on this platform")
+            }
+        }
+    }
 }
 
 /// One complete, bounded durable operation record.
@@ -2007,6 +1996,9 @@ pub(crate) enum JournalError {
     /// Profile ownership changed while opening the production journal or recovery root.
     #[error(transparent)]
     ProfileOwnership(#[from] wavecrate_library::app_dirs::ProfileOwnershipError),
+    /// A production capability or durability primitive is not verified on this platform.
+    #[error("operation journal capability is unsupported or unverified at {path}: {reason}")]
+    UnsupportedPlatform { path: PathBuf, reason: String },
     /// A durable operation record could not be written or synchronized.
     #[error("operation journal write failed at {path}: {source}")]
     Write { path: PathBuf, source: io::Error },
@@ -2154,6 +2146,16 @@ impl OperationJournalStore {
         directory: PathBuf,
         journal_dir: Dir,
     ) -> Result<Self, JournalError> {
+        #[cfg(windows)]
+        {
+            let _ = journal_dir;
+            return Err(JournalError::UnsupportedPlatform {
+                path: directory,
+                reason: String::from(
+                    "production cap-std journal scan/rename is not verified on Windows",
+                ),
+            });
+        }
         let ownership = OwnershipLock::acquire_at(&journal_dir, &directory)?;
         let mut store = Self {
             directory,
@@ -3743,6 +3745,15 @@ impl OperationJournalCoordinator {
         profile_guard: &wavecrate::app_dirs::WritableProfileGuard,
     ) -> Result<Self, JournalError> {
         let directory = profile_guard.profile_root().join("operation_journal");
+        #[cfg(windows)]
+        {
+            return Err(JournalError::UnsupportedPlatform {
+                path: directory,
+                reason: String::from(
+                    "production cap-std journal scan/rename is not verified on Windows",
+                ),
+            });
+        }
         let journal_dir = profile_guard
             .open_child_dir(Path::new("operation_journal"))
             .map_err(JournalError::ProfileOwnership)?;
@@ -5279,6 +5290,7 @@ impl OwnershipLock {
         {
             use std::os::windows::fs::OpenOptionsExt;
             use std::os::windows::io::AsRawHandle;
+            use windows::Win32::Foundation::{ERROR_LOCK_VIOLATION, HANDLE, WIN32_ERROR};
             use windows::Win32::Storage::FileSystem::{
                 FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_OPEN_REPARSE_POINT,
                 LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY, LockFileEx,
@@ -5323,8 +5335,14 @@ impl OwnershipLock {
                     &mut overlapped,
                 )
             };
-            if result.is_err() {
-                return Err(JournalError::JournalOwnedByAnotherProcess { path });
+            if let Err(error) = result {
+                if WIN32_ERROR::from_error(&error) == Some(ERROR_LOCK_VIOLATION) {
+                    return Err(JournalError::JournalOwnedByAnotherProcess { path });
+                }
+                return Err(JournalError::Write {
+                    path,
+                    source: io::Error::other(error.to_string()),
+                });
             }
             file.set_len(0)
                 .and_then(|_| file.write_all(format!("pid={}\n", std::process::id()).as_bytes()))
@@ -5401,7 +5419,9 @@ impl OwnershipLock {
         {
             use std::os::windows::fs::MetadataExt;
             use std::os::windows::io::AsRawHandle;
-            use windows::Win32::Foundation::{FILE_ATTRIBUTE_REPARSE_POINT, HANDLE};
+            use windows::Win32::Foundation::{
+                ERROR_LOCK_VIOLATION, FILE_ATTRIBUTE_REPARSE_POINT, HANDLE, WIN32_ERROR,
+            };
             use windows::Win32::Storage::FileSystem::{
                 LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY, LockFileEx,
             };
@@ -5433,8 +5453,14 @@ impl OwnershipLock {
                     &mut overlapped,
                 )
             };
-            if result.is_err() {
-                return Err(JournalError::JournalOwnedByAnotherProcess { path });
+            if let Err(error) = result {
+                if WIN32_ERROR::from_error(&error) == Some(ERROR_LOCK_VIOLATION) {
+                    return Err(JournalError::JournalOwnedByAnotherProcess { path });
+                }
+                return Err(JournalError::Write {
+                    path,
+                    source: io::Error::other(error.to_string()),
+                });
             }
             file.set_len(0)
                 .and_then(|_| file.write_all(format!("pid={}\n", std::process::id()).as_bytes()))
@@ -5584,13 +5610,17 @@ fn atomic_durable_write_relative(
         });
     }
     if let Err(source) = sync_capability_directory(directory) {
-        return Err(JournalError::Write {
-            path: path
-                .parent()
-                .unwrap_or_else(|| Path::new("."))
-                .to_path_buf(),
-            source,
-        });
+        let path = path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf();
+        if source.kind() == io::ErrorKind::Unsupported {
+            return Err(JournalError::UnsupportedPlatform {
+                path,
+                reason: source.to_string(),
+            });
+        }
+        return Err(JournalError::Write { path, source });
     }
     Ok(())
 }
@@ -5603,9 +5633,10 @@ fn sync_capability_directory(directory: &Dir) -> io::Result<()> {
     #[cfg(target_os = "windows")]
     {
         let _ = directory;
-        // Windows uses the capability-relative rename; the underlying rename is the
-        // strongest namespace durability primitive available to this store.
-        Ok(())
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "capability-relative directory synchronization is not verified on Windows",
+        ))
     }
     #[cfg(all(not(unix), not(target_os = "windows")))]
     {
