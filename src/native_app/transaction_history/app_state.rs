@@ -258,6 +258,23 @@ impl NativeAppState {
         command: HistoryFileIoCommand,
         context: &mut ui::UiUpdateContext<GuiMessage>,
     ) {
+        if let Err(error) = self.background.waveform_recovery.clone() {
+            let execution_id = command.execution_id;
+            let transaction_id = command.transaction_id;
+            let direction = command.direction;
+            let through_target = command.through_target;
+            self.restore_history_file_io_not_started(
+                execution_id,
+                transaction_id,
+                direction,
+                through_target,
+                owner_restore_error_status(
+                    direction,
+                    OperationJournalRestoreError::RecoveryUnavailable(error),
+                ),
+            );
+            return;
+        }
         let intent = OperationIntent {
             actor: OperationActor::User,
             kind: OperationKind::FileHistory,
@@ -620,6 +637,9 @@ fn owner_restore_error_status(
         }
         OperationJournalRestoreError::Journal(error) => {
             unreachable!("ambiguous journal errors must retain history in flight: {error}")
+        }
+        OperationJournalRestoreError::RecoveryUnavailable(error) => {
+            format!("destructive recovery unavailable: {error}")
         }
         OperationJournalRestoreError::Unavailable(error) => {
             format!("operation journal unavailable: {error}")

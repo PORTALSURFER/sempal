@@ -161,6 +161,7 @@ pub(in crate::native_app) enum JournalOperationError {
 pub(in crate::native_app) enum OperationJournalRestoreError {
     RejectedBeforeIntent(RejectedBeforeIntent),
     Journal(String),
+    RecoveryUnavailable(RecoveryUnavailable),
     Unavailable(String),
     Closed,
 }

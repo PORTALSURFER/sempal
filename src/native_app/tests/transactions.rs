@@ -78,6 +78,21 @@ fn begin_owner_restore_for_tests(
         .expect("owner restore command")
 }
 
+fn enable_test_owner_recovery(state: &mut crate::native_app::app::NativeAppState) {
+    let path = std::env::current_dir().expect("test recovery root");
+    let file = std::fs::File::open(&path).expect("test recovery root");
+    let identity =
+        wavecrate_library::filesystem_identity::stable_filesystem_identity_from_open_file(&file)
+            .expect("test recovery root identity");
+    state.background.waveform_recovery = Ok(
+        crate::native_app::transaction_history::operation_journal::RecoveryRootCapability {
+            path,
+            file: std::sync::Arc::new(file),
+            identity,
+        },
+    );
+}
+
 fn platform_qualification_assessment_for_tests() -> ReplacementQualificationAssessment {
     ReplacementQualificationAssessment {
         platform_family: ReplacementPlatformFamily::Other,
@@ -298,8 +313,30 @@ fn closed_owner_completion_fence_ignores_duplicate_unavailable_result() {
 }
 
 #[test]
+fn unavailable_owner_recovery_rejects_before_owner_admission() {
+    let mut state = gui_state_for_span_tests();
+    let command = begin_owner_restore_for_tests(&mut state);
+    let mut context = ui::UiUpdateContext::default();
+
+    state.start_history_file_io(command, &mut context);
+
+    assert!(context.into_command().is_empty());
+    assert!(!state.transactions.history.file_io_in_flight());
+    assert!(state.transactions.history.can_undo());
+    assert!(state.ui.status.sample.contains("not started"));
+    assert!(
+        state
+            .ui
+            .status
+            .sample
+            .contains("destructive recovery unavailable")
+    );
+}
+
+#[test]
 fn owner_route_enqueues_background_waiter_without_ui_block() {
     let mut state = gui_state_for_span_tests();
+    enable_test_owner_recovery(&mut state);
     let command = begin_owner_restore_for_tests(&mut state);
     let mut context = ui::UiUpdateContext::default();
     state.start_history_file_io(command, &mut context);
@@ -327,6 +364,7 @@ fn stale_owner_staging_completion_preserves_in_flight_transaction() {
 #[test]
 fn owner_staging_queue_failure_restores_original_stack_without_ui_wait() {
     let mut state = gui_state_for_span_tests();
+    enable_test_owner_recovery(&mut state);
     for _ in 0..32 {
         state
             .background
