@@ -238,7 +238,7 @@ fn open_profile_root(path: &Path) -> io::Result<Dir> {
             };
             dir = dir.open_dir_nofollow(name)?;
         }
-        return Ok(dir);
+        Ok(dir)
     }
     #[cfg(windows)]
     {
