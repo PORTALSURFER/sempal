@@ -497,6 +497,8 @@ impl OperationJournalOwner {
     ///
     /// The owner thread observes the closed channel, drops its coordinator, and releases the
     /// profile lock itself. This call never waits for owner-thread I/O or synchronization.
+    /// The return value reports only whether this call closed the sender; it is not an
+    /// acknowledgement that the coordinator or profile lock has been released.
     pub(in crate::native_app) fn shutdown(&mut self) -> bool {
         let previous = self.lifecycle.swap(
             OwnerLifecycle::Closing as u8,

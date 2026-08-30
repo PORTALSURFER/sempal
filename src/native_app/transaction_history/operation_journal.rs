@@ -2770,11 +2770,30 @@ impl OperationJournalStore {
             if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
                 continue;
             }
-            let file_type = entry.file_type().map_err(|source| JournalError::Scan {
-                path: path.clone(),
-                source,
-            })?;
-            if !file_type.is_file() {
+            #[cfg(unix)]
+            let file = Self::open_scan_entry_nonblocking(directory, &name, &path)?;
+            #[cfg(not(unix))]
+            let mut options = CapabilityOpenOptions::new();
+            #[cfg(not(unix))]
+            let file = {
+                options.read(true).follow(FollowSymlinks::No);
+                entry
+                    .open_with(&options)
+                    .map_err(|source| JournalError::Scan {
+                        path: path.clone(),
+                        source,
+                    })?
+                    .into_std()
+            };
+            #[cfg(not(unix))]
+            if !file
+                .metadata()
+                .map_err(|source| JournalError::Scan {
+                    path: path.clone(),
+                    source,
+                })?
+                .is_file()
+            {
                 return Err(JournalError::Scan {
                     path,
                     source: io::Error::new(
@@ -2783,14 +2802,6 @@ impl OperationJournalStore {
                     ),
                 });
             }
-            let mut options = CapabilityOpenOptions::new();
-            options.read(true).follow(FollowSymlinks::No);
-            let file = entry
-                .open_with(&options)
-                .map_err(|source| JournalError::Scan {
-                    path: path.clone(),
-                    source,
-                })?;
             let mut bytes = Vec::with_capacity(MAX_RECORD_BYTES);
             file.take((MAX_RECORD_BYTES as u64).saturating_add(1))
                 .read_to_end(&mut bytes)
@@ -2801,6 +2812,55 @@ impl OperationJournalStore {
             self.ingest_scan_entry(path, bytes)?;
         }
         Ok(())
+    }
+
+    #[cfg(unix)]
+    fn open_scan_entry_nonblocking(
+        directory: &Dir,
+        name: &std::ffi::OsStr,
+        path: &Path,
+    ) -> Result<File, JournalError> {
+        use std::ffi::CString;
+        use std::os::fd::{AsRawFd, FromRawFd};
+        use std::os::unix::ffi::OsStrExt;
+
+        let name = CString::new(name.as_bytes()).map_err(|_| JournalError::Scan {
+            path: path.to_path_buf(),
+            source: io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "operation journal entry name contains NUL",
+            ),
+        })?;
+        let parent = directory
+            .try_clone()
+            .map_err(|source| JournalError::Scan {
+                path: path.to_path_buf(),
+                source,
+            })?
+            .into_std_file();
+        let flags = libc::O_RDONLY | libc::O_CLOEXEC | libc::O_NOFOLLOW | libc::O_NONBLOCK;
+        let fd = unsafe { libc::openat(parent.as_raw_fd(), name.as_ptr(), flags) };
+        if fd < 0 {
+            return Err(JournalError::Scan {
+                path: path.to_path_buf(),
+                source: io::Error::last_os_error(),
+            });
+        }
+        let file = unsafe { File::from_raw_fd(fd) };
+        let metadata = file.metadata().map_err(|source| JournalError::Scan {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        if !metadata.is_file() {
+            return Err(JournalError::Scan {
+                path: path.to_path_buf(),
+                source: io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "operation journal entry is not a regular file",
+                ),
+            });
+        }
+        Ok(file)
     }
 
     fn ingest_scan_entry(&mut self, path: PathBuf, bytes: Vec<u8>) -> Result<(), JournalError> {
@@ -7592,6 +7652,57 @@ mod tests {
             "FIFO leaf open blocked before regular-file rejection"
         );
         assert!(result.is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn capability_scan_rejects_replaced_fifo_without_blocking() {
+        use std::os::unix::ffi::OsStrExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let json = directory.path().join("replaced.json");
+        fs::write(&json, b"placeholder").unwrap();
+        let journal_dir =
+            Dir::open_ambient_dir(directory.path(), cap_fs_ext::ambient_authority()).unwrap();
+        fs::remove_file(&json).unwrap();
+        let fifo = json;
+        let fifo_name = std::ffi::CString::new(fifo.as_os_str().as_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(fifo_name.as_ptr(), 0o600) }, 0);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let display = directory.path().to_path_buf();
+        let handle = std::thread::spawn(move || {
+            sender
+                .send(OperationJournalStore::open_from_capability(
+                    display,
+                    journal_dir,
+                ))
+                .unwrap();
+        });
+
+        let first_result = receiver.recv_timeout(std::time::Duration::from_millis(250));
+        let completed_without_writer = first_result.is_ok();
+        let result = match first_result {
+            Ok(result) => result,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                let writer = OpenOptions::new().write(true).open(&fifo).unwrap();
+                drop(writer);
+                receiver
+                    .recv_timeout(std::time::Duration::from_secs(1))
+                    .expect("FIFO capability scan did not complete after FIFO writer unblock")
+            }
+            Err(error) => panic!("FIFO capability scan channel failed: {error}"),
+        };
+        handle.join().unwrap();
+
+        assert!(
+            completed_without_writer,
+            "replaced FIFO capability scan blocked before regular-file rejection"
+        );
+        assert!(matches!(
+            result,
+            Err(JournalError::Scan { source, .. })
+                if source.kind() == io::ErrorKind::InvalidData
+        ));
     }
 
     #[test]
