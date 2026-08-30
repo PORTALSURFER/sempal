@@ -24,6 +24,17 @@ pub enum LibraryError {
         /// Rejected profile name.
         profile: String,
     },
+    /// The profile ownership capability could not be used for a library operation.
+    #[error(transparent)]
+    ProfileOwnership(#[from] app_dirs::ProfileOwnershipError),
+    /// Profile ownership changed while an accepted library command was in flight.
+    #[error("profile ownership changed at {path}: {reason}")]
+    ProfileOwnershipChanged {
+        /// Profile root whose ownership boundary changed.
+        path: PathBuf,
+        /// Stable reason for the fail-closed result.
+        reason: String,
+    },
     /// Failed to open or query the database.
     #[error("Library database query failed: {0}")]
     Sql(#[from] rusqlite::Error),

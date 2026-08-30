@@ -11,6 +11,7 @@ mod connection;
 mod error;
 mod harvest;
 mod migrations;
+mod owner;
 mod schema_checks;
 mod schema_defs;
 mod sources;
@@ -32,6 +33,11 @@ pub use harvest::{
     HarvestDerivationOperation, HarvestDerivationRecord, HarvestFileIdentity, HarvestFileKey,
     HarvestFileRecord, HarvestMetadataSnapshot, HarvestSourceRange, HarvestState,
     NewHarvestDerivation,
+};
+pub use owner::{
+    GLOBAL_LIBRARY_WRITER_COMMAND_CAPACITY, GlobalLibraryWriter, GlobalLibraryWriterQueueError,
+    GlobalLibraryWriterStartError, GlobalLibraryWriterStatus, GlobalLibraryWriterUnavailable,
+    SourceRegistrySnapshot,
 };
 
 #[cfg(test)]
