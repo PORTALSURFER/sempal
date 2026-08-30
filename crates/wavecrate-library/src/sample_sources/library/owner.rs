@@ -145,6 +145,49 @@ enum WriterCommand {
     },
 }
 
+enum WriterReply {
+    Load {
+        result: SyncSender<Result<SourceRegistrySnapshot, LibraryError>>,
+        value: Result<SourceRegistrySnapshot, LibraryError>,
+    },
+    Replace {
+        result: SyncSender<Result<(), LibraryError>>,
+        value: Result<(), LibraryError>,
+    },
+}
+
+impl WriterReply {
+    fn send(self) {
+        match self {
+            Self::Load { result, value } => {
+                let _ = result.send(value);
+            }
+            Self::Replace { result, value } => {
+                let _ = result.send(value);
+            }
+        }
+    }
+
+    fn send_error(self, error: LibraryError) {
+        match self {
+            Self::Load { result, .. } => {
+                let _ = result.send(Err(error));
+            }
+            Self::Replace { result, .. } => {
+                let _ = result.send(Err(error));
+            }
+        }
+    }
+}
+
+struct OwnerHooks {
+    initialization_gate: Option<Arc<std::sync::Barrier>>,
+    #[cfg(test)]
+    binding_open_gate: Option<(Arc<std::sync::Barrier>, Arc<std::sync::Barrier>)>,
+    #[cfg(test)]
+    post_command_gate: Option<(Arc<std::sync::Barrier>, Arc<std::sync::Barrier>)>,
+}
+
 /// Profile-owned asynchronous writer for `library.db`.
 ///
 /// The handle contains only typed command and lifecycle state. The writable SQLite connection
@@ -168,12 +211,14 @@ impl GlobalLibraryWriter {
     pub fn start(
         profile_guard: &WritableProfileGuard,
     ) -> Result<Self, GlobalLibraryWriterStartError> {
-        Self::start_inner(profile_guard, None)
+        Self::start_inner(profile_guard, None, None, None)
     }
 
     fn start_inner(
         profile_guard: &WritableProfileGuard,
         initialization_gate: Option<Arc<std::sync::Barrier>>,
+        binding_open_gate: Option<(Arc<std::sync::Barrier>, Arc<std::sync::Barrier>)>,
+        post_command_gate: Option<(Arc<std::sync::Barrier>, Arc<std::sync::Barrier>)>,
     ) -> Result<Self, GlobalLibraryWriterStartError> {
         let worker_profile_guard = profile_guard.try_clone()?;
         let (commands, command_rx) = mpsc::sync_channel(GLOBAL_LIBRARY_WRITER_COMMAND_CAPACITY);
@@ -185,6 +230,8 @@ impl GlobalLibraryWriter {
         let worker_unavailable = Arc::clone(&unavailable);
         let admission_gate = Arc::new(Mutex::new(()));
         let worker_admission_gate = Arc::clone(&admission_gate);
+        #[cfg(not(test))]
+        let _ = (binding_open_gate, post_command_gate);
         let worker = thread::Builder::new()
             .name(String::from("wavecrate-global-library-writer"))
             .spawn(move || {
@@ -193,7 +240,13 @@ impl GlobalLibraryWriter {
                     command_rx,
                     worker_lifecycle,
                     worker_unavailable,
-                    initialization_gate,
+                    OwnerHooks {
+                        initialization_gate,
+                        #[cfg(test)]
+                        binding_open_gate,
+                        #[cfg(test)]
+                        post_command_gate,
+                    },
                     worker_admission_gate,
                 );
             })
@@ -215,9 +268,41 @@ impl GlobalLibraryWriter {
         profile_guard: &WritableProfileGuard,
     ) -> (Self, Arc<std::sync::Barrier>) {
         let gate = Arc::new(std::sync::Barrier::new(2));
-        let writer =
-            Self::start_inner(profile_guard, Some(Arc::clone(&gate))).expect("writer start");
+        let writer = Self::start_inner(profile_guard, Some(Arc::clone(&gate)), None, None)
+            .expect("writer start");
         (writer, gate)
+    }
+
+    #[cfg(test)]
+    fn start_with_binding_open_gate_for_test(
+        profile_guard: &WritableProfileGuard,
+    ) -> (Self, Arc<std::sync::Barrier>, Arc<std::sync::Barrier>) {
+        let ready = Arc::new(std::sync::Barrier::new(2));
+        let release = Arc::new(std::sync::Barrier::new(2));
+        let writer = Self::start_inner(
+            profile_guard,
+            None,
+            Some((Arc::clone(&ready), Arc::clone(&release))),
+            None,
+        )
+        .expect("writer start");
+        (writer, ready, release)
+    }
+
+    #[cfg(test)]
+    fn start_with_post_command_gate_for_test(
+        profile_guard: &WritableProfileGuard,
+    ) -> (Self, Arc<std::sync::Barrier>, Arc<std::sync::Barrier>) {
+        let ready = Arc::new(std::sync::Barrier::new(2));
+        let release = Arc::new(std::sync::Barrier::new(2));
+        let writer = Self::start_inner(
+            profile_guard,
+            None,
+            None,
+            Some((Arc::clone(&ready), Arc::clone(&release))),
+        )
+        .expect("writer start");
+        (writer, ready, release)
     }
 
     #[cfg(test)]
@@ -389,21 +474,30 @@ fn run_owner(
     command_rx: Receiver<WriterCommand>,
     lifecycle: Arc<std::sync::atomic::AtomicU8>,
     unavailable: Arc<Mutex<Option<GlobalLibraryWriterUnavailable>>>,
-    initialization_gate: Option<Arc<std::sync::Barrier>>,
+    hooks: OwnerHooks,
     admission_gate: Arc<Mutex<()>>,
 ) {
-    if let Some(initialization_gate) = initialization_gate {
+    if let Some(initialization_gate) = hooks.initialization_gate {
         initialization_gate.wait();
     }
-    let mut database = match LibraryDatabase::open_for_profile_guard(&profile_guard) {
+    #[cfg(test)]
+    let open_result =
+        LibraryDatabase::open_for_profile_guard(&profile_guard, hooks.binding_open_gate);
+    #[cfg(not(test))]
+    let open_result = { LibraryDatabase::open_for_profile_guard(&profile_guard) };
+    let mut database = match open_result {
         Ok(database) => database,
         Err(error) => {
-            let reason = unavailable_from_library_error(&error);
+            let profile_error = profile_guard.validate_current().err();
+            let reason = profile_error
+                .as_ref()
+                .map(unavailable_from_profile_error)
+                .unwrap_or_else(|| unavailable_from_library_error(&error));
             *unavailable
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(reason);
             lifecycle.store(
-                if matches!(error, LibraryError::ProfileOwnership(_)) {
+                if profile_error.is_some() || matches!(error, LibraryError::ProfileOwnership(_)) {
                     WriterLifecycle::Closed as u8
                 } else {
                     WriterLifecycle::Unavailable as u8
@@ -414,7 +508,7 @@ fn run_owner(
         }
     };
 
-    if let Err(error) = profile_guard.validate_current() {
+    if let Err(error) = database.validate_profile_guard(&profile_guard) {
         close_after_profile_change(
             &command_rx,
             &lifecycle,
@@ -430,7 +524,7 @@ fn run_owner(
     );
 
     loop {
-        if let Err(error) = profile_guard.validate_current() {
+        if let Err(error) = database.validate_profile_guard(&profile_guard) {
             close_after_profile_change(
                 &command_rx,
                 &lifecycle,
@@ -445,7 +539,7 @@ fn run_owner(
             Err(mpsc::RecvTimeoutError::Timeout) => continue,
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         };
-        if let Err(error) = profile_guard.validate_current() {
+        if let Err(error) = database.validate_profile_guard(&profile_guard) {
             reject_after_profile_change(command, &error);
             close_after_profile_change(
                 &command_rx,
@@ -457,18 +551,16 @@ fn run_owner(
             break;
         }
 
-        match command {
-            WriterCommand::LoadSourceRegistry { result } => {
-                let command_result = database.load_source_registry();
-                let _ = result.send(command_result);
-            }
-            WriterCommand::ReplaceSourceRegistry { snapshot, result } => {
-                let command_result = database.replace_source_registry(&snapshot);
-                let _ = result.send(command_result);
-            }
+        let reply = execute_command(command, &mut database);
+
+        #[cfg(test)]
+        if let Some((ready, release)) = hooks.post_command_gate.as_ref() {
+            ready.wait();
+            release.wait();
         }
 
-        if let Err(error) = profile_guard.validate_current() {
+        if let Err(error) = database.validate_profile_guard(&profile_guard) {
+            reply.send_error(profile_change_library_error(&error, true));
             close_after_profile_change(
                 &command_rx,
                 &lifecycle,
@@ -478,6 +570,7 @@ fn run_owner(
             );
             break;
         }
+        reply.send();
     }
 
     drop(database);
@@ -485,6 +578,19 @@ fn run_owner(
         WriterLifecycle::Closed as u8,
         std::sync::atomic::Ordering::Release,
     );
+}
+
+fn execute_command(command: WriterCommand, database: &mut LibraryDatabase) -> WriterReply {
+    match command {
+        WriterCommand::LoadSourceRegistry { result } => WriterReply::Load {
+            value: database.load_source_registry(),
+            result,
+        },
+        WriterCommand::ReplaceSourceRegistry { snapshot, result } => WriterReply::Replace {
+            value: database.replace_source_registry(&snapshot),
+            result,
+        },
+    }
 }
 
 fn close_after_profile_change(
@@ -509,11 +615,7 @@ fn close_after_profile_change(
 }
 
 fn reject_after_profile_change(command: WriterCommand, error: &ProfileOwnershipError) {
-    let library_error = LibraryError::ProfileOwnershipChanged {
-        path: profile_error_path(error),
-        reason: error.to_string(),
-    };
-    send_command_error(command, library_error);
+    send_command_error(command, profile_change_library_error(error, false));
 }
 
 fn reject_remaining_profile_change(
@@ -533,6 +635,21 @@ fn send_command_error(command: WriterCommand, error: LibraryError) {
         WriterCommand::ReplaceSourceRegistry { result, .. } => {
             let _ = result.send(Err(error));
         }
+    }
+}
+
+fn profile_change_library_error(
+    error: &ProfileOwnershipError,
+    completion_not_confirmable: bool,
+) -> LibraryError {
+    let reason = if completion_not_confirmable {
+        format!("completion not confirmable: {error}")
+    } else {
+        error.to_string()
+    };
+    LibraryError::ProfileOwnershipChanged {
+        path: profile_error_path(error),
+        reason,
     }
 }
 
@@ -882,6 +999,178 @@ mod tests {
     }
 
     #[test]
+    fn profile_owned_open_rejects_nonregular_sidecar_before_sqlite() {
+        let temp = tempdir().expect("base");
+        let _runtime = TestRuntimeGuard::acquire();
+        let base_path = std::fs::canonicalize(temp.path()).expect("canonical test base");
+        let base_guard = ConfigBaseGuard::set(base_path);
+        let profile_guard = PersistenceProfileGuard::named("sidecar-entry");
+        let writable_guard = WritableProfileGuard::acquire_current().expect("profile ownership");
+        let root = writable_guard.profile_root().to_path_buf();
+        fs::create_dir(root.join("library.db-wal")).expect("nonregular WAL fixture");
+        let db_path = root.join(super::super::LIBRARY_DB_FILE_NAME);
+        let opens_before = super::super::connection::test_open_count(&db_path);
+        let writer = GlobalLibraryWriter::start(&writable_guard).expect("writer start");
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !matches!(
+            writer.status(),
+            GlobalLibraryWriterStatus::Unavailable { .. }
+        ) {
+            assert!(
+                Instant::now() < deadline,
+                "writer did not reject the nonregular sidecar"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(matches!(
+            writer.status(),
+            GlobalLibraryWriterStatus::Unavailable {
+                reason: GlobalLibraryWriterUnavailable::DatabaseUnavailable { reason }
+            } if reason.contains("library.db-wal")
+        ));
+        assert_eq!(
+            super::super::connection::test_open_count(&db_path),
+            opens_before
+        );
+        drop(writer);
+        drop(writable_guard);
+        drop(profile_guard);
+        drop(base_guard);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn profile_owned_open_rejects_database_symlink_without_following_it() {
+        let temp = tempdir().expect("base");
+        let _runtime = TestRuntimeGuard::acquire();
+        let base_path = std::fs::canonicalize(temp.path()).expect("canonical test base");
+        let base_guard = ConfigBaseGuard::set(base_path);
+        let profile_guard = PersistenceProfileGuard::named("database-symlink");
+        let writable_guard = WritableProfileGuard::acquire_current().expect("profile ownership");
+        let root = writable_guard.profile_root().to_path_buf();
+        let outside = temp.path().join("outside.db");
+        fs::write(&outside, b"outside database").expect("outside database");
+        std::os::unix::fs::symlink(&outside, root.join(super::super::LIBRARY_DB_FILE_NAME))
+            .expect("database symlink fixture");
+        let db_path = root.join(super::super::LIBRARY_DB_FILE_NAME);
+        let opens_before = super::super::connection::test_open_count(&db_path);
+        let writer = GlobalLibraryWriter::start(&writable_guard).expect("writer start");
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !matches!(
+            writer.status(),
+            GlobalLibraryWriterStatus::Unavailable { .. }
+        ) {
+            assert!(
+                Instant::now() < deadline,
+                "writer did not reject the database symlink"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(matches!(
+            writer.status(),
+            GlobalLibraryWriterStatus::Unavailable {
+                reason: GlobalLibraryWriterUnavailable::DatabaseUnavailable { reason }
+            } if reason.contains("library.db")
+        ));
+        assert_eq!(
+            super::super::connection::test_open_count(&db_path),
+            opens_before
+        );
+        drop(writer);
+        drop(writable_guard);
+        drop(profile_guard);
+        drop(base_guard);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn profile_root_replacement_during_initialization_does_not_redirect_database() {
+        let temp = tempdir().expect("base");
+        let _runtime = TestRuntimeGuard::acquire();
+        let base_path = std::fs::canonicalize(temp.path()).expect("canonical test base");
+        let base_guard = ConfigBaseGuard::set(base_path);
+        let profile_guard = PersistenceProfileGuard::named("initialization-replacement");
+        let writable_guard = WritableProfileGuard::acquire_current().expect("profile ownership");
+        let root = writable_guard.profile_root().to_path_buf();
+        let (mut writer, ready, release) =
+            GlobalLibraryWriter::start_with_binding_open_gate_for_test(&writable_guard);
+
+        ready.wait();
+        let displaced = temp.path().join("initialization-replacement-old");
+        fs::rename(&root, &displaced).expect("displace original profile root");
+        fs::create_dir(&root).expect("replacement profile root");
+        release.wait();
+
+        wait_until_closed(&writer);
+        assert!(!root.join(super::super::LIBRARY_DB_FILE_NAME).exists());
+        assert!(displaced.join(super::super::LIBRARY_DB_FILE_NAME).is_file());
+        assert!(matches!(
+            writer.unavailable_reason(),
+            Some(GlobalLibraryWriterUnavailable::ProfileOwnershipChanged { path, .. })
+                if path == root
+        ));
+        assert!(!writer.shutdown());
+        drop(writable_guard);
+        drop(profile_guard);
+        drop(base_guard);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn profile_replacement_before_reply_returns_completion_not_confirmable() {
+        let temp = tempdir().expect("base");
+        let _runtime = TestRuntimeGuard::acquire();
+        let base_path = std::fs::canonicalize(temp.path()).expect("canonical test base");
+        let base_guard = ConfigBaseGuard::set(base_path);
+        let profile_guard = PersistenceProfileGuard::named("inflight-replacement");
+        let writable_guard = WritableProfileGuard::acquire_current().expect("profile ownership");
+        let (mut writer, ready, release) =
+            GlobalLibraryWriter::start_with_post_command_gate_for_test(&writable_guard);
+        wait_until_available(&writer);
+        let root = writable_guard.profile_root().to_path_buf();
+        let result = writer
+            .replace_source_registry(SourceRegistrySnapshot::new(Vec::new()))
+            .expect("replace admission");
+
+        ready.wait();
+        let queued_result = writer
+            .load_source_registry_snapshot()
+            .expect("queued load admission");
+        let displaced = temp.path().join("inflight-replacement-old");
+        fs::rename(&root, &displaced).expect("displace original profile root");
+        fs::create_dir(&root).expect("replacement profile root");
+        release.wait();
+
+        let result = result
+            .recv_timeout(Duration::from_secs(2))
+            .expect("in-flight command result");
+        match result {
+            Err(LibraryError::ProfileOwnershipChanged { path, reason }) => {
+                assert_eq!(path, root);
+                assert!(reason.contains("completion not confirmable"));
+            }
+            other => panic!("profile replacement returned {other:?}"),
+        }
+        assert!(matches!(
+            queued_result
+                .recv_timeout(Duration::from_secs(2))
+                .expect("queued command result"),
+            Err(LibraryError::ProfileOwnershipChanged { .. })
+        ));
+        wait_until_closed(&writer);
+        assert!(matches!(
+            writer.load_source_registry_snapshot(),
+            Err(GlobalLibraryWriterQueueError::Closed)
+        ));
+        assert!(displaced.join(super::super::LIBRARY_DB_FILE_NAME).is_file());
+        assert!(!writer.shutdown());
+        drop(writable_guard);
+        drop(profile_guard);
+        drop(base_guard);
+    }
+
+    #[test]
+    #[cfg(unix)]
     fn profile_replacement_closes_owner_and_rejects_later_commands() {
         let temp = tempdir().expect("base");
         let _runtime = TestRuntimeGuard::acquire();
@@ -907,7 +1196,7 @@ mod tests {
         drop(base_guard);
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     #[test]
     fn profile_lock_replacement_closes_owner_and_rejects_later_commands() {
         let temp = tempdir().expect("base");
@@ -931,6 +1220,27 @@ mod tests {
                 if path == lock_path
         ));
         let _ = writer.shutdown();
+        drop(writable_guard);
+        drop(profile_guard);
+        drop(base_guard);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn profile_root_rename_is_blocked_by_retained_database_binding() {
+        let temp = tempdir().expect("base");
+        let _runtime = TestRuntimeGuard::acquire();
+        let (base_guard, profile_guard, writable_guard, mut writer) =
+            start_writer(&temp, "root-rename-barrier");
+        let root = writable_guard.profile_root().to_path_buf();
+        wait_until_available(&writer);
+        let displaced = temp.path().join("root-rename-barrier-old");
+        assert!(fs::rename(&root, &displaced).is_err());
+        assert!(matches!(
+            writer.status(),
+            GlobalLibraryWriterStatus::Available
+        ));
+        assert!(writer.shutdown());
         drop(writable_guard);
         drop(profile_guard);
         drop(base_guard);

@@ -114,6 +114,11 @@ impl WritableProfileGuard {
         &self.profile_root
     }
 
+    /// Return the identity captured from the retained profile-root capability.
+    pub(crate) fn profile_root_identity(&self) -> &str {
+        &self.profile_identity
+    }
+
     /// Clone this acquired profile capability for another profile-owned participant.
     ///
     /// The clone retains the same lock identity and open lock descriptor. It therefore does not

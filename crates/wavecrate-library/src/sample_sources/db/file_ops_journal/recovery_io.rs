@@ -12,6 +12,7 @@ use cap_primitives::fs::{FollowSymlinks, OpenOptions, open, open_ambient_dir, op
 #[cfg(test)]
 use cap_primitives::fs::{hard_link, remove_file};
 
+use crate::app_dirs::{ProfileOwnershipError, WritableProfileGuard};
 use crate::filesystem_identity::{
     stable_filesystem_identity, stable_filesystem_identity_from_open_file,
 };
@@ -448,6 +449,7 @@ impl RecoveryRoot {
             return Ok(BoundDatabaseRoot {
                 path,
                 _capability: capability,
+                identity: self.identity.clone(),
             });
         }
 
@@ -460,6 +462,7 @@ impl RecoveryRoot {
             Ok(BoundDatabaseRoot {
                 path,
                 _capability: capability,
+                identity: self.identity.clone(),
             })
         }
     }
@@ -497,18 +500,79 @@ impl RecoveryRoot {
     }
 }
 
-pub(super) struct BoundDatabaseRoot {
+pub(crate) struct BoundDatabaseRoot {
     path: PathBuf,
     _capability: fs::File,
+    identity: String,
 }
 
 impl BoundDatabaseRoot {
-    pub(super) fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         &self.path
+    }
+
+    pub(crate) fn for_profile_guard(
+        profile_guard: &WritableProfileGuard,
+    ) -> Result<Self, ProfileOwnershipError> {
+        let expected_identity = profile_guard.profile_root_identity();
+
+        #[cfg(windows)]
+        let capability =
+            windows_database_root_binding(profile_guard.profile_root(), expected_identity)
+                .map_err(|error| profile_binding_error(profile_guard, error))?;
+
+        #[cfg(not(windows))]
+        let capability = profile_guard.profile_root_dir()?.into_std_file();
+
+        #[cfg(windows)]
+        let path = windows_final_path(&capability)
+            .map_err(|error| profile_binding_error(profile_guard, error))?;
+
+        #[cfg(not(windows))]
+        let path =
+            database_root_alias(&capability, profile_guard.profile_root(), expected_identity)
+                .map_err(|error| profile_binding_error(profile_guard, error))?;
+
+        validate_database_root_alias(&capability, &path, expected_identity)
+            .map_err(|error| profile_binding_error(profile_guard, error))?;
+        Ok(Self {
+            path,
+            _capability: capability,
+            identity: expected_identity.to_owned(),
+        })
+    }
+
+    pub(crate) fn validate_profile_guard(
+        &self,
+        profile_guard: &WritableProfileGuard,
+    ) -> Result<(), ProfileOwnershipError> {
+        profile_guard.validate_current()?;
+        validate_database_root_alias(
+            &self._capability,
+            &self.path,
+            profile_guard.profile_root_identity(),
+        )
+        .map_err(|error| profile_binding_error(profile_guard, error))?;
+        if self.identity != profile_guard.profile_root_identity() {
+            return Err(ProfileOwnershipError::ProfileRootReplaced {
+                path: profile_guard.profile_root().to_path_buf(),
+            });
+        }
+        Ok(())
     }
 }
 
 impl DatabaseRootBindingGuard for BoundDatabaseRoot {}
+
+fn profile_binding_error(
+    profile_guard: &WritableProfileGuard,
+    error: String,
+) -> ProfileOwnershipError {
+    ProfileOwnershipError::Io {
+        path: profile_guard.profile_root().to_path_buf(),
+        source: io::Error::other(error),
+    }
+}
 
 #[cfg(not(windows))]
 fn database_root_alias(

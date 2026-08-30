@@ -18,6 +18,14 @@ pub enum LibraryError {
         /// Underlying IO error.
         source: std::io::Error,
     },
+    /// A database, WAL, or SHM entry was not safe to hand to SQLite.
+    #[error("Library database path validation failed at {path}: {reason}")]
+    DatabasePathValidation {
+        /// Entry that failed no-follow validation.
+        path: PathBuf,
+        /// Stable validation failure description.
+        reason: String,
+    },
     /// Failed to resolve the configured persistence profile.
     #[error("Invalid library persistence profile '{profile}'")]
     InvalidProfile {
